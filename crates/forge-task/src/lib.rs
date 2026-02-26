@@ -10,6 +10,8 @@
 //! - **Difficulty** (`difficulty`): Difficulty estimation and tier assignment
 
 pub mod composer;
+pub mod curriculum;
 pub mod difficulty;
 pub mod evaluator;
+pub mod generator;
 pub mod predicate;

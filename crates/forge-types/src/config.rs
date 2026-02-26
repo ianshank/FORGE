@@ -10,6 +10,7 @@ use crate::constants;
 
 /// Top-level configuration for a FORGE simulation instance.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ForgeConfig {
     /// World generation and layout parameters.
     pub world: WorldConfig,
@@ -29,6 +30,7 @@ pub struct ForgeConfig {
 
 /// World generation configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WorldConfig {
     /// Grid width in tiles.
     pub width: u16,
@@ -68,6 +70,7 @@ impl Default for WorldConfig {
 
 /// Physics system configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PhysicsConfig {
     /// Whether collision detection is enabled.
     pub collision_enabled: bool,
@@ -98,6 +101,7 @@ impl Default for PhysicsConfig {
 
 /// Crafting system configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CraftingConfig {
     /// Whether the crafting system is enabled.
     pub enabled: bool,
@@ -122,6 +126,7 @@ impl Default for CraftingConfig {
 
 /// Agent configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AgentConfig {
     /// Number of agents in the simulation.
     pub num_agents: u32,
@@ -167,6 +172,7 @@ impl Default for AgentConfig {
 
 /// Task system configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TaskConfig {
     /// Whether the task system is enabled.
     pub enabled: bool,
@@ -197,6 +203,7 @@ impl Default for TaskConfig {
 
 /// Curriculum controller configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CurriculumConfig {
     /// Whether the curriculum controller is enabled.
     pub enabled: bool,
@@ -224,6 +231,7 @@ impl Default for CurriculumConfig {
 
 /// Rendering and visualization configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RenderConfig {
     /// Whether to generate pixel observations (slower).
     pub pixel_observations: bool,

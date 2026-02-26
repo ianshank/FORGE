@@ -1,0 +1,18 @@
+[package]
+name = "forge-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WebAssembly visualization module for FORGE"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+forge-types = { path = "../forge-types" }
+forge-core = { path = "../forge-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

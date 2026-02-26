@@ -6,8 +6,28 @@ members = [
     "crates/forge-task",
     "crates/forge-agent",
     "crates/forge-bench",
+    "crates/forge-python",
+    "crates/forge-wasm",
 ]
 resolver = "2"
+
+[package]
+name = "forge-integration-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+forge-types = { path = "crates/forge-types" }
+forge-core = { path = "crates/forge-core" }
+forge-worldgen = { path = "crates/forge-worldgen" }
+forge-task = { path = "crates/forge-task" }
+rand = "0.8"
+rand_pcg = "0.3"
+
+[[test]]
+name = "integration_tests"
+path = "tests/rust/integration_tests.rs"
 
 [workspace.package]
 version = "0.1.0"
@@ -54,6 +74,10 @@ proptest = "1"
 
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
+
+# Python bindings
+pyo3 = { version = "0.22", features = ["extension-module"] }
+numpy = "0.22"
 
 [profile.release]
 lto = true

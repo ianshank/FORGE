@@ -7,11 +7,14 @@
 //! <1µs per environment step on a single CPU core.
 
 pub mod combat;
+pub mod communication;
 pub mod crafting;
+pub mod day_night;
 pub mod physics;
 pub mod resource;
 pub mod rng;
 pub mod systems;
+pub mod visibility;
 pub mod world;
 
 // Re-export the main entry points

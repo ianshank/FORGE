@@ -9,9 +9,12 @@ use forge_types::Action;
 use tracing::trace;
 
 use crate::combat;
+use crate::communication;
 use crate::crafting;
+use crate::day_night;
 use crate::physics;
 use crate::resource;
+use crate::visibility;
 use crate::world::WorldState;
 
 /// Runs all simulation systems for a single tick.
@@ -79,6 +82,19 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     // 6. Combat system
     combat::process_combat(&mut state.agents, &state.grid, &validated_actions);
     combat::apply_environmental_damage(&mut state.agents, &state.grid);
+
+    // 7. Communication system
+    communication::process_communication(
+        &mut state.agents,
+        &validated_actions,
+        &state.config.agents,
+    );
+
+    // 8. Visibility system
+    visibility::update_visibility(&state.agents, &mut state.grid);
+
+    // 9. Day/night system
+    state.day_phase = day_night::compute_day_phase(state.tick, &state.config.world);
 
     // Increment tick
     state.tick += 1;

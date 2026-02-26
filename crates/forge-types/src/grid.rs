@@ -162,6 +162,8 @@ pub struct Tile {
     pub object_id: Option<u32>,
     /// Resource node at this tile, if any.
     pub resource_id: Option<u32>,
+    /// Fog-of-war visibility state.
+    pub visibility: VisibilityState,
 }
 
 impl Default for Tile {
@@ -172,6 +174,7 @@ impl Default for Tile {
             agent_id: None,
             object_id: None,
             resource_id: None,
+            visibility: VisibilityState::Hidden,
         }
     }
 }

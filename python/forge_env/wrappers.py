@@ -1,0 +1,313 @@
+"""Observation and reward wrappers for the ForgeEnv.
+
+Provides composable wrappers that modify observations, rewards, and episode
+lifecycle behaviour. All wrappers delegate unknown attribute access to the
+inner environment so they can be stacked freely.
+
+Wrappers
+--------
+FlattenObservationWrapper
+    Flattens a dict observation into a single 1-D numpy array.
+NormalizeRewardWrapper
+    Normalises rewards to zero mean / unit variance using running statistics.
+TimeLimit
+    Truncates an episode after a fixed number of steps.
+RecordEpisodeStatistics
+    Records cumulative return, episode length, and wall-clock time.
+"""
+
+from typing import Any, Optional
+
+try:
+    import numpy as np
+
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
+try:
+    import time as _time
+
+    HAS_TIME = True
+except ImportError:
+    HAS_TIME = False
+
+
+# ---------------------------------------------------------------------------
+# Base helper
+# ---------------------------------------------------------------------------
+
+class _BaseWrapper:
+    """Minimal wrapper base that delegates attribute access to the inner env.
+
+    All concrete wrappers inherit from this so that attributes such as
+    ``observation_space``, ``action_space``, ``render``, and ``close`` are
+    transparently forwarded when they are not overridden.
+
+    Args:
+        env: The environment to wrap.
+    """
+
+    def __init__(self, env: Any):
+        self.env = env
+
+    # Forward any attribute not found on the wrapper itself to the inner env.
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.env, name)
+
+
+# ---------------------------------------------------------------------------
+# FlattenObservationWrapper
+# ---------------------------------------------------------------------------
+
+class FlattenObservationWrapper(_BaseWrapper):
+    """Flattens a dict observation into a single 1-D numpy array.
+
+    Each value in the observation dict is cast to ``np.float32``, flattened,
+    and then concatenated in *sorted key order* so that the result is
+    deterministic.
+
+    Args:
+        env: A ForgeEnv-like environment whose ``reset`` and ``step`` methods
+            return dict observations.
+
+    Raises:
+        ImportError: If numpy is not installed.
+    """
+
+    def __init__(self, env: Any):
+        if not HAS_NUMPY:
+            raise ImportError(
+                "numpy is required for FlattenObservationWrapper. "
+                "Install with: pip install numpy"
+            )
+        super().__init__(env)
+
+    # -- public helpers -----------------------------------------------------
+
+    def flatten_obs(self, obs_dict: dict) -> "np.ndarray":
+        """Flatten a dict observation into a 1-D float32 numpy array.
+
+        Args:
+            obs_dict: Dictionary mapping observation keys to array-like values.
+
+        Returns:
+            A 1-D ``np.float32`` array containing all observation values
+            concatenated in sorted-key order.
+        """
+        parts = []
+        for key in sorted(obs_dict.keys()):
+            val = np.asarray(obs_dict[key], dtype=np.float32).ravel()
+            parts.append(val)
+        return np.concatenate(parts)
+
+    # -- env interface ------------------------------------------------------
+
+    def reset(self, **kwargs: Any) -> tuple:
+        """Reset the inner environment and flatten the observation.
+
+        Returns:
+            ``(flat_obs, info)`` tuple.
+        """
+        obs, info = self.env.reset(**kwargs)
+        return self.flatten_obs(obs), info
+
+    def step(self, action: Any) -> tuple:
+        """Step the inner environment and flatten the observation.
+
+        Returns:
+            ``(flat_obs, reward, terminated, truncated, info)`` tuple.
+        """
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        return self.flatten_obs(obs), reward, terminated, truncated, info
+
+
+# ---------------------------------------------------------------------------
+# NormalizeRewardWrapper
+# ---------------------------------------------------------------------------
+
+class NormalizeRewardWrapper(_BaseWrapper):
+    """Normalises rewards using a running mean and variance estimate.
+
+    The wrapper maintains Welford-style running statistics and normalises
+    each reward as ``(r - mean) / sqrt(var + 1e-8)``.  Normalised rewards
+    are clipped to the range ``[-10, 10]`` to prevent extreme values.
+
+    Args:
+        env: The environment to wrap.
+        clip: Maximum absolute value for the normalised reward.
+        epsilon: Small constant added to the variance for numerical stability.
+
+    Attributes:
+        reward_mean: Running mean of observed rewards.
+        reward_var: Running variance of observed rewards.
+        count: Number of rewards observed so far.
+    """
+
+    def __init__(
+        self,
+        env: Any,
+        clip: float = 10.0,
+        epsilon: float = 1e-8,
+    ):
+        super().__init__(env)
+        self.reward_mean: float = 0.0
+        self.reward_var: float = 1.0
+        self.count: float = 0.0
+        self._clip = clip
+        self._epsilon = epsilon
+
+    # -- internal -----------------------------------------------------------
+
+    def _update_stats(self, reward: float) -> None:
+        """Update running mean and variance with a new reward value."""
+        self.count += 1.0
+        delta = reward - self.reward_mean
+        self.reward_mean += delta / self.count
+        delta2 = reward - self.reward_mean
+        self.reward_var += (delta * delta2 - self.reward_var) / self.count
+
+    def _normalize(self, reward: float) -> float:
+        """Return the normalised and clipped reward."""
+        std = (self.reward_var + self._epsilon) ** 0.5
+        normed = (reward - self.reward_mean) / std
+        # Clip to [-10, 10]
+        if normed > self._clip:
+            normed = self._clip
+        elif normed < -self._clip:
+            normed = -self._clip
+        return normed
+
+    # -- env interface ------------------------------------------------------
+
+    def reset(self, **kwargs: Any) -> tuple:
+        """Reset the inner environment (statistics are *not* reset).
+
+        Returns:
+            ``(obs, info)`` tuple.
+        """
+        return self.env.reset(**kwargs)
+
+    def step(self, action: Any) -> tuple:
+        """Step the inner environment and normalise the reward.
+
+        Returns:
+            ``(obs, normalised_reward, terminated, truncated, info)`` tuple.
+        """
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self._update_stats(reward)
+        normalised_reward = self._normalize(reward)
+        return obs, normalised_reward, terminated, truncated, info
+
+
+# ---------------------------------------------------------------------------
+# TimeLimit
+# ---------------------------------------------------------------------------
+
+class TimeLimit(_BaseWrapper):
+    """Truncates an episode after a fixed number of steps.
+
+    When the step count reaches ``max_steps`` the wrapper sets ``truncated``
+    to ``True`` in the returned tuple.  The ``terminated`` flag from the
+    inner environment is left unchanged.
+
+    Args:
+        env: The environment to wrap.
+        max_steps: Maximum number of steps before truncation.
+
+    Attributes:
+        _current_step: Number of steps taken in the current episode.
+    """
+
+    def __init__(self, env: Any, max_steps: int):
+        super().__init__(env)
+        self.max_steps = max_steps
+        self._current_step: int = 0
+
+    # -- env interface ------------------------------------------------------
+
+    def reset(self, **kwargs: Any) -> tuple:
+        """Reset the inner environment and the step counter.
+
+        Returns:
+            ``(obs, info)`` tuple.
+        """
+        self._current_step = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action: Any) -> tuple:
+        """Step the inner environment and check the step limit.
+
+        Returns:
+            ``(obs, reward, terminated, truncated, info)`` tuple where
+            ``truncated`` is ``True`` when the step limit is reached.
+        """
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self._current_step += 1
+        if self._current_step >= self.max_steps:
+            truncated = True
+        return obs, reward, terminated, truncated, info
+
+
+# ---------------------------------------------------------------------------
+# RecordEpisodeStatistics
+# ---------------------------------------------------------------------------
+
+class RecordEpisodeStatistics(_BaseWrapper):
+    """Records episode return, length, and wall-clock duration.
+
+    When an episode ends (``terminated or truncated``), the wrapper injects
+    an ``"episode"`` key into the *info* dict with the following sub-keys:
+
+    * ``"r"`` -- cumulative episode return (float).
+    * ``"l"`` -- episode length in steps (int).
+    * ``"t"`` -- elapsed wall-clock time in seconds (float).
+
+    Args:
+        env: The environment to wrap.
+    """
+
+    def __init__(self, env: Any):
+        if not HAS_TIME:
+            raise ImportError("time module is required for RecordEpisodeStatistics.")
+        super().__init__(env)
+        self._episode_return: float = 0.0
+        self._episode_length: int = 0
+        self._episode_start: float = 0.0
+
+    # -- env interface ------------------------------------------------------
+
+    def reset(self, **kwargs: Any) -> tuple:
+        """Reset the inner environment and start tracking a new episode.
+
+        Returns:
+            ``(obs, info)`` tuple.
+        """
+        obs, info = self.env.reset(**kwargs)
+        self._episode_return = 0.0
+        self._episode_length = 0
+        self._episode_start = _time.time()
+        return obs, info
+
+    def step(self, action: Any) -> tuple:
+        """Step the inner environment and update episode statistics.
+
+        When the episode ends, the info dict is augmented with an
+        ``"episode"`` entry containing ``"r"``, ``"l"``, and ``"t"`` keys.
+
+        Returns:
+            ``(obs, reward, terminated, truncated, info)`` tuple.
+        """
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self._episode_return += reward
+        self._episode_length += 1
+
+        if terminated or truncated:
+            episode_info = {
+                "r": self._episode_return,
+                "l": self._episode_length,
+                "t": _time.time() - self._episode_start,
+            }
+            info["episode"] = episode_info
+
+        return obs, reward, terminated, truncated, info
