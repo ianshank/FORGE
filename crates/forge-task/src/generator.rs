@@ -5,6 +5,7 @@
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 use forge_types::grid::Position;
 use forge_types::resource::ItemType;
@@ -73,13 +74,14 @@ fn random_agent_id<R: Rng>(rng: &mut R, config: &TaskGenConfig) -> u32 {
 ///
 /// The tier determines the structural complexity of the generated task.
 /// Reward scales linearly with the tier.
+#[instrument(skip_all)]
 pub fn generate_task<R: Rng>(
     rng: &mut R,
     tier: u8,
     config: &TaskGenConfig,
     task_id: u64,
 ) -> TaskDefinition {
-    let tier = tier.clamp(1, config.max_tier.min(6));
+    let tier = tier.clamp(1, config.max_tier.clamp(1, 6));
     let goal = match tier {
         1 => generate_tier1(rng, config),
         2 => generate_tier2(rng, config),
@@ -110,6 +112,7 @@ pub fn generate_task<R: Rng>(
 }
 
 /// Generates an active task ready for evaluation.
+#[instrument(skip_all)]
 pub fn generate_active_task<R: Rng>(
     rng: &mut R,
     tier: u8,
@@ -327,6 +330,7 @@ fn generate_tier6<R: Rng>(rng: &mut R, config: &TaskGenConfig) -> TaskCompositio
 // ---------------------------------------------------------------------------
 
 /// Generates a human-readable description of a task composition.
+#[instrument(skip_all)]
 pub fn describe_task(goal: &TaskComposition) -> String {
     match goal {
         TaskComposition::Atom(pred) => describe_predicate(pred),
@@ -369,6 +373,8 @@ pub fn describe_task(goal: &TaskComposition) -> String {
                 action_id
             )
         }
+
+        _ => "unknown task".to_string(),
     }
 }
 
@@ -405,6 +411,8 @@ fn describe_predicate(pred: &Predicate) -> String {
         Predicate::AgentOnTerrain(id, terrain) => {
             format!("agent {} is on terrain {}", id, terrain)
         }
+
+        _ => "unknown predicate".to_string(),
     }
 }
 
@@ -418,6 +426,7 @@ fn count_atoms(composition: &TaskComposition) -> usize {
         TaskComposition::Before(subtask, _) => count_atoms(subtask),
         TaskComposition::While(cond, goal) => count_atoms(cond) + count_atoms(goal),
         TaskComposition::Without(subtask, _) => count_atoms(subtask),
+        _ => 1,
     }
 }
 
@@ -542,6 +551,21 @@ mod tests {
         // Requesting tier 6 but max_tier is 3; should clamp to 3
         let task = generate_task(&mut rng, 6, &config, 0);
         assert!(!task.description.is_empty());
+    }
+
+    #[test]
+    fn test_generate_task_max_tier_zero() {
+        let config = TaskGenConfig {
+            max_tier: 0,
+            ..default_config()
+        };
+        let mut rng = make_rng(42);
+        // max_tier=0 means the tier clamp range is 1..min(0, 6) = 1..0,
+        // so clamp(1, 0) yields 0 which then goes to the default arm.
+        // The function should not panic; we just verify it produces a valid task.
+        let task = generate_task(&mut rng, 1, &config, 0);
+        assert!(!task.description.is_empty());
+        assert!(task.estimated_steps >= 1);
     }
 
     #[test]

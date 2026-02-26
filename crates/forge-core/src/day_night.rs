@@ -5,16 +5,20 @@
 //! emergent behaviour differences between day and night.
 
 use forge_types::config::WorldConfig;
-use tracing::trace;
+use forge_types::constants::{
+    DAY_PHASE_DAWN, DAY_PHASE_DAY, DAY_PHASE_DUSK, DAY_PHASE_NIGHT, NUM_DAY_PHASES,
+    VISION_MODIFIER_DAY, VISION_MODIFIER_NIGHT, VISION_MODIFIER_TWILIGHT,
+};
+use tracing::{instrument, trace};
 
-/// Dawn phase constant.
-pub const PHASE_DAWN: u8 = 0;
-/// Daytime phase constant.
-pub const PHASE_DAY: u8 = 1;
-/// Dusk phase constant.
-pub const PHASE_DUSK: u8 = 2;
-/// Nighttime phase constant.
-pub const PHASE_NIGHT: u8 = 3;
+/// Dawn phase constant (re-exported from forge-types for convenience).
+pub const PHASE_DAWN: u8 = DAY_PHASE_DAWN;
+/// Daytime phase constant (re-exported from forge-types for convenience).
+pub const PHASE_DAY: u8 = DAY_PHASE_DAY;
+/// Dusk phase constant (re-exported from forge-types for convenience).
+pub const PHASE_DUSK: u8 = DAY_PHASE_DUSK;
+/// Nighttime phase constant (re-exported from forge-types for convenience).
+pub const PHASE_NIGHT: u8 = DAY_PHASE_NIGHT;
 
 /// Computes the current day phase (0-3) from the tick and cycle configuration.
 ///
@@ -26,6 +30,7 @@ pub const PHASE_NIGHT: u8 = 3;
 ///
 /// If `day_night_cycle_length` is 0, the cycle is disabled and this
 /// always returns `PHASE_DAY`.
+#[instrument(skip_all)]
 pub fn compute_day_phase(tick: u64, config: &WorldConfig) -> u8 {
     let cycle_length = config.day_night_cycle_length;
     if cycle_length == 0 {
@@ -42,7 +47,7 @@ pub fn compute_day_phase(tick: u64, config: &WorldConfig) -> u8 {
         return PHASE_DAY;
     }
 
-    let phase = (position_in_cycle / quarter_length).min(3) as u8;
+    let phase = (position_in_cycle / quarter_length).min((NUM_DAY_PHASES - 1) as u64) as u8;
 
     trace!(tick, cycle_length, phase, "computed day phase");
 
@@ -54,18 +59,20 @@ pub fn compute_day_phase(tick: u64, config: &WorldConfig) -> u8 {
 /// - Day: 1.0 (full vision)
 /// - Dawn / Dusk: 0.75 (reduced visibility)
 /// - Night: 0.5 (limited visibility)
+#[instrument]
 pub fn vision_modifier(phase: u8) -> f32 {
     match phase {
-        PHASE_DAY => 1.0,
-        PHASE_DAWN | PHASE_DUSK => 0.75,
-        PHASE_NIGHT => 0.5,
-        _ => 1.0, // fallback
+        PHASE_DAY => VISION_MODIFIER_DAY,
+        PHASE_DAWN | PHASE_DUSK => VISION_MODIFIER_TWILIGHT,
+        PHASE_NIGHT => VISION_MODIFIER_NIGHT,
+        _ => VISION_MODIFIER_DAY, // fallback
     }
 }
 
 /// Returns whether the given phase is considered "daytime".
 ///
 /// Dawn and Day are daytime; Dusk and Night are not.
+#[instrument]
 pub fn is_daytime(phase: u8) -> bool {
     phase == PHASE_DAY || phase == PHASE_DAWN
 }

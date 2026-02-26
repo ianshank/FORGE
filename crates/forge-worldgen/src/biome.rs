@@ -6,6 +6,7 @@
 
 use forge_types::config::WorldConfig;
 use forge_types::grid::TerrainType;
+use tracing::instrument;
 
 /// Configurable thresholds that drive biome classification.
 ///
@@ -75,6 +76,7 @@ impl BiomeClassifier {
     /// Maps an (elevation, moisture) pair to a [`TerrainType`].
     ///
     /// Both `elevation` and `moisture` are expected to be in \[0.0, 1.0\].
+    #[instrument(skip_all)]
     pub fn classify(&self, elevation: f64, moisture: f64) -> TerrainType {
         let t = &self.thresholds;
 
@@ -159,6 +161,28 @@ mod tests {
         assert_eq!(c.classify(0.1, 0.5), TerrainType::Water);
         assert_eq!(c.classify(0.9, 0.5), TerrainType::Mountain);
         assert_eq!(c.classify(0.5, 0.7), TerrainType::Forest);
+    }
+
+    #[test]
+    fn test_biome_extreme_elevation() {
+        let c = default_classifier();
+        // Elevation 0.0 should be deep water
+        let at_zero = c.classify(0.0, 0.5);
+        assert_eq!(at_zero, TerrainType::Water, "elevation 0.0 should be Water");
+
+        // Elevation 1.0 should be mountain
+        let at_one = c.classify(1.0, 0.5);
+        assert_eq!(
+            at_one,
+            TerrainType::Mountain,
+            "elevation 1.0 should be Mountain"
+        );
+
+        // Test with extreme moisture values at the extremes
+        assert_eq!(c.classify(0.0, 0.0), TerrainType::Water);
+        assert_eq!(c.classify(0.0, 1.0), TerrainType::Water);
+        assert_eq!(c.classify(1.0, 0.0), TerrainType::Mountain);
+        assert_eq!(c.classify(1.0, 1.0), TerrainType::Mountain);
     }
 
     #[test]

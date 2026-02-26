@@ -16,7 +16,13 @@ RecordEpisodeStatistics
     Records cumulative return, episode length, and wall-clock time.
 """
 
-from typing import Any, Optional
+from __future__ import annotations
+
+import logging
+import time as _time
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import numpy as np
@@ -25,17 +31,18 @@ try:
 except ImportError:
     HAS_NUMPY = False
 
-try:
-    import time as _time
-
-    HAS_TIME = True
-except ImportError:
-    HAS_TIME = False
+__all__ = [
+    "FlattenObservationWrapper",
+    "NormalizeRewardWrapper",
+    "RecordEpisodeStatistics",
+    "TimeLimit",
+]
 
 
 # ---------------------------------------------------------------------------
 # Base helper
 # ---------------------------------------------------------------------------
+
 
 class _BaseWrapper:
     """Minimal wrapper base that delegates attribute access to the inner env.
@@ -48,7 +55,7 @@ class _BaseWrapper:
         env: The environment to wrap.
     """
 
-    def __init__(self, env: Any):
+    def __init__(self, env: Any) -> None:
         self.env = env
 
     # Forward any attribute not found on the wrapper itself to the inner env.
@@ -60,8 +67,9 @@ class _BaseWrapper:
 # FlattenObservationWrapper
 # ---------------------------------------------------------------------------
 
+
 class FlattenObservationWrapper(_BaseWrapper):
-    """Flattens a dict observation into a single 1-D numpy array.
+    """Flatten a dict observation into a single 1-D numpy array.
 
     Each value in the observation dict is cast to ``np.float32``, flattened,
     and then concatenated in *sorted key order* so that the result is
@@ -75,7 +83,7 @@ class FlattenObservationWrapper(_BaseWrapper):
         ImportError: If numpy is not installed.
     """
 
-    def __init__(self, env: Any):
+    def __init__(self, env: Any) -> None:
         if not HAS_NUMPY:
             raise ImportError(
                 "numpy is required for FlattenObservationWrapper. "
@@ -85,7 +93,7 @@ class FlattenObservationWrapper(_BaseWrapper):
 
     # -- public helpers -----------------------------------------------------
 
-    def flatten_obs(self, obs_dict: dict) -> "np.ndarray":
+    def flatten_obs(self, obs_dict: dict[str, Any]) -> np.ndarray:
         """Flatten a dict observation into a 1-D float32 numpy array.
 
         Args:
@@ -95,15 +103,15 @@ class FlattenObservationWrapper(_BaseWrapper):
             A 1-D ``np.float32`` array containing all observation values
             concatenated in sorted-key order.
         """
-        parts = []
-        for key in sorted(obs_dict.keys()):
-            val = np.asarray(obs_dict[key], dtype=np.float32).ravel()
-            parts.append(val)
+        parts = [
+            np.asarray(obs_dict[key], dtype=np.float32).ravel()
+            for key in sorted(obs_dict.keys())
+        ]
         return np.concatenate(parts)
 
     # -- env interface ------------------------------------------------------
 
-    def reset(self, **kwargs: Any) -> tuple:
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         """Reset the inner environment and flatten the observation.
 
         Returns:
@@ -112,7 +120,7 @@ class FlattenObservationWrapper(_BaseWrapper):
         obs, info = self.env.reset(**kwargs)
         return self.flatten_obs(obs), info
 
-    def step(self, action: Any) -> tuple:
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Step the inner environment and flatten the observation.
 
         Returns:
@@ -126,8 +134,9 @@ class FlattenObservationWrapper(_BaseWrapper):
 # NormalizeRewardWrapper
 # ---------------------------------------------------------------------------
 
+
 class NormalizeRewardWrapper(_BaseWrapper):
-    """Normalises rewards using a running mean and variance estimate.
+    """Normalise rewards using a running mean and variance estimate.
 
     The wrapper maintains Welford-style running statistics and normalises
     each reward as ``(r - mean) / sqrt(var + 1e-8)``.  Normalised rewards
@@ -149,7 +158,7 @@ class NormalizeRewardWrapper(_BaseWrapper):
         env: Any,
         clip: float = 10.0,
         epsilon: float = 1e-8,
-    ):
+    ) -> None:
         super().__init__(env)
         self.reward_mean: float = 0.0
         self.reward_var: float = 1.0
@@ -171,24 +180,20 @@ class NormalizeRewardWrapper(_BaseWrapper):
         """Return the normalised and clipped reward."""
         std = (self.reward_var + self._epsilon) ** 0.5
         normed = (reward - self.reward_mean) / std
-        # Clip to [-10, 10]
-        if normed > self._clip:
-            normed = self._clip
-        elif normed < -self._clip:
-            normed = -self._clip
-        return normed
+        # Clip to [-clip, clip]
+        return float(max(-self._clip, min(self._clip, normed)))
 
     # -- env interface ------------------------------------------------------
 
-    def reset(self, **kwargs: Any) -> tuple:
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         """Reset the inner environment (statistics are *not* reset).
 
         Returns:
             ``(obs, info)`` tuple.
         """
-        return self.env.reset(**kwargs)
+        return self.env.reset(**kwargs)  # type: ignore[no-any-return]
 
-    def step(self, action: Any) -> tuple:
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Step the inner environment and normalise the reward.
 
         Returns:
@@ -204,8 +209,9 @@ class NormalizeRewardWrapper(_BaseWrapper):
 # TimeLimit
 # ---------------------------------------------------------------------------
 
+
 class TimeLimit(_BaseWrapper):
-    """Truncates an episode after a fixed number of steps.
+    """Truncate an episode after a fixed number of steps.
 
     When the step count reaches ``max_steps`` the wrapper sets ``truncated``
     to ``True`` in the returned tuple.  The ``terminated`` flag from the
@@ -219,23 +225,23 @@ class TimeLimit(_BaseWrapper):
         _current_step: Number of steps taken in the current episode.
     """
 
-    def __init__(self, env: Any, max_steps: int):
+    def __init__(self, env: Any, max_steps: int) -> None:
         super().__init__(env)
         self.max_steps = max_steps
         self._current_step: int = 0
 
     # -- env interface ------------------------------------------------------
 
-    def reset(self, **kwargs: Any) -> tuple:
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         """Reset the inner environment and the step counter.
 
         Returns:
             ``(obs, info)`` tuple.
         """
         self._current_step = 0
-        return self.env.reset(**kwargs)
+        return self.env.reset(**kwargs)  # type: ignore[no-any-return]
 
-    def step(self, action: Any) -> tuple:
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Step the inner environment and check the step limit.
 
         Returns:
@@ -253,8 +259,9 @@ class TimeLimit(_BaseWrapper):
 # RecordEpisodeStatistics
 # ---------------------------------------------------------------------------
 
+
 class RecordEpisodeStatistics(_BaseWrapper):
-    """Records episode return, length, and wall-clock duration.
+    """Record episode return, length, and wall-clock duration.
 
     When an episode ends (``terminated or truncated``), the wrapper injects
     an ``"episode"`` key into the *info* dict with the following sub-keys:
@@ -267,9 +274,7 @@ class RecordEpisodeStatistics(_BaseWrapper):
         env: The environment to wrap.
     """
 
-    def __init__(self, env: Any):
-        if not HAS_TIME:
-            raise ImportError("time module is required for RecordEpisodeStatistics.")
+    def __init__(self, env: Any) -> None:
         super().__init__(env)
         self._episode_return: float = 0.0
         self._episode_length: int = 0
@@ -277,7 +282,7 @@ class RecordEpisodeStatistics(_BaseWrapper):
 
     # -- env interface ------------------------------------------------------
 
-    def reset(self, **kwargs: Any) -> tuple:
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         """Reset the inner environment and start tracking a new episode.
 
         Returns:
@@ -289,7 +294,7 @@ class RecordEpisodeStatistics(_BaseWrapper):
         self._episode_start = _time.time()
         return obs, info
 
-    def step(self, action: Any) -> tuple:
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Step the inner environment and update episode statistics.
 
         When the episode ends, the info dict is augmented with an

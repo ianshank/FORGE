@@ -128,12 +128,12 @@ def train_with_sb3(timesteps, seed):
 
     episode_rewards = []
     for ep in range(5):
-        obs, info = eval_env.reset()
+        obs, _info = eval_env.reset()
         done = False
         total_reward = 0.0
         while not done:
             action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = eval_env.step(action)
+            obs, reward, terminated, truncated, _info = eval_env.step(action)
             total_reward += reward
             done = terminated or truncated
         episode_rewards.append(total_reward)
@@ -163,19 +163,19 @@ def run_random_baseline(seed, num_steps=1000):
     if env is None:
         return
 
-    obs, info = env.reset()
+    _obs, _info = env.reset()
     episode_rewards = []
     current_episode_reward = 0.0
 
-    for step in range(1, num_steps + 1):
+    for _step in range(1, num_steps + 1):
         action = env.action_space.sample()
-        obs, reward, terminated, truncated, info = env.step(action)
+        _obs, reward, terminated, truncated, _info = env.step(action)
         current_episode_reward += reward
 
         if terminated or truncated:
             episode_rewards.append(current_episode_reward)
             current_episode_reward = 0.0
-            obs, info = env.reset()
+            _obs, _info = env.reset()
 
     # Account for any in-progress episode
     if current_episode_reward != 0.0:

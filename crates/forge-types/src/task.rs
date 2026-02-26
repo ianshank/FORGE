@@ -11,6 +11,7 @@ use crate::resource::ItemType;
 
 /// Atomic predicates that evaluate against world state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum Predicate {
     /// Agent is at a specific position.
     AgentAt(AgentId, Position),
@@ -36,6 +37,7 @@ pub enum Predicate {
 
 /// Composition operators for building complex tasks from predicates.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum TaskComposition {
     /// A single atomic predicate.
     Atom(Predicate),
@@ -163,5 +165,114 @@ mod tests {
             dense_reward_weights: vec![0.5, 0.5],
         };
         assert_eq!(task.tier.value(), 2);
+    }
+
+    #[test]
+    fn test_active_task_defaults() {
+        let definition = TaskDefinition {
+            id: 42,
+            description: "Test task".to_string(),
+            goal: TaskComposition::Atom(Predicate::AgentAt(0, Position::new(1, 1))),
+            tier: TaskTier::new(1),
+            estimated_steps: 10,
+            reward: 1.0,
+            dense_reward_weights: vec![1.0],
+        };
+        let active = ActiveTask {
+            definition,
+            progress: vec![0.0],
+            sequence_index: 0,
+            completed: false,
+            failed: false,
+        };
+        assert_eq!(active.definition.id, 42);
+        assert_eq!(active.sequence_index, 0);
+        assert!(!active.completed);
+        assert!(!active.failed);
+        assert_eq!(active.progress.len(), 1);
+        assert_eq!(active.progress[0], 0.0);
+    }
+
+    #[test]
+    fn test_task_composition_while() {
+        let condition = TaskComposition::Atom(Predicate::HealthAbove(0, 0.5));
+        let goal = TaskComposition::Atom(Predicate::AgentHas(0, ItemType::Wood, 3));
+        let while_task = TaskComposition::While(Box::new(condition), Box::new(goal));
+
+        // Verify structure via serialization roundtrip.
+        let json = serde_json::to_string(&while_task).unwrap();
+        let recovered: TaskComposition = serde_json::from_str(&json).unwrap();
+        assert_eq!(while_task, recovered);
+
+        // Verify it matches the While variant.
+        match &while_task {
+            TaskComposition::While(cond, g) => {
+                match cond.as_ref() {
+                    TaskComposition::Atom(Predicate::HealthAbove(id, t)) => {
+                        assert_eq!(*id, 0);
+                        assert_eq!(*t, 0.5);
+                    }
+                    _ => panic!("expected HealthAbove predicate"),
+                }
+                match g.as_ref() {
+                    TaskComposition::Atom(Predicate::AgentHas(id, item, count)) => {
+                        assert_eq!(*id, 0);
+                        assert_eq!(*item, ItemType::Wood);
+                        assert_eq!(*count, 3);
+                    }
+                    _ => panic!("expected AgentHas predicate"),
+                }
+            }
+            _ => panic!("expected While variant"),
+        }
+    }
+
+    #[test]
+    fn test_task_composition_before() {
+        let subtask = TaskComposition::Atom(Predicate::AgentAt(0, Position::new(10, 10)));
+        let before_task = TaskComposition::Before(Box::new(subtask), 500);
+
+        let json = serde_json::to_string(&before_task).unwrap();
+        let recovered: TaskComposition = serde_json::from_str(&json).unwrap();
+        assert_eq!(before_task, recovered);
+
+        match &before_task {
+            TaskComposition::Before(sub, deadline) => {
+                assert_eq!(*deadline, 500);
+                match sub.as_ref() {
+                    TaskComposition::Atom(Predicate::AgentAt(id, pos)) => {
+                        assert_eq!(*id, 0);
+                        assert_eq!(*pos, Position::new(10, 10));
+                    }
+                    _ => panic!("expected AgentAt predicate"),
+                }
+            }
+            _ => panic!("expected Before variant"),
+        }
+    }
+
+    #[test]
+    fn test_task_composition_without() {
+        let subtask = TaskComposition::Atom(Predicate::AgentHas(0, ItemType::Stone, 5));
+        let without_task = TaskComposition::Without(Box::new(subtask), 0); // forbidden: Noop
+
+        let json = serde_json::to_string(&without_task).unwrap();
+        let recovered: TaskComposition = serde_json::from_str(&json).unwrap();
+        assert_eq!(without_task, recovered);
+
+        match &without_task {
+            TaskComposition::Without(sub, forbidden_action) => {
+                assert_eq!(*forbidden_action, 0);
+                match sub.as_ref() {
+                    TaskComposition::Atom(Predicate::AgentHas(id, item, count)) => {
+                        assert_eq!(*id, 0);
+                        assert_eq!(*item, ItemType::Stone);
+                        assert_eq!(*count, 5);
+                    }
+                    _ => panic!("expected AgentHas predicate"),
+                }
+            }
+            _ => panic!("expected Without variant"),
+        }
     }
 }

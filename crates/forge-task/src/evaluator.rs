@@ -5,7 +5,7 @@
 
 use forge_types::entity::Agent;
 use forge_types::task::ActiveTask;
-use tracing::{debug, trace};
+use tracing::{debug, instrument, trace};
 
 use crate::composer::evaluate_composition;
 use crate::predicate::EvalContext;
@@ -24,6 +24,7 @@ pub struct TaskEvalResult {
 }
 
 /// Evaluates all active tasks and computes rewards.
+#[instrument(skip_all)]
 pub fn evaluate_tasks(
     tasks: &mut [ActiveTask],
     agents: &[Agent],
@@ -209,6 +210,19 @@ mod tests {
         let r1 = evaluate_tasks(&mut tasks1, &agents, 0, 1.0, &[]);
         let r2 = evaluate_tasks(&mut tasks2, &agents, 0, 2.0, &[]);
         assert!((r2.rewards[0] / r1.rewards[0] - 2.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_evaluate_empty_tasks() {
+        let agents = vec![make_agent(0, 5, 5)];
+        let mut tasks: Vec<ActiveTask> = vec![];
+        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[]);
+        assert_eq!(result.rewards.len(), 1);
+        assert_eq!(result.rewards[0], 0.0);
+        assert!(result.completed_tasks.is_empty());
+        assert!(result.failed_tasks.is_empty());
+        // Empty task list should not terminate (there's nothing to complete)
+        assert!(!result.should_terminate);
     }
 
     #[test]

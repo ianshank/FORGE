@@ -160,7 +160,7 @@ def inventory_diff(before, after):
     return gained, lost
 
 
-def run_crafting_demo(steps, seed, world_size):
+def run_crafting_demo(steps, seed, world_size):  # noqa: PLR0912, PLR0915
     """Run the crafting demonstration."""
 
     config = {
@@ -187,14 +187,14 @@ def run_crafting_demo(steps, seed, world_size):
     print("FORGE Crafting Demo")
     print("=" * 60)
     print(f"World size     : {world_size}x{world_size}")
-    print(f"Resource density: 0.5 (high)")
-    print(f"Crafting       : enabled")
+    print("Resource density: 0.5 (high)")
+    print("Crafting       : enabled")
     print(f"Seed           : {seed}")
     print(f"Steps          : {steps}")
     print()
 
     env = ForgeEnv(config=config)
-    obs, info = env.reset(seed=seed)
+    obs, _info = env.reset(seed=seed)
     rng = random.Random(seed)
 
     total_reward = 0.0
@@ -228,7 +228,7 @@ def run_crafting_demo(steps, seed, world_size):
             # Random movement.
             action = rng.choice(MOVE_ACTIONS)
 
-        obs, reward, terminated, truncated, info = env.step(action)
+        obs, reward, terminated, truncated, _info = env.step(action)
         total_reward += reward
 
         # Check for inventory changes.
@@ -264,7 +264,7 @@ def run_crafting_demo(steps, seed, world_size):
         if terminated or truncated:
             reason = "terminated" if terminated else "truncated"
             print(f"\n  >> Episode {reason} at step {step_idx}. Resetting ...\n")
-            obs, info = env.reset(seed=seed)
+            obs, _info = env.reset(seed=seed)
             prev_inventory = read_inventory(obs)
 
     # Final summary.

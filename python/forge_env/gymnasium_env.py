@@ -4,21 +4,28 @@ Wraps the native Rust ForgeEnv to provide full Gymnasium Env compliance
 with proper Space objects from the gymnasium library.
 """
 
-from typing import Any, Optional
+from __future__ import annotations
+
+import logging
+from typing import Any, ClassVar
+
+logger = logging.getLogger(__name__)
 
 try:
-    import gymnasium as gym
-    from gymnasium import spaces
+    import gymnasium as gym  # noqa: F401
     import numpy as np
+    from gymnasium import spaces
 
     HAS_GYMNASIUM = True
 except ImportError:
     HAS_GYMNASIUM = False
 
 try:
-    from forge_env import ForgeEnv as _NativeEnv
+    from forge_env.forge_env import ForgeEnv as _NativeEnv
 except ImportError:
     _NativeEnv = None
+
+__all__ = ["ForgeGymnasiumEnv"]
 
 
 class ForgeGymnasiumEnv:
@@ -33,13 +40,13 @@ class ForgeGymnasiumEnv:
         render_mode: Optional render mode ('ascii' or None).
     """
 
-    metadata = {"render_modes": ["ascii"]}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": ["ascii"]}
 
     def __init__(
         self,
-        config: Optional[dict] = None,
-        render_mode: Optional[str] = None,
-    ):
+        config: dict[str, Any] | None = None,
+        render_mode: str | None = None,
+    ) -> None:
         if _NativeEnv is None:
             raise ImportError(
                 "forge_env native module not found. "
@@ -88,10 +95,10 @@ class ForgeGymnasiumEnv:
     def reset(
         self,
         *,
-        seed: Optional[int] = None,
-        options: Optional[dict] = None,
-    ) -> tuple:
-        """Resets the environment.
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Reset the environment.
 
         Returns:
             (observation, info) tuple.
@@ -99,25 +106,25 @@ class ForgeGymnasiumEnv:
         obs, info = self._env.reset(seed=seed, options=options)
         return obs, info
 
-    def step(self, action: int) -> tuple:
-        """Steps the environment with the given action.
+    def step(self, action: int) -> tuple[Any, float, bool, bool, dict[str, Any]]:
+        """Step the environment with the given action.
 
         Returns:
             (observation, reward, terminated, truncated, info) tuple.
         """
-        return self._env.step(action)
+        return self._env.step(action)  # type: ignore[no-any-return]
 
-    def render(self) -> Optional[str]:
-        """Renders the environment."""
+    def render(self) -> str | None:
+        """Render the environment."""
         if self.render_mode == "ascii":
-            return self._env.render()
+            return self._env.render()  # type: ignore[no-any-return]
         return None
 
-    def close(self):
-        """Closes the environment."""
+    def close(self) -> None:
+        """Close the environment."""
         self._env.close()
 
     @property
-    def unwrapped(self):
-        """Returns the native environment."""
+    def unwrapped(self) -> Any:
+        """Return the native environment."""
         return self._env

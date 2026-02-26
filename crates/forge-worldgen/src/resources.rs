@@ -10,6 +10,7 @@ use forge_types::grid::{Grid, Position, TerrainType};
 use forge_types::resource::{ItemType, ResourceNode};
 use rand::Rng;
 use rand_pcg::Pcg64Mcg;
+use tracing::instrument;
 
 /// Default respawn rate for resources (ticks between respawn increments).
 const DEFAULT_RESPAWN_RATE: u32 = 100;
@@ -82,6 +83,7 @@ impl ResourcePlacer {
     ///
     /// Returns a list of [`ResourceNode`]s.  Each node is also registered
     /// on the grid tile via `resource_id` (index into the returned vector).
+    #[instrument(skip_all)]
     pub fn place_resources(
         grid: &Grid,
         config: &WorldConfig,

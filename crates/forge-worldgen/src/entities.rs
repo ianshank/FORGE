@@ -7,6 +7,7 @@
 use forge_types::grid::{Grid, Position};
 use rand::seq::SliceRandom;
 use rand_pcg::Pcg64Mcg;
+use tracing::instrument;
 
 /// Minimum Manhattan distance between spawn points.
 ///
@@ -30,6 +31,7 @@ impl SpawnPlacer {
     ///
     /// Returns up to `num_agents` positions.  If fewer walkable tiles exist
     /// than requested agents, as many as possible are returned.
+    #[instrument(skip_all)]
     pub fn find_spawn_points(grid: &Grid, num_agents: u32, rng: &mut Pcg64Mcg) -> Vec<Position> {
         let num = num_agents as usize;
         tracing::trace!(num_agents, "finding spawn points");
@@ -188,6 +190,53 @@ mod tests {
         let spawns = SpawnPlacer::find_spawn_points(&grid, 1000, &mut rng);
         // Should return as many as possible without panicking
         assert!(spawns.len() <= 64);
+    }
+
+    #[test]
+    fn test_spawn_more_agents_than_tiles() {
+        // Create the smallest possible grid (2x2 = 4 tiles)
+        let config = WorldConfig {
+            width: 2,
+            height: 2,
+            seed: 42,
+            ..WorldConfig::default()
+        };
+        let gen = TerrainGenerator::new(&config, config.seed);
+        let mut grid = Grid::new(config.width, config.height);
+        gen.generate(&mut grid);
+
+        let mut rng = Pcg64Mcg::seed_from_u64(42);
+        // Request far more agents than total tiles
+        let spawns = SpawnPlacer::find_spawn_points(&grid, 100, &mut rng);
+
+        // Should not panic and should return at most the number of walkable tiles
+        let walkable_count = (0..grid.height)
+            .flat_map(|y| (0..grid.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                grid.get(x, y)
+                    .map(|t| {
+                        t.terrain.is_walkable()
+                            && t.resource_id.is_none()
+                            && t.object_id.is_none()
+                            && t.agent_id.is_none()
+                    })
+                    .unwrap_or(false)
+            })
+            .count();
+        assert!(
+            spawns.len() <= walkable_count,
+            "spawn count {} should not exceed walkable tiles {}",
+            spawns.len(),
+            walkable_count
+        );
+        // Also verify all positions are unique
+        let unique: std::collections::HashSet<(u16, u16)> =
+            spawns.iter().map(|p| (p.x, p.y)).collect();
+        assert_eq!(
+            unique.len(),
+            spawns.len(),
+            "spawn positions should be unique"
+        );
     }
 
     #[test]

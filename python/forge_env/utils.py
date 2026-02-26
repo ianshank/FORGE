@@ -16,7 +16,17 @@ seed_everything
     reproducibility.
 """
 
-from typing import Any, Callable, Optional, Sequence
+from __future__ import annotations
+
+import logging
+import random
+import time as _time
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+logger = logging.getLogger(__name__)
 
 try:
     import numpy as np
@@ -26,26 +36,27 @@ except ImportError:
     HAS_NUMPY = False
 
 try:
-    import time as _time
-
-    HAS_TIME = True
-except ImportError:
-    HAS_TIME = False
-
-try:
-    from forge_env import ForgeEnv as _NativeEnv
+    from forge_env.forge_env import ForgeEnv as _NativeEnv
 except ImportError:
     _NativeEnv = None
+
+__all__ = [
+    "benchmark_fps",
+    "check_env",
+    "make_env",
+    "seed_everything",
+]
 
 
 # ---------------------------------------------------------------------------
 # make_env
 # ---------------------------------------------------------------------------
 
+
 def make_env(
-    config: Optional[dict] = None,
-    wrappers: Optional[Sequence[Callable]] = None,
-    seed: Optional[int] = None,
+    config: dict[str, Any] | None = None,
+    wrappers: Sequence[Callable[..., Any]] | None = None,
+    seed: int | None = None,
 ) -> Any:
     """Create a ForgeEnv instance and optionally apply a chain of wrappers.
 
@@ -54,7 +65,7 @@ def make_env(
         wrappers: An optional sequence of wrapper constructors (callables).
             Each callable must accept a single positional argument (the
             environment) and return a wrapped environment.  Wrappers are
-            applied in order — the first element wraps the base env, the
+            applied in order -- the first element wraps the base env, the
             second wraps the result, and so on.
         seed: If provided, ``reset(seed=seed)`` is called on the final
             (possibly wrapped) environment before it is returned, ensuring
@@ -102,6 +113,7 @@ def make_env(
 # check_env
 # ---------------------------------------------------------------------------
 
+
 def check_env(env: Any) -> bool:
     """Run basic sanity checks on an environment instance.
 
@@ -129,7 +141,7 @@ def check_env(env: Any) -> bool:
     assert len(reset_result) == 2, (
         f"reset() must return a 2-tuple (obs, info), got length {len(reset_result)}"
     )
-    obs, info = reset_result
+    _obs, _info = reset_result
 
     # -- step ---------------------------------------------------------------
     step_result = env.step(0)
@@ -140,7 +152,7 @@ def check_env(env: Any) -> bool:
         f"step() must return a 5-tuple (obs, reward, terminated, truncated, info), "
         f"got length {len(step_result)}"
     )
-    _obs, _reward, terminated, truncated, _info = step_result
+    _step_obs, _reward, terminated, truncated, _step_info = step_result
 
     assert isinstance(terminated, bool), (
         f"terminated must be bool, got {type(terminated).__name__}"
@@ -156,6 +168,7 @@ def check_env(env: Any) -> bool:
 # benchmark_fps
 # ---------------------------------------------------------------------------
 
+
 def benchmark_fps(env: Any, n_steps: int = 10000) -> float:
     """Measure environment step throughput in frames per second.
 
@@ -169,13 +182,7 @@ def benchmark_fps(env: Any, n_steps: int = 10000) -> float:
 
     Returns:
         Steps per second as a float.
-
-    Raises:
-        ImportError: If the ``time`` module is unavailable.
     """
-    if not HAS_TIME:
-        raise ImportError("time module is required for benchmark_fps.")
-
     env.reset()
 
     start = _time.perf_counter()
@@ -186,12 +193,14 @@ def benchmark_fps(env: Any, n_steps: int = 10000) -> float:
     elapsed = _time.perf_counter() - start
 
     fps = n_steps / elapsed if elapsed > 0 else float("inf")
+    logger.info("Benchmark: %.1f FPS over %d steps", fps, n_steps)
     return fps
 
 
 # ---------------------------------------------------------------------------
 # seed_everything
 # ---------------------------------------------------------------------------
+
 
 def seed_everything(seed: int) -> None:
     """Set random seeds across multiple libraries for reproducibility.
@@ -205,8 +214,6 @@ def seed_everything(seed: int) -> None:
     Args:
         seed: The integer seed value.
     """
-    import random
-
     random.seed(seed)
 
     if HAS_NUMPY:
@@ -214,7 +221,7 @@ def seed_everything(seed: int) -> None:
 
     # Optional: seed PyTorch if installed
     try:
-        import torch
+        import torch  # noqa: PLC0415
 
         torch.manual_seed(seed)
         if torch.cuda.is_available():

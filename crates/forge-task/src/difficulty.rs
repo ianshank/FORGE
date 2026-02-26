@@ -4,8 +4,10 @@
 //! assigning it to a difficulty tier (1-6).
 
 use forge_types::task::{TaskComposition, TaskTier};
+use tracing::instrument;
 
 /// Estimates the difficulty tier of a task composition.
+#[instrument(skip_all)]
 pub fn estimate_difficulty(composition: &TaskComposition) -> TaskTier {
     let score = difficulty_score(composition);
     let tier = match score {
@@ -54,10 +56,13 @@ fn difficulty_score(composition: &TaskComposition) -> u32 {
             // Constraints add difficulty
             difficulty_score(subtask) + 1
         }
+
+        _ => 1,
     }
 }
 
 /// Estimates the minimum number of actions an oracle agent would need.
+#[instrument(skip_all)]
 pub fn estimate_min_steps(composition: &TaskComposition) -> u32 {
     match composition {
         TaskComposition::Atom(_) => 1,
@@ -67,6 +72,7 @@ pub fn estimate_min_steps(composition: &TaskComposition) -> u32 {
         TaskComposition::Before(subtask, _) => estimate_min_steps(subtask),
         TaskComposition::While(_, goal) => estimate_min_steps(goal),
         TaskComposition::Without(subtask, _) => estimate_min_steps(subtask),
+        _ => 1,
     }
 }
 

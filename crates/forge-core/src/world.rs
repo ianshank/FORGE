@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use forge_types::config::ForgeConfig;
+use forge_types::constants::{OBS_EMPTY_SLOT_ITEM, OBS_NO_OBJECT, OBS_NO_RESOURCE};
 use forge_types::entity::{Agent, Object};
 use forge_types::grid::{Grid, Position};
 use forge_types::observation::{
@@ -15,7 +16,7 @@ use forge_types::resource::{RecipeBook, ResourceNode};
 use forge_types::task::ActiveTask;
 use forge_types::Action;
 use serde::Serialize;
-use tracing::{info, trace};
+use tracing::{info, instrument, trace};
 
 use crate::rng::ForgeRng;
 use crate::systems;
@@ -54,6 +55,7 @@ impl WorldState {
     ///
     /// Initializes the grid, spawns agents at default positions,
     /// and sets up the RNG.
+    #[instrument(skip_all)]
     pub fn new(config: ForgeConfig) -> Self {
         let config = Arc::new(config);
         let mut rng = ForgeRng::new(config.world.seed);
@@ -101,6 +103,7 @@ impl WorldState {
     /// Advances the simulation by one tick with the given actions.
     ///
     /// Returns a StepResult containing observations, rewards, and termination info.
+    #[instrument(skip_all)]
     pub fn step(&mut self, actions: &[Action]) -> StepResult {
         if self.terminated || self.truncated {
             return self.make_terminal_result();
@@ -132,6 +135,7 @@ impl WorldState {
     }
 
     /// Resets the simulation to initial state with a new seed.
+    #[instrument(skip_all)]
     pub fn reset(&mut self, seed: Option<u64>) -> StepResult {
         let new_seed = seed.unwrap_or_else(|| self.rng.next_u64());
 
@@ -194,8 +198,8 @@ impl WorldState {
                         has_agent: tile.agent_id.is_some(),
                         has_object: tile.object_id.is_some(),
                         has_resource: tile.resource_id.is_some(),
-                        object_type: tile.object_id.map_or(255, |_| 0), // simplified
-                        resource_type: tile.resource_id.map_or(255, |_| 0), // simplified
+                        object_type: tile.object_id.map_or(OBS_NO_OBJECT, |_| 0),
+                        resource_type: tile.resource_id.map_or(OBS_NO_RESOURCE, |_| 0),
                     });
                 } else {
                     // Out of bounds — show as wall
@@ -205,8 +209,8 @@ impl WorldState {
                         has_agent: false,
                         has_object: false,
                         has_resource: false,
-                        object_type: 255,
-                        resource_type: 255,
+                        object_type: OBS_NO_OBJECT,
+                        resource_type: OBS_NO_RESOURCE,
                     });
                 }
             }
@@ -219,7 +223,7 @@ impl WorldState {
                 .iter()
                 .map(|slot| match slot {
                     Some(stack) => (stack.item_type as u8, stack.count),
-                    None => (255, 0),
+                    None => (OBS_EMPTY_SLOT_ITEM, 0),
                 })
                 .collect(),
         };
@@ -282,6 +286,7 @@ impl WorldState {
     }
 
     /// Returns an ASCII debug representation of the world.
+    #[instrument(skip_all)]
     pub fn to_debug_grid(&self) -> String {
         let mut result =
             String::with_capacity((self.grid.width as usize + 1) * self.grid.height as usize);
@@ -305,6 +310,7 @@ impl WorldState {
                         forge_types::TerrainType::Sand => 'S',
                         forge_types::TerrainType::Forest => 'T',
                         forge_types::TerrainType::Mountain => 'M',
+                        _ => '?',
                     }
                 };
                 result.push(ch);
@@ -316,6 +322,7 @@ impl WorldState {
     }
 
     /// Serializes the world state to bytes for MCTS state snapshots.
+    #[instrument(skip_all)]
     pub fn to_bytes(&self) -> Vec<u8> {
         // Serialize the essential state (excluding config which is shared)
         let serializable = SerializableWorldState {
@@ -532,5 +539,221 @@ mod tests {
         assert_eq!(world.agents.len(), 4);
         // All agents should be alive
         assert!(world.agents.iter().all(|a| a.alive));
+    }
+
+    // ---- Edge case tests ----
+
+    #[test]
+    fn test_grid_with_min_dimension() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 8;
+        config.world.height = 8;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        let world = WorldState::new(config);
+
+        assert_eq!(world.grid.width, 8);
+        assert_eq!(world.grid.height, 8);
+        assert_eq!(world.agents.len(), 1);
+        assert!(world.agents[0].alive);
+        // Agent should be within bounds
+        assert!(world.agents[0].position.x < 8);
+        assert!(world.agents[0].position.y < 8);
+    }
+
+    #[test]
+    fn test_observation_agent_at_corner_origin() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        let mut world = WorldState::new(config);
+
+        // Move agent to (0,0)
+        let old_pos = world.agents[0].position;
+        if let Some(tile) = world.grid.get_mut(old_pos.x, old_pos.y) {
+            tile.agent_id = None;
+        }
+        world.agents[0].position = Position::new(0, 0);
+        world.grid.get_mut(0, 0).unwrap().agent_id = Some(0);
+
+        let obs = world.generate_observation(&world.agents[0]);
+
+        // Observation should still have the correct shape
+        let vr = world.agents[0].vision_radius as u16;
+        let expected_side = 2 * vr + 1;
+        assert_eq!(obs.view_width, expected_side);
+        assert_eq!(obs.view_height, expected_side);
+        assert_eq!(
+            obs.grid_view.len(),
+            (expected_side as usize) * (expected_side as usize)
+        );
+
+        // Tiles beyond the boundary should show as walls
+        // The top-left corner of the view (at offset -vr, -vr from agent at (0,0))
+        // should be out of bounds (wall)
+        let first_tile = &obs.grid_view[0];
+        assert_eq!(first_tile.terrain, forge_types::TerrainType::Wall as u8);
+    }
+
+    #[test]
+    fn test_reset_with_none_seed() {
+        let mut world = make_test_world();
+        let initial_seed = world.config.world.seed;
+
+        // Step a few times to advance the RNG
+        world.step(&[Action::Noop]);
+        world.step(&[Action::Noop]);
+
+        // Reset with None — should derive a new seed from the RNG
+        let result = world.reset(None);
+        assert_eq!(world.tick, 0);
+        assert!(!world.terminated);
+        assert!(!world.truncated);
+        assert_eq!(result.observations.len(), 1);
+
+        // The seed should have changed (overwhelmingly likely)
+        assert_ne!(
+            world.config.world.seed, initial_seed,
+            "reset(None) should use a derived seed"
+        );
+    }
+
+    #[test]
+    fn test_multiple_resets_produce_different_states() {
+        let mut world = make_test_world();
+
+        // First reset with a specific seed
+        world.reset(Some(100));
+        let pos_after_first = world.agents[0].position;
+
+        // Second reset with a different seed
+        world.reset(Some(200));
+        let pos_after_second = world.agents[0].position;
+
+        // Third reset with another seed
+        world.reset(Some(300));
+        let pos_after_third = world.agents[0].position;
+
+        // At least two of the three positions should differ
+        // (technically all could coincide, but with a 16x16 grid that is very unlikely)
+        let all_same = pos_after_first == pos_after_second && pos_after_second == pos_after_third;
+        assert!(
+            !all_same,
+            "multiple resets with different seeds should produce different states"
+        );
+    }
+
+    #[test]
+    fn test_to_debug_grid_with_empty_world() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 8;
+        config.world.height = 8;
+        config.world.seed = 42;
+        config.agents.num_agents = 0;
+        let world = WorldState::new(config);
+
+        let debug = world.to_debug_grid();
+        assert!(!debug.is_empty());
+        // With no agents, should be all ground tiles
+        assert!(!debug.contains('A'));
+        // Should have 8 rows (each 8 chars + newline)
+        let lines: Vec<&str> = debug.lines().collect();
+        assert_eq!(lines.len(), 8);
+        for line in &lines {
+            assert_eq!(line.len(), 8);
+        }
+    }
+
+    #[test]
+    fn test_to_bytes_round_trip_consistency() {
+        let world = make_test_world();
+        let bytes1 = world.to_bytes();
+        let bytes2 = world.to_bytes();
+
+        assert!(!bytes1.is_empty());
+        assert_eq!(bytes1, bytes2, "serialization should be deterministic");
+    }
+
+    #[test]
+    fn test_to_bytes_changes_after_step() {
+        let mut world = make_test_world();
+        let bytes_before = world.to_bytes();
+
+        world.step(&[Action::Move(Direction::Right)]);
+        let bytes_after = world.to_bytes();
+
+        assert_ne!(
+            bytes_before, bytes_after,
+            "state bytes should change after stepping"
+        );
+    }
+
+    #[test]
+    fn test_step_after_termination_returns_terminal_result() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        let mut world = WorldState::new(config);
+
+        // Kill the agent to trigger termination
+        world.agents[0].alive = false;
+        let result = world.step(&[Action::Noop]);
+        assert!(result.terminated);
+
+        // Subsequent step should still return terminal result
+        let result2 = world.step(&[Action::Noop]);
+        assert!(result2.terminated);
+    }
+
+    #[test]
+    fn test_world_min_dimension_width() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 8;
+        config.world.height = 16;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        let mut world = WorldState::new(config);
+
+        // Should still work with min width
+        let result = world.step(&[Action::Noop]);
+        assert!(!result.terminated);
+        assert_eq!(world.grid.width, 8);
+    }
+
+    #[test]
+    fn test_world_min_dimension_height() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 8;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        let mut world = WorldState::new(config);
+
+        let result = world.step(&[Action::Noop]);
+        assert!(!result.terminated);
+        assert_eq!(world.grid.height, 8);
+    }
+
+    #[test]
+    fn test_observation_position_field() {
+        let world = make_test_world();
+        let obs = world.generate_observation(&world.agents[0]);
+
+        assert_eq!(obs.position.0, world.agents[0].position.x);
+        assert_eq!(obs.position.1, world.agents[0].position.y);
+    }
+
+    #[test]
+    fn test_observation_health_and_stamina_normalized() {
+        let world = make_test_world();
+        let obs = world.generate_observation(&world.agents[0]);
+
+        // Health and stamina should be between 0.0 and 1.0
+        assert!(obs.health >= 0.0 && obs.health <= 1.0);
+        assert!(obs.stamina >= 0.0 && obs.stamina <= 1.0);
     }
 }

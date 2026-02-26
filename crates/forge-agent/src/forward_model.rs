@@ -6,6 +6,7 @@
 use forge_core::WorldState;
 use forge_types::observation::StepResult;
 use forge_types::Action;
+use tracing::instrument;
 
 /// A forward model that can simulate actions from a given state.
 ///
@@ -38,6 +39,7 @@ pub struct DefaultForwardModel {
 
 impl DefaultForwardModel {
     /// Creates a new forward model.
+    #[instrument(skip_all)]
     pub fn new(comm_vocab_size: u16) -> Self {
         Self {
             action_space: Action::space_size(comm_vocab_size),

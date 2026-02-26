@@ -31,6 +31,7 @@ use forge_types::entity::Object;
 use forge_types::grid::{Grid, Position};
 use forge_types::resource::ResourceNode;
 use rand_pcg::Pcg64Mcg;
+use tracing::instrument;
 
 use crate::entities::SpawnPlacer;
 use crate::objects::ObjectPlacer;
@@ -54,6 +55,7 @@ impl WorldGenerator {
     /// Creates a new world generator from the given configuration.
     ///
     /// The seed is taken from `config.seed`.
+    #[instrument(skip_all)]
     pub fn new(config: &WorldConfig) -> Self {
         tracing::trace!(
             seed = config.seed,
@@ -74,6 +76,7 @@ impl WorldGenerator {
     ///   creating this from a deterministic seed if reproducibility is desired.
     ///
     /// Returns `(grid, resources, objects, spawn_points)`.
+    #[instrument(skip_all)]
     pub fn generate(
         &self,
         rng: &mut Pcg64Mcg,

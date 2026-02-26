@@ -6,7 +6,7 @@
 use forge_types::entity::ObjectType;
 use forge_types::grid::Direction;
 use forge_types::Action;
-use tracing::trace;
+use tracing::{instrument, trace};
 
 use crate::combat;
 use crate::communication;
@@ -31,6 +31,7 @@ use crate::world::WorldState;
 /// 9. Day/night system — Phase 3
 /// 10. Task system — Phase 4
 /// 11. Generate observations
+#[instrument(skip_all)]
 pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     trace!(tick = state.tick, "running systems");
 
@@ -249,5 +250,269 @@ mod tests {
         run_systems(&mut state, &actions);
 
         assert_eq!(state.agents[0].position, Position::new(6, 5));
+    }
+
+    // ---- compute_near_station tests ----
+
+    fn make_station_object(id: u32, x: u16, y: u16) -> forge_types::Object {
+        forge_types::Object {
+            id,
+            position: Position::new(x, y),
+            object_type: ObjectType::CraftingStation,
+            mass: 65536,
+            durability: 655360,
+            state: forge_types::entity::ObjectState::Active,
+        }
+    }
+
+    fn make_agent_at(id: u32, x: u16, y: u16) -> forge_types::entity::Agent {
+        let config = forge_types::config::AgentConfig::default();
+        forge_types::entity::Agent::new(id, Position::new(x, y), &config)
+    }
+
+    #[test]
+    fn test_near_station_adjacent_right() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let agent = make_agent_at(0, 5, 5);
+        let station = make_station_object(0, 6, 5);
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&[agent], &grid, &[station]);
+        assert!(result[0], "agent should be near station to the right");
+    }
+
+    #[test]
+    fn test_near_station_adjacent_left() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let agent = make_agent_at(0, 5, 5);
+        let station = make_station_object(0, 4, 5);
+        grid.get_mut(4, 5).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&[agent], &grid, &[station]);
+        assert!(result[0], "agent should be near station to the left");
+    }
+
+    #[test]
+    fn test_near_station_adjacent_up() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let agent = make_agent_at(0, 5, 5);
+        let station = make_station_object(0, 5, 4);
+        grid.get_mut(5, 4).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&[agent], &grid, &[station]);
+        assert!(result[0], "agent should be near station above");
+    }
+
+    #[test]
+    fn test_near_station_adjacent_down() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let agent = make_agent_at(0, 5, 5);
+        let station = make_station_object(0, 5, 6);
+        grid.get_mut(5, 6).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&[agent], &grid, &[station]);
+        assert!(result[0], "agent should be near station below");
+    }
+
+    #[test]
+    fn test_near_station_same_tile() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let agent = make_agent_at(0, 5, 5);
+        let station = make_station_object(0, 5, 5);
+        grid.get_mut(5, 5).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&[agent], &grid, &[station]);
+        assert!(result[0], "agent should be near station on same tile");
+    }
+
+    #[test]
+    fn test_near_station_no_objects() {
+        let grid = forge_types::grid::Grid::new(16, 16);
+        let agent = make_agent_at(0, 5, 5);
+
+        let result = compute_near_station(&[agent], &grid, &[]);
+        assert!(!result[0], "no objects means not near any station");
+    }
+
+    #[test]
+    fn test_near_station_non_station_object() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let agent = make_agent_at(0, 5, 5);
+        // Boulder is not a CraftingStation
+        let boulder = forge_types::Object {
+            id: 0,
+            position: Position::new(6, 5),
+            object_type: forge_types::entity::ObjectType::Boulder,
+            mass: 65536,
+            durability: 655360,
+            state: forge_types::entity::ObjectState::Active,
+        };
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&[agent], &grid, &[boulder]);
+        assert!(!result[0], "boulder is not a crafting station");
+    }
+
+    #[test]
+    fn test_near_station_at_grid_boundary() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        // Agent at (0,0) — Up and Left offsets go out of bounds
+        let agent = make_agent_at(0, 0, 0);
+        let station = make_station_object(0, 1, 0);
+        grid.get_mut(1, 0).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&[agent], &grid, &[station]);
+        assert!(result[0], "agent at corner should see adjacent station");
+    }
+
+    #[test]
+    fn test_near_station_dead_agent() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let mut agent = make_agent_at(0, 5, 5);
+        agent.alive = false;
+        let station = make_station_object(0, 6, 5);
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&[agent], &grid, &[station]);
+        assert!(!result[0], "dead agent should not be near station");
+    }
+
+    #[test]
+    fn test_near_station_diagonal_not_adjacent() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let agent = make_agent_at(0, 5, 5);
+        // Station at (6,6) — diagonal, not cardinal adjacent
+        let station = make_station_object(0, 6, 6);
+        grid.get_mut(6, 6).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&[agent], &grid, &[station]);
+        assert!(
+            !result[0],
+            "diagonal is not adjacent in cardinal directions"
+        );
+    }
+
+    // ---- validate_actions additional tests ----
+
+    #[test]
+    fn test_validate_actions_empty() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        let state = WorldState::new(config);
+
+        let actions: Vec<Action> = vec![];
+        let validated = validate_actions(&actions, &state);
+        assert!(validated.is_empty());
+    }
+
+    #[test]
+    fn test_validate_actions_mixed_valid_invalid() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 2;
+        config.agents.comm_vocab_size = 10;
+        let mut state = WorldState::new(config);
+        state.agents[1].alive = false;
+
+        let actions = vec![
+            Action::Move(forge_types::Direction::Up),   // valid
+            Action::Move(forge_types::Direction::Down), // invalid: dead agent
+        ];
+        let validated = validate_actions(&actions, &state);
+        assert_eq!(validated[0], Action::Move(forge_types::Direction::Up));
+        assert_eq!(validated[1], Action::Noop);
+    }
+
+    #[test]
+    fn test_validate_actions_invalid_drop_slot() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        let state = WorldState::new(config);
+
+        // carry_capacity is 10 by default, so slot 10 is out of range
+        let actions = vec![Action::Drop(10)];
+        let validated = validate_actions(&actions, &state);
+        assert_eq!(validated[0], Action::Noop);
+    }
+
+    #[test]
+    fn test_validate_actions_valid_drop_slot() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        let state = WorldState::new(config);
+
+        // slot 0 should be valid
+        let actions = vec![Action::Drop(0)];
+        let validated = validate_actions(&actions, &state);
+        assert_eq!(validated[0], Action::Drop(0));
+    }
+
+    #[test]
+    fn test_validate_actions_invalid_use_slot() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        let state = WorldState::new(config);
+
+        // carry_capacity is 10, slot 255 is out of range
+        let actions = vec![Action::Use(255)];
+        let validated = validate_actions(&actions, &state);
+        assert_eq!(validated[0], Action::Noop);
+    }
+
+    #[test]
+    fn test_validate_actions_valid_use_slot() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        let state = WorldState::new(config);
+
+        let actions = vec![Action::Use(9)];
+        let validated = validate_actions(&actions, &state);
+        assert_eq!(validated[0], Action::Use(9));
+    }
+
+    #[test]
+    fn test_validate_actions_invalid_comm_token() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        config.agents.comm_vocab_size = 10;
+        let state = WorldState::new(config);
+
+        // Token 10 is beyond vocab_size of 10 (valid: 0..9)
+        let actions = vec![Action::Communicate(10)];
+        let validated = validate_actions(&actions, &state);
+        assert_eq!(validated[0], Action::Noop);
+    }
+
+    #[test]
+    fn test_validate_actions_valid_comm_token() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        config.agents.comm_vocab_size = 10;
+        let state = WorldState::new(config);
+
+        let actions = vec![Action::Communicate(9)];
+        let validated = validate_actions(&actions, &state);
+        assert_eq!(validated[0], Action::Communicate(9));
+    }
+
+    #[test]
+    fn test_validate_actions_noop_passthrough() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        let state = WorldState::new(config);
+
+        let actions = vec![Action::Noop];
+        let validated = validate_actions(&actions, &state);
+        assert_eq!(validated[0], Action::Noop);
+    }
+
+    #[test]
+    fn test_validate_actions_pickup_passthrough() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        let state = WorldState::new(config);
+
+        let actions = vec![Action::PickUp];
+        let validated = validate_actions(&actions, &state);
+        assert_eq!(validated[0], Action::PickUp);
     }
 }

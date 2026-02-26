@@ -82,6 +82,7 @@ impl Direction {
 
 /// Terrain types that make up the world grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum TerrainType {
     Ground = 0,
@@ -139,6 +140,7 @@ impl TerrainType {
 
 /// Visibility state for fog-of-war.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum VisibilityState {
     /// Never been seen.
@@ -362,5 +364,46 @@ mod tests {
             assert!(TerrainType::from_u8(i).is_some());
         }
         assert!(TerrainType::from_u8(8).is_none());
+    }
+
+    #[test]
+    fn test_grid_is_empty() {
+        // A 1x1 grid has one tile and is therefore not empty.
+        let grid = Grid::new(1, 1);
+        assert!(!grid.is_empty());
+        assert_eq!(grid.len(), 1);
+
+        // A 0x0 grid (zero dimensions) is empty.
+        let empty_grid = Grid::new(0, 0);
+        assert!(empty_grid.is_empty());
+        assert_eq!(empty_grid.len(), 0);
+    }
+
+    #[test]
+    fn test_terrain_movement_cost() {
+        // Walkable terrains have specific costs.
+        assert_eq!(TerrainType::Ground.movement_cost(), 65536); // 1.0x
+        assert_eq!(TerrainType::Ice.movement_cost(), 32768); // 0.5x
+        assert_eq!(TerrainType::Sand.movement_cost(), 98304); // 1.5x
+        assert_eq!(TerrainType::Forest.movement_cost(), 131072); // 2.0x
+
+        // Non-walkable terrains return i32::MAX.
+        assert_eq!(TerrainType::Water.movement_cost(), i32::MAX);
+        assert_eq!(TerrainType::Wall.movement_cost(), i32::MAX);
+        assert_eq!(TerrainType::Lava.movement_cost(), i32::MAX);
+        assert_eq!(TerrainType::Mountain.movement_cost(), i32::MAX);
+    }
+
+    #[test]
+    fn test_direction_from_index_all() {
+        // All four valid indices.
+        assert_eq!(Direction::from_index(0), Some(Direction::Up));
+        assert_eq!(Direction::from_index(1), Some(Direction::Down));
+        assert_eq!(Direction::from_index(2), Some(Direction::Left));
+        assert_eq!(Direction::from_index(3), Some(Direction::Right));
+
+        // Invalid index returns None.
+        assert_eq!(Direction::from_index(4), None);
+        assert_eq!(Direction::from_index(255), None);
     }
 }

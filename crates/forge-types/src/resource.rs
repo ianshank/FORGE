@@ -9,6 +9,7 @@ use crate::grid::{Position, TerrainType};
 
 /// Types of items that can be in inventory or used in crafting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum ItemType {
     // Raw resources
@@ -332,5 +333,63 @@ mod tests {
         assert_eq!(ItemType::from_u8(0), Some(ItemType::Wood));
         assert_eq!(ItemType::from_u8(10), Some(ItemType::Axe));
         assert_eq!(ItemType::from_u8(255), None);
+    }
+
+    #[test]
+    fn test_recipe_book_empty() {
+        let book = RecipeBook::new();
+        assert!(book.is_empty());
+        assert_eq!(book.len(), 0);
+        assert!(book.get(0).is_none());
+    }
+
+    #[test]
+    fn test_item_type_from_u8_all_valid() {
+        // Raw resources: 0-5
+        assert_eq!(ItemType::from_u8(0), Some(ItemType::Wood));
+        assert_eq!(ItemType::from_u8(1), Some(ItemType::Stone));
+        assert_eq!(ItemType::from_u8(2), Some(ItemType::Ore));
+        assert_eq!(ItemType::from_u8(3), Some(ItemType::Fish));
+        assert_eq!(ItemType::from_u8(4), Some(ItemType::Fiber));
+        assert_eq!(ItemType::from_u8(5), Some(ItemType::Clay));
+
+        // Crafted items: 10-19
+        assert_eq!(ItemType::from_u8(10), Some(ItemType::Axe));
+        assert_eq!(ItemType::from_u8(11), Some(ItemType::Pickaxe));
+        assert_eq!(ItemType::from_u8(12), Some(ItemType::Sword));
+        assert_eq!(ItemType::from_u8(13), Some(ItemType::Shield));
+        assert_eq!(ItemType::from_u8(14), Some(ItemType::Plank));
+        assert_eq!(ItemType::from_u8(15), Some(ItemType::Bridge));
+        assert_eq!(ItemType::from_u8(16), Some(ItemType::Rope));
+        assert_eq!(ItemType::from_u8(17), Some(ItemType::Brick));
+        assert_eq!(ItemType::from_u8(18), Some(ItemType::Key));
+        assert_eq!(ItemType::from_u8(19), Some(ItemType::Torch));
+
+        // Food: 30-31
+        assert_eq!(ItemType::from_u8(30), Some(ItemType::CookedFish));
+        assert_eq!(ItemType::from_u8(31), Some(ItemType::Bread));
+
+        // Invalid values in the gaps should return None.
+        assert_eq!(ItemType::from_u8(6), None);
+        assert_eq!(ItemType::from_u8(9), None);
+        assert_eq!(ItemType::from_u8(20), None);
+        assert_eq!(ItemType::from_u8(29), None);
+        assert_eq!(ItemType::from_u8(32), None);
+    }
+
+    #[test]
+    fn test_item_type_food_classification() {
+        // CookedFish and Bread are food items (value >= 30).
+        assert!(!ItemType::CookedFish.is_raw_resource());
+        assert!(!ItemType::CookedFish.is_crafted()); // value 30 is not in 10..30
+        assert!(!ItemType::CookedFish.is_tool());
+
+        assert!(!ItemType::Bread.is_raw_resource());
+        assert!(!ItemType::Bread.is_crafted()); // value 31 is not in 10..30
+        assert!(!ItemType::Bread.is_tool());
+
+        // Verify that actual crafted items are classified correctly.
+        assert!(ItemType::Axe.is_crafted());
+        assert!(ItemType::Torch.is_crafted());
     }
 }

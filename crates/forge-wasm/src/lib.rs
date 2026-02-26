@@ -11,6 +11,7 @@ use forge_types::config::ForgeConfig;
 use forge_types::observation::{ActionSpace, ObservationSpace};
 use forge_types::Action;
 use serde::Serialize;
+use tracing::instrument;
 use wasm_bindgen::prelude::*;
 
 /// Response payload for a single simulation step, serialized to JSON.
@@ -53,6 +54,7 @@ impl ForgeWasmEnv {
     ///
     /// Panics if `config_json` contains invalid JSON or fields that cannot be
     /// parsed into a `ForgeConfig`.
+    #[instrument(skip_all)]
     #[wasm_bindgen(constructor)]
     pub fn new(config_json: &str) -> Self {
         let trimmed = config_json.trim();
@@ -76,6 +78,7 @@ impl ForgeWasmEnv {
     ///
     /// A JSON-encoded [`StepResponse`] containing the initial observations,
     /// zero rewards, and `terminated = false`.
+    #[instrument(skip_all)]
     pub fn reset(&mut self, seed: Option<u64>) -> String {
         let result = self.world.reset(seed);
         let response = StepResponse {
@@ -102,6 +105,7 @@ impl ForgeWasmEnv {
     ///
     /// A JSON-encoded [`StepResponse`] with observations, rewards,
     /// termination flags, and diagnostic info.
+    #[instrument(skip_all)]
     pub fn step(&mut self, action: u32) -> String {
         let comm_vocab = self.config.agents.comm_vocab_size;
         let decoded = Action::from_discrete(action, comm_vocab).unwrap_or(Action::Noop);
@@ -298,6 +302,47 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value.get("n").is_some());
         assert!(value.get("action_names").is_some());
+    }
+
+    #[test]
+    fn test_partial_config_json() {
+        // Provide JSON with only some fields; the rest should use defaults
+        let partial_json = r#"{"world": {"width": 16, "height": 16, "seed": 42}}"#;
+        let env = ForgeWasmEnv::new(partial_json);
+        assert_eq!(env.world.grid.width, 16);
+        assert_eq!(env.world.grid.height, 16);
+        assert!(!env.world.terminated);
+        // Agents should still be created using defaults
+        assert!(!env.world.agents.is_empty());
+    }
+
+    #[test]
+    fn test_multi_step_episode() {
+        let mut env = ForgeWasmEnv::new(&default_config_json());
+        let reset_json = env.reset(Some(123));
+        let reset_val: serde_json::Value = serde_json::from_str(&reset_json).unwrap();
+        assert_eq!(reset_val["terminated"].as_bool(), Some(false));
+
+        // Run 100 steps
+        for i in 0..100 {
+            let action = i % 5; // cycle through Noop, Up, Down, Left, Right
+            let step_json = env.step(action);
+            let step_val: serde_json::Value = serde_json::from_str(&step_json).unwrap();
+            assert!(step_val.get("observations").is_some());
+            assert!(step_val.get("rewards").is_some());
+            // If terminated or truncated, stop early
+            if step_val["terminated"].as_bool() == Some(true)
+                || step_val["truncated"].as_bool() == Some(true)
+            {
+                break;
+            }
+        }
+
+        // Verify the state advanced from tick 0
+        let state_json = env.get_state_json();
+        let state_val: serde_json::Value = serde_json::from_str(&state_json).unwrap();
+        let tick = state_val["tick"].as_u64().unwrap();
+        assert!(tick > 0, "tick should have advanced after stepping");
     }
 
     #[test]

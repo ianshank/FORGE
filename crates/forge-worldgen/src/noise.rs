@@ -4,6 +4,8 @@
 //! No external noise crate dependency -- fully self-contained and deterministic
 //! for any given seed.
 
+use tracing::instrument;
+
 /// A deterministic 2D Perlin noise generator.
 ///
 /// Given the same seed, `sample_2d` and `octave_noise_2d` will always
@@ -19,6 +21,7 @@ impl PerlinNoise {
     ///
     /// The seed deterministically initialises the internal permutation table
     /// via a Fisher-Yates shuffle driven by a simple splitmix64 PRNG.
+    #[instrument(skip_all)]
     pub fn new(seed: u64) -> Self {
         let mut perm_base: [u8; 256] = [0; 256];
         for i in 0..256u16 {
@@ -88,6 +91,7 @@ impl PerlinNoise {
     ///
     /// * `octaves` -- number of noise layers (typically 1..8).
     /// * `persistence` -- amplitude decay per octave (typically 0.4..0.7).
+    #[instrument(skip_all)]
     pub fn octave_noise_2d(&self, x: f64, y: f64, octaves: u32, persistence: f64) -> f64 {
         let mut total = 0.0_f64;
         let mut frequency = 1.0_f64;
@@ -123,13 +127,18 @@ fn splitmix64(mut state: u64) -> u64 {
 }
 
 /// Fast floor that handles negative values correctly.
+///
+/// For values outside `i32` range the result is clamped to `i32::MIN` / `i32::MAX`.
 #[inline]
 fn fast_floor(x: f64) -> i32 {
-    let xi = x as i32;
-    if x < xi as f64 {
-        xi - 1
+    let floored = x.floor();
+    // Clamp to i32 range to prevent overflow on extreme inputs.
+    if floored <= i32::MIN as f64 {
+        i32::MIN
+    } else if floored >= i32::MAX as f64 {
+        i32::MAX
     } else {
-        xi
+        floored as i32
     }
 }
 
@@ -252,6 +261,32 @@ mod tests {
             (single - direct).abs() < 1e-12,
             "Single octave should equal direct sample"
         );
+    }
+
+    #[test]
+    fn test_perlin_large_coordinates() {
+        let noise = PerlinNoise::new(42);
+        // Large coordinates within the safe i32 range (the internal fast_floor
+        // casts to i32, so coordinates must stay within ~2.1e9).
+        // Test with large but valid coordinates to ensure no panics or NaN.
+        let coords = [1e3, -1e3, 1e5, -1e5, 5e5, -5e5, 1e6, -1e6];
+        for &x in &coords {
+            for &y in &coords {
+                let v = noise.sample_2d(x, y);
+                assert!(
+                    v.is_finite(),
+                    "sample_2d({x}, {y}) produced non-finite: {v}"
+                );
+            }
+        }
+        // Also test octave_noise_2d at large coordinates
+        for &x in &coords {
+            let v = noise.octave_noise_2d(x, x, 4, 0.5);
+            assert!(
+                v.is_finite(),
+                "octave_noise_2d({x}, {x}) produced non-finite: {v}"
+            );
+        }
     }
 
     #[test]

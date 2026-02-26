@@ -256,6 +256,7 @@ impl Default for RenderConfig {
 
 /// Team configuration for multi-agent scenarios.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[non_exhaustive]
 pub enum TeamStructure {
     /// Every agent is independent.
     #[default]

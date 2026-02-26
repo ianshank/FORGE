@@ -4,6 +4,8 @@
 //! Each node tracks visit counts, cumulative value, prior probabilities,
 //! and child indices.
 
+use tracing::instrument;
+
 /// Index into the tree node vector.
 pub type NodeId = usize;
 
@@ -118,6 +120,7 @@ pub struct MctsTree {
 
 impl MctsTree {
     /// Creates a new tree with a root node.
+    #[instrument(skip_all)]
     pub fn new(config: MctsConfig) -> Self {
         let root = MctsNode::root(config.action_space);
         Self {
@@ -182,6 +185,7 @@ impl MctsTree {
     ///
     /// With temperature 0: returns the most-visited action (greedy).
     /// With temperature > 0: samples proportional to visit^(1/temp).
+    #[instrument(skip_all)]
     pub fn best_action(&self) -> Option<u32> {
         let root = &self.nodes[0];
         let mut best_visits = 0;
@@ -332,6 +336,17 @@ mod tests {
 
         tree.add_child(0, 0, 0.5);
         assert!(tree.node(0).is_expanded());
+    }
+
+    #[test]
+    fn test_select_child_no_children() {
+        let tree = MctsTree::new(make_config());
+        // Root has no children, so select_child should return None
+        let result = tree.select_child(0);
+        assert!(
+            result.is_none(),
+            "select_child on root with no children should return None"
+        );
     }
 
     #[test]

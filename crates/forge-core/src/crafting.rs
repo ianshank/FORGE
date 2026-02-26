@@ -7,7 +7,7 @@
 use forge_types::entity::Agent;
 use forge_types::resource::RecipeBook;
 use forge_types::Action;
-use tracing::trace;
+use tracing::{instrument, trace};
 
 /// Processes Craft actions using the recipe book.
 ///
@@ -21,6 +21,7 @@ use tracing::trace;
 ///
 /// The `near_station` slice provides a per-agent boolean indicating whether
 /// the agent is adjacent to or on a crafting station tile.
+#[instrument(skip_all)]
 pub fn process_crafting(
     agents: &mut [Agent],
     actions: &[Action],

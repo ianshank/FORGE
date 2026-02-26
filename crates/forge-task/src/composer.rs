@@ -4,13 +4,14 @@
 //! logical operators (AND, OR, SEQUENCE, BEFORE, WHILE, WITHOUT).
 
 use forge_types::task::TaskComposition;
-use tracing::trace;
+use tracing::{instrument, trace};
 
 use crate::predicate::{evaluate_predicate, EvalContext, PredicateResult};
 
 /// Evaluates a composite task against the current world state.
 ///
 /// Returns the overall satisfaction and progress of the task tree.
+#[instrument(skip_all)]
 pub fn evaluate_composition(
     composition: &TaskComposition,
     ctx: &EvalContext,
@@ -141,6 +142,11 @@ pub fn evaluate_composition(
                 evaluate_composition(subtask, ctx, sequence_index, forbidden_actions)
             }
         }
+
+        _ => PredicateResult {
+            satisfied: false,
+            progress: 0.0,
+        },
     }
 }
 
@@ -290,5 +296,58 @@ mod tests {
         let mut seq_idx = 0;
         let result = evaluate_composition(&task, &ctx, &mut seq_idx, &[]);
         assert!(!result.satisfied);
+    }
+
+    #[test]
+    fn test_composer_deeply_nested() {
+        // Build deeply nested AND/OR/SEQUENCE composition:
+        // AND(
+        //   OR(
+        //     AgentAt(0, (5,5)),
+        //     SEQUENCE(
+        //       AgentAt(0, (0,0)),
+        //       AND(
+        //         TimeElapsed(10),
+        //         OR(
+        //           AgentAt(0, (5,5)),
+        //           TimeElapsed(5)
+        //         )
+        //       )
+        //     )
+        //   ),
+        //   TimeElapsed(1)
+        // )
+        let agents = vec![make_agent(0, 5, 5)];
+        let ctx = make_ctx(&agents, 100);
+
+        let deep_or = TaskComposition::Or(vec![
+            TaskComposition::Atom(Predicate::AgentAt(0, Position::new(5, 5))),
+            TaskComposition::Atom(Predicate::TimeElapsed(5)),
+        ]);
+        let deep_and = TaskComposition::And(vec![
+            TaskComposition::Atom(Predicate::TimeElapsed(10)),
+            deep_or,
+        ]);
+        let sequence = TaskComposition::Sequence(vec![
+            TaskComposition::Atom(Predicate::AgentAt(0, Position::new(0, 0))),
+            deep_and,
+        ]);
+        let top_or = TaskComposition::Or(vec![
+            TaskComposition::Atom(Predicate::AgentAt(0, Position::new(5, 5))),
+            sequence,
+        ]);
+        let top_and = TaskComposition::And(vec![
+            top_or,
+            TaskComposition::Atom(Predicate::TimeElapsed(1)),
+        ]);
+
+        let mut seq_idx = 0;
+        let result = evaluate_composition(&top_and, &ctx, &mut seq_idx, &[]);
+        // The top AND requires both: OR (satisfied via AgentAt(0,(5,5))) AND TimeElapsed(1) (satisfied at tick 100)
+        assert!(
+            result.satisfied,
+            "deeply nested composition should be satisfied"
+        );
+        assert!((result.progress - 1.0).abs() < 0.01);
     }
 }

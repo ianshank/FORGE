@@ -12,6 +12,7 @@ forge-types = { path = "../forge-types" }
 forge-core = { path = "../forge-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
 wasm-bindgen = "0.2"
 
 [dev-dependencies]

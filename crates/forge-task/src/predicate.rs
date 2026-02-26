@@ -71,6 +71,11 @@ pub fn evaluate_predicate(predicate: &Predicate, ctx: &EvalContext) -> Predicate
             // Requires object list — handled at a higher level
             PredicateResult::unsatisfied(0.0)
         }
+
+        _ => {
+            // Unknown predicate variant — treat as unsatisfied
+            PredicateResult::unsatisfied(0.0)
+        }
     }
 }
 

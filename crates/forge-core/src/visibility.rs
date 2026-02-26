@@ -5,7 +5,7 @@
 
 use forge_types::entity::Agent;
 use forge_types::grid::{Grid, VisibilityState};
-use tracing::trace;
+use tracing::{instrument, trace};
 
 /// Updates visibility state for all tiles based on agent positions and vision radii.
 ///
@@ -15,6 +15,7 @@ use tracing::trace;
 /// 3. If the ray reaches the tile without hitting vision-blocking terrain, mark it Visible
 ///
 /// Vision is blocked by tiles where `terrain.blocks_vision()` returns true.
+#[instrument(skip_all)]
 pub fn update_visibility(agents: &[Agent], grid: &mut Grid) {
     // Step 1: Demote all Visible tiles to Explored
     for tile in grid.tiles.iter_mut() {
@@ -123,6 +124,7 @@ fn has_line_of_sight(grid: &Grid, x0: i32, y0: i32, x1: i32, y1: i32) -> bool {
 /// Returns a flat `Vec<bool>` of `(2*radius+1)^2` elements, row-major.
 /// Each element is `true` if the corresponding tile is currently Visible,
 /// `false` otherwise (Hidden, Explored, or out of bounds).
+#[instrument(skip_all)]
 pub fn visibility_mask(agent: &Agent, grid: &Grid) -> Vec<bool> {
     let vr = agent.vision_radius as i32;
     let side = (2 * vr + 1) as usize;
@@ -316,5 +318,159 @@ mod tests {
 
         // Line from (5,5) to (9,5) passes through the wall at (7,5)
         assert!(!has_line_of_sight(&grid, 5, 5, 9, 5));
+    }
+
+    // ---- Edge case tests ----
+
+    #[test]
+    fn test_vision_radius_zero() {
+        let mut grid = make_grid(16, 16);
+        let mut agent = make_agent(0, 5, 5);
+        agent.vision_radius = 0;
+
+        update_visibility(&[agent.clone()], &mut grid);
+
+        // Agent should see only its own tile
+        assert_eq!(grid.get(5, 5).unwrap().visibility, VisibilityState::Visible);
+
+        // Adjacent tiles should remain hidden
+        assert_eq!(grid.get(5, 4).unwrap().visibility, VisibilityState::Hidden);
+        assert_eq!(grid.get(5, 6).unwrap().visibility, VisibilityState::Hidden);
+        assert_eq!(grid.get(4, 5).unwrap().visibility, VisibilityState::Hidden);
+        assert_eq!(grid.get(6, 5).unwrap().visibility, VisibilityState::Hidden);
+
+        // Visibility mask for radius 0 should be a single element
+        let mask = visibility_mask(&agent, &grid);
+        assert_eq!(mask.len(), 1);
+        assert!(mask[0]);
+    }
+
+    #[test]
+    fn test_agent_at_origin_visibility() {
+        let mut grid = make_grid(16, 16);
+        let mut agent = make_agent(0, 0, 0);
+        agent.vision_radius = 3;
+
+        update_visibility(&[agent.clone()], &mut grid);
+
+        // Own tile should be visible
+        assert_eq!(grid.get(0, 0).unwrap().visibility, VisibilityState::Visible);
+
+        // Some tiles within radius that are in bounds should be visible
+        assert_eq!(grid.get(1, 0).unwrap().visibility, VisibilityState::Visible);
+        assert_eq!(grid.get(0, 1).unwrap().visibility, VisibilityState::Visible);
+        assert_eq!(grid.get(2, 2).unwrap().visibility, VisibilityState::Visible);
+
+        // Tiles far away should be hidden
+        assert_eq!(
+            grid.get(10, 10).unwrap().visibility,
+            VisibilityState::Hidden
+        );
+
+        // Mask should still be correct shape
+        let mask = visibility_mask(&agent, &grid);
+        let side = (2 * 3 + 1) as usize;
+        assert_eq!(mask.len(), side * side);
+        // Center of mask (which represents agent pos) should be visible
+        let center = 3 * side + 3;
+        assert!(mask[center]);
+    }
+
+    #[test]
+    fn test_diagonal_line_of_sight() {
+        let grid = make_grid(16, 16);
+
+        // Diagonal line of sight across open terrain should be clear
+        assert!(has_line_of_sight(&grid, 3, 3, 7, 7));
+        assert!(has_line_of_sight(&grid, 7, 7, 3, 3));
+        assert!(has_line_of_sight(&grid, 3, 7, 7, 3));
+        assert!(has_line_of_sight(&grid, 7, 3, 3, 7));
+    }
+
+    #[test]
+    fn test_diagonal_line_of_sight_blocked() {
+        let mut grid = make_grid(16, 16);
+        // Place a wall on the diagonal path from (3,3) to (7,7)
+        grid.get_mut(5, 5).unwrap().terrain = TerrainType::Wall;
+
+        assert!(!has_line_of_sight(&grid, 3, 3, 7, 7));
+    }
+
+    #[test]
+    fn test_line_of_sight_same_tile() {
+        let grid = make_grid(16, 16);
+        // Same tile should always be visible
+        assert!(has_line_of_sight(&grid, 5, 5, 5, 5));
+    }
+
+    #[test]
+    fn test_line_of_sight_adjacent() {
+        let grid = make_grid(16, 16);
+        // Adjacent tiles should have clear LOS on open terrain
+        assert!(has_line_of_sight(&grid, 5, 5, 5, 6));
+        assert!(has_line_of_sight(&grid, 5, 5, 5, 4));
+        assert!(has_line_of_sight(&grid, 5, 5, 6, 5));
+        assert!(has_line_of_sight(&grid, 5, 5, 4, 5));
+    }
+
+    #[test]
+    fn test_visibility_uses_euclidean_radius() {
+        let mut grid = make_grid(32, 32);
+        let mut agent = make_agent(0, 15, 15);
+        agent.vision_radius = 3;
+
+        update_visibility(&[agent], &mut grid);
+
+        // (15 + 3, 15 + 3) => dx=3, dy=3 => dist^2 = 18 > 9 = radius^2
+        // So corners of the bounding box should NOT be visible
+        assert_eq!(
+            grid.get(18, 18).unwrap().visibility,
+            VisibilityState::Hidden,
+            "corner of bounding box should be outside Euclidean radius"
+        );
+
+        // (15 + 3, 15) => dx=3, dy=0 => dist^2 = 9 <= 9 => visible
+        assert_eq!(
+            grid.get(18, 15).unwrap().visibility,
+            VisibilityState::Visible,
+            "tile at exact radius along axis should be visible"
+        );
+    }
+
+    #[test]
+    fn test_visibility_mask_at_corner() {
+        let mut grid = make_grid(16, 16);
+        let mut agent = make_agent(0, 0, 0);
+        agent.vision_radius = 2;
+
+        update_visibility(&[agent.clone()], &mut grid);
+
+        let mask = visibility_mask(&agent, &grid);
+        let side = (2 * 2 + 1) as usize; // 5
+        assert_eq!(mask.len(), side * side);
+
+        // Center (agent's own tile) should be true
+        let center = 2 * side + 2;
+        assert!(mask[center]);
+
+        // Top-left corner of mask (offset -2,-2 from agent at 0,0 => world (-2,-2)) is OOB
+        assert!(!mask[0], "out-of-bounds tile should be false in mask");
+    }
+
+    #[test]
+    fn test_mountain_blocks_vision() {
+        let mut grid = make_grid(16, 16);
+        grid.get_mut(7, 5).unwrap().terrain = TerrainType::Mountain;
+
+        let mut agent = make_agent(0, 5, 5);
+        agent.vision_radius = 5;
+
+        update_visibility(&[agent], &mut grid);
+
+        // Mountain itself should be visible
+        assert_eq!(grid.get(7, 5).unwrap().visibility, VisibilityState::Visible);
+
+        // Tile behind the mountain should be hidden
+        assert_eq!(grid.get(9, 5).unwrap().visibility, VisibilityState::Hidden);
     }
 }

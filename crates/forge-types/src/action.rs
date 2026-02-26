@@ -11,6 +11,7 @@ use crate::resource::ItemType;
 
 /// An action that an agent can take in a single tick.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum Action {
     /// Do nothing this tick.
     Noop,

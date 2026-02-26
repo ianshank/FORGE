@@ -6,6 +6,7 @@
 
 use forge_types::config::WorldConfig;
 use forge_types::grid::Grid;
+use tracing::instrument;
 
 use crate::biome::BiomeClassifier;
 use crate::noise::PerlinNoise;
@@ -37,6 +38,7 @@ impl TerrainGenerator {
     /// The `biome_scale` field from `config` controls feature frequency:
     /// lower values produce larger biome patches, higher values produce
     /// smaller, more detailed features.
+    #[instrument(skip_all)]
     pub fn new(config: &WorldConfig, seed: u64) -> Self {
         let elevation_noise = PerlinNoise::new(seed);
         let moisture_noise = PerlinNoise::new(seed.wrapping_add(MOISTURE_SEED_OFFSET));
@@ -69,6 +71,7 @@ impl TerrainGenerator {
     /// Fills the given grid with terrain types derived from noise + biomes.
     ///
     /// Every tile's `terrain` and `elevation` fields are set.
+    #[instrument(skip_all)]
     pub fn generate(&self, grid: &mut Grid) {
         let width = grid.width;
         let height = grid.height;

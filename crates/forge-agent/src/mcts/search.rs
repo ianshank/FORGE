@@ -5,7 +5,7 @@
 
 use forge_core::WorldState;
 use forge_types::Action;
-use tracing::trace;
+use tracing::{instrument, trace};
 
 use super::policy::PolicyValue;
 use super::tree::{MctsConfig, MctsTree};
@@ -25,6 +25,7 @@ pub struct MctsSearch<F: ForwardModel, P: PolicyValue> {
 
 impl<F: ForwardModel, P: PolicyValue> MctsSearch<F, P> {
     /// Creates a new MCTS search engine.
+    #[instrument(skip_all)]
     pub fn new(model: F, policy: P, config: MctsConfig, comm_vocab_size: u16) -> Self {
         Self {
             model,
@@ -35,6 +36,7 @@ impl<F: ForwardModel, P: PolicyValue> MctsSearch<F, P> {
     }
 
     /// Runs MCTS from the given state and returns the best action.
+    #[instrument(skip_all)]
     pub fn search(&self, state: &WorldState, agent_idx: usize) -> Action {
         let mut tree = MctsTree::new(self.config.clone());
 
@@ -230,6 +232,25 @@ mod tests {
         // Even with 1 simulation, should return a valid action
         let action = search.search(&state, 0);
         assert!(action.to_discrete() < Action::space_size(0));
+    }
+
+    #[test]
+    fn test_mcts_zero_simulations() {
+        let model = DefaultForwardModel::new(0);
+        let policy = UniformPolicy::new(32);
+        let config = MctsConfig {
+            num_simulations: 0,
+            action_space: 32,
+            max_depth: 5,
+            ..MctsConfig::default()
+        };
+        let search = MctsSearch::new(model, policy, config, 0);
+        let state = make_test_state();
+
+        // With 0 simulations, tree is never expanded. best_action returns None,
+        // so search falls back to Noop. Should not panic.
+        let action = search.search(&state, 0);
+        assert_eq!(action, Action::Noop);
     }
 
     #[test]

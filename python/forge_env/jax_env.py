@@ -10,7 +10,10 @@ delegating the actual simulation to the native (non-JAX) environment.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Optional dependency imports
@@ -19,20 +22,24 @@ from typing import Any, Dict, Optional, Tuple
 try:
     import jax
     import jax.numpy as jnp
+
     HAS_JAX = True
 except ImportError:
     HAS_JAX = False
 
 try:
     import numpy as np
+
     HAS_NUMPY = True
 except ImportError:
     HAS_NUMPY = False
 
 try:
-    from forge_env import ForgeEnv as _NativeEnv
+    from forge_env.forge_env import ForgeEnv as _NativeEnv
 except ImportError:
     _NativeEnv = None
+
+__all__ = ["ForgeJaxEnv"]
 
 
 class ForgeJaxEnv:
@@ -65,7 +72,7 @@ class ForgeJaxEnv:
     def __init__(
         self,
         n_envs: int,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         seed: int = 0,
     ) -> None:
         if not HAS_JAX:
@@ -101,8 +108,8 @@ class ForgeJaxEnv:
 
     @staticmethod
     def _obs_dict_to_arrays(
-        obs: Dict[str, Any],
-    ) -> Tuple[Any, Any, float, float, Tuple, int]:
+        obs: dict[str, Any],
+    ) -> tuple[Any, Any, float, float, tuple[int, ...], int]:
         """Extract the numeric/array fields from an observation dict.
 
         Returns
@@ -125,8 +132,8 @@ class ForgeJaxEnv:
 
     def _batch_observations(
         self,
-        obs_list: list[Dict[str, Any]],
-    ) -> Dict[str, jnp.ndarray]:
+        obs_list: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Stack a list of observation dicts into batched JAX arrays.
 
         Parameters
@@ -171,7 +178,7 @@ class ForgeJaxEnv:
     # Public API
     # ------------------------------------------------------------------
 
-    def reset(self) -> Tuple[Dict[str, jnp.ndarray], Dict[str, Any]]:
+    def reset(self) -> tuple[dict[str, Any], dict[str, list[Any]]]:
         """Reset every environment and return batched observations.
 
         Each environment *i* is reset with seed ``self.seed + i``.
@@ -193,7 +200,7 @@ class ForgeJaxEnv:
         batched_obs = self._batch_observations(obs_list)
 
         # Merge info dicts: each key maps to a list of per-env values.
-        merged_info: Dict[str, list] = {}
+        merged_info: dict[str, list[Any]] = {}
         for info in info_list:
             for key, value in info.items():
                 merged_info.setdefault(key, []).append(value)
@@ -202,14 +209,8 @@ class ForgeJaxEnv:
 
     def step(
         self,
-        actions: jnp.ndarray,
-    ) -> Tuple[
-        Dict[str, jnp.ndarray],
-        jnp.ndarray,
-        jnp.ndarray,
-        jnp.ndarray,
-        Dict[str, Any],
-    ]:
+        actions: Any,
+    ) -> tuple[dict[str, Any], Any, Any, Any, dict[str, list[Any]]]:
         """Take one step in every environment.
 
         Parameters
@@ -235,10 +236,7 @@ class ForgeJaxEnv:
         """
         # Convert JAX actions to a plain Python/Numpy iterable so we can
         # index individual scalars for the native API.
-        if HAS_JAX:
-            actions_np = np.asarray(actions)
-        else:
-            actions_np = actions
+        actions_np = np.asarray(actions) if HAS_JAX else actions
 
         obs_list = []
         rewards = []
@@ -260,7 +258,7 @@ class ForgeJaxEnv:
         batched_terminated = jnp.array(terminated_list, dtype=jnp.bool_)
         batched_truncated = jnp.array(truncated_list, dtype=jnp.bool_)
 
-        merged_info: Dict[str, list] = {}
+        merged_info: dict[str, list[Any]] = {}
         for info in info_list:
             for key, value in info.items():
                 merged_info.setdefault(key, []).append(value)
@@ -277,7 +275,7 @@ class ForgeJaxEnv:
     # vmap-friendly interface via io_callback
     # ------------------------------------------------------------------
 
-    def jax_reset(self) -> Dict[str, jnp.ndarray]:
+    def jax_reset(self) -> dict[str, Any]:
         """Reset environments via ``jax.experimental.io_callback``.
 
         This method is safe to call inside ``jax.jit``-traced code.  The
@@ -297,18 +295,18 @@ class ForgeJaxEnv:
             trial_obs,
         )
 
-        def _reset_callback() -> Dict[str, jnp.ndarray]:
+        def _reset_callback() -> dict[str, Any]:
             obs, _ = self.reset()
             return obs
 
-        return jax.experimental.io_callback(
+        return jax.experimental.io_callback(  # type: ignore[no-any-return]
             _reset_callback,
             result_shapes,
         )
 
     def jax_step(
-        self, actions: jnp.ndarray
-    ) -> Tuple[Dict[str, jnp.ndarray], jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        self, actions: Any,
+    ) -> tuple[dict[str, Any], Any, Any, Any]:
         """Step environments via ``jax.experimental.io_callback``.
 
         This method is safe to call inside ``jax.jit``-traced code.  The
@@ -347,15 +345,15 @@ class ForgeJaxEnv:
         result_shapes = (obs_shapes, reward_shape, terminated_shape, truncated_shape)
 
         def _step_callback(
-            acts: jnp.ndarray,
-        ) -> Tuple[Dict[str, jnp.ndarray], jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+            acts: Any,
+        ) -> tuple[dict[str, Any], Any, Any, Any]:
             obs, rewards, terminated, truncated, _ = self.step(acts)
             return obs, rewards, terminated, truncated
 
         # Reset environments to undo the probe step side effects.
         self.reset()
 
-        return jax.experimental.io_callback(
+        return jax.experimental.io_callback(  # type: ignore[no-any-return]
             _step_callback,
             result_shapes,
             actions,

@@ -6,7 +6,7 @@
 use forge_core::WorldState;
 use forge_types::Action;
 use rand::Rng;
-use tracing::trace;
+use tracing::{instrument, trace};
 
 /// Trait for agents that can select actions given a world state.
 pub trait Agent: Send {
@@ -170,6 +170,7 @@ impl<R: Rng + Send> Agent for HeuristicAgent<R> {
 }
 
 /// Runs an episode with the given agent(s), returning total per-agent rewards.
+#[instrument(skip_all)]
 pub fn run_episode(
     state: &mut WorldState,
     agents: &mut [Box<dyn Agent>],
@@ -347,6 +348,20 @@ mod tests {
         // Should have stopped at truncation
         assert!(state.truncated);
         assert_eq!(state.tick, 5);
+    }
+
+    #[test]
+    fn test_run_episode_max_steps_zero() {
+        let mut state = make_test_world();
+        let mut agents: Vec<Box<dyn Agent>> = vec![Box::new(NoopAgent)];
+        let initial_tick = state.tick;
+
+        let rewards = run_episode(&mut state, &mut agents, 0);
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0], 0.0);
+        // Tick should not have advanced
+        assert_eq!(state.tick, initial_tick);
     }
 
     #[test]

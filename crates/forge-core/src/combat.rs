@@ -8,7 +8,7 @@ use forge_types::entity::Agent;
 use forge_types::grid::{Direction, Grid, TerrainType};
 use forge_types::resource::ItemType;
 use forge_types::Action;
-use tracing::trace;
+use tracing::{instrument, trace};
 
 /// Processes combat damage from Use actions when using a weapon.
 ///
@@ -20,6 +20,7 @@ use tracing::trace;
 ///
 /// Adjacent tiles are checked in a fixed deterministic order to ensure
 /// reproducible behavior.
+#[instrument(skip_all)]
 pub fn process_combat(agents: &mut [Agent], grid: &Grid, actions: &[Action]) {
     // Collect attack intents first to avoid borrow issues
     let mut attacks: Vec<(usize, usize)> = Vec::new(); // (attacker_idx, target_idx)
@@ -116,6 +117,7 @@ pub fn process_combat(agents: &mut [Agent], grid: &Grid, actions: &[Action]) {
 /// Note: Lava is normally not walkable (is_walkable() returns false),
 /// but agents may end up on lava tiles through external placement,
 /// terrain changes, or being pushed. This system handles those cases.
+#[instrument(skip_all)]
 pub fn apply_environmental_damage(agents: &mut [Agent], grid: &Grid) {
     for agent in agents.iter_mut() {
         if !agent.alive {

@@ -219,4 +219,63 @@ mod tests {
         assert!(!tile.has_agent);
         assert_eq!(tile.object_type, 255);
     }
+
+    #[test]
+    fn test_step_result_construction() {
+        let obs = Observation {
+            grid_view: vec![TileObservation::default()],
+            view_width: 1,
+            view_height: 1,
+            inventory: InventoryObservation {
+                slots: vec![(255, 0)],
+            },
+            health: 1.0,
+            stamina: 0.8,
+            position: (5, 10),
+            messages: vec![],
+            day_phase: 1,
+            task_progress: vec![0.5],
+        };
+
+        let step = StepResult {
+            observations: vec![obs],
+            rewards: vec![1.0],
+            terminated: false,
+            truncated: false,
+            info: StepInfo::default(),
+        };
+
+        assert_eq!(step.observations.len(), 1);
+        assert_eq!(step.rewards.len(), 1);
+        assert!(!step.terminated);
+        assert!(!step.truncated);
+        assert_eq!(step.rewards[0], 1.0);
+        assert_eq!(step.observations[0].position, (5, 10));
+        assert_eq!(step.observations[0].health, 1.0);
+        assert_eq!(step.observations[0].stamina, 0.8);
+    }
+
+    #[test]
+    fn test_step_info_defaults() {
+        let info = StepInfo::default();
+        assert_eq!(info.tick, 0);
+        assert!(info.agents_alive.is_empty());
+        assert!(info.tasks_completed.is_empty());
+        assert_eq!(info.total_resources, 0);
+        assert_eq!(info.day_phase, 0);
+    }
+
+    #[test]
+    fn test_inventory_observation() {
+        let inv_obs = InventoryObservation {
+            slots: vec![(0, 5), (1, 3), (255, 0)],
+        };
+        assert_eq!(inv_obs.slots.len(), 3);
+        // First slot: item type 0 (Wood) with count 5.
+        assert_eq!(inv_obs.slots[0], (0, 5));
+        // Second slot: item type 1 (Stone) with count 3.
+        assert_eq!(inv_obs.slots[1], (1, 3));
+        // Third slot: empty (sentinel 255, count 0).
+        assert_eq!(inv_obs.slots[2], (255, 0));
+    }
 }

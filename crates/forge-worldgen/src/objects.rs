@@ -9,6 +9,7 @@ use forge_types::entity::{Object, ObjectState, ObjectType};
 use forge_types::grid::{Grid, Position, TerrainType};
 use rand::Rng;
 use rand_pcg::Pcg64Mcg;
+use tracing::instrument;
 
 /// Fixed-point 1.0 representation (16 fractional bits).
 const FP_ONE: i32 = 65536;
@@ -80,6 +81,7 @@ impl ObjectPlacer {
     /// Returns a vector of [`Object`]s.  The number of placed objects is
     /// capped at `config.max_entities / 2` so that there is room for agents
     /// and other dynamic entities.
+    #[instrument(skip_all)]
     pub fn place_objects(grid: &Grid, config: &WorldConfig, rng: &mut Pcg64Mcg) -> Vec<Object> {
         // Reserve at most half the entity budget for objects.
         let max_objects = (config.max_entities / 2) as usize;

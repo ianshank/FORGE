@@ -5,6 +5,7 @@
 
 use forge_types::config::CurriculumConfig;
 use rand::Rng;
+use tracing::instrument;
 
 /// Number of difficulty tiers.
 const NUM_TIERS: usize = 6;
@@ -22,6 +23,7 @@ pub struct CurriculumController {
 
 impl CurriculumController {
     /// Creates a new curriculum controller with uniform initial distribution.
+    #[instrument(skip_all)]
     pub fn new(config: CurriculumConfig) -> Self {
         let uniform = 1.0 / NUM_TIERS as f32;
         Self {
@@ -62,6 +64,7 @@ impl CurriculumController {
     /// Samples a tier (1-6) from the current weight distribution.
     ///
     /// The returned tier is clamped to `[1, max_tier]`.
+    #[instrument(skip_all)]
     pub fn sample_tier<R: Rng>(&self, rng: &mut R, max_tier: u8) -> u8 {
         let max_tier = max_tier.clamp(1, NUM_TIERS as u8);
         let effective_weights: Vec<f32> = self.tier_weights[..max_tier as usize].to_vec();
@@ -97,6 +100,7 @@ impl CurriculumController {
     ///
     /// If the success rate is above target: shift weight toward harder tiers.
     /// If the success rate is below target: shift weight toward easier tiers.
+    #[instrument(skip_all)]
     fn adjust_difficulty(&mut self) {
         let rate = self.success_rate();
         let target = self.config.target_success_rate;
@@ -360,6 +364,66 @@ mod tests {
             let tier = ctrl.sample_tier(&mut rng, 3);
             assert!((1..=3).contains(&tier), "tier {} exceeds max_tier=3", tier);
         }
+    }
+
+    #[test]
+    fn test_curriculum_extreme_adjustment_rate() {
+        // Test with adjustment_rate = 0.0 (no adjustment should happen)
+        let config_zero = CurriculumConfig {
+            warmup_episodes: 0,
+            window_size: 10,
+            adjustment_rate: 0.0,
+            target_success_rate: 0.5,
+            enabled: true,
+        };
+        let mut ctrl_zero = CurriculumController::new(config_zero);
+        let initial_weights = *ctrl_zero.tier_weights();
+
+        for _ in 0..20 {
+            ctrl_zero.record_outcome(true);
+        }
+        // With rate 0.0, weights should not change
+        for (i, (&initial, &final_w)) in initial_weights
+            .iter()
+            .zip(ctrl_zero.tier_weights().iter())
+            .enumerate()
+        {
+            assert!(
+                (initial - final_w).abs() < 1e-6,
+                "tier {} weight changed with rate 0.0: {} -> {}",
+                i + 1,
+                initial,
+                final_w
+            );
+        }
+
+        // Test with adjustment_rate = 1.0 (aggressive adjustment)
+        let config_one = CurriculumConfig {
+            warmup_episodes: 0,
+            window_size: 10,
+            adjustment_rate: 1.0,
+            target_success_rate: 0.5,
+            enabled: true,
+        };
+        let mut ctrl_one = CurriculumController::new(config_one);
+
+        for _ in 0..20 {
+            ctrl_one.record_outcome(true);
+        }
+        // With rate 1.0, weights should still sum to 1.0 and be valid
+        let sum: f32 = ctrl_one.tier_weights().iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-4,
+            "weights should sum to 1.0, got {}",
+            sum
+        );
+        // Higher tiers should have gained weight
+        let higher_weight: f32 = ctrl_one.tier_weights()[3..6].iter().sum();
+        assert!(
+            higher_weight > 0.5,
+            "higher tiers should dominate with rate 1.0 and all successes, got {}",
+            higher_weight
+        );
     }
 
     #[test]

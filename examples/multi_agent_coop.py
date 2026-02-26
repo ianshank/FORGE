@@ -52,7 +52,7 @@ def run_cooperative_scenario(num_steps=100, num_agents=2):
     print(f"Environment created with {len(agent_ids)} agents: {agent_ids}")
     print(f"Running for {num_steps} steps...\n")
 
-    total_rewards = {agent_id: 0.0 for agent_id in agent_ids}
+    total_rewards = dict.fromkeys(agent_ids, 0.0)
 
     for step in range(1, num_steps + 1):
         # Sample random actions for each agent

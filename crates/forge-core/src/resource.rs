@@ -7,7 +7,7 @@ use forge_types::entity::Agent;
 use forge_types::grid::Grid;
 use forge_types::resource::ResourceNode;
 use forge_types::Action;
-use tracing::trace;
+use tracing::{instrument, trace};
 
 /// Processes resource harvesting for PickUp actions at resource nodes.
 ///
@@ -19,6 +19,7 @@ use tracing::trace;
 /// - Adds the harvested item to the agent's inventory
 ///
 /// All processing is deterministic and uses agent-order priority.
+#[instrument(skip_all)]
 pub fn process_harvesting(
     agents: &mut [Agent],
     grid: &Grid,
@@ -130,6 +131,7 @@ pub fn process_harvesting(
 ///   decrement the timer
 /// - When the timer reaches 0, add 1 unit of quantity (up to max_quantity)
 ///   and reset the timer to the respawn_rate
+#[instrument(skip_all)]
 pub fn tick_respawn(resources: &mut [ResourceNode]) {
     for resource in resources.iter_mut() {
         // Only process resources that are below max capacity

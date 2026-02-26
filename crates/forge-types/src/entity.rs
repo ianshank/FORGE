@@ -221,6 +221,7 @@ pub struct Object {
 
 /// Types of interactive objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum ObjectType {
     Boulder = 0,
@@ -235,6 +236,7 @@ pub enum ObjectType {
 
 /// State of an object.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ObjectState {
     /// Default active state.
     #[default]
@@ -324,5 +326,62 @@ mod tests {
         assert_eq!(caps.speed_multiplier, 65536);
         assert!(caps.can_communicate);
         assert!(caps.can_trade);
+    }
+
+    #[test]
+    fn test_inventory_capacity() {
+        let inv = Inventory::new(5);
+        assert_eq!(inv.capacity(), 5);
+
+        let inv_zero = Inventory::new(0);
+        assert_eq!(inv_zero.capacity(), 0);
+
+        let inv_large = Inventory::new(100);
+        assert_eq!(inv_large.capacity(), 100);
+    }
+
+    #[test]
+    fn test_inventory_occupied_slots() {
+        let mut inv = Inventory::new(5);
+        assert_eq!(inv.occupied_slots(), 0);
+
+        inv.add_item(ItemType::Wood, 1);
+        assert_eq!(inv.occupied_slots(), 1);
+
+        inv.add_item(ItemType::Stone, 2);
+        assert_eq!(inv.occupied_slots(), 2);
+
+        inv.add_item(ItemType::Ore, 3);
+        assert_eq!(inv.occupied_slots(), 3);
+    }
+
+    #[test]
+    fn test_inventory_get_slot() {
+        let mut inv = Inventory::new(3);
+        inv.add_item(ItemType::Wood, 5);
+
+        // Valid index with an item returns Some.
+        let slot0 = inv.get_slot(0);
+        assert!(slot0.is_some());
+        let stack = slot0.unwrap();
+        assert_eq!(stack.item_type, ItemType::Wood);
+        assert_eq!(stack.count, 5);
+
+        // Valid index but empty slot returns None.
+        assert!(inv.get_slot(1).is_none());
+
+        // Invalid index (out of bounds) returns None.
+        assert!(inv.get_slot(10).is_none());
+    }
+
+    #[test]
+    fn test_inventory_empty() {
+        let mut inv = Inventory::new(0);
+        assert_eq!(inv.capacity(), 0);
+        assert!(inv.is_full());
+        // Adding an item to a zero-capacity inventory should fail gracefully.
+        assert!(!inv.add_item(ItemType::Wood, 1));
+        assert_eq!(inv.occupied_slots(), 0);
+        assert_eq!(inv.count_item(ItemType::Wood), 0);
     }
 }

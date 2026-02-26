@@ -4,19 +4,19 @@ Wraps the native Rust ForgeEnv to provide PettingZoo's Parallel API for
 simultaneous multi-agent interactions.
 """
 
-from typing import Any, Optional
+from __future__ import annotations
+
+import logging
+from typing import Any, ClassVar
+
+logger = logging.getLogger(__name__)
 
 try:
-    import numpy as np
-
-    HAS_NUMPY = True
-except ImportError:
-    HAS_NUMPY = False
-
-try:
-    from forge_env import ForgeEnv as _NativeEnv
+    from forge_env.forge_env import ForgeEnv as _NativeEnv
 except ImportError:
     _NativeEnv = None
+
+__all__ = ["ForgeParallelEnv"]
 
 
 class ForgeParallelEnv:
@@ -32,14 +32,14 @@ class ForgeParallelEnv:
         render_mode: Optional render mode ('ascii' or None).
     """
 
-    metadata = {"render_modes": ["ascii"], "name": "forge_v0"}
+    metadata: ClassVar[dict[str, Any]] = {"render_modes": ["ascii"], "name": "forge_v0"}
 
     def __init__(
         self,
         n_agents: int = 2,
-        config: Optional[dict] = None,
-        render_mode: Optional[str] = None,
-    ):
+        config: dict[str, Any] | None = None,
+        render_mode: str | None = None,
+    ) -> None:
         if _NativeEnv is None:
             raise ImportError(
                 "forge_env native module not found. "
@@ -67,10 +67,10 @@ class ForgeParallelEnv:
 
     def reset(
         self,
-        seed: Optional[int] = None,
-        options: Optional[dict] = None,
-    ) -> tuple[dict, dict]:
-        """Resets the environment.
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Reset the environment.
 
         Returns:
             (observations, infos) dicts keyed by agent name.
@@ -78,9 +78,9 @@ class ForgeParallelEnv:
         obs, info = self._env.reset(seed=seed, options=options)
 
         # If the native env returns per-agent data, distribute it
-        observations = {}
-        infos = {}
-        for i, agent_name in enumerate(self.agents):
+        observations: dict[str, Any] = {}
+        infos: dict[str, Any] = {}
+        for _i, agent_name in enumerate(self.agents):
             observations[agent_name] = obs  # TODO: per-agent obs from native
             infos[agent_name] = info
 
@@ -88,9 +88,9 @@ class ForgeParallelEnv:
         return observations, infos
 
     def step(
-        self, actions: dict
-    ) -> tuple[dict, dict, dict, dict, dict]:
-        """Steps the environment with simultaneous actions from all agents.
+        self, actions: dict[str, int],
+    ) -> tuple[dict[str, Any], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]]:
+        """Step the environment with simultaneous actions from all agents.
 
         Args:
             actions: Dict mapping agent names to discrete action integers.
@@ -99,19 +99,17 @@ class ForgeParallelEnv:
             (observations, rewards, terminations, truncations, infos) dicts.
         """
         # Convert dict of actions to list ordered by agent index
-        action_list = []
-        for i, agent_name in enumerate(self.possible_agents):
-            action_list.append(actions.get(agent_name, 0))
+        action_list = [actions.get(agent_name, 0) for agent_name in self.possible_agents]
 
-        # Step with first agent's action (simplified — full multi-agent
+        # Step with first agent's action (simplified -- full multi-agent
         # requires native multi-action step support)
         obs, reward, terminated, truncated, info = self._env.step(action_list[0])
 
-        observations = {}
-        rewards = {}
-        terminations = {}
-        truncations = {}
-        infos = {}
+        observations: dict[str, Any] = {}
+        rewards: dict[str, float] = {}
+        terminations: dict[str, bool] = {}
+        truncations: dict[str, bool] = {}
+        infos: dict[str, Any] = {}
 
         for agent_name in self.agents:
             observations[agent_name] = obs
@@ -129,20 +127,20 @@ class ForgeParallelEnv:
 
         return observations, rewards, terminations, truncations, infos
 
-    def observation_space(self, agent: str) -> dict:
-        """Returns observation space for the given agent."""
-        return self._obs_space
+    def observation_space(self, agent: str) -> dict[str, Any]:
+        """Return observation space for the given agent."""
+        return self._obs_space  # type: ignore[no-any-return]
 
-    def action_space(self, agent: str) -> dict:
-        """Returns action space for the given agent."""
-        return self._act_space
+    def action_space(self, agent: str) -> dict[str, Any]:
+        """Return action space for the given agent."""
+        return self._act_space  # type: ignore[no-any-return]
 
-    def render(self) -> Optional[str]:
-        """Renders the environment."""
+    def render(self) -> str | None:
+        """Render the environment."""
         if self.render_mode == "ascii":
-            return self._env.render()
+            return self._env.render()  # type: ignore[no-any-return]
         return None
 
-    def close(self):
-        """Closes the environment."""
+    def close(self) -> None:
+        """Close the environment."""
         self._env.close()

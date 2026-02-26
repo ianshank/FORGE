@@ -8,7 +8,7 @@ use forge_types::config::PhysicsConfig;
 use forge_types::entity::Agent;
 use forge_types::grid::{Grid, Position};
 use forge_types::Action;
-use tracing::{trace, warn};
+use tracing::{instrument, trace, warn};
 
 /// Result of processing a single agent's movement action.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,6 +30,7 @@ pub enum MoveResult {
 ///
 /// Movement is processed in agent order (agent 0 first). Ties in movement
 /// to the same tile are resolved by agent priority (lower ID wins).
+#[instrument(skip_all)]
 pub fn process_movements(
     agents: &mut [Agent],
     grid: &mut Grid,
@@ -188,6 +189,7 @@ pub fn process_movements(
 }
 
 /// Regenerates stamina for all agents.
+#[instrument(skip_all)]
 pub fn regenerate_stamina(agents: &mut [Agent], config: &PhysicsConfig, max_stamina: i32) {
     for agent in agents.iter_mut() {
         if !agent.alive {
@@ -197,7 +199,8 @@ pub fn regenerate_stamina(agents: &mut [Agent], config: &PhysicsConfig, max_stam
     }
 }
 
-/// Processes push actions — agents pushing objects.
+/// Processes push actions -- agents pushing objects.
+#[instrument(skip_all)]
 pub fn process_pushes(
     agents: &[Agent],
     grid: &mut Grid,
@@ -512,5 +515,316 @@ mod tests {
 
         assert_eq!(results[0], MoveResult::Moved(Position::new(3, 2)));
         assert_eq!(results[1], MoveResult::Moved(Position::new(7, 8)));
+    }
+
+    // ---- process_pushes tests ----
+
+    fn make_test_object(id: u32, x: u16, y: u16) -> forge_types::Object {
+        forge_types::Object {
+            id,
+            position: Position::new(x, y),
+            object_type: forge_types::entity::ObjectType::Boulder,
+            mass: 65536,
+            durability: 655360,
+            state: forge_types::entity::ObjectState::Active,
+        }
+    }
+
+    #[test]
+    fn test_push_object_right() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 6, 5)];
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        let actions = vec![Action::Push(Direction::Right)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        assert_eq!(objects[0].position, Position::new(7, 5));
+        assert!(grid.get(6, 5).unwrap().object_id.is_none());
+        assert_eq!(grid.get(7, 5).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_object_up() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 5, 4)];
+        grid.get_mut(5, 4).unwrap().object_id = Some(0);
+
+        let actions = vec![Action::Push(Direction::Up)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        assert_eq!(objects[0].position, Position::new(5, 3));
+        assert!(grid.get(5, 4).unwrap().object_id.is_none());
+        assert_eq!(grid.get(5, 3).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_object_down() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 5, 6)];
+        grid.get_mut(5, 6).unwrap().object_id = Some(0);
+
+        let actions = vec![Action::Push(Direction::Down)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        assert_eq!(objects[0].position, Position::new(5, 7));
+        assert!(grid.get(5, 6).unwrap().object_id.is_none());
+        assert_eq!(grid.get(5, 7).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_object_left() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 4, 5)];
+        grid.get_mut(4, 5).unwrap().object_id = Some(0);
+
+        let actions = vec![Action::Push(Direction::Left)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        assert_eq!(objects[0].position, Position::new(3, 5));
+        assert!(grid.get(4, 5).unwrap().object_id.is_none());
+        assert_eq!(grid.get(3, 5).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_against_grid_boundary() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 0, 1)];
+        grid.get_mut(0, 1).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 0, 0)];
+        grid.get_mut(0, 0).unwrap().object_id = Some(0);
+
+        let actions = vec![Action::Push(Direction::Up)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        // Object should NOT have moved — destination is out of bounds
+        assert_eq!(objects[0].position, Position::new(0, 0));
+        assert_eq!(grid.get(0, 0).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_against_wall() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 6, 5)];
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        grid.get_mut(7, 5).unwrap().terrain = TerrainType::Wall;
+
+        let actions = vec![Action::Push(Direction::Right)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        // Object should NOT have moved (wall blocks)
+        assert_eq!(objects[0].position, Position::new(6, 5));
+        assert_eq!(grid.get(6, 5).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_against_water() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 6, 5)];
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        grid.get_mut(7, 5).unwrap().terrain = TerrainType::Water;
+
+        let actions = vec![Action::Push(Direction::Right)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        // Object should NOT have moved (water is impassable)
+        assert_eq!(objects[0].position, Position::new(6, 5));
+        assert_eq!(grid.get(6, 5).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_with_collision_disabled() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 6, 5)];
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        let mut config = default_physics();
+        config.collision_enabled = false;
+
+        let actions = vec![Action::Push(Direction::Right)];
+        process_pushes(&agents, &mut grid, &mut objects, &actions, &config);
+
+        // Should skip entirely when collision is disabled
+        assert_eq!(objects[0].position, Position::new(6, 5));
+        assert_eq!(grid.get(6, 5).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_no_object_at_position() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects: Vec<forge_types::Object> = Vec::new();
+
+        let actions = vec![Action::Push(Direction::Right)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        // Nothing to push, no crash
+        assert!(objects.is_empty());
+    }
+
+    #[test]
+    fn test_push_dead_agent_skipped() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = vec![make_test_agent(0, 5, 5)];
+        agents[0].alive = false;
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 6, 5)];
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        let actions = vec![Action::Push(Direction::Right)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        // Dead agent's push should be skipped
+        assert_eq!(objects[0].position, Position::new(6, 5));
+        assert_eq!(grid.get(6, 5).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_blocked_by_another_object() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let mut objects = vec![make_test_object(0, 6, 5), make_test_object(1, 7, 5)];
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+        grid.get_mut(7, 5).unwrap().object_id = Some(1);
+
+        let actions = vec![Action::Push(Direction::Right)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        // Push should fail — destination has another object
+        assert_eq!(objects[0].position, Position::new(6, 5));
+    }
+
+    #[test]
+    fn test_push_blocked_by_agent_on_destination() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 5, 5), make_test_agent(1, 7, 5)];
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+        grid.get_mut(7, 5).unwrap().agent_id = Some(1);
+
+        let mut objects = vec![make_test_object(0, 6, 5)];
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        let actions = vec![Action::Push(Direction::Right), Action::Noop];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        // Push should fail — destination tile has an agent
+        assert_eq!(objects[0].position, Position::new(6, 5));
+        assert_eq!(grid.get(6, 5).unwrap().object_id, Some(0));
+    }
+
+    #[test]
+    fn test_push_agent_at_boundary_no_adjacent_tile() {
+        let mut grid = make_test_grid(16, 16);
+        let agents = vec![make_test_agent(0, 15, 5)];
+        grid.get_mut(15, 5).unwrap().agent_id = Some(0);
+
+        let mut objects: Vec<forge_types::Object> = Vec::new();
+
+        let actions = vec![Action::Push(Direction::Right)];
+        process_pushes(
+            &agents,
+            &mut grid,
+            &mut objects,
+            &actions,
+            &default_physics(),
+        );
+
+        // No crash, push_from is out of bounds so nothing happens
+        assert!(objects.is_empty());
     }
 }

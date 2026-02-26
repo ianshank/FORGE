@@ -71,3 +71,41 @@ pub const DEFAULT_LAVA_DAMAGE: i32 = 65536; // 1.0
 
 // Direction count
 pub const NUM_DIRECTIONS: usize = 4;
+
+// Fixed-point arithmetic
+/// Number of fractional bits in fixed-point representation (16 bits).
+pub const FIXED_POINT_SHIFT: u32 = 16;
+/// 1.0 in fixed-point representation.
+pub const FIXED_POINT_ONE: i32 = 1 << FIXED_POINT_SHIFT; // 65536
+
+// Observation encoding sentinels
+/// Sentinel value for "no object" in observation encoding.
+pub const OBS_NO_OBJECT: u8 = 255;
+/// Sentinel value for "no resource" in observation encoding.
+pub const OBS_NO_RESOURCE: u8 = 255;
+/// Sentinel value for empty inventory slot item type.
+pub const OBS_EMPTY_SLOT_ITEM: u8 = 255;
+
+// Day/night phases
+/// Dawn phase index.
+pub const DAY_PHASE_DAWN: u8 = 0;
+/// Day phase index.
+pub const DAY_PHASE_DAY: u8 = 1;
+/// Dusk phase index.
+pub const DAY_PHASE_DUSK: u8 = 2;
+/// Night phase index.
+pub const DAY_PHASE_NIGHT: u8 = 3;
+/// Number of day/night phases.
+pub const NUM_DAY_PHASES: u8 = 4;
+
+// Vision modifiers per day phase
+/// Vision multiplier during day.
+pub const VISION_MODIFIER_DAY: f32 = 1.0;
+/// Vision multiplier during dawn/dusk.
+pub const VISION_MODIFIER_TWILIGHT: f32 = 0.75;
+/// Vision multiplier during night.
+pub const VISION_MODIFIER_NIGHT: f32 = 0.5;
+
+// Observation feature count per tile
+/// Number of features per tile in grid observation encoding.
+pub const OBS_FEATURES_PER_TILE: usize = 7;

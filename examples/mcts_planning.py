@@ -114,7 +114,7 @@ def run_planned_agent(env, num_steps, n_simulations, depth):
     Returns:
         A list of per-step rewards collected by the planned agent.
     """
-    obs, info = env.reset()
+    _obs, _info = env.reset()
     rewards = []
 
     for step in range(1, num_steps + 1):
@@ -122,8 +122,8 @@ def run_planned_agent(env, num_steps, n_simulations, depth):
 
         # After planning, reset and replay to maintain consistent state
         # (This is the simplified-demo workaround for lacking env cloning.)
-        obs, info = env.reset()
-        obs, reward, terminated, truncated, info = env.step(action)
+        _obs, _info = env.reset()
+        _obs, reward, terminated, truncated, _info = env.step(action)
         rewards.append(reward)
 
         if step % 50 == 0:
@@ -131,7 +131,7 @@ def run_planned_agent(env, num_steps, n_simulations, depth):
             print(f"  [Planned] Step {step}: last-50 mean reward = {mean_r:.4f}")
 
         if terminated or truncated:
-            obs, info = env.reset()
+            _obs, _info = env.reset()
 
     return rewards
 
@@ -146,12 +146,12 @@ def run_random_agent(env, num_steps):
     Returns:
         A list of per-step rewards collected by the random agent.
     """
-    obs, info = env.reset()
+    _obs, _info = env.reset()
     rewards = []
 
     for step in range(1, num_steps + 1):
         action = env.action_space.sample()
-        obs, reward, terminated, truncated, info = env.step(action)
+        _obs, reward, terminated, truncated, _info = env.step(action)
         rewards.append(reward)
 
         if step % 50 == 0:
@@ -159,7 +159,7 @@ def run_random_agent(env, num_steps):
             print(f"  [Random]  Step {step}: last-50 mean reward = {mean_r:.4f}")
 
         if terminated or truncated:
-            obs, info = env.reset()
+            _obs, _info = env.reset()
 
     return rewards
 
@@ -221,13 +221,13 @@ def main(n_simulations=50, depth=10, num_steps=200):
     print("\n" + "=" * 60)
     print("Results")
     print("=" * 60)
-    print(f"  Planned agent:")
+    print("  Planned agent:")
     print(f"    Total reward : {np.sum(planned_rewards):.3f}")
     print(f"    Mean reward  : {np.mean(planned_rewards):.4f}")
     print(f"    Std reward   : {np.std(planned_rewards):.4f}")
     print(f"    Wall time    : {planned_time:.2f}s")
     print()
-    print(f"  Random baseline:")
+    print("  Random baseline:")
     print(f"    Total reward : {np.sum(random_rewards):.3f}")
     print(f"    Mean reward  : {np.mean(random_rewards):.4f}")
     print(f"    Std reward   : {np.std(random_rewards):.4f}")
