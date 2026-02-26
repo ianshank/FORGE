@@ -39,3 +39,17 @@ target/criterion/
 
 # WASM build artifacts
 pkg/
+
+# Pytest / demo-ui
+.pytest_cache/
+**/.pytest_cache/
+demo_ui/backend/__pycache__/
+demo_ui/tests/__pycache__/
+demo_ui/frontend/__pycache__/
+demo_ui/**/__pycache__/
+htmlcov/
+.coverage
+coverage.xml
+
+# Claude agent configuration (not for repo)
+.claude/

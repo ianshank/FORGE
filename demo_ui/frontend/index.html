@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FORGE Demo — Fast Open-source Runtime for Generalist Envs</title>
+  <meta name="description"
+    content="Interactive live demo of FORGE: a high-performance simulation engine for multi-agent reinforcement learning." />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+
+<body>
+  <div id="app">
+
+    <!-- ───────────────── HEADER ───────────────── -->
+    <header id="header">
+      <div class="traffic-lights" style="margin-right:4px">
+        <div class="tl tl-red"></div>
+        <div class="tl tl-yellow"></div>
+        <div class="tl tl-green"></div>
+      </div>
+      <div>
+        <div class="logo-glow">FORGE</div>
+        <div class="logo-tagline">Fast Open-source Runtime for Generalist Envs</div>
+      </div>
+      <div class="header-divider"></div>
+      <div class="header-meta">
+        <div class="meta-chip">
+          Platform <span class="val" id="chip-platform">—</span>
+        </div>
+        <div class="meta-chip">
+          Last Run <span class="val" id="chip-date">—</span>
+        </div>
+        <div class="meta-chip">
+          Baseline <span class="val" id="chip-result">—</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div style="font-size:11px;color:var(--text-dim)">
+          🔗 <a href="https://github.com/iansherer/forge" target="_blank"
+            style="color:var(--cyan-dim);text-decoration:none;">GitHub</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- ───────────────── SIDEBAR ───────────────── -->
+    <nav id="sidebar">
+      <div class="sidebar-title">Demo Sections</div>
+      <div id="section-list">
+        <!-- Populated by JS -->
+      </div>
+    </nav>
+
+    <!-- ───────────────── TERMINAL ───────────────── -->
+    <main id="terminal-panel">
+      <div class="panel-header">
+        <div class="panel-title">Live Output</div>
+        <div style="margin-left:8px;font-size:11px;color:var(--text-dim)" id="current-section-label"></div>
+        <button class="btn btn-secondary" id="btn-clear" style="margin-left:auto;padding:4px 10px;font-size:11px;"
+          onclick="clearTerminal()">Clear</button>
+      </div>
+      <div class="terminal-card">
+        <div id="terminal-output">
+          <span class="c-muted">Waiting for FORGE… Click a section or Run All to start.</span><span
+            class="cursor-blink"></span>
+        </div>
+        <div class="terminal-prompt">
+          <span class="prompt-sym">forge$</span>
+          <span id="prompt-text" style="color:var(--text-dim)">ready</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- ───────────────── STATS PANEL ───────────────── -->
+    <aside id="stats-panel">
+
+      <!-- Live metrics -->
+      <div class="stat-card">
+        <div class="stat-label">Seed</div>
+        <div class="stat-value" id="stat-seed">42</div>
+        <div class="stat-sub">deterministic run</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">Steps / Second</div>
+        <div class="stat-value" id="stat-fps">—</div>
+        <div class="stat-sub" id="stat-fps-sub">from baseline results</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">us / Step</div>
+        <div class="stat-value" id="stat-us">—</div>
+        <div class="stat-sub">Python + PyO3 overhead</div>
+      </div>
+
+      <!-- World canvas -->
+      <div id="world-canvas-wrap">
+        <div class="stat-label">World View</div>
+        <canvas id="world-canvas" width="220" height="220"></canvas>
+      </div>
+
+      <!-- Progress -->
+      <div class="stat-card">
+        <div class="stat-label">Run Progress</div>
+        <div id="progress-label" style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Idle</div>
+        <div class="progress-wrap">
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+      </div>
+
+      <!-- Mini section list -->
+      <div class="stat-card">
+        <div class="stat-label">Section Results</div>
+        <div id="mini-section-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ───────────────── FOOTER / CONTROLS ───────────────── -->
+    <footer id="footer">
+      <div class="control-group">
+        <span class="control-label">Seed</span>
+        <input id="seed-input" class="input-sm" type="number" value="42" min="0" max="99999" />
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Quick</span>
+        <div class="toggle-wrap" onclick="toggleQuick()">
+          <div class="toggle-track on" id="quick-toggle">
+            <div class="toggle-thumb"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:1px;height:28px;background:var(--border)"></div>
+
+      <button class="btn btn-primary" id="btn-run-all" onclick="runAll()">
+        ▶ Run All
+      </button>
+      <button class="btn btn-secondary" id="btn-stop" onclick="stopRun()" disabled>
+        ⏹ Stop
+      </button>
+
+      <div class="footer-timer">
+        Elapsed: <span id="footer-elapsed">0.0s</span>
+      </div>
+    </footer>
+
+  </div>
+
+  <script src="/static/app.js?v=3"></script>
+</body>
+
+</html>

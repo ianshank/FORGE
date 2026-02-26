@@ -100,9 +100,7 @@ def run_cooperative_scenario(num_steps=100, num_agents=2):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run a multi-agent cooperative scenario in FORGE."
-    )
+    parser = argparse.ArgumentParser(description="Run a multi-agent cooperative scenario in FORGE.")
     parser.add_argument(
         "--steps",
         type=int,

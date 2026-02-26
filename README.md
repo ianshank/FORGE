@@ -86,6 +86,29 @@ python examples/forge_demo.py --quick      # CI mode (no delays)
 python examples/forge_demo.py --section crafting  # Single section
 ```
 
+### Interactive Demo UI (Web)
+
+Launch a premium dark-mode web UI that streams live FORGE output in a browser:
+
+```powershell
+# Windows (one-click launcher — installs deps, starts server, opens browser)
+.\demo_ui\run_demo.ps1
+
+# Or manually:
+python -m pip install -r demo_ui/backend/requirements.txt
+python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765
+# Then open http://127.0.0.1:8765
+```
+
+**Features:**
+
+- 📟 **Live terminal** — streams `forge_demo.py` output in real-time via Server-Sent Events
+- 🌍 **World canvas** — ASCII grid rendered as colored tiles (terrain types, agents, resources)
+- 📊 **Stats panel** — live steps/sec, μs/step, seed, run progress (0/8 → 8/8)
+- 🎛️ **Section nav** — run any of the 8 demo sections individually or all at once
+- 🟢 **PASS/FAIL badges** — each section badge updates live as output streams in
+- ⚡ **Quick mode toggle** — full or fast (CI-style) execution
+
 ## Architecture
 
 FORGE is organized as a multi-crate Rust workspace with Python and WASM frontends:

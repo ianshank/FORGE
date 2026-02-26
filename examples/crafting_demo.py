@@ -199,7 +199,7 @@ def run_crafting_demo(steps, seed, world_size):  # noqa: PLR0912, PLR0915
 
     total_reward = 0.0
     items_collected = {}  # cumulative items gained
-    items_crafted = {}    # cumulative crafted items gained
+    items_crafted = {}  # cumulative crafted items gained
     craft_attempts = 0
     craft_successes = 0
     pickup_attempts = 0
@@ -245,8 +245,7 @@ def run_crafting_demo(steps, seed, world_size):  # noqa: PLR0912, PLR0915
                     items_crafted[item_id] = items_crafted.get(item_id, 0) + count
                     lost_str = format_inventory(lost)
                     print(
-                        f"  [Step {step_idx:>4d}] CRAFTED: {name} x{count} "
-                        f"(consumed: {lost_str})"
+                        f"  [Step {step_idx:>4d}] CRAFTED: {name} x{count} (consumed: {lost_str})"
                     )
             elif gained and not lost:
                 for item_id, count in gained.items():

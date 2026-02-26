@@ -52,10 +52,24 @@ ACTION_CRAFT_BASE = 26
 MOVE_ACTIONS = [ACTION_MOVE_UP, ACTION_MOVE_DOWN, ACTION_MOVE_LEFT, ACTION_MOVE_RIGHT]
 
 ITEM_NAMES: dict[int, str] = {
-    0: "Wood", 1: "Stone", 2: "Ore", 3: "Fish", 4: "Fiber", 5: "Clay",
-    10: "Axe", 11: "Pickaxe", 12: "Sword", 13: "Shield", 14: "Plank",
-    15: "Bridge", 16: "Rope", 17: "Brick", 18: "Key", 19: "Torch",
-    30: "CookedFish", 31: "Bread",
+    0: "Wood",
+    1: "Stone",
+    2: "Ore",
+    3: "Fish",
+    4: "Fiber",
+    5: "Clay",
+    10: "Axe",
+    11: "Pickaxe",
+    12: "Sword",
+    13: "Shield",
+    14: "Plank",
+    15: "Bridge",
+    16: "Rope",
+    17: "Brick",
+    18: "Key",
+    19: "Torch",
+    30: "CookedFish",
+    31: "Bread",
 }
 
 DAY_PHASE_NAMES = {0: "Dawn", 1: "Day", 2: "Dusk", 3: "Night"}
@@ -67,17 +81,17 @@ TERRAIN_LEGEND = (
 
 RESET = "\033[0m"
 TERRAIN_COLORS: dict[str, str] = {
-    ".": "\033[37m",   # white
-    "~": "\033[34m",   # blue
-    "#": "\033[90m",   # dark gray
-    "T": "\033[32m",   # green
-    "M": "\033[33m",   # yellow
-    "S": "\033[93m",   # bright yellow
-    "I": "\033[96m",   # cyan
-    "L": "\033[91m",   # red
-    "A": "\033[1;91m", # bold red
-    "R": "\033[95m",   # magenta
-    "O": "\033[93m",   # bright yellow
+    ".": "\033[37m",  # white
+    "~": "\033[34m",  # blue
+    "#": "\033[90m",  # dark gray
+    "T": "\033[32m",  # green
+    "M": "\033[33m",  # yellow
+    "S": "\033[93m",  # bright yellow
+    "I": "\033[96m",  # cyan
+    "L": "\033[91m",  # red
+    "A": "\033[1;91m",  # bold red
+    "R": "\033[95m",  # magenta
+    "O": "\033[93m",  # bright yellow
 }
 
 # ---------------------------------------------------------------------------
@@ -264,10 +278,14 @@ def demo_navigation(seed: int) -> bool:
     print("Moving: Up, Up, Right, Right, Down, Down, Left, Left\n")
 
     actions = [
-        (ACTION_MOVE_UP, "Up"), (ACTION_MOVE_UP, "Up"),
-        (ACTION_MOVE_RIGHT, "Right"), (ACTION_MOVE_RIGHT, "Right"),
-        (ACTION_MOVE_DOWN, "Down"), (ACTION_MOVE_DOWN, "Down"),
-        (ACTION_MOVE_LEFT, "Left"), (ACTION_MOVE_LEFT, "Left"),
+        (ACTION_MOVE_UP, "Up"),
+        (ACTION_MOVE_UP, "Up"),
+        (ACTION_MOVE_RIGHT, "Right"),
+        (ACTION_MOVE_RIGHT, "Right"),
+        (ACTION_MOVE_DOWN, "Down"),
+        (ACTION_MOVE_DOWN, "Down"),
+        (ACTION_MOVE_LEFT, "Left"),
+        (ACTION_MOVE_LEFT, "Left"),
     ]
 
     for action_id, action_name in actions:
@@ -383,10 +401,14 @@ def demo_crafting(seed: int) -> bool:
         inv_after = extract_inventory(obs)
 
         if inv_after != inv_before:
-            gained = {k: v - inv_before.get(k, 0) for k, v in inv_after.items()
-                      if v > inv_before.get(k, 0)}
-            consumed = {k: v - inv_after.get(k, 0) for k, v in inv_before.items()
-                        if v > inv_after.get(k, 0)}
+            gained = {
+                k: v - inv_before.get(k, 0)
+                for k, v in inv_after.items()
+                if v > inv_before.get(k, 0)
+            }
+            consumed = {
+                k: v - inv_after.get(k, 0) for k, v in inv_before.items() if v > inv_after.get(k, 0)
+            }
             gained_str = format_inventory(gained)
             consumed_str = format_inventory(consumed)
             print(f"  Crafted {recipe_name}: consumed [{consumed_str}] -> gained [{gained_str}]")
@@ -438,7 +460,9 @@ def demo_multi_agent(seed: int) -> bool:
             for agent_id in agent_ids:
                 pos = infos.get(agent_id, {}).get("position", "?")
                 rew = rewards.get(agent_id, 0.0)
-                print(f"    {agent_id}: pos={pos}, reward={rew:+.3f}, total={total_rewards[agent_id]:+.3f}")
+                print(
+                    f"    {agent_id}: pos={pos}, reward={rew:+.3f}, total={total_rewards[agent_id]:+.3f}"
+                )
 
     print()
     # Render the grid (through the inner env if available)

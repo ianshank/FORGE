@@ -16,17 +16,19 @@ Shows FORGE and its external actors.
 │  Deterministic grid-world simulation for training AI agents.            │
 │  Procedural worlds, crafting, combat, multi-agent, task curriculum.     │
 │  130K+ steps/sec from Python, <8 μs/step.                              │
-└───────────────┬──────────────┬──────────────────┬───────────────────────┘
-                │              │                  │
-      ┌─────────▼──────┐  ┌───▼──────────┐  ┌────▼───────────────┐
-      │  RL Researcher  │  │ Web Browser  │  │  Rust Application  │
-      │                 │  │              │  │                    │
-      │ Trains agents   │  │ Runs FORGE   │  │ Embeds simulation  │
-      │ via Python API  │  │ via WASM in  │  │ engine directly    │
-      │ (Gymnasium,     │  │ browser with │  │ as a Rust library  │
-      │  PettingZoo,    │  │ JS/JSON API  │  │ dependency         │
-      │  JAX, SB3)      │  │              │  │                    │
-      └────────────────┘  └──────────────┘  └────────────────────┘
+└──────┬──────────────┬──────────────────┬──────────────┬────────────────┘
+       │              │                  │              │
+┌──────▼──────┐ ┌─────▼────────┐ ┌──────▼──────┐ ┌────▼────────────────┐
+│ RL          │ │  Demo User   │ │   Web       │ │  Rust Application   │
+│ Researcher  │ │              │ │   Browser   │ │                     │
+│             │ │ Watches live │ │             │ │ Embeds simulation   │
+│ Trains      │ │ FORGE demo   │ │ Runs FORGE  │ │ engine directly     │
+│ agents via  │ │ at           │ │ via WASM in │ │ as a Rust library   │
+│ Python API  │ │ localhost:   │ │ browser     │ │ dependency          │
+│ (Gymnasium, │ │ 8765 via the │ │ with JS/    │ │                     │
+│  PettingZoo,│ │ Demo UI      │ │ JSON API    │ │                     │
+│  JAX, SB3)  │ │              │ │             │ │                     │
+└─────────────┘ └──────────────┘ └─────────────┘ └─────────────────────┘
 ```
 
 ### External Actors
@@ -34,6 +36,7 @@ Shows FORGE and its external actors.
 | Actor | Interface | Description |
 |-------|-----------|-------------|
 | RL Researcher | Python (PyO3) | Trains agents using Gymnasium/PettingZoo/JAX APIs |
+| Demo User | HTTP (localhost:8765) | Interacts with the live demo via the web UI |
 | Web Browser | WASM (JSON) | Runs visualization or interactive demos |
 | Rust Application | Cargo crate | Embeds simulation as a library dependency |
 

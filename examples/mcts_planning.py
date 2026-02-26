@@ -203,9 +203,7 @@ def main(n_simulations=50, depth=10, num_steps=200):
     print("Running planned agent...")
     env_planned = ForgeGymnasiumEnv(config=config, seed=42)
     t0 = time.time()
-    planned_rewards = run_planned_agent(
-        env_planned, num_steps, n_simulations, depth
-    )
+    planned_rewards = run_planned_agent(env_planned, num_steps, n_simulations, depth)
     planned_time = time.time() - t0
     env_planned.close()
 
@@ -238,8 +236,7 @@ def main(n_simulations=50, depth=10, num_steps=200):
     print(f"  Planned vs Random improvement: {improvement:+.3f} total reward")
     if planned_time > 0:
         print(
-            f"  Planning overhead: {planned_time / max(random_time, 1e-9):.1f}x "
-            f"slower than random"
+            f"  Planning overhead: {planned_time / max(random_time, 1e-9):.1f}x slower than random"
         )
 
 
