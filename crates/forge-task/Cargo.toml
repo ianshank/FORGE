@@ -1,0 +1,17 @@
+[package]
+name = "forge-task"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Task DSL, procedural task generation, and curriculum system for FORGE"
+
+[dependencies]
+forge-types = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+rand_pcg = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

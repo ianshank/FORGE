@@ -1,0 +1,65 @@
+[workspace]
+members = [
+    "crates/forge-types",
+    "crates/forge-core",
+    "crates/forge-worldgen",
+    "crates/forge-task",
+    "crates/forge-agent",
+    "crates/forge-bench",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Ian Shank"]
+license = "Apache-2.0"
+repository = "https://github.com/ianshank/FORGE"
+description = "Fast Open-source Runtime for Generalist Environments"
+
+[workspace.dependencies]
+# Shared types crate
+forge-types = { path = "crates/forge-types" }
+forge-core = { path = "crates/forge-core" }
+forge-worldgen = { path = "crates/forge-worldgen" }
+forge-task = { path = "crates/forge-task" }
+forge-agent = { path = "crates/forge-agent" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+toml = "0.8"
+
+# Fixed-point arithmetic for deterministic physics
+fixed = "1"
+
+# Random number generation
+rand = "0.8"
+rand_pcg = "0.3"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Small collections
+smallvec = { version = "1", features = ["serde"] }
+
+# Testing
+proptest = "1"
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+
+[profile.bench]
+lto = true
+codegen-units = 1

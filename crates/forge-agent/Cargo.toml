@@ -1,0 +1,18 @@
+[package]
+name = "forge-agent"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Agent framework, MCTS planning, and baselines for FORGE"
+
+[dependencies]
+forge-types = { workspace = true }
+forge-core = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+rand_pcg = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
