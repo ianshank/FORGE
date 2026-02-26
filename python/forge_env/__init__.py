@@ -21,9 +21,9 @@ __version__ = "0.1.0"
 
 # Native Rust extension (built via maturin)
 try:
-    from forge_env.forge_env import ForgeEnv as _NativeEnv
+    from forge_env.forge_env import ForgeEnv
 except ImportError:
-    _NativeEnv = None
+    ForgeEnv = None  # type: ignore[assignment,misc]
     logger.debug("Native forge_env module not available; running in pure-Python mode.")
 
 # Convenience re-exports
@@ -32,6 +32,7 @@ from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: E402
 from forge_env.utils import benchmark_fps, check_env, make_env  # noqa: E402
 
 __all__ = [
+    "ForgeEnv",
     "ForgeGymnasiumEnv",
     "ForgeParallelEnv",
     "__version__",

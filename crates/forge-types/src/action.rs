@@ -46,10 +46,10 @@ impl Action {
     ///   5: PickUp
     ///   6-15: Drop(slot 0-9)
     ///   16-25: Use(slot 0-9)
-    ///   26: Craft(0) — recipe index encoded separately or via extended action
-    ///   27-30: Push (Up, Down, Left, Right)
-    ///   31: Interact
-    ///   32+: Communication tokens
+    ///   26-34: Craft(recipe 0-8)
+    ///   35-38: Push (Up, Down, Left, Right)
+    ///   39: Interact
+    ///   40+: Communication tokens
     pub fn from_discrete(action_id: u32, comm_vocab_size: u16) -> Option<Action> {
         match action_id {
             0 => Some(Action::Noop),
@@ -60,14 +60,14 @@ impl Action {
             5 => Some(Action::PickUp),
             6..=15 => Some(Action::Drop((action_id - 6) as u8)),
             16..=25 => Some(Action::Use((action_id - 16) as u8)),
-            26 => Some(Action::Craft(0)),
-            27 => Some(Action::Push(Direction::Up)),
-            28 => Some(Action::Push(Direction::Down)),
-            29 => Some(Action::Push(Direction::Left)),
-            30 => Some(Action::Push(Direction::Right)),
-            31 => Some(Action::Interact),
-            n if n >= 32 && (n - 32) < comm_vocab_size as u32 => {
-                Some(Action::Communicate((n - 32) as CommToken))
+            26..=34 => Some(Action::Craft((action_id - 26) as u16)),
+            35 => Some(Action::Push(Direction::Up)),
+            36 => Some(Action::Push(Direction::Down)),
+            37 => Some(Action::Push(Direction::Left)),
+            38 => Some(Action::Push(Direction::Right)),
+            39 => Some(Action::Interact),
+            n if n >= 40 && (n - 40) < comm_vocab_size as u32 => {
+                Some(Action::Communicate((n - 40) as CommToken))
             }
             _ => None,
         }
@@ -85,12 +85,12 @@ impl Action {
             Action::Drop(slot) => 6 + *slot as u32,
             Action::Use(slot) => 16 + *slot as u32,
             Action::Craft(recipe) => 26 + *recipe as u32,
-            Action::Push(Direction::Up) => 27,
-            Action::Push(Direction::Down) => 28,
-            Action::Push(Direction::Left) => 29,
-            Action::Push(Direction::Right) => 30,
-            Action::Interact => 31,
-            Action::Communicate(token) => 32 + *token as u32,
+            Action::Push(Direction::Up) => 35,
+            Action::Push(Direction::Down) => 36,
+            Action::Push(Direction::Left) => 37,
+            Action::Push(Direction::Right) => 38,
+            Action::Interact => 39,
+            Action::Communicate(token) => 40 + *token as u32,
             Action::Trade(_, _) => 0, // Trade uses extended action space
             Action::Throw(_, _) => 0, // Throw uses extended action space
         }
@@ -98,7 +98,7 @@ impl Action {
 
     /// Returns the total size of the discrete action space.
     pub fn space_size(comm_vocab_size: u16) -> u32 {
-        32 + comm_vocab_size as u32
+        40 + comm_vocab_size as u32
     }
 }
 
@@ -129,6 +129,9 @@ mod tests {
             Action::Drop(5),
             Action::Use(0),
             Action::Use(9),
+            Action::Craft(0),
+            Action::Craft(4),
+            Action::Craft(8),
             Action::Push(Direction::Up),
             Action::Push(Direction::Right),
             Action::Interact,
@@ -145,9 +148,9 @@ mod tests {
 
     #[test]
     fn test_action_space_size() {
-        assert_eq!(Action::space_size(0), 32);
-        assert_eq!(Action::space_size(16), 48);
-        assert_eq!(Action::space_size(256), 288);
+        assert_eq!(Action::space_size(0), 40);
+        assert_eq!(Action::space_size(16), 56);
+        assert_eq!(Action::space_size(256), 296);
     }
 
     #[test]

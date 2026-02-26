@@ -175,7 +175,9 @@ impl ActionSpace {
         for i in 0..10 {
             names.push(format!("Use Slot {}", i));
         }
-        names.push("Craft".to_string());
+        for i in 0..9 {
+            names.push(format!("Craft Recipe {}", i));
+        }
         names.push("Push Up".to_string());
         names.push("Push Down".to_string());
         names.push("Push Left".to_string());
@@ -206,8 +208,8 @@ mod tests {
     #[test]
     fn test_action_space_creation() {
         let space = ActionSpace::new(16);
-        assert_eq!(space.n, 48); // 32 base + 16 comm
-        assert_eq!(space.action_names.len(), 48);
+        assert_eq!(space.n, 56); // 40 base + 16 comm
+        assert_eq!(space.action_names.len(), 56);
         assert_eq!(space.action_names[0], "Noop");
         assert_eq!(space.action_names[1], "Move Up");
     }

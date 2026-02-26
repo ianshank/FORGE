@@ -8,6 +8,7 @@ description = "Core simulation engine for the FORGE platform"
 
 [dependencies]
 forge-types = { workspace = true }
+forge-worldgen = { workspace = true }
 serde = { workspace = true }
 bincode = { workspace = true }
 tracing = { workspace = true }

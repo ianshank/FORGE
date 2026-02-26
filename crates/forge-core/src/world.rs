@@ -15,6 +15,9 @@ use forge_types::observation::{
 use forge_types::resource::{RecipeBook, ResourceNode};
 use forge_types::task::ActiveTask;
 use forge_types::Action;
+use forge_worldgen::WorldGenerator;
+use rand::SeedableRng;
+use rand_pcg::Pcg64Mcg;
 use serde::Serialize;
 use tracing::{info, instrument, trace};
 
@@ -60,14 +63,22 @@ impl WorldState {
         let config = Arc::new(config);
         let mut rng = ForgeRng::new(config.world.seed);
 
-        let grid = Grid::new(config.world.width, config.world.height);
+        // Use WorldGenerator for terrain, resources, and objects
+        let generator = WorldGenerator::new(&config.world);
+        let mut gen_rng = Pcg64Mcg::seed_from_u64(config.world.seed);
+        let (grid, resources, objects, spawn_points) = generator.generate(&mut gen_rng);
 
-        // Spawn agents at deterministic positions
+        // Spawn agents at generated spawn points or deterministic fallback positions
         let mut agents = Vec::with_capacity(config.agents.num_agents as usize);
         for i in 0..config.agents.num_agents {
-            let x = rng.next_range(config.world.width as u32) as u16;
-            let y = rng.next_range(config.world.height as u32) as u16;
-            let agent = Agent::new(i, Position::new(x, y), &config.agents);
+            let pos = if (i as usize) < spawn_points.len() {
+                spawn_points[i as usize]
+            } else {
+                let x = rng.next_range(config.world.width as u32) as u16;
+                let y = rng.next_range(config.world.height as u32) as u16;
+                Position::new(x, y)
+            };
+            let agent = Agent::new(i, pos, &config.agents);
             agents.push(agent);
         }
 
@@ -75,8 +86,8 @@ impl WorldState {
             tick: 0,
             grid,
             agents,
-            objects: Vec::new(),
-            resources: Vec::new(),
+            objects,
+            resources,
             tasks: Vec::new(),
             recipe_book: RecipeBook::default(),
             day_phase: 0,
@@ -94,6 +105,8 @@ impl WorldState {
             width = state.config.world.width,
             height = state.config.world.height,
             num_agents = state.config.agents.num_agents,
+            resources = state.resources.len(),
+            objects = state.objects.len(),
             "world created"
         );
 

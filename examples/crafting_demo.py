@@ -9,8 +9,8 @@ FORGE discrete action encoding (relevant subset):
     1-4   : Move (Up, Down, Left, Right)
     5     : Pick Up (gather resource at current tile)
     16-25 : Use item from inventory slot 0-9
-    26    : Craft recipe index 0 (Axe: 2 Wood + 1 Stone)
-    31    : Interact
+    26-34 : Craft recipe index 0-8
+    39    : Interact
 
 Default recipes (from RecipeBook::default_recipes):
     0 - Axe      : 2 Wood + 1 Stone  -> 1 Axe       (level 1, no station)
@@ -75,7 +75,7 @@ ACTION_MOVE_LEFT = 3
 ACTION_MOVE_RIGHT = 4
 ACTION_PICKUP = 5
 ACTION_CRAFT_BASE = 26  # Craft recipe 0; recipe index is encoded as (26 + recipe_id)
-ACTION_INTERACT = 31
+ACTION_INTERACT = 39
 
 MOVE_ACTIONS = [ACTION_MOVE_UP, ACTION_MOVE_DOWN, ACTION_MOVE_LEFT, ACTION_MOVE_RIGHT]
 

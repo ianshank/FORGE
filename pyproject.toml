@@ -13,6 +13,7 @@ classifiers = [
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "forge_env"
+python-source = "python"
 
 [tool.ruff]
 target-version = "py39"

@@ -140,9 +140,9 @@ mod tests {
     #[test]
     fn test_action_space_size() {
         let model = DefaultForwardModel::new(16);
-        assert_eq!(model.action_space_size(), 48);
+        assert_eq!(model.action_space_size(), 56);
 
         let model = DefaultForwardModel::new(0);
-        assert_eq!(model.action_space_size(), 32);
+        assert_eq!(model.action_space_size(), 40);
     }
 }
