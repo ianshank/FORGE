@@ -1,0 +1,183 @@
+name: Release — Build & Publish to PyPI
+
+on:
+    push:
+        tags:
+            - "v[0-9]+.[0-9]+.[0-9]+"
+            - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+    contents: write # needed for GitHub Release creation
+
+env:
+    PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+    # ---------------------------------------------------------------------------
+    # Build binary wheels for all supported platforms
+    # ---------------------------------------------------------------------------
+    build-wheels:
+        name: Build wheels (${{ matrix.os }} / py${{ matrix.python-version }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, macos-latest, windows-latest]
+                python-version: ["3.9", "3.11", "3.12"]
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: ${{ matrix.python-version }}
+
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  key: release-${{ matrix.os }}-${{ matrix.python-version }}
+
+            # Build manylinux wheels inside a container (Linux only)
+            - name: Build wheel (Linux — manylinux2014)
+              if: runner.os == 'Linux'
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: build
+                  args: >
+                      --release
+                      -m crates/forge-python/Cargo.toml
+                      --out dist/
+                  manylinux: "2014"
+                  target: x86_64
+
+            - name: Build wheel (Linux aarch64 — manylinux2014)
+              if: runner.os == 'Linux'
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: build
+                  args: >
+                      --release
+                      -m crates/forge-python/Cargo.toml
+                      --out dist/
+                  manylinux: "2014"
+                  target: aarch64
+
+            - name: Build wheel (macOS / Windows)
+              if: runner.os != 'Linux'
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: build
+                  args: >
+                      --release
+                      -m crates/forge-python/Cargo.toml
+                      --out dist/
+
+            - name: Upload wheel artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+                  path: dist/*.whl
+                  retention-days: 7
+
+    # ---------------------------------------------------------------------------
+    # Smoke-test each built wheel on a clean venv
+    # ---------------------------------------------------------------------------
+    test-wheels:
+        name: Smoke-test wheel (${{ matrix.os }} / py${{ matrix.python-version }})
+        needs: build-wheels
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, macos-latest, windows-latest]
+                python-version: ["3.9", "3.11", "3.12"]
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: ${{ matrix.python-version }}
+
+            - name: Download built wheel
+              uses: actions/download-artifact@v4
+              with:
+                  name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+                  path: dist/
+
+            - name: Install wheel into fresh venv
+              run: |
+                  python -m pip install --upgrade pip
+                  python -m pip install dist/*.whl
+
+            - name: Smoke test
+              run: |
+                  python -c "
+                  import forge_env
+                  from forge_env import ForgeEnv
+                  env = ForgeEnv()
+                  obs, info = env.reset(seed=42)
+                  assert 'grid_view' in obs, 'grid_view missing from observation'
+                  obs2, reward, terminated, truncated, info2 = env.step(0)
+                  assert isinstance(reward, float), 'reward is not float'
+                  print(f'forge_env {getattr(forge_env, \"__version__\", \"unknown\")} — smoke test PASSED')
+                  "
+
+    # ---------------------------------------------------------------------------
+    # Publish wheels to PyPI (only on successful smoke tests)
+    # ---------------------------------------------------------------------------
+    publish:
+        name: Publish to PyPI
+        needs: test-wheels
+        runs-on: ubuntu-latest
+        environment:
+            name: pypi
+            url: https://pypi.org/project/forge-env/
+
+        steps:
+            - uses: actions/download-artifact@v4
+              with:
+                  pattern: wheels-*
+                  path: dist/
+                  merge-multiple: true
+
+            - name: List wheels to publish
+              run: ls -lh dist/
+
+            - name: Publish to PyPI via maturin
+              uses: PyO3/maturin-action@v1
+              env:
+                  MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+              with:
+                  command: upload
+                  args: --skip-existing dist/*
+
+    # ---------------------------------------------------------------------------
+    # Create GitHub Release with wheel assets attached
+    # ---------------------------------------------------------------------------
+    github-release:
+        name: Create GitHub Release
+        needs: publish
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/download-artifact@v4
+              with:
+                  pattern: wheels-*
+                  path: dist/
+                  merge-multiple: true
+
+            - name: Extract version from tag
+              id: version
+              run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  name: "forge-env v${{ steps.version.outputs.version }}"
+                  generate_release_notes: true
+                  files: dist/*.whl

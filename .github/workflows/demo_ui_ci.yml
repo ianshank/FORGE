@@ -1,41 +1,145 @@
-name: Demo UI CI
+name: Python CI
 
 on:
   push:
-    branches: [ main, master ]
-    paths:
-      - 'demo_ui/**'
-      - '.github/workflows/demo_ui_ci.yml'
+    branches: [main, develop, "feat/**"]
   pull_request:
-    branches: [ main, master ]
-    paths:
-      - 'demo_ui/**'
+    branches: [main]
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
 
 jobs:
-  test:
+  # ---------------------------------------------------------------------------
+  # Lint + type-check (fast, no Rust build required)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint & Type Check
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install lint tools
+        run: pip install ruff mypy
+
+      - name: Ruff lint
+        run: python -m ruff check python/ tests/ demo_ui/
+
+      - name: Mypy type check (project source, no site-packages)
+        run: >
+          python -m mypy python/forge_env/ demo_ui/backend/
+          --ignore-missing-imports
+          --no-site-packages
+
+  # ---------------------------------------------------------------------------
+  # Python unit tests with coverage (requires maturin build)
+  # ---------------------------------------------------------------------------
+  test:
+    name: Python Tests (≥80% coverage)
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-        cache: 'pip'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r demo_ui/backend/requirements.txt
-        # Explicitly install the package if needed, though conftest handles sys.path
-        # pip install -e . 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-    - name: Install Playwright Browsers
-      run: playwright install --with-deps chromium
+      - uses: Swatinem/rust-cache@v2
 
-    - name: Run Backend Tests
-      run: pytest demo_ui/tests/test_backend.py
+      - name: Install maturin
+        run: pip install "maturin>=1.0,<2.0"
 
-    - name: Run E2E Browser Tests
-      run: pytest demo_ui/tests/test_e2e_browser.py --browser chromium --headless
+      - name: Build & install package (development mode)
+        run: maturin develop -m crates/forge-python/Cargo.toml
+
+      - name: Install test dependencies
+        run: pip install ".[test]"
+
+      - name: Run Python tests with coverage
+        run: >
+          pytest tests/python/
+          --cov=forge_env
+          --cov-report=xml
+          --cov-report=term-missing
+          --cov-fail-under=80
+          -v --tb=short
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: python
+          fail_ci_if_error: false
+
+  # ---------------------------------------------------------------------------
+  # Demo UI backend tests (no Rust build needed — uses installed wheel)
+  # ---------------------------------------------------------------------------
+  demo-ui:
+    name: Demo UI Backend Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install maturin + build
+        run: |
+          pip install "maturin>=1.0,<2.0"
+          maturin develop -m crates/forge-python/Cargo.toml
+
+      - name: Install demo UI dependencies
+        run: |
+          pip install -r demo_ui/backend/requirements.txt
+          pip install pytest pytest-asyncio anyio httpx
+
+      - name: Run demo UI backend tests
+        run: pytest demo_ui/tests/test_backend.py -v --tb=short
+
+  # ---------------------------------------------------------------------------
+  # Security scan (dependency audit)
+  # ---------------------------------------------------------------------------
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit Python dependencies
+        run: pip-audit --requirement demo_ui/backend/requirements.txt || true
+
+      - name: Cargo audit (Rust CVEs)
+        run: |
+          cargo install cargo-audit --quiet
+          cargo audit

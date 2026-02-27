@@ -4,22 +4,81 @@ build-backend = "maturin"
 
 [project]
 name = "forge-env"
+version = "0.1.0"
+description = "Fast Open-source Runtime for Generalist Environments — high-performance RL simulation platform"
+readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.9"
+authors = [{ name = "FORGE Contributors" }]
+keywords = ["reinforcement-learning", "simulation", "gymnasium", "pettingzoo", "rl", "environment"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
 ]
+# Core runtime — keep minimal (no heavy ML deps)
 dependencies = [
-    "httpx>=0.27",
+    "numpy>=1.24",
 ]
 
+[project.urls]
+Homepage = "https://github.com/ianshank/FORGE"
+Repository = "https://github.com/ianshank/FORGE"
+Documentation = "https://ianshank.github.io/FORGE"
+Changelog = "https://github.com/ianshank/FORGE/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/ianshank/FORGE/issues"
+
 [project.optional-dependencies]
+# Base test utilities
 test = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5",
+    "pytest-benchmark>=4",
     "anyio>=4",
     "httpx>=0.27",
+]
+# Gymnasium / PettingZoo wrappers
+gym = [
+    "gymnasium>=0.29",
+    "pettingzoo>=1.24",
+]
+# JAX-vectorized env
+jax = [
+    "jax>=0.4",
+    "jaxlib>=0.4",
+]
+# Stable Baselines 3 training
+sb3 = [
+    "stable-baselines3>=2.0,<3",
+    "torch>=2.0",
+]
+# CleanRL training
+cleanrl = [
+    "tensorboard>=2.14",
+]
+# W&B / MLflow optional logging hooks
+logging-hooks = [
+    "wandb>=0.17",
+    "mlflow>=2.0",
+]
+# Dev tools (lint, type check)
+dev = [
+    "ruff>=0.3",
+    "mypy>=1.8",
+    "maturin>=1.0,<2.0",
+]
+# Everything for local dev
+all = [
+    "forge-env[test,gym,jax,sb3,cleanrl,logging-hooks,dev]",
 ]
 
 
