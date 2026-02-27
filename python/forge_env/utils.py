@@ -102,6 +102,7 @@ def make_env(
     if wrappers is not None:
         for wrapper_fn in wrappers:
             env = wrapper_fn(env)
+            logger.debug("Applied wrapper %s", type(env).__name__)
 
     if seed is not None:
         env.reset(seed=seed)
@@ -217,7 +218,12 @@ def seed_everything(seed: int) -> None:
     random.seed(seed)
 
     if HAS_NUMPY:
-        np.random.seed(seed)
+        # Use the modern Generator API (NumPy >= 1.17) to avoid the legacy
+        # global-state ``np.random.seed`` deprecation warning.
+        try:
+            np.random.default_rng(seed)  # preferred: seeds the default BitGenerator
+        except AttributeError:  # pragma: no cover -- very old numpy fallback
+            np.random.seed(seed)
 
     # Optional: seed PyTorch if installed
     try:

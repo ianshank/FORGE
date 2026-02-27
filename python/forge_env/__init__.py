@@ -23,7 +23,7 @@ __version__ = "0.1.0"
 try:
     from forge_env.forge_env import ForgeEnv
 except ImportError:
-    ForgeEnv = None  # type: ignore[assignment,misc]
+    ForgeEnv = None  # native ext not built yet
     logger.debug("Native forge_env module not available; running in pure-Python mode.")
 
 # Convenience re-exports

@@ -14,7 +14,12 @@ import textwrap
 from typing import TYPE_CHECKING
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+
+try:
+    from httpx import ASGITransport, AsyncClient
+except ImportError:
+    # Fallback for type checking or environments where httpx isn't installed yet
+    ASGITransport, AsyncClient = None, None  # type: ignore
 
 if TYPE_CHECKING:
     from pathlib import Path

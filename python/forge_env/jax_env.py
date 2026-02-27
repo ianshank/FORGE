@@ -90,10 +90,18 @@ class ForgeJaxEnv:
                 "NumPy is required but not installed. "
                 "Install it with: pip install numpy"
             )
+        if n_envs < 1:
+            raise ValueError(
+                f"n_envs must be a positive integer, got {n_envs!r}"
+            )
 
         self.n_envs: int = n_envs
         self.config = config
         self.seed: int = seed
+
+        logger.debug(
+            "Initialising ForgeJaxEnv with n_envs=%d, seed=%d", n_envs, seed
+        )
 
         # Create the native environment instances.
         self._envs = [_NativeEnv(config=config) for _ in range(n_envs)]

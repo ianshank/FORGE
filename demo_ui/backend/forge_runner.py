@@ -9,13 +9,18 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["SECTIONS", "parse_results_md", "run_all", "run_section"]
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -45,8 +50,22 @@ async def run_section(
     section: str,
     seed: int = 42,
     quick: bool = True,
+    timeout: float = 120.0,
 ) -> AsyncGenerator[str, None]:
-    """Async generator that yields stdout lines from forge_demo.py."""
+    """Async generator that yields stdout lines from forge_demo.py.
+
+    Parameters
+    ----------
+    section:
+        Demo section key (must be in ``SECTIONS``).
+    seed:
+        Random seed forwarded to the demo script.
+    quick:
+        If True, pass ``--quick`` flag to the demo script.
+    timeout:
+        Maximum seconds to wait for the subprocess to complete.  After
+        this the process is killed and an ERROR line is yielded.
+    """
     if section not in SECTIONS:
         yield f"ERROR: Unknown section '{section}'. Valid: {', '.join(SECTIONS)}\n"
         return
@@ -63,6 +82,7 @@ async def run_section(
     if quick:
         cmd.append("--quick")
 
+    logger.debug("Starting section '%s' (seed=%d, quick=%s, timeout=%.1fs)", section, seed, quick, timeout)
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -71,15 +91,30 @@ async def run_section(
             cwd=str(FORGE_ROOT),
         )
     except Exception as exc:
+        logger.error("Failed to start process for section '%s': %s", section, exc)
         yield f"ERROR: Failed to start process: {exc}\n"
         return
 
     assert proc.stdout is not None
-    async for raw_line in proc.stdout:
+    try:
+        # Stream lines with a loose deadline: read all stdout via communicate()
+        # gated by asyncio.wait_for, which is available from Python 3.9+.
+        stdout_bytes, _ = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout
+        )
+    except TimeoutError:
+        logger.warning("Section '%s' timed out after %.1fs — killing process", section, timeout)
+        proc.kill()
+        await proc.communicate()  # drain to avoid resource leak
+        yield f"\nERROR: Section timed out after {timeout:.0f}s\n"
+        return
+
+    for raw_line in stdout_bytes.splitlines(keepends=True):
         yield raw_line.decode("utf-8", errors="replace")
 
-    await proc.wait()
+    # proc.communicate() already waited; returncode is now set.
     rc = proc.returncode
+    logger.debug("Section '%s' finished with exit code %d", section, rc)
     if rc != 0:
         yield f"\nProcess exited with code {rc}\n"
     else:
@@ -103,7 +138,7 @@ async def run_all(
 # ---------------------------------------------------------------------------
 
 
-def parse_results_md(path: Path | None = None) -> dict:
+def parse_results_md(path: Path | None = None) -> dict[str, Any]:
     """Parse demo_results.md into a structured dict."""
     md_path = path or RESULTS_MD
     if not md_path.exists():

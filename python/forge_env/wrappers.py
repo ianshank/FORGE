@@ -32,6 +32,7 @@ except ImportError:
     HAS_NUMPY = False
 
 __all__ = [
+    "BaseWrapper",
     "FlattenObservationWrapper",
     "NormalizeRewardWrapper",
     "RecordEpisodeStatistics",
@@ -61,6 +62,28 @@ class _BaseWrapper:
     # Forward any attribute not found on the wrapper itself to the inner env.
     def __getattr__(self, name: str) -> Any:
         return getattr(self.env, name)
+
+    def __repr__(self) -> str:
+        """Show the full wrapper chain for easier debugging."""
+        return f"{type(self).__name__}({self.env!r})"
+
+    @property
+    def unwrapped(self) -> Any:
+        """Return the innermost (unwrapped) environment.
+
+        Traverses the wrapper chain until it finds an object that does not
+        carry a ``.env`` attribute, returning that as the base environment.
+        This matches the :func:`gymnasium.Env.unwrapped` convention.
+        """
+        inner: Any = self.env
+        while hasattr(inner, "env"):
+            inner = inner.env
+        return inner
+
+
+# Public alias so downstream code can reference the base class without the
+# leading underscore convention.
+BaseWrapper = _BaseWrapper
 
 
 # ---------------------------------------------------------------------------
