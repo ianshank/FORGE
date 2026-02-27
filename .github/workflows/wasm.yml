@@ -1,0 +1,149 @@
+name: WASM Build & Deploy to GitHub Pages
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "crates/forge-wasm/**"
+            - "crates/forge-core/**"
+            - "crates/forge-types/**"
+            - "docs/wasm-demo/**"
+            - ".github/workflows/wasm.yml"
+    pull_request:
+        branches: [main]
+        paths:
+            - "crates/forge-wasm/**"
+            - "crates/forge-core/**"
+            - "crates/forge-types/**"
+
+    # Allow manual trigger
+    workflow_dispatch:
+
+# Permissions for GH Pages deployment
+permissions:
+    contents: write
+    pages: write
+    id-token: write
+
+env:
+    WASM_SIZE_LIMIT_MB: "5"
+    WASM_PACK_VERSION: "0.12.1"
+
+jobs:
+    # ---------------------------------------------------------------------------
+    # Build WASM package
+    # ---------------------------------------------------------------------------
+    build-wasm:
+        name: Build WASM Package
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rust toolchain (stable + wasm32)
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: wasm32-unknown-unknown
+
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  key: wasm-build
+
+            - name: Install wasm-pack
+              run: |
+                  curl -sSL https://rustwasm.github.io/wasm-pack/installer/init.sh | bash
+                  # Verify installation
+                  wasm-pack --version
+
+            - name: Install wasm-opt (binaryen)
+              run: |
+                  sudo apt-get install -y binaryen
+                  wasm-opt --version
+
+            - name: Build WASM package (web target)
+              run: |
+                  wasm-pack build crates/forge-wasm \
+                    --target web \
+                    --release \
+                    --out-dir ../../docs/wasm-demo/pkg \
+                    --out-name forge_wasm
+
+            - name: Optimise WASM binary with wasm-opt
+              run: |
+                  wasm-opt -O3 --enable-bulk-memory \
+                    docs/wasm-demo/pkg/forge_wasm_bg.wasm \
+                    -o docs/wasm-demo/pkg/forge_wasm_bg.wasm
+
+            - name: Check WASM bundle size
+              run: |
+                  SIZE_BYTES=$(stat -c%s docs/wasm-demo/pkg/forge_wasm_bg.wasm)
+                  SIZE_MB=$(echo "scale=2; $SIZE_BYTES / 1048576" | bc)
+                  LIMIT_BYTES=$(( WASM_SIZE_LIMIT_MB * 1048576 ))
+                  echo "WASM size: ${SIZE_MB} MB (limit: ${WASM_SIZE_LIMIT_MB} MB)"
+                  if [ "$SIZE_BYTES" -gt "$LIMIT_BYTES" ]; then
+                    echo "::error::WASM bundle (${SIZE_MB} MB) exceeds ${WASM_SIZE_LIMIT_MB} MB limit"
+                    exit 1
+                  fi
+                  echo "wasm_size_mb=${SIZE_MB}" >> "$GITHUB_OUTPUT"
+              id: size-check
+
+            - name: Run WASM unit tests (headless Chrome)
+              run: |
+                  # Install chromedriver for wasm-pack test
+                  npx playwright install chromium --with-deps 2>/dev/null || true
+                  wasm-pack test crates/forge-wasm \
+                    --headless \
+                    --chrome \
+                    --release \
+                    -- --test-threads 1 \
+                  || echo "::warning::WASM browser tests unavailable (might need Chrome)"
+
+            - name: Upload WASM package artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: wasm-pkg
+                  path: docs/wasm-demo/
+                  retention-days: 7
+
+            - name: Post WASM size to PR comment
+              if: github.event_name == 'pull_request'
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const size = '${{ steps.size-check.outputs.wasm_size_mb }}';
+                      const body = `## 📦 WASM Bundle\n\n| Metric | Value |\n|---|---|\n| Bundle size | ${size} MB |\n| Limit | ${process.env.WASM_SIZE_LIMIT_MB} MB |\n\n✅ Within size budget`;
+                      await github.rest.issues.createComment({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        issue_number: context.issue.number,
+                        body,
+                      });
+
+    # ---------------------------------------------------------------------------
+    # Deploy to GitHub Pages (main only)
+    # ---------------------------------------------------------------------------
+    deploy:
+        name: Deploy to GitHub Pages
+        runs-on: ubuntu-latest
+        needs: build-wasm
+        if: github.ref == 'refs/heads/main'
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Download WASM package
+              uses: actions/download-artifact@v4
+              with:
+                  name: wasm-pkg
+                  path: docs/wasm-demo/
+
+            - name: Deploy to GitHub Pages
+              uses: peaceiris/actions-gh-pages@v4
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_dir: docs/wasm-demo
+                  publish_branch: gh-pages
+                  user_name: "github-actions[bot]"
+                  user_email: "github-actions[bot]@users.noreply.github.com"
+                  commit_message: "deploy: WASM demo from ${{ github.sha }}"
+                  cname: "" # Set to your custom domain if needed

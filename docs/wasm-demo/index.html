@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="FORGE — Interactive RL simulation environment running live in your browser via WebAssembly." />
+  <title>FORGE Live Demo — RL Environment (WASM)</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="demo.css" />
+</head>
+<body>
+  <!-- ─── Header ─────────────────────────────────────────────── -->
+  <header class="header" role="banner">
+    <div class="header-inner">
+      <span class="logo" aria-label="FORGE logo">🔥 FORGE</span>
+      <nav class="header-links" aria-label="Primary navigation">
+        <a href="https://github.com/ianshank/FORGE" target="_blank" rel="noopener noreferrer" id="github-link">GitHub</a>
+        <a href="https://github.com/ianshank/FORGE/blob/main/README.md" target="_blank" rel="noopener noreferrer" id="docs-link">Docs</a>
+        <a href="https://pypi.org/project/forge-env" target="_blank" rel="noopener noreferrer" id="pypi-link">PyPI</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ─── Error Banner ────────────────────────────────────────── -->
+  <div id="error-banner" class="error-banner hidden" role="alert" aria-live="assertive">
+    <span id="error-message"></span>
+    <button id="error-dismiss" aria-label="Dismiss error">✕</button>
+  </div>
+
+  <!-- ─── Main Layout ─────────────────────────────────────────── -->
+  <main class="layout" id="main">
+    <!-- World Canvas Panel -->
+    <section class="panel panel-world" aria-label="World simulation">
+      <div class="panel-header">
+        <h1 class="panel-title">World Canvas</h1>
+        <div class="status-row">
+          <span class="badge" id="status-badge">Loading WASM…</span>
+          <span class="tick-label">Tick: <span id="tick-counter">—</span></span>
+        </div>
+      </div>
+
+      <pre id="ascii-canvas" class="ascii-canvas" role="img" aria-label="ASCII grid of the FORGE world" aria-live="polite">
+        Initialising…
+      </pre>
+
+      <div class="agent-row" id="agent-row" aria-label="Agent positions"></div>
+    </section>
+
+    <!-- Controls + Stats Panel -->
+    <aside class="panel panel-controls" aria-label="Controls and statistics">
+      <!-- Seed Control -->
+      <section class="control-group" aria-labelledby="seed-heading">
+        <h2 class="control-heading" id="seed-heading">Seed &amp; Config</h2>
+        <div class="input-row">
+          <label for="seed-input" class="input-label">Seed</label>
+          <input
+            id="seed-input"
+            type="number"
+            class="input-field"
+            value="42"
+            min="0"
+            max="4294967295"
+            aria-describedby="seed-hint"
+          />
+          <span id="seed-hint" class="input-hint">0 – 2³²−1</span>
+        </div>
+        <div class="input-row">
+          <label for="world-size-input" class="input-label">World size</label>
+          <select id="world-size-input" class="input-field" aria-label="World grid size">
+            <option value="16">16 × 16</option>
+            <option value="32" selected>32 × 32</option>
+            <option value="64">64 × 64</option>
+          </select>
+        </div>
+        <div class="input-row">
+          <label for="num-agents-input" class="input-label">Agents</label>
+          <input id="num-agents-input" type="number" class="input-field" value="1" min="1" max="8" />
+        </div>
+      </section>
+
+      <!-- Action Buttons -->
+      <section class="control-group" aria-labelledby="actions-heading">
+        <h2 class="control-heading" id="actions-heading">Actions</h2>
+        <div class="btn-grid">
+          <button id="btn-reset" class="btn btn-primary" aria-label="Reset episode" disabled>⟳ Reset</button>
+          <button id="btn-step"  class="btn btn-secondary" aria-label="Step one tick" disabled>▶ Step</button>
+          <button id="btn-play"  class="btn btn-secondary" aria-label="Play automatically" disabled>⏵ Play</button>
+          <button id="btn-pause" class="btn btn-ghost hidden" aria-label="Pause playback">⏸ Pause</button>
+        </div>
+        <div class="input-row" id="fps-row">
+          <label for="fps-input" class="input-label">FPS</label>
+          <input id="fps-input" type="range" class="range-input" min="1" max="30" value="10" aria-valuenow="10" aria-valuemin="1" aria-valuemax="30" />
+          <span id="fps-display">10</span>
+        </div>
+        <div class="input-row">
+          <label for="action-select" class="input-label">Manual action</label>
+          <select id="action-select" class="input-field" aria-label="Choose an action to apply on next step"></select>
+        </div>
+      </section>
+
+      <!-- Stats -->
+      <section class="control-group" aria-labelledby="stats-heading">
+        <h2 class="control-heading" id="stats-heading">Episode Stats</h2>
+        <dl class="stats-grid">
+          <dt>Cumulative Reward</dt><dd id="stat-reward">—</dd>
+          <dt>Episode Length</dt><dd id="stat-ep-len">—</dd>
+          <dt>Terminated</dt><dd id="stat-terminated">—</dd>
+          <dt>Truncated</dt><dd id="stat-truncated">—</dd>
+          <dt>Agents Alive</dt><dd id="stat-agents-alive">—</dd>
+          <dt>Day Phase</dt><dd id="stat-day-phase">—</dd>
+        </dl>
+      </section>
+
+      <!-- Shareable Link -->
+      <section class="control-group" aria-labelledby="share-heading">
+        <h2 class="control-heading" id="share-heading">Share</h2>
+        <div class="btn-grid">
+          <button id="btn-copy-link" class="btn btn-ghost" aria-label="Copy shareable link for this seed">🔗 Copy Seed Link</button>
+        </div>
+        <p class="share-hint" id="copy-confirmation" aria-live="polite"></p>
+      </section>
+
+      <!-- Space Info (collapsible) -->
+      <details class="control-group space-details" id="space-details">
+        <summary class="control-heading">Spaces (JSON)</summary>
+        <pre id="obs-space-json" class="space-json" aria-label="Observation space JSON"></pre>
+        <pre id="act-space-json" class="space-json" aria-label="Action space JSON"></pre>
+      </details>
+    </aside>
+  </main>
+
+  <!-- ─── Footer ──────────────────────────────────────────────── -->
+  <footer class="footer" role="contentinfo">
+    <span>FORGE — Fast Open-source Runtime for Generalist Environments</span>
+    <a href="https://github.com/ianshank/FORGE/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0</a>
+  </footer>
+
+  <script type="module" src="demo.js"></script>
+</body>
+</html>

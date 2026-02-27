@@ -1,218 +1,364 @@
-"""PPO training template for FORGE environments.
+"""PPO training script for FORGE environments.
 
-Provides a ready-to-use skeleton for training a Proximal Policy Optimization
-(PPO) agent on a FORGE environment using Stable Baselines3. When SB3 is not
-installed, the script falls back to a random-action baseline so you can still
-verify that the environment works correctly.
+Supports Stable Baselines3 (default) with optional W&B / MLflow logging.
+Falls back to a random-action baseline when SB3 is not installed.
 
-Usage:
-    # With Stable Baselines3 installed:
-    python train_ppo.py --timesteps 100000 --seed 42
+Usage::
 
-    # Without SB3 (random baseline):
-    python train_ppo.py --seed 42
+    # Basic (SB3 required):
+    python examples/train_ppo.py --timesteps 100000 --seed 42
+
+    # With W&B:
+    python examples/train_ppo.py --timesteps 100000 --wandb --wandb-project forge-ppo
+
+    # With MLflow:
+    export MLFLOW_TRACKING_URI=http://localhost:5000
+    python examples/train_ppo.py --timesteps 100000 --mlflow
+
+    # Save metrics CSV:
+    python examples/train_ppo.py --timesteps 100000 --output-dir runs/exp1
+
+    # Random baseline (no SB3):
+    python examples/train_ppo.py --seed 42
+
+    # Smoke test (fast CI):
+    python examples/train_ppo.py --timesteps 1000 --no-render
 """
 
+from __future__ import annotations
+
 import argparse
+import logging
+import sys
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 
-# --- Optional: Stable Baselines3 -------------------------------------------
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Optional: Stable Baselines3
+# ---------------------------------------------------------------------------
 try:
-    from stable_baselines3 import PPO
+    from stable_baselines3 import PPO  # type: ignore[import-untyped]
+    from stable_baselines3.common.callbacks import BaseCallback  # type: ignore[import-untyped]
 
     SB3_AVAILABLE = True
 except ImportError:
+    PPO = None  # type: ignore[assignment]
+    BaseCallback = object  # type: ignore[assignment,misc]
     SB3_AVAILABLE = False
-    PPO = None
 
-# --- FORGE environment ------------------------------------------------------
+# ---------------------------------------------------------------------------
+# FORGE imports
+# ---------------------------------------------------------------------------
 try:
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
 except ImportError:
-    ForgeGymnasiumEnv = None
-    print(
-        "WARNING: Could not import ForgeGymnasiumEnv from forge_env.gymnasium_env.\n"
-        "Make sure the forge-python crate is built and installed:\n"
-        "  cd crates/forge-python && maturin develop\n"
+    ForgeGymnasiumEnv = None  # type: ignore[assignment, misc]
+    logger.warning(
+        "ForgeGymnasiumEnv not available — run `maturin develop` in crates/forge-python"
     )
 
-# --- FORGE wrappers ---------------------------------------------------------
 try:
+    from forge_env.callbacks import (
+        CompositeCallback,
+        ConsoleCallback,
+        CsvCallback,
+        EpisodeStats,
+        MLflowCallback,
+        WandbCallback,
+    )
     from forge_env.wrappers import (
         FlattenObservationWrapper,
         RecordEpisodeStatistics,
         TimeLimit,
     )
+
+    FORGE_EXTRAS_AVAILABLE = True
 except ImportError:
-    FlattenObservationWrapper = None
-    RecordEpisodeStatistics = None
-    TimeLimit = None
-    print(
-        "WARNING: Could not import wrappers from forge_env.wrappers.\n"
-        "FlattenObservationWrapper, TimeLimit, and RecordEpisodeStatistics "
-        "will not be available.\n"
-    )
+    FORGE_EXTRAS_AVAILABLE = False
+    logger.warning("forge_env extras (callbacks/wrappers) not available.")
 
 
-def make_env(seed=0):
-    """Create a FORGE Gymnasium environment with standard wrappers.
+# ---------------------------------------------------------------------------
+# SB3 bridge callback
+# ---------------------------------------------------------------------------
 
-    The environment is wrapped with:
-    - TimeLimit: caps each episode at 500 steps.
-    - FlattenObservationWrapper: flattens nested observations into a 1-D array.
-    - RecordEpisodeStatistics: tracks episode return and length.
 
-    Args:
-        seed: Random seed for reproducibility.
+class _ForgeCallbackBridge(BaseCallback):  # type: ignore[misc]
+    """Adapts SB3's BaseCallback to fire forge_env LoggingCallbacks on episode end."""
 
-    Returns:
-        A wrapped ForgeGymnasiumEnv instance, or None if imports failed.
+    def __init__(self, forge_callback: Any, verbose: int = 0) -> None:
+        super().__init__(verbose=verbose)
+        self._forge_cb = forge_callback
+        self._episode = 0
+        self._ep_start_step = 0
+        self._ep_start_time: float = 0.0
+
+    def _on_training_start(self) -> None:
+        import time
+
+        self._ep_start_time = time.monotonic()
+        self._forge_cb.on_training_start()
+
+    def _on_step(self) -> bool:
+        import time
+
+        infos = self.locals.get("infos", [{}])
+        for info in infos:
+            if "episode" in info:
+                ep = info["episode"]
+                duration = time.monotonic() - self._ep_start_time or 1e-6
+                fps = ep.get("l", 1) / duration
+                stats = EpisodeStats(
+                    episode=self._episode,
+                    total_steps=self.num_timesteps,
+                    episode_length=ep.get("l", 0),
+                    episode_return=float(ep.get("r", 0.0)),
+                    fps=fps,
+                )
+                self._forge_cb.on_episode_end(stats)
+                self._episode += 1
+                self._ep_start_time = time.monotonic()
+        return True
+
+    def _on_training_end(self) -> None:
+        self._forge_cb.on_training_end()
+
+
+# ---------------------------------------------------------------------------
+# Environment factory
+# ---------------------------------------------------------------------------
+
+
+def make_env(
+    seed: int = 0,
+    world_size: int = 32,
+    num_agents: int = 1,
+    max_steps: int = 500,
+) -> Any:
+    """Create a wrapped FORGE Gymnasium environment.
+
+    Parameters
+    ----------
+    seed:           Random seed.
+    world_size:     Width and height of the square world grid.
+    num_agents:     Number of agents in the simulation.
+    max_steps:      Episode truncation length (TimeLimit wrapper).
+
+    Returns
+    -------
+    A wrapped gymnasium-compatible env, or ``None`` on import failure.
     """
     if ForgeGymnasiumEnv is None:
-        print("ForgeGymnasiumEnv is not available. Cannot create environment.")
+        logger.error("ForgeGymnasiumEnv not available; cannot create env.")
         return None
 
-    config = {
-        "world": {
-            "width": 32,
-            "height": 32,
-        },
-        "agents": {
-            "num_agents": 1,
-        },
+    config: dict[str, Any] = {
+        "world": {"width": world_size, "height": world_size},
+        "agents": {"num_agents": num_agents},
     }
-
     env = ForgeGymnasiumEnv(config=config, seed=seed)
 
-    if TimeLimit is not None:
-        env = TimeLimit(env, max_steps=500)
-    if FlattenObservationWrapper is not None:
+    if FORGE_EXTRAS_AVAILABLE:
+        env = TimeLimit(env, max_steps=max_steps)
         env = FlattenObservationWrapper(env)
-    if RecordEpisodeStatistics is not None:
         env = RecordEpisodeStatistics(env)
 
     return env
 
 
-def train_with_sb3(timesteps, seed):
-    """Train a PPO agent using Stable Baselines3.
+# ---------------------------------------------------------------------------
+# Training
+# ---------------------------------------------------------------------------
 
-    Args:
-        timesteps: Total number of training timesteps.
-        seed: Random seed for reproducibility.
-    """
-    env = make_env(seed=seed)
+
+def train_with_sb3(args: argparse.Namespace) -> None:
+    """Run SB3 PPO training with optional logging callbacks."""
+    if not SB3_AVAILABLE:
+        logger.error("stable-baselines3 is not installed; cannot train.")
+        sys.exit(1)
+
+    env = make_env(
+        seed=args.seed,
+        world_size=args.world_size,
+        num_agents=args.num_agents,
+        max_steps=args.max_steps,
+    )
     if env is None:
-        return
+        sys.exit(1)
 
-    print(f"Training PPO for {timesteps} timesteps (seed={seed})...")
+    # Build callback chain
+    callbacks: list[Any] = [ConsoleCallback(log_every=args.log_every)]
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = output_dir / "metrics.csv"
+    csv_cb = CsvCallback(output_path=csv_path)
+    callbacks.append(csv_cb)
+
+    if args.wandb:
+        callbacks.append(
+            WandbCallback(
+                project=args.wandb_project,
+                run_name=args.run_name,
+                config=vars(args),
+            )
+        )
+    if args.mlflow:
+        callbacks.append(MLflowCallback(experiment_name=args.mlflow_experiment))
+
+    composite = CompositeCallback(callbacks)
+    sb3_bridge = _ForgeCallbackBridge(composite)
+
+    logger.info("Training PPO for %d timesteps (seed=%d)…", args.timesteps, args.seed)
     model = PPO(
         "MlpPolicy",
         env,
-        verbose=1,
-        seed=seed,
-        n_steps=256,
-        batch_size=64,
-        n_epochs=4,
-        learning_rate=3e-4,
+        verbose=0 if args.no_render else 1,
+        seed=args.seed,
+        n_steps=args.n_steps,
+        batch_size=args.batch_size,
+        n_epochs=args.n_epochs,
+        learning_rate=args.learning_rate,
+        gamma=args.gamma,
     )
+    model.learn(total_timesteps=args.timesteps, callback=sb3_bridge)
+    model_path = output_dir / "ppo_forge.zip"
+    model.save(str(model_path))
+    logger.info("Model saved to %s", model_path)
 
-    model.learn(total_timesteps=timesteps)
+    # Quick evaluation
+    if not args.no_render:
+        _evaluate(model, args)
 
-    # Evaluate the trained agent for a few episodes
-    print("\n--- Evaluation ---")
-    eval_env = make_env(seed=seed + 1000)
+    env.close()
+
+
+def _evaluate(model: Any, args: argparse.Namespace, n_episodes: int = 5) -> None:
+    """Run evaluation episodes and print results."""
+    eval_env = make_env(seed=args.seed + 1000, world_size=args.world_size)
     if eval_env is None:
         return
 
-    episode_rewards = []
-    for ep in range(5):
-        obs, _info = eval_env.reset()
+    rewards = []
+    for ep in range(n_episodes):
+        obs, _ = eval_env.reset()
         done = False
-        total_reward = 0.0
+        total = 0.0
         while not done:
             action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, _info = eval_env.step(action)
-            total_reward += reward
+            obs, reward, terminated, truncated, _ = eval_env.step(action)
+            total += float(reward)
             done = terminated or truncated
-        episode_rewards.append(total_reward)
-        print(f"  Episode {ep + 1}: reward = {total_reward:.3f}")
+        rewards.append(total)
+        logger.info("Eval episode %d: return=%.3f", ep + 1, total)
 
     eval_env.close()
-    env.close()
+    print(f"\n{'─' * 40}")
+    print(f"Evaluation over {n_episodes} episodes:")
+    print(f"  Mean return : {np.mean(rewards):.3f}")
+    print(f"  Std return  : {np.std(rewards):.3f}")
+    print(f"{'─' * 40}")
 
-    print(f"\nMean evaluation reward: {np.mean(episode_rewards):.3f}")
-    print(f"Std evaluation reward:  {np.std(episode_rewards):.3f}")
 
-
-def run_random_baseline(seed, num_steps=1000):
-    """Run a random-action baseline when SB3 is not available.
-
-    Args:
-        seed: Random seed for reproducibility.
-        num_steps: Number of steps to run.
-    """
+def run_random_baseline(args: argparse.Namespace) -> None:
+    """Random-action baseline for when SB3 is not available."""
     print(
-        "Stable Baselines3 is not installed. To train with PPO, install it:\n"
-        "  pip install stable-baselines3\n"
+        "stable-baselines3 not installed. Running random baseline…\n"
+        "Install SB3: pip install 'forge-env[sb3]'"
     )
-    print(f"Running random baseline for {num_steps} steps instead...\n")
-
-    env = make_env(seed=seed)
+    env = make_env(seed=args.seed)
     if env is None:
         return
 
-    _obs, _info = env.reset()
-    episode_rewards = []
-    current_episode_reward = 0.0
+    env.reset()
+    episode_rewards: list[float] = []
+    ep_reward = 0.0
 
-    for _step in range(1, num_steps + 1):
+    for step in range(1, args.timesteps + 1):
         action = env.action_space.sample()
-        _obs, reward, terminated, truncated, _info = env.step(action)
-        current_episode_reward += reward
-
+        _, reward, terminated, truncated, _ = env.step(action)
+        ep_reward += float(reward)
         if terminated or truncated:
-            episode_rewards.append(current_episode_reward)
-            current_episode_reward = 0.0
-            _obs, _info = env.reset()
+            episode_rewards.append(ep_reward)
+            ep_reward = 0.0
+            env.reset()
 
-    # Account for any in-progress episode
-    if current_episode_reward != 0.0:
-        episode_rewards.append(current_episode_reward)
+    if ep_reward != 0.0:
+        episode_rewards.append(ep_reward)
 
     env.close()
-
     if episode_rewards:
-        print("--- Random Baseline Results ---")
-        print(f"  Episodes completed: {len(episode_rewards)}")
-        print(f"  Mean episode reward: {np.mean(episode_rewards):.3f}")
-        print(f"  Std episode reward:  {np.std(episode_rewards):.3f}")
-        print(f"  Min episode reward:  {np.min(episode_rewards):.3f}")
-        print(f"  Max episode reward:  {np.max(episode_rewards):.3f}")
+        print(
+            f"Random baseline over {len(episode_rewards)} episodes:\n"
+            f"  Mean return: {np.mean(episode_rewards):.3f}\n"
+            f"  Std return:  {np.std(episode_rewards):.3f}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    # ── Environment
+    env_g = parser.add_argument_group("Environment")
+    env_g.add_argument("--world-size", type=int, default=32, metavar="N",
+                       help="Square world grid size (default: 32)")
+    env_g.add_argument("--num-agents", type=int, default=1, metavar="N")
+    env_g.add_argument("--max-steps", type=int, default=500, metavar="N",
+                       help="Episode truncation length (default: 500)")
+    # ── Training
+    train_g = parser.add_argument_group("Training")
+    train_g.add_argument("--timesteps", type=int, default=100_000,
+                         help="Total SB3 timesteps (default: 100000)")
+    train_g.add_argument("--seed", type=int, default=42)
+    train_g.add_argument("--n-steps", type=int, default=256,
+                         help="PPO rollout length per update (default: 256)")
+    train_g.add_argument("--batch-size", type=int, default=64)
+    train_g.add_argument("--n-epochs", type=int, default=4)
+    train_g.add_argument("--learning-rate", type=float, default=3e-4)
+    train_g.add_argument("--gamma", type=float, default=0.99)
+    # ── Output
+    out_g = parser.add_argument_group("Output")
+    out_g.add_argument("--output-dir", type=Path, default=Path("runs/default"),
+                       help="Directory for model checkpoints and metrics CSV")
+    out_g.add_argument("--run-name", type=str, default=None)
+    out_g.add_argument("--log-every", type=int, default=10,
+                       help="Console log frequency in episodes (default: 10)")
+    out_g.add_argument("--no-render", action="store_true",
+                       help="Suppress SB3 verbose output and skip evaluation")
+    # ── Logging
+    log_g = parser.add_argument_group("Logging")
+    log_g.add_argument("--wandb", action="store_true",
+                       help="Enable W&B logging (requires wandb installed)")
+    log_g.add_argument("--wandb-project", type=str, default="forge-ppo")
+    log_g.add_argument("--mlflow", action="store_true",
+                       help="Enable MLflow logging (requires mlflow installed)")
+    log_g.add_argument("--mlflow-experiment", type=str, default="forge-ppo")
+    log_g.add_argument("--verbose", action="store_true")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+    if SB3_AVAILABLE:
+        train_with_sb3(args)
     else:
-        print("No episodes completed within the given steps.")
+        run_random_baseline(args)
+    return 0
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Train a PPO agent on a FORGE environment (or run a random baseline)."
-    )
-    parser.add_argument(
-        "--timesteps",
-        type=int,
-        default=50000,
-        help="Total training timesteps for PPO (default: 50000).",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility (default: 42).",
-    )
-    args = parser.parse_args()
-
-    if SB3_AVAILABLE:
-        train_with_sb3(timesteps=args.timesteps, seed=args.seed)
-    else:
-        run_random_baseline(seed=args.seed)
+    sys.exit(main())
