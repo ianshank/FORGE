@@ -4,18 +4,28 @@
 //! Each predicate evaluates to a boolean (satisfied or not) and
 //! optionally a progress value in [0.0, 1.0].
 
-use forge_types::entity::{Agent, AgentId};
-use forge_types::grid::Position;
+use forge_types::entity::{Agent, AgentId, ObjectState};
+use forge_types::grid::{Grid, Position, TerrainType};
 use forge_types::resource::ItemType;
 use forge_types::task::Predicate;
+use forge_types::Object;
 use tracing::trace;
 
 /// Context for evaluating predicates against the current world state.
+///
+/// The `grid` and `objects` fields are optional for backwards compatibility:
+/// predicates that don't require spatial lookups (e.g. `AgentHas`, `TimeElapsed`)
+/// work without them. Predicates like `AgentOnTerrain`, `ObjectAt`, and
+/// `ObjectInState` return unsatisfied(0.0) when the required data is absent.
 pub struct EvalContext<'a> {
     /// All agents in the simulation.
     pub agents: &'a [Agent],
     /// Current tick.
     pub tick: u64,
+    /// The world grid (optional — required for terrain predicates).
+    pub grid: Option<&'a Grid>,
+    /// All objects in the simulation (optional — required for object predicates).
+    pub objects: Option<&'a [Object]>,
 }
 
 /// Result of evaluating a predicate.
@@ -59,17 +69,12 @@ pub fn evaluate_predicate(predicate: &Predicate, ctx: &EvalContext) -> Predicate
             eval_agent_has(ctx, *agent_id, *item_type, *count)
         }
         Predicate::TeamAlive(team_id) => eval_team_alive(ctx, *team_id),
-        Predicate::AgentOnTerrain(_agent_id, _terrain) => {
-            // Requires grid access — handled at a higher level
-            PredicateResult::unsatisfied(0.0)
+        Predicate::AgentOnTerrain(agent_id, terrain_id) => {
+            eval_agent_on_terrain(ctx, *agent_id, *terrain_id)
         }
-        Predicate::ObjectAt(_obj_id, _pos) => {
-            // Requires object list — handled at a higher level
-            PredicateResult::unsatisfied(0.0)
-        }
-        Predicate::ObjectInState(_obj_id, _state) => {
-            // Requires object list — handled at a higher level
-            PredicateResult::unsatisfied(0.0)
+        Predicate::ObjectAt(obj_id, pos) => eval_object_at(ctx, *obj_id, pos),
+        Predicate::ObjectInState(obj_id, state_name) => {
+            eval_object_in_state(ctx, *obj_id, state_name)
         }
 
         _ => {
@@ -196,6 +201,90 @@ fn eval_team_alive(ctx: &EvalContext, team_id: u8) -> PredicateResult {
     }
 }
 
+/// Checks if agent is standing on a specific terrain type.
+fn eval_agent_on_terrain(ctx: &EvalContext, agent_id: AgentId, terrain_id: u8) -> PredicateResult {
+    let grid = match ctx.grid {
+        Some(g) => g,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+    let agent = match find_agent(ctx.agents, agent_id) {
+        Some(a) => a,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+    let expected_terrain = match terrain_id {
+        0 => TerrainType::Ground,
+        1 => TerrainType::Water,
+        2 => TerrainType::Wall,
+        3 => TerrainType::Lava,
+        4 => TerrainType::Ice,
+        5 => TerrainType::Sand,
+        6 => TerrainType::Forest,
+        7 => TerrainType::Mountain,
+        _ => return PredicateResult::unsatisfied(0.0),
+    };
+    if let Some(tile) = grid.get(agent.position.x, agent.position.y) {
+        if tile.terrain == expected_terrain {
+            trace!(
+                agent_id,
+                ?expected_terrain,
+                "predicate AgentOnTerrain satisfied"
+            );
+            PredicateResult::satisfied()
+        } else {
+            PredicateResult::unsatisfied(0.0)
+        }
+    } else {
+        PredicateResult::unsatisfied(0.0)
+    }
+}
+
+/// Checks if an object is at a specific position.
+fn eval_object_at(ctx: &EvalContext, obj_id: u32, target: &Position) -> PredicateResult {
+    let objects = match ctx.objects {
+        Some(o) => o,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+    if let Some(obj) = objects.iter().find(|o| o.id == obj_id) {
+        if obj.position == *target {
+            trace!(obj_id, "predicate ObjectAt satisfied");
+            PredicateResult::satisfied()
+        } else {
+            let distance = obj.position.manhattan_distance(target) as f32;
+            let max_dist = 100.0_f32;
+            let progress = 1.0 - (distance / max_dist).min(1.0);
+            PredicateResult::unsatisfied(progress)
+        }
+    } else {
+        PredicateResult::unsatisfied(0.0)
+    }
+}
+
+/// Checks if an object is in a specific state (by state name).
+fn eval_object_in_state(ctx: &EvalContext, obj_id: u32, state_name: &str) -> PredicateResult {
+    let objects = match ctx.objects {
+        Some(o) => o,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+    let expected_state = match state_name {
+        "Active" | "active" => ObjectState::Active,
+        "Inactive" | "inactive" => ObjectState::Inactive,
+        "Open" | "open" => ObjectState::Open,
+        "Closed" | "closed" => ObjectState::Closed,
+        "Destroyed" | "destroyed" => ObjectState::Destroyed,
+        _ => return PredicateResult::unsatisfied(0.0),
+    };
+    if let Some(obj) = objects.iter().find(|o| o.id == obj_id) {
+        if obj.state == expected_state {
+            trace!(obj_id, ?expected_state, "predicate ObjectInState satisfied");
+            PredicateResult::satisfied()
+        } else {
+            PredicateResult::unsatisfied(0.0)
+        }
+    } else {
+        PredicateResult::unsatisfied(0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,7 +295,12 @@ mod tests {
     }
 
     fn make_ctx(agents: &[Agent], tick: u64) -> EvalContext<'_> {
-        EvalContext { agents, tick }
+        EvalContext {
+            agents,
+            tick,
+            grid: None,
+            objects: None,
+        }
     }
 
     #[test]
@@ -308,5 +402,171 @@ mod tests {
         let result = evaluate_predicate(&Predicate::AgentAt(99, Position::new(0, 0)), &ctx);
         assert!(!result.satisfied);
         assert_eq!(result.progress, 0.0);
+    }
+
+    // ---- AgentOnTerrain tests ----
+
+    #[test]
+    fn test_agent_on_terrain_satisfied() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let mut grid = Grid::new(16, 16);
+        grid.get_mut(3, 3).unwrap().terrain = TerrainType::Forest;
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: Some(&grid),
+            objects: None,
+        };
+        // Forest = terrain_id 6
+        let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
+        assert!(result.satisfied);
+    }
+
+    #[test]
+    fn test_agent_on_terrain_unsatisfied() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let grid = Grid::new(16, 16); // all Ground = 0
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: Some(&grid),
+            objects: None,
+        };
+        // Forest = terrain_id 6, but agent is on Ground
+        let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
+        assert!(!result.satisfied);
+    }
+
+    #[test]
+    fn test_agent_on_terrain_no_grid() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let ctx = make_ctx(&agents, 0); // grid is None
+        let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 0), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    // ---- ObjectAt tests ----
+
+    #[test]
+    fn test_object_at_satisfied() {
+        use forge_types::entity::ObjectType;
+        let agents = vec![];
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(5, 5),
+            object_type: ObjectType::Boulder,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Active,
+        }];
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
+        assert!(result.satisfied);
+    }
+
+    #[test]
+    fn test_object_at_unsatisfied() {
+        use forge_types::entity::ObjectType;
+        let agents = vec![];
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(1, 1),
+            object_type: ObjectType::Boulder,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Active,
+        }];
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
+        assert!(!result.satisfied);
+        assert!(result.progress > 0.0); // partial progress from proximity
+    }
+
+    #[test]
+    fn test_object_at_no_objects() {
+        let agents = vec![];
+        let ctx = make_ctx(&agents, 0); // objects is None
+        let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    // ---- ObjectInState tests ----
+
+    #[test]
+    fn test_object_in_state_satisfied() {
+        use forge_types::entity::ObjectType;
+        let agents = vec![];
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(0, 0),
+            object_type: ObjectType::Door,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Open,
+        }];
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
+        assert!(result.satisfied);
+    }
+
+    #[test]
+    fn test_object_in_state_unsatisfied() {
+        use forge_types::entity::ObjectType;
+        let agents = vec![];
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(0, 0),
+            object_type: ObjectType::Door,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Closed,
+        }];
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
+        assert!(!result.satisfied);
+    }
+
+    #[test]
+    fn test_object_in_state_case_insensitive() {
+        use forge_types::entity::ObjectType;
+        let agents = vec![];
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(0, 0),
+            object_type: ObjectType::Boulder,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Active,
+        }];
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        let result = evaluate_predicate(&Predicate::ObjectInState(0, "active".to_string()), &ctx);
+        assert!(result.satisfied);
     }
 }

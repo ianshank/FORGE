@@ -63,7 +63,7 @@ impl ForgeWasmEnv {
         } else {
             serde_json::from_str(config_json).expect("failed to parse ForgeConfig JSON")
         };
-        let world = WorldState::new(config.clone());
+        let world = WorldState::new(config.clone()).expect("invalid config");
         Self { world, config }
     }
 

@@ -199,10 +199,39 @@ pub fn regenerate_stamina(agents: &mut [Agent], config: &PhysicsConfig, max_stam
     }
 }
 
+/// Minimal agent snapshot for push processing.
+///
+/// Contains only the fields needed to evaluate push actions, avoiding a full
+/// `Vec<Agent>` clone. Extracted once per tick before mutable borrows begin.
+#[derive(Debug, Clone, Copy)]
+pub struct AgentPushData {
+    /// Agent identifier.
+    pub id: u32,
+    /// Current position.
+    pub position: Position,
+    /// Whether the agent is alive.
+    pub alive: bool,
+}
+
+impl AgentPushData {
+    /// Creates push data from an agent reference.
+    #[inline]
+    pub fn from_agent(agent: &Agent) -> Self {
+        Self {
+            id: agent.id,
+            position: agent.position,
+            alive: agent.alive,
+        }
+    }
+}
+
 /// Processes push actions -- agents pushing objects.
+///
+/// Accepts [`AgentPushData`] slices instead of full `&[Agent]` references,
+/// eliminating the need to clone the entire agent vec each tick.
 #[instrument(skip_all)]
 pub fn process_pushes(
-    agents: &[Agent],
+    agent_data: &[AgentPushData],
     grid: &mut Grid,
     objects: &mut [forge_types::Object],
     actions: &[Action],
@@ -214,7 +243,10 @@ pub fn process_pushes(
 
     for (i, action) in actions.iter().enumerate() {
         if let Action::Push(direction) = action {
-            let agent = &agents[i];
+            if i >= agent_data.len() {
+                continue;
+            }
+            let agent = &agent_data[i];
             if !agent.alive {
                 continue;
             }
@@ -540,8 +572,9 @@ mod tests {
         grid.get_mut(6, 5).unwrap().object_id = Some(0);
 
         let actions = vec![Action::Push(Direction::Right)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -563,8 +596,9 @@ mod tests {
         grid.get_mut(5, 4).unwrap().object_id = Some(0);
 
         let actions = vec![Action::Push(Direction::Up)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -586,8 +620,9 @@ mod tests {
         grid.get_mut(5, 6).unwrap().object_id = Some(0);
 
         let actions = vec![Action::Push(Direction::Down)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -609,8 +644,9 @@ mod tests {
         grid.get_mut(4, 5).unwrap().object_id = Some(0);
 
         let actions = vec![Action::Push(Direction::Left)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -632,8 +668,9 @@ mod tests {
         grid.get_mut(0, 0).unwrap().object_id = Some(0);
 
         let actions = vec![Action::Push(Direction::Up)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -657,8 +694,9 @@ mod tests {
         grid.get_mut(7, 5).unwrap().terrain = TerrainType::Wall;
 
         let actions = vec![Action::Push(Direction::Right)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -682,8 +720,9 @@ mod tests {
         grid.get_mut(7, 5).unwrap().terrain = TerrainType::Water;
 
         let actions = vec![Action::Push(Direction::Right)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -708,7 +747,8 @@ mod tests {
         config.collision_enabled = false;
 
         let actions = vec![Action::Push(Direction::Right)];
-        process_pushes(&agents, &mut grid, &mut objects, &actions, &config);
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
+        process_pushes(&push_data, &mut grid, &mut objects, &actions, &config);
 
         // Should skip entirely when collision is disabled
         assert_eq!(objects[0].position, Position::new(6, 5));
@@ -724,8 +764,9 @@ mod tests {
         let mut objects: Vec<forge_types::Object> = Vec::new();
 
         let actions = vec![Action::Push(Direction::Right)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -747,8 +788,9 @@ mod tests {
         grid.get_mut(6, 5).unwrap().object_id = Some(0);
 
         let actions = vec![Action::Push(Direction::Right)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -771,8 +813,9 @@ mod tests {
         grid.get_mut(7, 5).unwrap().object_id = Some(1);
 
         let actions = vec![Action::Push(Direction::Right)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -794,8 +837,9 @@ mod tests {
         grid.get_mut(6, 5).unwrap().object_id = Some(0);
 
         let actions = vec![Action::Push(Direction::Right), Action::Noop];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,
@@ -816,8 +860,9 @@ mod tests {
         let mut objects: Vec<forge_types::Object> = Vec::new();
 
         let actions = vec![Action::Push(Direction::Right)];
+        let push_data: Vec<AgentPushData> = agents.iter().map(AgentPushData::from_agent).collect();
         process_pushes(
-            &agents,
+            &push_data,
             &mut grid,
             &mut objects,
             &actions,

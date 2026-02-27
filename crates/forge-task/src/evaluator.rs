@@ -4,7 +4,9 @@
 //! computes rewards, and detects completion/failure.
 
 use forge_types::entity::Agent;
+use forge_types::grid::Grid;
 use forge_types::task::ActiveTask;
+use forge_types::Object;
 use tracing::{debug, instrument, trace};
 
 use crate::composer::evaluate_composition;
@@ -24,6 +26,10 @@ pub struct TaskEvalResult {
 }
 
 /// Evaluates all active tasks and computes rewards.
+///
+/// `grid` and `objects` are optional for backwards compatibility. When
+/// provided, predicates like `AgentOnTerrain`, `ObjectAt`, and
+/// `ObjectInState` will be evaluated; otherwise they return unsatisfied.
 #[instrument(skip_all)]
 pub fn evaluate_tasks(
     tasks: &mut [ActiveTask],
@@ -31,8 +37,15 @@ pub fn evaluate_tasks(
     tick: u64,
     reward_scale: f32,
     forbidden_actions: &[u32],
+    grid: Option<&Grid>,
+    objects: Option<&[Object]>,
 ) -> TaskEvalResult {
-    let ctx = EvalContext { agents, tick };
+    let ctx = EvalContext {
+        agents,
+        tick,
+        grid,
+        objects,
+    };
     let mut rewards = vec![0.0_f32; agents.len()];
     let mut completed_tasks = Vec::new();
     let failed_tasks = Vec::new();
@@ -145,7 +158,7 @@ mod tests {
             10.0,
         )];
 
-        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[]);
+        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[], None, None);
         assert!(result.rewards[0] > 0.0);
         assert_eq!(result.completed_tasks, vec![0]);
         assert!(tasks[0].completed);
@@ -160,7 +173,7 @@ mod tests {
             10.0,
         )];
 
-        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[]);
+        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[], None, None);
         assert!(!tasks[0].completed);
         assert!(result.completed_tasks.is_empty());
     }
@@ -174,7 +187,7 @@ mod tests {
             10.0,
         )];
 
-        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[]);
+        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[], None, None);
         assert!(result.should_terminate);
     }
 
@@ -187,7 +200,7 @@ mod tests {
             10.0,
         )];
 
-        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[]);
+        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[], None, None);
         // Both alive agents should get reward
         assert!(result.rewards[0] > 0.0);
         assert!(result.rewards[1] > 0.0);
@@ -207,8 +220,8 @@ mod tests {
             10.0,
         )];
 
-        let r1 = evaluate_tasks(&mut tasks1, &agents, 0, 1.0, &[]);
-        let r2 = evaluate_tasks(&mut tasks2, &agents, 0, 2.0, &[]);
+        let r1 = evaluate_tasks(&mut tasks1, &agents, 0, 1.0, &[], None, None);
+        let r2 = evaluate_tasks(&mut tasks2, &agents, 0, 2.0, &[], None, None);
         assert!((r2.rewards[0] / r1.rewards[0] - 2.0).abs() < 0.1);
     }
 
@@ -216,7 +229,7 @@ mod tests {
     fn test_evaluate_empty_tasks() {
         let agents = vec![make_agent(0, 5, 5)];
         let mut tasks: Vec<ActiveTask> = vec![];
-        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[]);
+        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[], None, None);
         assert_eq!(result.rewards.len(), 1);
         assert_eq!(result.rewards[0], 0.0);
         assert!(result.completed_tasks.is_empty());
@@ -235,7 +248,7 @@ mod tests {
         )];
         tasks[0].completed = true;
 
-        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[]);
+        let result = evaluate_tasks(&mut tasks, &agents, 0, 1.0, &[], None, None);
         assert!(result.completed_tasks.is_empty()); // not re-completed
         assert!(result.should_terminate); // still terminates
     }
