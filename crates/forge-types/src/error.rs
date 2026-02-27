@@ -134,4 +134,42 @@ mod tests {
         let forge_err: ForgeError = sim_err.into();
         assert!(matches!(forge_err, ForgeError::Simulation(_)));
     }
+
+    #[test]
+    fn test_config_error_display() {
+        let config_err = ConfigError::OutOfRange {
+            field: "width".to_string(),
+            value: "999".to_string(),
+            min: "8".to_string(),
+            max: "256".to_string(),
+        };
+        let forge_err: ForgeError = config_err.into();
+        let msg = forge_err.to_string();
+        assert!(msg.contains("configuration error"));
+        assert!(msg.contains("width"));
+        assert!(msg.contains("999"));
+        assert!(msg.contains("8"));
+        assert!(msg.contains("256"));
+    }
+
+    #[test]
+    fn test_serialization_error_display() {
+        let forge_err = ForgeError::Serialization("invalid JSON at line 5".to_string());
+        let msg = forge_err.to_string();
+        assert!(msg.contains("serialization error"));
+        assert!(msg.contains("invalid JSON at line 5"));
+    }
+
+    #[test]
+    fn test_forge_result_ok() {
+        let result: ForgeResult<u32> = Ok(42);
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_forge_result_err() {
+        let result: ForgeResult<u32> = Err(ForgeError::Serialization("bad data".to_string()));
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ForgeError::Serialization(_)));
+    }
 }

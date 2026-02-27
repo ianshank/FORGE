@@ -51,15 +51,26 @@ pub struct WorldState {
     pub terminated: bool,
     /// Whether the simulation was truncated (max steps).
     pub truncated: bool,
+    /// Rewards computed by the task evaluator for the most recent step.
+    /// Consumed by `make_step_result()` and reset each tick.
+    pub last_task_rewards: Option<Vec<f32>>,
 }
 
 impl WorldState {
     /// Creates a new world state from configuration.
     ///
-    /// Initializes the grid, spawns agents at default positions,
-    /// and sets up the RNG.
+    /// Validates the config and initializes the grid, spawns agents at
+    /// default positions, and sets up the RNG.
+    ///
+    /// Returns [`ForgeError::Config`] if the configuration is invalid.
+    ///
+    /// # Breaking Change (v0.2.0)
+    ///
+    /// This method now returns `ForgeResult<WorldState>` instead of `WorldState`.
+    /// Callers must handle the `Result` (e.g., `.unwrap()` or `?`).
     #[instrument(skip_all)]
-    pub fn new(config: ForgeConfig) -> Self {
+    pub fn new(config: ForgeConfig) -> forge_types::ForgeResult<Self> {
+        forge_types::validation::validate_config(&config)?;
         let config = Arc::new(config);
         let mut rng = ForgeRng::new(config.world.seed);
 
@@ -95,6 +106,7 @@ impl WorldState {
             config,
             terminated: false,
             truncated: false,
+            last_task_rewards: None,
         };
 
         // Place agents on the grid
@@ -110,7 +122,7 @@ impl WorldState {
             "world created"
         );
 
-        state
+        Ok(state)
     }
 
     /// Advances the simulation by one tick with the given actions.
@@ -157,7 +169,7 @@ impl WorldState {
         let mut new_config = (*self.config).clone();
         new_config.world.seed = new_seed;
 
-        let new_state = WorldState::new(new_config);
+        let new_state = WorldState::new(new_config).expect("validated config must be valid");
 
         self.tick = new_state.tick;
         self.grid = new_state.grid;
@@ -171,6 +183,7 @@ impl WorldState {
         self.config = new_state.config;
         self.terminated = false;
         self.truncated = false;
+        self.last_task_rewards = None;
 
         self.make_step_result()
     }
@@ -262,19 +275,32 @@ impl WorldState {
             position: (agent.position.x, agent.position.y),
             messages: agent.comm_buffer.to_vec(),
             day_phase: self.day_phase,
-            task_progress: Vec::new(), // populated by task system in Phase 4
+            task_progress: self
+                .tasks
+                .iter()
+                .map(|t| {
+                    if t.progress.is_empty() {
+                        0.0
+                    } else {
+                        t.progress[0]
+                    }
+                })
+                .collect(),
         }
     }
 
     /// Generates the StepResult for the current state.
-    fn make_step_result(&self) -> StepResult {
+    fn make_step_result(&mut self) -> StepResult {
         let observations: Vec<Observation> = self
             .agents
             .iter()
             .map(|agent| self.generate_observation(agent))
             .collect();
 
-        let rewards = vec![0.0; self.agents.len()]; // Task rewards added in Phase 4
+        let rewards = self
+            .last_task_rewards
+            .take()
+            .unwrap_or_else(|| vec![0.0; self.agents.len()]);
 
         let info = StepInfo {
             tick: self.tick,
@@ -294,7 +320,7 @@ impl WorldState {
     }
 
     /// Generates a terminal StepResult.
-    fn make_terminal_result(&self) -> StepResult {
+    fn make_terminal_result(&mut self) -> StepResult {
         self.make_step_result()
     }
 
@@ -354,7 +380,6 @@ impl WorldState {
 }
 
 /// Serializable subset of WorldState (excludes Arc<Config>).
-/// Uses Serialize only — deserialization happens via `from_bytes`.
 #[derive(Serialize)]
 struct SerializableWorldState<'a> {
     tick: u64,
@@ -366,6 +391,91 @@ struct SerializableWorldState<'a> {
     rng_state: crate::rng::RngState,
     terminated: bool,
     truncated: bool,
+}
+
+/// Owned version for deserialization from bytes/JSON.
+#[derive(serde::Deserialize)]
+struct DeserializableWorldState {
+    tick: u64,
+    grid: Grid,
+    agents: Vec<Agent>,
+    objects: Vec<Object>,
+    resources: Vec<ResourceNode>,
+    day_phase: u8,
+    rng_state: crate::rng::RngState,
+    terminated: bool,
+    truncated: bool,
+}
+
+impl WorldState {
+    /// Deserializes a world state from bytes (bincode format).
+    ///
+    /// The config must be the same one used when the state was serialized.
+    /// The RNG is reconstructed from the saved state to preserve determinism.
+    #[instrument(skip_all)]
+    pub fn from_bytes(bytes: &[u8], config: Arc<ForgeConfig>) -> forge_types::ForgeResult<Self> {
+        let deserialized: DeserializableWorldState = bincode::deserialize(bytes)
+            .map_err(|e| forge_types::ForgeError::Serialization(format!("bincode: {e}")))?;
+
+        Ok(WorldState {
+            tick: deserialized.tick,
+            grid: deserialized.grid,
+            agents: deserialized.agents,
+            objects: deserialized.objects,
+            resources: deserialized.resources,
+            tasks: Vec::new(),
+            recipe_book: RecipeBook::default(),
+            day_phase: deserialized.day_phase,
+            rng: ForgeRng::from_state(&deserialized.rng_state),
+            config,
+            terminated: deserialized.terminated,
+            truncated: deserialized.truncated,
+            last_task_rewards: None,
+        })
+    }
+
+    /// Serializes the world state to JSON for human-readable saves.
+    #[instrument(skip_all)]
+    pub fn to_json(&self) -> forge_types::ForgeResult<String> {
+        let serializable = SerializableWorldState {
+            tick: self.tick,
+            grid: &self.grid,
+            agents: &self.agents,
+            objects: &self.objects,
+            resources: &self.resources,
+            day_phase: self.day_phase,
+            rng_state: self.rng.save_state(),
+            terminated: self.terminated,
+            truncated: self.truncated,
+        };
+        serde_json::to_string(&serializable)
+            .map_err(|e| forge_types::ForgeError::Serialization(format!("json: {e}")))
+    }
+
+    /// Deserializes a world state from JSON.
+    ///
+    /// The config must match what was used when the state was serialized.
+    #[instrument(skip_all)]
+    pub fn from_json(json: &str, config: Arc<ForgeConfig>) -> forge_types::ForgeResult<Self> {
+        let deserialized: DeserializableWorldState = serde_json::from_str(json)
+            .map_err(|e| forge_types::ForgeError::Serialization(format!("json: {e}")))?;
+
+        Ok(WorldState {
+            tick: deserialized.tick,
+            grid: deserialized.grid,
+            agents: deserialized.agents,
+            objects: deserialized.objects,
+            resources: deserialized.resources,
+            tasks: Vec::new(),
+            recipe_book: RecipeBook::default(),
+            day_phase: deserialized.day_phase,
+            rng: ForgeRng::from_state(&deserialized.rng_state),
+            config,
+            terminated: deserialized.terminated,
+            truncated: deserialized.truncated,
+            last_task_rewards: None,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -381,7 +491,7 @@ mod tests {
         config.world.seed = 42;
         config.agents.num_agents = 1;
         config.task.max_episode_length = 1000;
-        WorldState::new(config)
+        WorldState::new(config).unwrap()
     }
 
     #[test]
@@ -436,9 +546,10 @@ mod tests {
         let mut config = ForgeConfig::default();
         config.world.width = 8;
         config.world.height = 8;
+        config.agents.default_vision_radius = 3;
         config.agents.num_agents = 1;
         config.task.max_episode_length = 5;
-        let mut world = WorldState::new(config);
+        let mut world = WorldState::new(config).unwrap();
 
         for _ in 0..5 {
             let result = world.step(&[Action::Noop]);
@@ -462,8 +573,8 @@ mod tests {
         };
         let config2 = config1.clone();
 
-        let mut world1 = WorldState::new(config1);
-        let mut world2 = WorldState::new(config2);
+        let mut world1 = WorldState::new(config1).unwrap();
+        let mut world2 = WorldState::new(config2).unwrap();
 
         // Same actions should produce identical states
         let action_sequence = vec![
@@ -547,7 +658,7 @@ mod tests {
         config.world.height = 32;
         config.world.seed = 42;
         config.agents.num_agents = 4;
-        let world = WorldState::new(config);
+        let world = WorldState::new(config).unwrap();
 
         assert_eq!(world.agents.len(), 4);
         // All agents should be alive
@@ -561,9 +672,10 @@ mod tests {
         let mut config = ForgeConfig::default();
         config.world.width = 8;
         config.world.height = 8;
+        config.agents.default_vision_radius = 3;
         config.world.seed = 42;
         config.agents.num_agents = 1;
-        let world = WorldState::new(config);
+        let world = WorldState::new(config).unwrap();
 
         assert_eq!(world.grid.width, 8);
         assert_eq!(world.grid.height, 8);
@@ -581,7 +693,7 @@ mod tests {
         config.world.height = 16;
         config.world.seed = 42;
         config.agents.num_agents = 1;
-        let mut world = WorldState::new(config);
+        let mut world = WorldState::new(config).unwrap();
 
         // Move agent to (0,0)
         let old_pos = world.agents[0].position;
@@ -663,9 +775,11 @@ mod tests {
         let mut config = ForgeConfig::default();
         config.world.width = 8;
         config.world.height = 8;
+        config.agents.default_vision_radius = 3;
         config.world.seed = 42;
         config.agents.num_agents = 0;
-        let world = WorldState::new(config);
+        config.task.enabled = false;
+        let world = WorldState::new(config).unwrap();
 
         let debug = world.to_debug_grid();
         assert!(!debug.is_empty());
@@ -710,7 +824,7 @@ mod tests {
         config.world.height = 16;
         config.world.seed = 42;
         config.agents.num_agents = 1;
-        let mut world = WorldState::new(config);
+        let mut world = WorldState::new(config).unwrap();
 
         // Kill the agent to trigger termination
         world.agents[0].alive = false;
@@ -729,7 +843,8 @@ mod tests {
         config.world.height = 16;
         config.world.seed = 42;
         config.agents.num_agents = 1;
-        let mut world = WorldState::new(config);
+        config.agents.default_vision_radius = 3;
+        let mut world = WorldState::new(config).unwrap();
 
         // Should still work with min width
         let result = world.step(&[Action::Noop]);
@@ -742,9 +857,10 @@ mod tests {
         let mut config = ForgeConfig::default();
         config.world.width = 16;
         config.world.height = 8;
+        config.agents.default_vision_radius = 3;
         config.world.seed = 42;
         config.agents.num_agents = 1;
-        let mut world = WorldState::new(config);
+        let mut world = WorldState::new(config).unwrap();
 
         let result = world.step(&[Action::Noop]);
         assert!(!result.terminated);
@@ -768,5 +884,72 @@ mod tests {
         // Health and stamina should be between 0.0 and 1.0
         assert!(obs.health >= 0.0 && obs.health <= 1.0);
         assert!(obs.stamina >= 0.0 && obs.stamina <= 1.0);
+    }
+
+    // ---- from_bytes / from_json roundtrip tests ----
+
+    #[test]
+    fn test_from_bytes_roundtrip() {
+        let mut world = make_test_world();
+        world.step(&[Action::Noop]);
+        world.step(&[Action::Move(Direction::Right)]);
+
+        let bytes = world.to_bytes();
+        let restored = WorldState::from_bytes(&bytes, world.config.clone()).unwrap();
+
+        assert_eq!(restored.tick, world.tick);
+        assert_eq!(restored.day_phase, world.day_phase);
+        assert_eq!(restored.agents.len(), world.agents.len());
+        assert_eq!(restored.agents[0].position, world.agents[0].position);
+        assert_eq!(restored.agents[0].health, world.agents[0].health);
+        assert_eq!(restored.terminated, world.terminated);
+        assert_eq!(restored.truncated, world.truncated);
+    }
+
+    #[test]
+    fn test_from_bytes_rng_preserves_sequence() {
+        let mut world = make_test_world();
+        for _ in 0..5 {
+            world.step(&[Action::Noop]);
+        }
+
+        let bytes = world.to_bytes();
+        let mut restored = WorldState::from_bytes(&bytes, world.config.clone()).unwrap();
+
+        // After restoration, stepping both should produce the same results
+        let result_original = world.step(&[Action::Noop]);
+        let result_restored = restored.step(&[Action::Noop]);
+        assert_eq!(
+            result_original.observations[0].position,
+            result_restored.observations[0].position,
+        );
+    }
+
+    #[test]
+    fn test_from_bytes_invalid_data() {
+        let config = Arc::new(ForgeConfig::default());
+        let result = WorldState::from_bytes(&[0, 1, 2, 3], config);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_to_json_roundtrip() {
+        let mut world = make_test_world();
+        world.step(&[Action::Noop]);
+
+        let json = world.to_json().unwrap();
+        assert!(!json.is_empty());
+
+        let restored = WorldState::from_json(&json, world.config.clone()).unwrap();
+        assert_eq!(restored.tick, world.tick);
+        assert_eq!(restored.agents[0].position, world.agents[0].position);
+        assert_eq!(restored.day_phase, world.day_phase);
+    }
+
+    #[test]
+    fn test_from_json_invalid_data() {
+        let config = Arc::new(ForgeConfig::default());
+        let result = WorldState::from_json("not valid json", config);
+        assert!(result.is_err());
     }
 }

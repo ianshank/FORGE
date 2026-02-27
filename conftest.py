@@ -11,3 +11,8 @@ from pathlib import Path
 FORGE_ROOT = Path(__file__).parent
 if str(FORGE_ROOT) not in sys.path:
     sys.path.insert(0, str(FORGE_ROOT))
+
+# Also add the python/ directory so forge_env is importable without maturin install
+PYTHON_DIR = FORGE_ROOT / "python"
+if str(PYTHON_DIR) not in sys.path:
+    sys.path.insert(0, str(PYTHON_DIR))

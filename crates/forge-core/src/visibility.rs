@@ -7,16 +7,20 @@ use forge_types::entity::Agent;
 use forge_types::grid::{Grid, VisibilityState};
 use tracing::{instrument, trace};
 
+use crate::day_night;
+
 /// Updates visibility state for all tiles based on agent positions and vision radii.
 ///
 /// Process:
 /// 1. Mark all currently Visible tiles as Explored (they were seen before)
-/// 2. For each alive agent, cast rays to all tiles within vision_radius
-/// 3. If the ray reaches the tile without hitting vision-blocking terrain, mark it Visible
+/// 2. For each alive agent, compute effective vision radius (base * day/night modifier)
+/// 3. Cast rays to all tiles within the effective radius
+/// 4. If the ray reaches the tile without hitting vision-blocking terrain, mark it Visible
 ///
 /// Vision is blocked by tiles where `terrain.blocks_vision()` returns true.
+/// The `day_phase` parameter controls vision range: day = full, dawn/dusk = 75%, night = 50%.
 #[instrument(skip_all)]
-pub fn update_visibility(agents: &[Agent], grid: &mut Grid) {
+pub fn update_visibility(agents: &[Agent], grid: &mut Grid, day_phase: u8) {
     // Step 1: Demote all Visible tiles to Explored
     for tile in grid.tiles.iter_mut() {
         if tile.visibility == VisibilityState::Visible {
@@ -24,7 +28,9 @@ pub fn update_visibility(agents: &[Agent], grid: &mut Grid) {
         }
     }
 
-    // Step 2: For each alive agent, reveal tiles within vision radius with line-of-sight
+    // Step 2: For each alive agent, reveal tiles within effective vision radius with line-of-sight
+    let modifier = day_night::vision_modifier(day_phase);
+
     for agent in agents {
         if !agent.alive {
             continue;
@@ -32,13 +38,17 @@ pub fn update_visibility(agents: &[Agent], grid: &mut Grid) {
 
         let ax = agent.position.x as i32;
         let ay = agent.position.y as i32;
-        let vr = agent.vision_radius as i32;
+        // Apply day/night vision modifier to base vision radius
+        let effective_radius = (agent.vision_radius as f32 * modifier).round() as i32;
+        let vr = effective_radius.max(0);
 
         trace!(
             agent_id = agent.id,
             x = ax,
             y = ay,
-            vision_radius = vr,
+            base_radius = agent.vision_radius,
+            effective_radius = vr,
+            day_phase = day_phase,
             "updating visibility"
         );
 
@@ -155,6 +165,7 @@ pub fn visibility_mask(agent: &Agent, grid: &Grid) -> Vec<bool> {
 mod tests {
     use super::*;
     use forge_types::config::AgentConfig;
+    use forge_types::constants::{DAY_PHASE_DAWN, DAY_PHASE_DAY, DAY_PHASE_NIGHT};
     use forge_types::entity::Agent;
     use forge_types::grid::{Grid, Position, TerrainType, VisibilityState};
 
@@ -172,7 +183,7 @@ mod tests {
         let mut grid = make_grid(16, 16);
         let agent = make_agent(0, 5, 5);
 
-        update_visibility(&[agent], &mut grid);
+        update_visibility(&[agent], &mut grid, DAY_PHASE_DAY);
 
         let tile = grid.get(5, 5).unwrap();
         assert_eq!(tile.visibility, VisibilityState::Visible);
@@ -184,7 +195,7 @@ mod tests {
         let mut agent = make_agent(0, 15, 15);
         agent.vision_radius = 3;
 
-        update_visibility(&[agent], &mut grid);
+        update_visibility(&[agent], &mut grid, DAY_PHASE_DAY);
 
         // Tile within radius should be visible
         assert_eq!(
@@ -208,7 +219,7 @@ mod tests {
         let mut agent = make_agent(0, 5, 5);
         agent.vision_radius = 5;
 
-        update_visibility(&[agent], &mut grid);
+        update_visibility(&[agent], &mut grid, DAY_PHASE_DAY);
 
         // The wall tile itself should be visible (we can see walls)
         assert_eq!(grid.get(7, 5).unwrap().visibility, VisibilityState::Visible);
@@ -224,14 +235,14 @@ mod tests {
         agent.vision_radius = 2;
 
         // First pass: agent at (5,5) reveals nearby tiles
-        update_visibility(&[agent.clone()], &mut grid);
+        update_visibility(&[agent.clone()], &mut grid, DAY_PHASE_DAY);
         assert_eq!(grid.get(5, 5).unwrap().visibility, VisibilityState::Visible);
 
         // Move agent away
         agent.position = Position::new(12, 12);
 
         // Second pass: old tiles should become Explored, not Hidden
-        update_visibility(&[agent], &mut grid);
+        update_visibility(&[agent], &mut grid, DAY_PHASE_DAY);
 
         assert_eq!(
             grid.get(5, 5).unwrap().visibility,
@@ -259,7 +270,7 @@ mod tests {
         let mut a2 = make_agent(1, 20, 20);
         a2.vision_radius = 2;
 
-        update_visibility(&[a1, a2], &mut grid);
+        update_visibility(&[a1, a2], &mut grid, DAY_PHASE_DAY);
 
         // Both agents' own tiles should be visible
         assert_eq!(grid.get(5, 5).unwrap().visibility, VisibilityState::Visible);
@@ -281,7 +292,7 @@ mod tests {
         let mut agent = make_agent(0, 5, 5);
         agent.alive = false;
 
-        update_visibility(&[agent], &mut grid);
+        update_visibility(&[agent], &mut grid, DAY_PHASE_DAY);
 
         // Dead agent should not reveal any tiles
         assert_eq!(grid.get(5, 5).unwrap().visibility, VisibilityState::Hidden);
@@ -293,7 +304,7 @@ mod tests {
         let mut agent = make_agent(0, 15, 15);
         agent.vision_radius = 3;
 
-        update_visibility(&[agent.clone()], &mut grid);
+        update_visibility(&[agent.clone()], &mut grid, DAY_PHASE_DAY);
 
         let mask = visibility_mask(&agent, &grid);
         let side = 2 * 3 + 1;
@@ -328,7 +339,7 @@ mod tests {
         let mut agent = make_agent(0, 5, 5);
         agent.vision_radius = 0;
 
-        update_visibility(&[agent.clone()], &mut grid);
+        update_visibility(&[agent.clone()], &mut grid, DAY_PHASE_DAY);
 
         // Agent should see only its own tile
         assert_eq!(grid.get(5, 5).unwrap().visibility, VisibilityState::Visible);
@@ -351,7 +362,7 @@ mod tests {
         let mut agent = make_agent(0, 0, 0);
         agent.vision_radius = 3;
 
-        update_visibility(&[agent.clone()], &mut grid);
+        update_visibility(&[agent.clone()], &mut grid, DAY_PHASE_DAY);
 
         // Own tile should be visible
         assert_eq!(grid.get(0, 0).unwrap().visibility, VisibilityState::Visible);
@@ -419,7 +430,7 @@ mod tests {
         let mut agent = make_agent(0, 15, 15);
         agent.vision_radius = 3;
 
-        update_visibility(&[agent], &mut grid);
+        update_visibility(&[agent], &mut grid, DAY_PHASE_DAY);
 
         // (15 + 3, 15 + 3) => dx=3, dy=3 => dist^2 = 18 > 9 = radius^2
         // So corners of the bounding box should NOT be visible
@@ -443,7 +454,7 @@ mod tests {
         let mut agent = make_agent(0, 0, 0);
         agent.vision_radius = 2;
 
-        update_visibility(&[agent.clone()], &mut grid);
+        update_visibility(&[agent.clone()], &mut grid, DAY_PHASE_DAY);
 
         let mask = visibility_mask(&agent, &grid);
         let side = (2 * 2 + 1) as usize; // 5
@@ -465,12 +476,114 @@ mod tests {
         let mut agent = make_agent(0, 5, 5);
         agent.vision_radius = 5;
 
-        update_visibility(&[agent], &mut grid);
+        update_visibility(&[agent], &mut grid, DAY_PHASE_DAY);
 
         // Mountain itself should be visible
         assert_eq!(grid.get(7, 5).unwrap().visibility, VisibilityState::Visible);
 
         // Tile behind the mountain should be hidden
         assert_eq!(grid.get(9, 5).unwrap().visibility, VisibilityState::Hidden);
+    }
+
+    // ---- Day/night vision modifier tests ----
+
+    #[test]
+    fn test_night_reduces_vision_radius() {
+        let mut grid = make_grid(32, 32);
+        let mut agent = make_agent(0, 15, 15);
+        agent.vision_radius = 6; // night modifier 0.5 → effective radius 3
+
+        update_visibility(&[agent], &mut grid, DAY_PHASE_NIGHT);
+
+        // Tile at distance 3 along axis should be visible (effective radius = 3)
+        assert_eq!(
+            grid.get(18, 15).unwrap().visibility,
+            VisibilityState::Visible,
+            "tile at effective night radius should be visible"
+        );
+
+        // Tile at distance 5 along axis should be hidden (beyond effective radius)
+        assert_eq!(
+            grid.get(20, 15).unwrap().visibility,
+            VisibilityState::Hidden,
+            "tile beyond effective night radius should be hidden"
+        );
+    }
+
+    #[test]
+    fn test_dawn_reduces_vision_radius() {
+        let mut grid = make_grid(32, 32);
+        let mut agent = make_agent(0, 15, 15);
+        agent.vision_radius = 4; // dawn modifier 0.75 → effective radius 3
+
+        update_visibility(&[agent], &mut grid, DAY_PHASE_DAWN);
+
+        // Tile at distance 3 along axis should be visible
+        assert_eq!(
+            grid.get(18, 15).unwrap().visibility,
+            VisibilityState::Visible,
+            "tile at effective dawn radius should be visible"
+        );
+
+        // Tile at distance 4 along axis should be hidden
+        assert_eq!(
+            grid.get(19, 15).unwrap().visibility,
+            VisibilityState::Hidden,
+            "tile beyond effective dawn radius should be hidden"
+        );
+    }
+
+    #[test]
+    fn test_day_full_vision_radius() {
+        let mut grid = make_grid(32, 32);
+        let mut agent = make_agent(0, 15, 15);
+        agent.vision_radius = 4;
+
+        update_visibility(&[agent], &mut grid, DAY_PHASE_DAY);
+
+        // Tile at full radius should be visible during day
+        assert_eq!(
+            grid.get(19, 15).unwrap().visibility,
+            VisibilityState::Visible,
+            "tile at full day radius should be visible"
+        );
+    }
+
+    #[test]
+    fn test_night_vision_radius_zero_still_sees_own_tile() {
+        let mut grid = make_grid(16, 16);
+        let mut agent = make_agent(0, 5, 5);
+        agent.vision_radius = 1; // night modifier 0.5 → rounds to 1, still sees adjacent
+
+        update_visibility(&[agent.clone()], &mut grid, DAY_PHASE_NIGHT);
+
+        // Agent should always see own tile regardless of phase
+        assert_eq!(
+            grid.get(5, 5).unwrap().visibility,
+            VisibilityState::Visible,
+            "agent should always see own tile at night"
+        );
+    }
+
+    #[test]
+    fn test_fog_of_war_persists_with_day_night_transition() {
+        let mut grid = make_grid(32, 32);
+        let mut agent = make_agent(0, 15, 15);
+        agent.vision_radius = 6;
+
+        // Day pass: full radius 6, tiles up to distance 6 are visible
+        update_visibility(&[agent.clone()], &mut grid, DAY_PHASE_DAY);
+        assert_eq!(
+            grid.get(21, 15).unwrap().visibility,
+            VisibilityState::Visible
+        );
+
+        // Night pass: effective radius 3, far tiles become Explored
+        update_visibility(&[agent], &mut grid, DAY_PHASE_NIGHT);
+        assert_eq!(
+            grid.get(21, 15).unwrap().visibility,
+            VisibilityState::Explored,
+            "tiles beyond night radius should become Explored, not Hidden"
+        );
     }
 }

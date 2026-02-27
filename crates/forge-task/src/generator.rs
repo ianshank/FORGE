@@ -5,7 +5,7 @@
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use tracing::instrument;
+use tracing::{instrument, warn};
 
 use forge_types::grid::Position;
 use forge_types::resource::ItemType;
@@ -374,7 +374,10 @@ pub fn describe_task(goal: &TaskComposition) -> String {
             )
         }
 
-        _ => "unknown task".to_string(),
+        _ => {
+            warn!("unknown TaskComposition variant in describe_task");
+            "unknown task".to_string()
+        }
     }
 }
 
@@ -412,7 +415,10 @@ fn describe_predicate(pred: &Predicate) -> String {
             format!("agent {} is on terrain {}", id, terrain)
         }
 
-        _ => "unknown predicate".to_string(),
+        _ => {
+            warn!("unknown Predicate variant in describe_predicate");
+            "unknown predicate".to_string()
+        }
     }
 }
 
@@ -426,7 +432,10 @@ fn count_atoms(composition: &TaskComposition) -> usize {
         TaskComposition::Before(subtask, _) => count_atoms(subtask),
         TaskComposition::While(cond, goal) => count_atoms(cond) + count_atoms(goal),
         TaskComposition::Without(subtask, _) => count_atoms(subtask),
-        _ => 1,
+        _ => {
+            warn!("unknown TaskComposition variant in count_atoms");
+            1
+        }
     }
 }
 

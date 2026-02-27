@@ -5,9 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::entity::{AgentId, CommToken};
+use crate::entity::CommToken;
 use crate::grid::Direction;
-use crate::resource::ItemType;
 
 /// An action that an agent can take in a single tick.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,12 +26,8 @@ pub enum Action {
     Craft(u16),
     /// Push an object in the given direction.
     Push(Direction),
-    /// Throw an item from inventory slot in a direction.
-    Throw(Direction, u8),
     /// Emit a communication token.
     Communicate(CommToken),
-    /// Offer a trade to another agent.
-    Trade(AgentId, TradeOffer),
     /// Context-sensitive interaction with adjacent tile.
     Interact,
 }
@@ -91,8 +86,6 @@ impl Action {
             Action::Push(Direction::Right) => 38,
             Action::Interact => 39,
             Action::Communicate(token) => 40 + *token as u32,
-            Action::Trade(_, _) => 0, // Trade uses extended action space
-            Action::Throw(_, _) => 0, // Throw uses extended action space
         }
     }
 
@@ -100,15 +93,6 @@ impl Action {
     pub fn space_size(comm_vocab_size: u16) -> u32 {
         40 + comm_vocab_size as u32
     }
-}
-
-/// A trade offer between agents.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TradeOffer {
-    /// Items offered by the proposer.
-    pub offer: Vec<(ItemType, u16)>,
-    /// Items requested from the other agent.
-    pub request: Vec<(ItemType, u16)>,
 }
 
 #[cfg(test)]

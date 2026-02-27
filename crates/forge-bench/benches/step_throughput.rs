@@ -24,7 +24,7 @@ fn bench_step_single_agent(c: &mut Criterion) {
 
     for size in [16u16, 32, 64, 128] {
         let config = make_config(size, size, 1);
-        let mut world = WorldState::new(config);
+        let mut world = WorldState::new(config).unwrap();
         let actions = vec![Action::Move(Direction::Right)];
 
         group.bench_with_input(
@@ -46,7 +46,7 @@ fn bench_step_multi_agent(c: &mut Criterion) {
 
     for num_agents in [1u32, 2, 4, 8] {
         let config = make_config(64, 64, num_agents);
-        let mut world = WorldState::new(config);
+        let mut world = WorldState::new(config).unwrap();
         let actions: Vec<Action> = (0..num_agents)
             .map(|i| Action::Move(Direction::from_index((i % 4) as u8).unwrap()))
             .collect();
@@ -67,7 +67,7 @@ fn bench_step_multi_agent(c: &mut Criterion) {
 
 fn bench_step_noop(c: &mut Criterion) {
     let config = make_config(64, 64, 1);
-    let mut world = WorldState::new(config);
+    let mut world = WorldState::new(config).unwrap();
     let actions = vec![Action::Noop];
 
     c.bench_function("step_noop_64x64", |b| {
@@ -88,7 +88,7 @@ fn bench_world_creation(c: &mut Criterion) {
             &size,
             |b, _| {
                 b.iter(|| {
-                    black_box(WorldState::new(config.clone()));
+                    black_box(WorldState::new(config.clone()).unwrap());
                 });
             },
         );
@@ -102,7 +102,7 @@ fn bench_serialization(c: &mut Criterion) {
 
     for size in [16u16, 32, 64] {
         let config = make_config(size, size, 1);
-        let world = WorldState::new(config);
+        let world = WorldState::new(config).unwrap();
 
         group.bench_with_input(
             BenchmarkId::new("to_bytes", format!("{}x{}", size, size)),

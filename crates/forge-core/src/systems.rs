@@ -6,7 +6,7 @@
 use forge_types::entity::ObjectType;
 use forge_types::grid::Direction;
 use forge_types::Action;
-use tracing::{instrument, trace};
+use tracing::{debug, instrument, trace, warn};
 
 use crate::combat;
 use crate::communication;
@@ -27,8 +27,8 @@ use crate::world::WorldState;
 /// 5. Crafting system — Phase 1
 /// 6. Combat system — Phase 1
 /// 7. Communication system — Phase 3
-/// 8. Visibility system — Phase 3
-/// 9. Day/night system — Phase 3
+/// 8. Day/night system — Phase 3 (before visibility so phase affects vision)
+/// 9. Visibility system — Phase 3 (applies day/night vision modifier)
 /// 10. Task system — Phase 4
 /// 11. Generate observations
 #[instrument(skip_all)]
@@ -46,9 +46,14 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
         &state.config.physics,
     );
 
-    // 2b. Physics: push processing
+    // 2b. Physics: push processing — extract minimal data to avoid cloning
+    let push_data: smallvec::SmallVec<[physics::AgentPushData; 8]> = state
+        .agents
+        .iter()
+        .map(physics::AgentPushData::from_agent)
+        .collect();
     physics::process_pushes(
-        &state.agents.clone(), // TODO: avoid clone in Phase optimization
+        &push_data,
         &mut state.grid,
         &mut state.objects,
         &validated_actions,
@@ -91,11 +96,29 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
         &state.config.agents,
     );
 
-    // 8. Visibility system
-    visibility::update_visibility(&state.agents, &mut state.grid);
-
-    // 9. Day/night system
+    // 8. Day/night system (compute before visibility so phase affects vision range)
     state.day_phase = day_night::compute_day_phase(state.tick, &state.config.world);
+
+    // 9. Visibility system (applies day/night vision modifier)
+    visibility::update_visibility(&state.agents, &mut state.grid, state.day_phase);
+
+    // 10. Task evaluation and reward computation
+    if !state.tasks.is_empty() {
+        let task_result = forge_task::evaluator::evaluate_tasks(
+            &mut state.tasks,
+            &state.agents,
+            state.tick,
+            state.config.task.reward_scale,
+            &[],
+            Some(&state.grid),
+            Some(&state.objects),
+        );
+        state.last_task_rewards = Some(task_result.rewards);
+        if task_result.should_terminate {
+            debug!(tick = state.tick, "task system triggered termination");
+            state.terminated = true;
+        }
+    }
 
     // Increment tick
     state.tick += 1;
@@ -105,6 +128,7 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
 
 /// Computes per-agent boolean indicating whether each agent is adjacent to
 /// or standing on a tile containing a CraftingStation object.
+#[instrument(skip_all)]
 fn compute_near_station(
     agents: &[forge_types::entity::Agent],
     grid: &forge_types::grid::Grid,
@@ -142,6 +166,7 @@ fn compute_near_station(
 }
 
 /// Validates actions and replaces invalid ones with Noop.
+#[instrument(skip_all)]
 fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
     actions
         .iter()
@@ -166,6 +191,10 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
                     if *token < vocab_size {
                         Action::Communicate(*token)
                     } else {
+                        warn!(
+                            agent_id = agent.id,
+                            token, vocab_size, "comm token out of range, falling back to Noop"
+                        );
                         Action::Noop
                     }
                 }
@@ -173,6 +202,12 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
                     if (*slot as usize) < agent.inventory.capacity() {
                         Action::Drop(*slot)
                     } else {
+                        warn!(
+                            agent_id = agent.id,
+                            slot,
+                            capacity = agent.inventory.capacity(),
+                            "drop slot out of range, falling back to Noop"
+                        );
                         Action::Noop
                     }
                 }
@@ -180,6 +215,12 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
                     if (*slot as usize) < agent.inventory.capacity() {
                         Action::Use(*slot)
                     } else {
+                        warn!(
+                            agent_id = agent.id,
+                            slot,
+                            capacity = agent.inventory.capacity(),
+                            "use slot out of range, falling back to Noop"
+                        );
                         Action::Noop
                     }
                 }
@@ -199,7 +240,7 @@ mod tests {
     fn test_validate_actions_dead_agent() {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
-        let mut state = WorldState::new(config);
+        let mut state = WorldState::new(config).unwrap();
         state.agents[0].alive = false;
 
         let actions = vec![Action::Move(forge_types::Direction::Up)];
@@ -211,7 +252,7 @@ mod tests {
     fn test_validate_actions_excess_actions() {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         let actions = vec![Action::Noop, Action::Noop, Action::Noop]; // 3 actions for 1 agent
         let validated = validate_actions(&actions, &state);
@@ -224,7 +265,7 @@ mod tests {
     #[test]
     fn test_systems_increment_tick() {
         let config = ForgeConfig::default();
-        let mut state = WorldState::new(config);
+        let mut state = WorldState::new(config).unwrap();
         let initial_tick = state.tick;
 
         let actions = vec![Action::Noop];
@@ -239,7 +280,7 @@ mod tests {
         config.world.width = 16;
         config.world.height = 16;
         config.agents.num_agents = 1;
-        let mut state = WorldState::new(config);
+        let mut state = WorldState::new(config).unwrap();
 
         // Place agent at (5, 5)
         let start_pos = Position::new(5, 5);
@@ -398,7 +439,7 @@ mod tests {
     fn test_validate_actions_empty() {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         let actions: Vec<Action> = vec![];
         let validated = validate_actions(&actions, &state);
@@ -410,7 +451,7 @@ mod tests {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 2;
         config.agents.comm_vocab_size = 10;
-        let mut state = WorldState::new(config);
+        let mut state = WorldState::new(config).unwrap();
         state.agents[1].alive = false;
 
         let actions = vec![
@@ -426,7 +467,7 @@ mod tests {
     fn test_validate_actions_invalid_drop_slot() {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         // carry_capacity is 10 by default, so slot 10 is out of range
         let actions = vec![Action::Drop(10)];
@@ -438,7 +479,7 @@ mod tests {
     fn test_validate_actions_valid_drop_slot() {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         // slot 0 should be valid
         let actions = vec![Action::Drop(0)];
@@ -450,7 +491,7 @@ mod tests {
     fn test_validate_actions_invalid_use_slot() {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         // carry_capacity is 10, slot 255 is out of range
         let actions = vec![Action::Use(255)];
@@ -462,7 +503,7 @@ mod tests {
     fn test_validate_actions_valid_use_slot() {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         let actions = vec![Action::Use(9)];
         let validated = validate_actions(&actions, &state);
@@ -474,7 +515,7 @@ mod tests {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
         config.agents.comm_vocab_size = 10;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         // Token 10 is beyond vocab_size of 10 (valid: 0..9)
         let actions = vec![Action::Communicate(10)];
@@ -487,7 +528,7 @@ mod tests {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
         config.agents.comm_vocab_size = 10;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         let actions = vec![Action::Communicate(9)];
         let validated = validate_actions(&actions, &state);
@@ -498,7 +539,7 @@ mod tests {
     fn test_validate_actions_noop_passthrough() {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         let actions = vec![Action::Noop];
         let validated = validate_actions(&actions, &state);
@@ -509,7 +550,7 @@ mod tests {
     fn test_validate_actions_pickup_passthrough() {
         let mut config = ForgeConfig::default();
         config.agents.num_agents = 1;
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
 
         let actions = vec![Action::PickUp];
         let validated = validate_actions(&actions, &state);

@@ -1,10 +1,10 @@
-name: Rust CI
+name: CI
 
 on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,7 +33,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
-    name: Tests
+    name: Rust Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,3 +49,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo bench --no-run -p forge-bench
+
+  python:
+    name: Python Lint & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin ruff mypy pytest numpy gymnasium
+      - name: Build native extension
+        run: maturin develop
+      - name: Ruff lint
+        run: ruff check python/ tests/python/
+      - name: Mypy type check
+        run: mypy python/forge_env/ tests/python/ --ignore-missing-imports
+      - name: Pytest
+        run: pytest tests/python/ -v

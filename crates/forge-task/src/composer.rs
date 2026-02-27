@@ -164,7 +164,12 @@ mod tests {
     }
 
     fn make_ctx(agents: &[Agent], tick: u64) -> EvalContext<'_> {
-        EvalContext { agents, tick }
+        EvalContext {
+            agents,
+            tick,
+            grid: None,
+            objects: None,
+        }
     }
 
     #[test]

@@ -350,3 +350,186 @@ def test_seed_everything() -> None:
     from forge_env.utils import seed_everything  # noqa: PLC0415
 
     seed_everything(42)
+
+
+def test_time_limit_resets_counter() -> None:
+    """TimeLimit should reset its _current_step counter on reset()."""
+    from forge_env.wrappers import TimeLimit  # noqa: PLC0415
+
+    env = TimeLimit(_DummyEnv(), max_steps=10)
+    env.reset()
+
+    # Take a few steps to advance the counter.
+    for _ in range(5):
+        env.step(0)
+    assert env._current_step == 5
+
+    # After reset the counter must be back to zero.
+    env.reset()
+    assert env._current_step == 0
+
+
+def test_normalize_reward_updates_stats() -> None:
+    """NormalizeRewardWrapper.count, reward_mean, and reward_var should update after steps."""
+    from forge_env.wrappers import NormalizeRewardWrapper  # noqa: PLC0415
+
+    env = NormalizeRewardWrapper(_DummyEnv())
+    env.reset()
+
+    assert env.count == 0.0
+    assert env.reward_mean == 0.0
+
+    # _DummyEnv always returns reward=1.0
+    env.step(0)
+    assert env.count == 1.0
+    # After a single observation of 1.0 the mean must be 1.0.
+    assert env.reward_mean == 1.0
+
+    env.step(0)
+    assert env.count == 2.0
+    # Two observations of 1.0 -> mean still 1.0.
+    assert env.reward_mean == 1.0
+
+
+def test_normalize_reward_clips_extreme() -> None:
+    """Normalised reward must stay in [-10, 10] even with extreme inputs."""
+    from forge_env.wrappers import NormalizeRewardWrapper  # noqa: PLC0415
+
+    class _ExtremeRewardEnv(_DummyEnv):
+        """Dummy env that returns extreme reward values."""
+
+        def step(
+            self, action: int,
+        ) -> tuple[dict[str, list[float]], float, bool, bool, dict[str, int]]:
+            self._step_count += 1
+            obs: dict[str, list[float]] = {"x": [1.0, 2.0], "y": [3.0]}
+            reward = 1e12 if self._step_count % 2 == 0 else -1e12
+            info: dict[str, int] = {"tick": self._step_count}
+            return obs, reward, False, False, info
+
+    env = NormalizeRewardWrapper(_ExtremeRewardEnv())
+    env.reset()
+
+    for _ in range(50):
+        _obs, reward, _term, _trunc, _info = env.step(0)
+        assert -10.0 <= reward <= 10.0, f"Normalised reward out of range: {reward}"
+
+
+def test_record_episode_statistics_resets_on_new_episode() -> None:
+    """RecordEpisodeStatistics should reset counters when reset() is called."""
+    from forge_env.wrappers import RecordEpisodeStatistics, TimeLimit  # noqa: PLC0415
+
+    env = RecordEpisodeStatistics(TimeLimit(_DummyEnv(), max_steps=3))
+
+    # First episode.
+    env.reset()
+    for _ in range(3):
+        env.step(0)
+
+    # Internal counters should reflect the finished episode.
+    assert env._episode_length == 3
+    assert env._episode_return == 3.0
+
+    # After reset the counters must be zeroed out.
+    env.reset()
+    assert env._episode_length == 0
+    assert env._episode_return == 0.0
+
+
+def test_flatten_observation_step() -> None:
+    """FlattenObservationWrapper should flatten observations from step() too."""
+    np = pytest.importorskip("numpy")
+    from forge_env.wrappers import FlattenObservationWrapper  # noqa: PLC0415
+
+    env = FlattenObservationWrapper(_DummyEnv())
+    env.reset()
+
+    obs, _reward, _terminated, _truncated, _info = env.step(0)
+    assert isinstance(obs, np.ndarray)
+    assert obs.ndim == 1
+    assert obs.dtype == np.float32
+    # {"x": [1, 2], "y": [3]} -> 3 elements
+    assert obs.shape[0] == 3
+
+
+def test_base_wrapper_delegates_attributes() -> None:
+    """_BaseWrapper.__getattr__ should forward attribute access to the inner env."""
+    from forge_env.wrappers import TimeLimit  # noqa: PLC0415
+
+    inner = _DummyEnv()
+    inner.custom_attr = "hello"  # type: ignore[attr-defined]
+
+    wrapped = TimeLimit(inner, max_steps=10)
+    # The wrapper itself has no 'custom_attr'; it should be forwarded.
+    assert wrapped.custom_attr == "hello"
+    # The inner env's _step_count should also be reachable via delegation.
+    assert wrapped._step_count == inner._step_count
+
+
+def test_time_limit_does_not_affect_terminated() -> None:
+    """TimeLimit must not override terminated=True coming from the inner env."""
+    from forge_env.wrappers import TimeLimit  # noqa: PLC0415
+
+    class _TerminatingEnv(_DummyEnv):
+        """Dummy env that terminates on the very first step."""
+
+        def step(
+            self, action: int,
+        ) -> tuple[dict[str, list[float]], float, bool, bool, dict[str, int]]:
+            self._step_count += 1
+            obs: dict[str, list[float]] = {"x": [1.0, 2.0], "y": [3.0]}
+            info: dict[str, int] = {"tick": self._step_count}
+            return obs, 0.0, True, False, info
+
+    env = TimeLimit(_TerminatingEnv(), max_steps=100)
+    env.reset()
+
+    _obs, _r, terminated, truncated, _info = env.step(0)
+    assert terminated is True, "terminated flag from inner env must be preserved"
+    assert truncated is False, "TimeLimit should not set truncated on step 1 of 100"
+
+
+def test_seed_everything_with_numpy() -> None:
+    """seed_everything should set the numpy random seed correctly."""
+    np = pytest.importorskip("numpy")
+    from forge_env.utils import seed_everything  # noqa: PLC0415
+
+    seed_everything(12345)
+    a = np.random.rand(5)
+
+    seed_everything(12345)
+    b = np.random.rand(5)
+
+    np.testing.assert_array_equal(a, b)
+
+
+def test_make_env_raises_without_native() -> None:
+    """make_env should raise ImportError when the native module is not available."""
+    from unittest import mock  # noqa: PLC0415
+
+    import forge_env.utils as utils_mod  # noqa: PLC0415
+
+    with mock.patch.object(utils_mod, "_NativeEnv", None), pytest.raises(
+        ImportError, match="native module not found"
+    ):
+        utils_mod.make_env()
+
+
+def test_check_env_validates_reset_type() -> None:
+    """check_env should raise AssertionError when reset() returns the wrong type."""
+    from forge_env.utils import check_env  # noqa: PLC0415
+
+    class _BadEnv:
+        """Env whose reset() returns a plain dict instead of a tuple."""
+
+        def reset(self, **kwargs: Any) -> dict[str, int]:
+            return {"bad": 1}
+
+        def step(self, action: int) -> None:
+            pass  # pragma: no cover
+
+        def close(self) -> None:
+            pass  # pragma: no cover
+
+    with pytest.raises(AssertionError, match=r"reset.*must return a tuple"):
+        check_env(_BadEnv())

@@ -32,6 +32,7 @@ impl BiomeThresholds {
     /// The `biome_scale` field is repurposed as a general biome-intensity
     /// knob.  A higher `biome_scale` pushes the water level down and the
     /// mountain level higher, producing more varied terrain.
+    #[instrument(skip_all)]
     pub fn from_config(config: &WorldConfig) -> Self {
         let scale = config.biome_scale as f64;
 
@@ -198,5 +199,41 @@ mod tests {
             c.classify(c.thresholds.water_level + 0.001, 0.5),
             TerrainType::Sand
         );
+    }
+
+    #[test]
+    fn test_from_config_default_scale() {
+        let config = WorldConfig::default();
+        let thresholds = BiomeThresholds::from_config(&config);
+        // Default biome_scale is 0.1
+        assert!(thresholds.water_level >= 0.10);
+        assert!(thresholds.water_level <= 0.50);
+        assert!(thresholds.mountain_level >= 0.60);
+        assert!(thresholds.mountain_level <= 0.90);
+        assert!(thresholds.sand_level > thresholds.water_level);
+    }
+
+    #[test]
+    fn test_from_config_high_scale() {
+        let config = WorldConfig {
+            biome_scale: 1.0,
+            ..WorldConfig::default()
+        };
+        let thresholds = BiomeThresholds::from_config(&config);
+        // High scale pushes water_level down and mountain_level up
+        assert!(thresholds.water_level <= 0.15);
+        assert!(thresholds.mountain_level >= 0.85);
+    }
+
+    #[test]
+    fn test_from_config_zero_scale() {
+        let config = WorldConfig {
+            biome_scale: 0.0,
+            ..WorldConfig::default()
+        };
+        let thresholds = BiomeThresholds::from_config(&config);
+        // Zero scale gives base values
+        assert!((thresholds.water_level - 0.35).abs() < 0.01);
+        assert!((thresholds.mountain_level - 0.72).abs() < 0.01);
     }
 }

@@ -219,7 +219,7 @@ mod tests {
         config.agents.num_agents = 1;
         config.agents.comm_vocab_size = 0;
         config.task.max_episode_length = 100;
-        WorldState::new(config)
+        WorldState::new(config).unwrap()
     }
 
     #[test]
@@ -251,7 +251,7 @@ mod tests {
         config.world.width = 16;
         config.world.height = 16;
         config.agents.num_agents = 1;
-        let mut state = WorldState::new(config);
+        let mut state = WorldState::new(config).unwrap();
 
         // Place agent at (2, 2), target at (5, 2)
         state.agents[0].position = Position::new(2, 2);
@@ -269,7 +269,7 @@ mod tests {
         config.world.width = 16;
         config.world.height = 16;
         config.agents.num_agents = 1;
-        let mut state = WorldState::new(config);
+        let mut state = WorldState::new(config).unwrap();
 
         state.agents[0].position = Position::new(5, 5);
         let mut agent = GreedyNavigator::new(5, 5);
@@ -284,7 +284,7 @@ mod tests {
         config.world.width = 16;
         config.world.height = 16;
         config.agents.num_agents = 1;
-        let mut state = WorldState::new(config);
+        let mut state = WorldState::new(config).unwrap();
 
         state.agents[0].position = Position::new(5, 2);
         let mut agent = GreedyNavigator::new(5, 8);
@@ -338,9 +338,10 @@ mod tests {
         config.world.width = 8;
         config.world.height = 8;
         config.agents.num_agents = 1;
+        config.agents.default_vision_radius = 3;
         config.agents.comm_vocab_size = 0;
         config.task.max_episode_length = 5;
-        let mut state = WorldState::new(config);
+        let mut state = WorldState::new(config).unwrap();
 
         let mut agents: Vec<Box<dyn Agent>> = vec![Box::new(NoopAgent)];
         run_episode(&mut state, &mut agents, 1000);

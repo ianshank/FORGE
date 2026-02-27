@@ -110,6 +110,7 @@ impl TerrainGenerator {
     /// Returns the raw elevation value at the given tile coordinate.
     ///
     /// Useful for downstream systems that need the continuous value.
+    #[instrument(skip_all)]
     pub fn elevation_at(&self, x: u16, y: u16) -> f64 {
         let nx = x as f64 * self.biome_scale;
         let ny = y as f64 * self.biome_scale;
@@ -120,6 +121,7 @@ impl TerrainGenerator {
     }
 
     /// Returns the raw moisture value at the given tile coordinate.
+    #[instrument(skip_all)]
     pub fn moisture_at(&self, x: u16, y: u16) -> f64 {
         let nx = x as f64 * self.biome_scale;
         let ny = y as f64 * self.biome_scale;
