@@ -12,7 +12,6 @@ from typing import Any, ClassVar
 logger = logging.getLogger(__name__)
 
 try:
-    import gymnasium as gym  # noqa: F401
     import numpy as np
     from gymnasium import spaces
 

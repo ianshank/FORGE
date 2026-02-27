@@ -10,6 +10,7 @@ use forge_types::resource::ItemType;
 use forge_types::task::Predicate;
 use forge_types::Object;
 use tracing::trace;
+use tracing::warn;
 
 /// Context for evaluating predicates against the current world state.
 ///
@@ -78,7 +79,7 @@ pub fn evaluate_predicate(predicate: &Predicate, ctx: &EvalContext) -> Predicate
         }
 
         _ => {
-            // Unknown predicate variant — treat as unsatisfied
+            warn!("unknown predicate variant encountered — treating as unsatisfied");
             PredicateResult::unsatisfied(0.0)
         }
     }

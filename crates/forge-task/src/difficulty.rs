@@ -4,7 +4,7 @@
 //! assigning it to a difficulty tier (1-6).
 
 use forge_types::task::{TaskComposition, TaskTier};
-use tracing::instrument;
+use tracing::{instrument, warn};
 
 /// Estimates the difficulty tier of a task composition.
 #[instrument(skip_all)]
@@ -57,7 +57,10 @@ fn difficulty_score(composition: &TaskComposition) -> u32 {
             difficulty_score(subtask) + 1
         }
 
-        _ => 1,
+        _ => {
+            warn!("unknown TaskComposition variant in difficulty_score");
+            1
+        }
     }
 }
 
@@ -72,7 +75,10 @@ pub fn estimate_min_steps(composition: &TaskComposition) -> u32 {
         TaskComposition::Before(subtask, _) => estimate_min_steps(subtask),
         TaskComposition::While(_, goal) => estimate_min_steps(goal),
         TaskComposition::Without(subtask, _) => estimate_min_steps(subtask),
-        _ => 1,
+        _ => {
+            warn!("unknown TaskComposition variant in estimate_min_steps");
+            1
+        }
     }
 }
 
