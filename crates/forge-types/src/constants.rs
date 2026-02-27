@@ -109,3 +109,47 @@ pub const VISION_MODIFIER_NIGHT: f32 = 0.5;
 // Observation feature count per tile
 /// Number of features per tile in grid observation encoding.
 pub const OBS_FEATURES_PER_TILE: usize = 7;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fixed_point_one_equals_shift() {
+        assert_eq!(FIXED_POINT_ONE, 1 << FIXED_POINT_SHIFT);
+        assert_eq!(FIXED_POINT_ONE, 65536);
+    }
+
+    #[test]
+    fn test_starting_health_equals_max_health() {
+        assert_eq!(DEFAULT_STARTING_HEALTH, DEFAULT_MAX_HEALTH);
+    }
+
+    #[test]
+    fn test_starting_stamina_equals_max_stamina() {
+        assert_eq!(DEFAULT_STARTING_STAMINA, DEFAULT_MAX_STAMINA);
+    }
+
+    #[test]
+    fn test_num_day_phases() {
+        assert_eq!(NUM_DAY_PHASES, 4);
+    }
+
+    #[test]
+    fn test_min_less_than_max_world_dimension() {
+        assert!(MIN_WORLD_DIMENSION < MAX_WORLD_DIMENSION);
+    }
+
+    #[test]
+    fn test_default_world_dimensions_within_range() {
+        assert!(DEFAULT_WORLD_WIDTH >= MIN_WORLD_DIMENSION);
+        assert!(DEFAULT_WORLD_WIDTH <= MAX_WORLD_DIMENSION);
+        assert!(DEFAULT_WORLD_HEIGHT >= MIN_WORLD_DIMENSION);
+        assert!(DEFAULT_WORLD_HEIGHT <= MAX_WORLD_DIMENSION);
+    }
+
+    #[test]
+    fn test_obs_features_per_tile() {
+        assert_eq!(OBS_FEATURES_PER_TILE, 7);
+    }
+}

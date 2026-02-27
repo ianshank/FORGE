@@ -27,6 +27,16 @@ except ImportError:
 
 __all__ = ["ForgeGymnasiumEnv"]
 
+# Fallback defaults that mirror Rust-side constants (forge_types::constants).
+# These are only used when the native observation_space dict does not provide
+# the corresponding key — in normal operation the Rust side always sets them.
+_DEFAULT_VISION_RADIUS = 5
+_DEFAULT_VIEW_SIDE = 2 * _DEFAULT_VISION_RADIUS + 1
+_DEFAULT_GRID_CHANNELS = 7  # OBS_FEATURES_PER_TILE
+_DEFAULT_CARRY_CAPACITY = 10  # DEFAULT_CARRY_CAPACITY
+_DEFAULT_NUM_DAY_PHASES = 4  # NUM_DAY_PHASES
+_DEFAULT_ACTION_N = 40  # Action::space_size(0) base actions with no comm
+
 
 class ForgeGymnasiumEnv:
     """Gymnasium-compatible wrapper around the native FORGE environment.
@@ -65,11 +75,12 @@ class ForgeGymnasiumEnv:
         native_obs_space = self._env.observation_space
         native_act_space = self._env.action_space
 
-        # Observation space is a Dict
-        view_h = native_obs_space.get("grid_view_height", 11)
-        view_w = native_obs_space.get("grid_view_width", 11)
-        channels = native_obs_space.get("grid_view_channels", 7)
-        inv_capacity = native_obs_space.get("inventory_capacity", 10)
+        # Observation space is a Dict — values come from Rust-side config,
+        # with module-level constants as fallbacks for backwards compatibility.
+        view_h = native_obs_space.get("grid_view_height", _DEFAULT_VIEW_SIDE)
+        view_w = native_obs_space.get("grid_view_width", _DEFAULT_VIEW_SIDE)
+        channels = native_obs_space.get("grid_view_channels", _DEFAULT_GRID_CHANNELS)
+        inv_capacity = native_obs_space.get("inventory_capacity", _DEFAULT_CARRY_CAPACITY)
 
         self.observation_space = spaces.Dict(
             {
@@ -84,12 +95,12 @@ class ForgeGymnasiumEnv:
                 "position": spaces.Box(
                     low=0, high=65535, shape=(2,), dtype=np.uint16
                 ),
-                "day_phase": spaces.Discrete(4),
+                "day_phase": spaces.Discrete(_DEFAULT_NUM_DAY_PHASES),
             }
         )
 
         # Action space is Discrete
-        action_n = native_act_space.get("n", 32)
+        action_n = native_act_space.get("n", _DEFAULT_ACTION_N)
         self.action_space = spaces.Discrete(action_n)
 
     def reset(
