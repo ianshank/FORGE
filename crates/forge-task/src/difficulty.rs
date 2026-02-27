@@ -149,4 +149,60 @@ mod tests {
         let steps = estimate_min_steps(&task);
         assert_eq!(steps, 2); // at least 2 actions
     }
+
+    #[test]
+    fn test_estimate_min_steps_or() {
+        let task = TaskComposition::Or(vec![
+            TaskComposition::Sequence(vec![
+                TaskComposition::Atom(Predicate::AgentHas(0, ItemType::Wood, 1)),
+                TaskComposition::Atom(Predicate::AgentHas(0, ItemType::Stone, 1)),
+                TaskComposition::Atom(Predicate::AgentAt(0, Position::new(5, 5))),
+            ]),
+            TaskComposition::Atom(Predicate::AgentAt(0, Position::new(0, 0))),
+        ]);
+        // Or takes the minimum path: single atom = 1
+        assert_eq!(estimate_min_steps(&task), 1);
+    }
+
+    #[test]
+    fn test_estimate_min_steps_while() {
+        let goal = TaskComposition::Sequence(vec![
+            TaskComposition::Atom(Predicate::AgentHas(0, ItemType::Wood, 3)),
+            TaskComposition::Atom(Predicate::AgentAt(0, Position::new(5, 5))),
+        ]);
+        let cond = TaskComposition::Atom(Predicate::HealthAbove(0, 0.5));
+        let task = TaskComposition::While(Box::new(cond), Box::new(goal));
+        // While uses the goal's min steps
+        assert_eq!(estimate_min_steps(&task), 2);
+    }
+
+    #[test]
+    fn test_estimate_min_steps_without() {
+        let base = TaskComposition::Atom(Predicate::AgentAt(0, Position::new(5, 5)));
+        let task = TaskComposition::Without(Box::new(base), 3);
+        // Without uses the subtask's min steps
+        assert_eq!(estimate_min_steps(&task), 1);
+    }
+
+    #[test]
+    fn test_while_increases_difficulty() {
+        let goal = TaskComposition::Atom(Predicate::AgentAt(0, Position::new(5, 5)));
+        let cond = TaskComposition::Atom(Predicate::HealthAbove(0, 0.5));
+        let task = TaskComposition::While(Box::new(cond), Box::new(goal.clone()));
+        let base_tier = estimate_difficulty(&goal);
+        let while_tier = estimate_difficulty(&task);
+        assert!(
+            while_tier.value() > base_tier.value(),
+            "while should be harder than the goal alone"
+        );
+    }
+
+    #[test]
+    fn test_without_increases_difficulty() {
+        let base = TaskComposition::Atom(Predicate::AgentAt(0, Position::new(5, 5)));
+        let constrained = TaskComposition::Without(Box::new(base.clone()), 7);
+        let base_tier = estimate_difficulty(&base);
+        let constrained_tier = estimate_difficulty(&constrained);
+        assert!(constrained_tier.value() >= base_tier.value());
+    }
 }

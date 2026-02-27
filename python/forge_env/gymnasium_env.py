@@ -94,6 +94,12 @@ class ForgeGymnasiumEnv:
                 "position": spaces.Box(
                     low=0, high=65535, shape=(2,), dtype=np.uint16
                 ),
+                "messages": spaces.Box(
+                    low=0,
+                    high=65535,
+                    shape=(native_obs_space.get("messages", {}).get("shape", (0,))),
+                    dtype=np.uint16,
+                ),
                 "day_phase": spaces.Discrete(_DEFAULT_NUM_DAY_PHASES),
             }
         )

@@ -29,7 +29,7 @@ except ImportError:
 # Convenience re-exports
 from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: E402
 from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: E402
-from forge_env.utils import benchmark_fps, check_env, make_env  # noqa: E402
+from forge_env.utils import benchmark_fps, check_env, make_env, seed_everything  # noqa: E402
 
 __all__ = [
     "ForgeEnv",
@@ -39,4 +39,5 @@ __all__ = [
     "benchmark_fps",
     "check_env",
     "make_env",
+    "seed_everything",
 ]

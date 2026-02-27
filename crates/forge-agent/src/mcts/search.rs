@@ -142,6 +142,7 @@ impl<F: ForwardModel, P: PolicyValue> MctsAgent<F, P> {
     }
 
     /// Selects an action using MCTS search.
+    #[instrument(skip_all)]
     pub fn select_action(&self, state: &WorldState, agent_idx: usize) -> Action {
         self.search.search(state, agent_idx)
     }

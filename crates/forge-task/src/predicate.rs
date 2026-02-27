@@ -9,8 +9,7 @@ use forge_types::grid::{Grid, Position, TerrainType};
 use forge_types::resource::ItemType;
 use forge_types::task::Predicate;
 use forge_types::Object;
-use tracing::trace;
-use tracing::warn;
+use tracing::{instrument, trace, warn};
 
 /// Context for evaluating predicates against the current world state.
 ///
@@ -55,6 +54,7 @@ impl PredicateResult {
 }
 
 /// Evaluates an atomic predicate against the current world state.
+#[instrument(skip_all)]
 pub fn evaluate_predicate(predicate: &Predicate, ctx: &EvalContext) -> PredicateResult {
     match predicate {
         Predicate::AgentAt(agent_id, target_pos) => eval_agent_at(ctx, *agent_id, target_pos),
