@@ -173,6 +173,13 @@ ignore_missing_imports = true
 module = "httpx.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# callbacks.py uses `wandb = None` / `mlflow = None` fallbacks that need
+# type: ignore[assignment] when the packages aren't installed, but the ignore
+# becomes "unused" when ignore_missing_imports resolves them to Any.
+module = "forge_env.callbacks"
+warn_unused_ignores = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
 python_files = ["test_*.py"]

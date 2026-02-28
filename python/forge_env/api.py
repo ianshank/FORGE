@@ -225,13 +225,13 @@ async def create_env(req: CreateEnvRequest) -> SessionResponse:
         "world": {"width": req.world_width, "height": req.world_height},
         "agents": {"num_agents": req.num_agents},
     }
-    env = ForgeGymnasiumEnv(config=config)
-    env = TimeLimit(env, max_steps=req.max_steps)
+    env_any: Any = ForgeGymnasiumEnv(config=config)
+    env_any = TimeLimit(env_any, max_steps=req.max_steps)
     if req.flatten_obs:
-        env = FlattenObservationWrapper(env)
+        env_any = FlattenObservationWrapper(env_any)
 
     session_id = str(uuid.uuid4())
-    sess = Session(session_id=session_id, env=env, config=config)
+    sess = Session(session_id=session_id, env=env_any, config=config)
 
     async with _lock:
         _sessions[session_id] = sess

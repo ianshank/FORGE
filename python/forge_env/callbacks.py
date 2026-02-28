@@ -40,7 +40,7 @@ try:
 
     _HAS_WANDB = True
 except ImportError:
-    wandb = None  # type: ignore[assignment]
+    wandb = None
     _HAS_WANDB = False
 
 try:
@@ -48,7 +48,7 @@ try:
 
     _HAS_MLFLOW = True
 except ImportError:
-    mlflow = None  # type: ignore[assignment]
+    mlflow = None  # type: ignore[assignment]  # CI: wandb resolves via ignore-missing-imports
     _HAS_MLFLOW = False
 
 # Runtime aliases used only inside type-annotated branches
@@ -271,7 +271,8 @@ class WandbCallback(LoggingCallback):
             config=self._config,
             resume="allow",
         )
-        logger.info("WandbCallback: run %s started at %s", self._run.id, self._run.url)
+        if self._run is not None:
+            logger.info("WandbCallback: run %s started at %s", self._run.id, self._run.url)
 
     def on_episode_end(self, stats: EpisodeStats) -> None:
         if not _HAS_WANDB or self._run is None:
@@ -335,7 +336,8 @@ class MLflowCallback(LoggingCallback):
 
         mlflow.set_experiment(self._experiment_name)
         self._run = mlflow.start_run(run_name=self._run_name)
-        logger.info("MLflowCallback: run %s started.", self._run.info.run_id)
+        if self._run is not None:
+            logger.info("MLflowCallback: run %s started.", self._run.info.run_id)
 
     def on_episode_end(self, stats: EpisodeStats) -> None:
         if not _HAS_MLFLOW or self._run is None:
