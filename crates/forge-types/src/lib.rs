@@ -21,6 +21,7 @@ pub mod grid;
 pub mod observation;
 pub mod resource;
 pub mod task;
+pub mod validation;
 
 // Re-export commonly used types at crate root
 pub use action::Action;

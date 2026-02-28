@@ -39,7 +39,8 @@ impl ForgeEnv {
             Some(dict) => crate::config::config_from_dict(py, dict)?,
             None => ForgeConfig::default(),
         };
-        let state = WorldState::new(forge_config.clone());
+        let state = WorldState::new(forge_config.clone())
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(Self {
             state,
             config: forge_config,

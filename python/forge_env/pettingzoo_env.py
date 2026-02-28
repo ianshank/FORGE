@@ -77,11 +77,12 @@ class ForgeParallelEnv:
         """
         obs, info = self._env.reset(seed=seed, options=options)
 
-        # If the native env returns per-agent data, distribute it
+        # Distribute shared observation to each agent.  When the native env
+        # gains per-agent observation support, this should unpack per-agent data.
         observations: dict[str, Any] = {}
         infos: dict[str, Any] = {}
-        for _i, agent_name in enumerate(self.agents):
-            observations[agent_name] = obs  # TODO: per-agent obs from native
+        for agent_name in self.agents:
+            observations[agent_name] = obs
             infos[agent_name] = info
 
         self.agents = list(self.possible_agents)
@@ -98,12 +99,11 @@ class ForgeParallelEnv:
         Returns:
             (observations, rewards, terminations, truncations, infos) dicts.
         """
-        # Convert dict of actions to list ordered by agent index
-        action_list = [actions.get(agent_name, 0) for agent_name in self.possible_agents]
-
-        # Step with first agent's action (simplified -- full multi-agent
-        # requires native multi-action step support)
-        obs, reward, terminated, truncated, info = self._env.step(action_list[0])
+        # Use the first agent's action for the shared simulation step.
+        # When the native env gains multi-action step support, all actions
+        # should be forwarded instead.
+        first_action = actions.get(self.possible_agents[0], 0)
+        obs, reward, terminated, truncated, info = self._env.step(first_action)
 
         observations: dict[str, Any] = {}
         rewards: dict[str, float] = {}

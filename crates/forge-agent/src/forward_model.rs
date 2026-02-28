@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn test_simulate_produces_new_state() {
         let config = make_test_config();
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
         let model = DefaultForwardModel::new(0);
 
         let (next_state, result) = model.simulate(&state, &[Action::Move(Direction::Right)]);
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn test_simulate_determinism() {
         let config = make_test_config();
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
         let model = DefaultForwardModel::new(0);
 
         let actions = vec![Action::Move(Direction::Right)];
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn test_is_terminal() {
         let config = make_test_config();
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
         let model = DefaultForwardModel::new(0);
 
         assert!(!model.is_terminal(&state));
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn test_num_agents() {
         let config = make_test_config();
-        let state = WorldState::new(config);
+        let state = WorldState::new(config).unwrap();
         let model = DefaultForwardModel::new(0);
 
         assert_eq!(model.num_agents(&state), 1);

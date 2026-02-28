@@ -158,6 +158,7 @@ impl MctsTree {
     /// Selects the best child of a node using PUCT formula.
     ///
     /// UCB score = Q(s,a) + c_puct * P(s,a) * sqrt(N_parent) / (1 + N_child)
+    #[instrument(skip_all)]
     pub fn select_child(&self, node_id: NodeId) -> Option<NodeId> {
         let node = &self.nodes[node_id];
         let sqrt_parent = (node.visits as f64).sqrt();
@@ -205,6 +206,7 @@ impl MctsTree {
     }
 
     /// Backpropagates a value estimate from a leaf up to the root.
+    #[instrument(skip_all)]
     pub fn backpropagate(&mut self, mut node_id: NodeId, value: f64) {
         let discount = self.config.discount as f64;
         let mut current_value = value;

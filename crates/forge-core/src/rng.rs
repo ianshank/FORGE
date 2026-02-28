@@ -8,6 +8,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 /// Deterministic random number generator for FORGE simulations.
 ///
@@ -33,6 +34,7 @@ pub struct RngState {
 
 impl ForgeRng {
     /// Creates a new deterministic RNG from a seed.
+    #[instrument(skip_all)]
     pub fn new(seed: u64) -> Self {
         Self {
             inner: Pcg64Mcg::seed_from_u64(seed),
@@ -84,6 +86,7 @@ impl ForgeRng {
     }
 
     /// Saves the current RNG state for serialization.
+    #[instrument(skip_all)]
     pub fn save_state(&self) -> RngState {
         RngState {
             seed: self.seed,
@@ -92,6 +95,7 @@ impl ForgeRng {
     }
 
     /// Restores RNG from a saved state.
+    #[instrument(skip_all)]
     pub fn from_state(state: &RngState) -> Self {
         // Recreate by replaying from seed
         // This ensures exact state reproduction
@@ -104,6 +108,7 @@ impl ForgeRng {
 
     /// Creates a derived RNG with a new seed mixed from the current state.
     /// Useful for generating sub-seeds for world generation layers.
+    #[instrument(skip_all)]
     pub fn derive(&mut self, domain: u64) -> ForgeRng {
         let derived_seed = self.next_u64() ^ domain;
         ForgeRng::new(derived_seed)

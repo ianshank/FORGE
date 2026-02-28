@@ -317,4 +317,225 @@ mod tests {
             let _: TeamStructure = serde_json::from_str(&json).unwrap();
         }
     }
+
+    #[test]
+    fn test_config_partial_json_deserialization() {
+        // Only set a few fields; everything else should get defaults
+        let json = r#"{"world": {"width": 32, "height": 128}, "agents": {"num_agents": 4}}"#;
+        let config: ForgeConfig = serde_json::from_str(json).unwrap();
+
+        // Explicitly set fields
+        assert_eq!(config.world.width, 32);
+        assert_eq!(config.world.height, 128);
+        assert_eq!(config.agents.num_agents, 4);
+
+        // Default-filled fields
+        let defaults = ForgeConfig::default();
+        assert_eq!(config.world.seed, defaults.world.seed);
+        assert_eq!(config.world.biome_scale, defaults.world.biome_scale);
+        assert_eq!(
+            config.world.resource_density,
+            defaults.world.resource_density
+        );
+        assert_eq!(
+            config.physics.collision_enabled,
+            defaults.physics.collision_enabled
+        );
+        assert_eq!(config.physics.friction, defaults.physics.friction);
+        assert_eq!(config.crafting.enabled, defaults.crafting.enabled);
+        assert_eq!(
+            config.crafting.max_ingredients,
+            defaults.crafting.max_ingredients
+        );
+        assert_eq!(config.task.max_tier, defaults.task.max_tier);
+        assert_eq!(
+            config.task.max_episode_length,
+            defaults.task.max_episode_length
+        );
+        assert_eq!(config.curriculum.enabled, defaults.curriculum.enabled);
+        assert_eq!(
+            config.rendering.pixel_observations,
+            defaults.rendering.pixel_observations
+        );
+    }
+
+    #[test]
+    fn test_all_configs_implement_default() {
+        let _world = WorldConfig::default();
+        let _physics = PhysicsConfig::default();
+        let _crafting = CraftingConfig::default();
+        let _agent = AgentConfig::default();
+        let _task = TaskConfig::default();
+        let _curriculum = CurriculumConfig::default();
+        let _render = RenderConfig::default();
+        let _forge = ForgeConfig::default();
+        let _team = TeamStructure::default();
+
+        // Verify sub-config defaults match constant values
+        let world = WorldConfig::default();
+        assert_eq!(world.width, constants::DEFAULT_WORLD_WIDTH);
+        assert_eq!(world.height, constants::DEFAULT_WORLD_HEIGHT);
+
+        let physics = PhysicsConfig::default();
+        assert_eq!(
+            physics.stamina_cost_move,
+            constants::DEFAULT_STAMINA_COST_MOVE
+        );
+        assert_eq!(physics.max_velocity, constants::DEFAULT_MAX_VELOCITY);
+
+        let crafting = CraftingConfig::default();
+        assert_eq!(crafting.max_ingredients, constants::DEFAULT_MAX_INGREDIENTS);
+
+        let agent = AgentConfig::default();
+        assert_eq!(agent.starting_health, constants::DEFAULT_STARTING_HEALTH);
+        assert_eq!(agent.max_stamina, constants::DEFAULT_MAX_STAMINA);
+
+        let task = TaskConfig::default();
+        assert_eq!(task.max_tier, constants::DEFAULT_MAX_TASK_TIER);
+        assert_eq!(task.reward_scale, constants::DEFAULT_REWARD_SCALE);
+
+        let curriculum = CurriculumConfig::default();
+        assert_eq!(
+            curriculum.target_success_rate,
+            constants::DEFAULT_TARGET_SUCCESS_RATE
+        );
+
+        let render = RenderConfig::default();
+        assert_eq!(render.pixel_width, constants::DEFAULT_PIXEL_WIDTH);
+        assert_eq!(render.pixel_height, constants::DEFAULT_PIXEL_HEIGHT);
+    }
+
+    #[test]
+    fn test_config_clone_equality() {
+        let original = ForgeConfig::default();
+        let cloned = original.clone();
+
+        // WorldConfig fields
+        assert_eq!(cloned.world.width, original.world.width);
+        assert_eq!(cloned.world.height, original.world.height);
+        assert_eq!(cloned.world.seed, original.world.seed);
+        assert_eq!(cloned.world.biome_scale, original.world.biome_scale);
+        assert_eq!(
+            cloned.world.resource_density,
+            original.world.resource_density
+        );
+        assert_eq!(
+            cloned.world.day_night_cycle_length,
+            original.world.day_night_cycle_length
+        );
+        assert_eq!(cloned.world.max_entities, original.world.max_entities);
+        assert_eq!(cloned.world.min_dimension, original.world.min_dimension);
+        assert_eq!(cloned.world.max_dimension, original.world.max_dimension);
+
+        // PhysicsConfig fields
+        assert_eq!(
+            cloned.physics.collision_enabled,
+            original.physics.collision_enabled
+        );
+        assert_eq!(
+            cloned.physics.stamina_cost_move,
+            original.physics.stamina_cost_move
+        );
+        assert_eq!(
+            cloned.physics.stamina_regen_rate,
+            original.physics.stamina_regen_rate
+        );
+        assert_eq!(cloned.physics.max_velocity, original.physics.max_velocity);
+        assert_eq!(cloned.physics.friction, original.physics.friction);
+        assert_eq!(
+            cloned.physics.projectiles_enabled,
+            original.physics.projectiles_enabled
+        );
+
+        // CraftingConfig fields
+        assert_eq!(cloned.crafting.enabled, original.crafting.enabled);
+        assert_eq!(
+            cloned.crafting.procedural_recipes,
+            original.crafting.procedural_recipes
+        );
+        assert_eq!(
+            cloned.crafting.max_ingredients,
+            original.crafting.max_ingredients
+        );
+        assert_eq!(
+            cloned.crafting.require_discovery,
+            original.crafting.require_discovery
+        );
+
+        // AgentConfig fields
+        assert_eq!(cloned.agents.num_agents, original.agents.num_agents);
+        assert_eq!(
+            cloned.agents.default_vision_radius,
+            original.agents.default_vision_radius
+        );
+        assert_eq!(
+            cloned.agents.default_carry_capacity,
+            original.agents.default_carry_capacity
+        );
+        assert_eq!(
+            cloned.agents.starting_health,
+            original.agents.starting_health
+        );
+        assert_eq!(cloned.agents.max_health, original.agents.max_health);
+        assert_eq!(
+            cloned.agents.starting_stamina,
+            original.agents.starting_stamina
+        );
+        assert_eq!(cloned.agents.max_stamina, original.agents.max_stamina);
+        assert_eq!(cloned.agents.heterogeneous, original.agents.heterogeneous);
+        assert_eq!(
+            cloned.agents.comm_vocab_size,
+            original.agents.comm_vocab_size
+        );
+        assert_eq!(cloned.agents.comm_radius, original.agents.comm_radius);
+        assert_eq!(
+            cloned.agents.comm_buffer_size,
+            original.agents.comm_buffer_size
+        );
+
+        // TaskConfig fields
+        assert_eq!(cloned.task.enabled, original.task.enabled);
+        assert_eq!(cloned.task.max_tier, original.task.max_tier);
+        assert_eq!(cloned.task.max_predicates, original.task.max_predicates);
+        assert_eq!(
+            cloned.task.max_episode_length,
+            original.task.max_episode_length
+        );
+        assert_eq!(cloned.task.reward_scale, original.task.reward_scale);
+        assert_eq!(cloned.task.dense_rewards, original.task.dense_rewards);
+
+        // CurriculumConfig fields
+        assert_eq!(cloned.curriculum.enabled, original.curriculum.enabled);
+        assert_eq!(
+            cloned.curriculum.target_success_rate,
+            original.curriculum.target_success_rate
+        );
+        assert_eq!(
+            cloned.curriculum.window_size,
+            original.curriculum.window_size
+        );
+        assert_eq!(
+            cloned.curriculum.warmup_episodes,
+            original.curriculum.warmup_episodes
+        );
+        assert_eq!(
+            cloned.curriculum.adjustment_rate,
+            original.curriculum.adjustment_rate
+        );
+
+        // RenderConfig fields
+        assert_eq!(
+            cloned.rendering.pixel_observations,
+            original.rendering.pixel_observations
+        );
+        assert_eq!(cloned.rendering.pixel_width, original.rendering.pixel_width);
+        assert_eq!(
+            cloned.rendering.pixel_height,
+            original.rendering.pixel_height
+        );
+        assert_eq!(
+            cloned.rendering.record_replays,
+            original.rendering.record_replays
+        );
+    }
 }

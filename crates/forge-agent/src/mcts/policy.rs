@@ -99,7 +99,8 @@ mod tests {
         config.world.width = 8;
         config.world.height = 8;
         config.agents.num_agents = 1;
-        WorldState::new(config)
+        config.agents.default_vision_radius = 3;
+        WorldState::new(config).unwrap()
     }
 
     #[test]

@@ -78,6 +78,15 @@ pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObj
     day_dict.set_item("dtype", "uint8")?;
     dict.set_item("day_phase", day_dict)?;
 
+    // Flat dimension values for Python wrapper convenience
+    dict.set_item("grid_view_height", view_side)?;
+    dict.set_item("grid_view_width", view_side)?;
+    dict.set_item(
+        "grid_view_channels",
+        forge_types::constants::OBS_FEATURES_PER_TILE,
+    )?;
+    dict.set_item("inventory_capacity", capacity)?;
+
     Ok(dict.unbind().into())
 }
 

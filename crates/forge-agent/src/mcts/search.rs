@@ -142,6 +142,7 @@ impl<F: ForwardModel, P: PolicyValue> MctsAgent<F, P> {
     }
 
     /// Selects an action using MCTS search.
+    #[instrument(skip_all)]
     pub fn select_action(&self, state: &WorldState, agent_idx: usize) -> Action {
         self.search.search(state, agent_idx)
     }
@@ -160,9 +161,10 @@ mod tests {
         config.world.height = 8;
         config.world.seed = 42;
         config.agents.num_agents = 1;
+        config.agents.default_vision_radius = 3;
         config.agents.comm_vocab_size = 0;
         config.task.max_episode_length = 100;
-        WorldState::new(config)
+        WorldState::new(config).unwrap()
     }
 
     fn make_search() -> MctsSearch<DefaultForwardModel, UniformPolicy> {
