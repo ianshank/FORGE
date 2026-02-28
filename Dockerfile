@@ -25,7 +25,7 @@ WORKDIR /forge
 COPY Cargo.toml ./
 COPY crates/ crates/
 
-RUN pip install --no-cache-dir "maturin>=1.0,<2.0"
+RUN pip install --no-cache-dir --break-system-packages "maturin>=1.0,<2.0"
 
 # Copy Python sources needed for the build
 COPY python/ python/
