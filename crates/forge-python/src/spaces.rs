@@ -25,7 +25,14 @@ pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObj
 
     // Grid view space
     let grid_dict = PyDict::new_bound(py);
-    grid_dict.set_item("shape", (view_side, view_side, 7))?;
+    grid_dict.set_item(
+        "shape",
+        (
+            view_side,
+            view_side,
+            forge_types::constants::OBS_FEATURES_PER_TILE,
+        ),
+    )?;
     grid_dict.set_item("low", 0u8)?;
     grid_dict.set_item("high", 255u8)?;
     grid_dict.set_item("dtype", "uint8")?;
@@ -74,7 +81,7 @@ pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObj
     // Day phase space
     let day_dict = PyDict::new_bound(py);
     day_dict.set_item("low", 0u8)?;
-    day_dict.set_item("high", 3u8)?;
+    day_dict.set_item("high", forge_types::constants::NUM_DAY_PHASES - 1)?;
     day_dict.set_item("dtype", "uint8")?;
     dict.set_item("day_phase", day_dict)?;
 

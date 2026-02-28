@@ -253,8 +253,8 @@ mod tests {
     #[test]
     fn test_single_octave_equals_sample() {
         let noise = PerlinNoise::new(55);
-        let x = 3.14;
-        let y = 2.71;
+        let x = std::f64::consts::PI;
+        let y = std::f64::consts::E;
         let single = noise.octave_noise_2d(x, y, 1, 0.5);
         let direct = noise.sample_2d(x, y);
         assert!(

@@ -13,9 +13,6 @@ use tracing::instrument;
 /// This trait abstracts the simulation so planning algorithms
 /// don't depend directly on WorldState internals.
 pub trait ForwardModel: Send + Sync {
-    /// Returns a snapshot (clone) of the current state.
-    fn snapshot(&self) -> WorldState;
-
     /// Simulates a single step from the given state.
     /// Returns the resulting state and step result without modifying the original.
     fn simulate(&self, state: &WorldState, actions: &[Action]) -> (WorldState, StepResult);
@@ -48,12 +45,6 @@ impl DefaultForwardModel {
 }
 
 impl ForwardModel for DefaultForwardModel {
-    fn snapshot(&self) -> WorldState {
-        // This is typically called from a state reference, but the trait
-        // doesn't hold state. Callers should clone the state directly.
-        unreachable!("Use state.clone() instead")
-    }
-
     fn simulate(&self, state: &WorldState, actions: &[Action]) -> (WorldState, StepResult) {
         let mut next_state = state.clone();
         let result = next_state.step(actions);

@@ -35,6 +35,7 @@ impl CurriculumController {
     }
 
     /// Records the outcome of an episode and adjusts difficulty if appropriate.
+    #[instrument(skip_all)]
     pub fn record_outcome(&mut self, success: bool) {
         self.outcomes.push(success);
         self.total_episodes += 1;

@@ -163,13 +163,14 @@ mod tests {
     #[test]
     fn test_forge_result_ok() {
         let result: ForgeResult<u32> = Ok(42);
-        assert_eq!(result.unwrap(), 42);
+        assert!(result.is_ok());
+        assert!(matches!(result, Ok(42)));
     }
 
     #[test]
     fn test_forge_result_err() {
         let result: ForgeResult<u32> = Err(ForgeError::Serialization("bad data".to_string()));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ForgeError::Serialization(_)));
+        assert!(matches!(result, Err(ForgeError::Serialization(_))));
     }
 }

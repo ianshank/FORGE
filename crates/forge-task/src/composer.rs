@@ -4,7 +4,7 @@
 //! logical operators (AND, OR, SEQUENCE, BEFORE, WHILE, WITHOUT).
 
 use forge_types::task::TaskComposition;
-use tracing::{instrument, trace};
+use tracing::{instrument, trace, warn};
 
 use crate::predicate::{evaluate_predicate, EvalContext, PredicateResult};
 
@@ -143,10 +143,13 @@ pub fn evaluate_composition(
             }
         }
 
-        _ => PredicateResult {
-            satisfied: false,
-            progress: 0.0,
-        },
+        other => {
+            warn!(?other, "unhandled TaskComposition variant in evaluate_composition");
+            PredicateResult {
+                satisfied: false,
+                progress: 0.0,
+            }
+        }
     }
 }
 
