@@ -336,7 +336,7 @@ mod tests {
     #[test]
     fn test_basic_movement() {
         let mut grid = make_test_grid(16, 16);
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
@@ -357,7 +357,7 @@ mod tests {
             (Direction::Right, Position::new(6, 5)),
         ] {
             let mut grid = make_test_grid(16, 16);
-            let mut agents = vec![make_test_agent(0, 5, 5)];
+            let mut agents = [make_test_agent(0, 5, 5)];
             grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
             let actions = vec![Action::Move(dir)];
@@ -376,7 +376,7 @@ mod tests {
     fn test_collision_with_wall() {
         let mut grid = make_test_grid(16, 16);
         grid.get_mut(5, 4).unwrap().terrain = TerrainType::Wall;
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn test_movement_drains_stamina() {
         let mut grid = make_test_grid(16, 16);
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let initial_stamina = agents[0].stamina;
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn test_no_stamina_blocks_movement() {
         let mut grid = make_test_grid(16, 16);
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         agents[0].stamina = 0;
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
@@ -443,7 +443,7 @@ mod tests {
     fn test_stamina_regeneration() {
         let config = default_physics();
         let agent_config = AgentConfig::default();
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         agents[0].stamina = 100000;
 
         regenerate_stamina(&mut agents, &config, agent_config.max_stamina);
@@ -454,7 +454,7 @@ mod tests {
     fn test_stamina_regen_capped() {
         let config = default_physics();
         let max = 655360;
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         agents[0].stamina = max;
 
         regenerate_stamina(&mut agents, &config, max);
@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn test_dead_agent_cannot_move() {
         let mut grid = make_test_grid(16, 16);
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         agents[0].alive = false;
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn test_noop_no_movement() {
         let mut grid = make_test_grid(16, 16);
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let initial_stamina = agents[0].stamina;
@@ -495,7 +495,7 @@ mod tests {
         // Forest costs 2x stamina
         let mut grid = make_test_grid(16, 16);
         grid.get_mut(5, 4).unwrap().terrain = TerrainType::Forest;
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let initial_stamina = agents[0].stamina;
@@ -523,7 +523,7 @@ mod tests {
     fn test_water_impassable() {
         let mut grid = make_test_grid(16, 16);
         grid.get_mut(5, 4).unwrap().terrain = TerrainType::Water;
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
@@ -565,7 +565,7 @@ mod tests {
     #[test]
     fn test_push_object_right() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5)];
+        let agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let mut objects = vec![make_test_object(0, 6, 5)];
@@ -589,7 +589,7 @@ mod tests {
     #[test]
     fn test_push_object_up() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5)];
+        let agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let mut objects = vec![make_test_object(0, 5, 4)];
@@ -613,7 +613,7 @@ mod tests {
     #[test]
     fn test_push_object_down() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5)];
+        let agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let mut objects = vec![make_test_object(0, 5, 6)];
@@ -637,7 +637,7 @@ mod tests {
     #[test]
     fn test_push_object_left() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5)];
+        let agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let mut objects = vec![make_test_object(0, 4, 5)];
@@ -661,7 +661,7 @@ mod tests {
     #[test]
     fn test_push_against_grid_boundary() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 0, 1)];
+        let agents = [make_test_agent(0, 0, 1)];
         grid.get_mut(0, 1).unwrap().agent_id = Some(0);
 
         let mut objects = vec![make_test_object(0, 0, 0)];
@@ -685,7 +685,7 @@ mod tests {
     #[test]
     fn test_push_against_wall() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5)];
+        let agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let mut objects = vec![make_test_object(0, 6, 5)];
@@ -711,7 +711,7 @@ mod tests {
     #[test]
     fn test_push_against_water() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5)];
+        let agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let mut objects = vec![make_test_object(0, 6, 5)];
@@ -737,7 +737,7 @@ mod tests {
     #[test]
     fn test_push_with_collision_disabled() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5)];
+        let agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let mut objects = vec![make_test_object(0, 6, 5)];
@@ -758,7 +758,7 @@ mod tests {
     #[test]
     fn test_push_no_object_at_position() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5)];
+        let agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let mut objects: Vec<forge_types::Object> = Vec::new();
@@ -780,7 +780,7 @@ mod tests {
     #[test]
     fn test_push_dead_agent_skipped() {
         let mut grid = make_test_grid(16, 16);
-        let mut agents = vec![make_test_agent(0, 5, 5)];
+        let mut agents = [make_test_agent(0, 5, 5)];
         agents[0].alive = false;
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
@@ -805,7 +805,7 @@ mod tests {
     #[test]
     fn test_push_blocked_by_another_object() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5)];
+        let agents = [make_test_agent(0, 5, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let mut objects = vec![make_test_object(0, 6, 5), make_test_object(1, 7, 5)];
@@ -829,7 +829,7 @@ mod tests {
     #[test]
     fn test_push_blocked_by_agent_on_destination() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 5, 5), make_test_agent(1, 7, 5)];
+        let agents = [make_test_agent(0, 5, 5), make_test_agent(1, 7, 5)];
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
         grid.get_mut(7, 5).unwrap().agent_id = Some(1);
 
@@ -854,7 +854,7 @@ mod tests {
     #[test]
     fn test_push_agent_at_boundary_no_adjacent_tile() {
         let mut grid = make_test_grid(16, 16);
-        let agents = vec![make_test_agent(0, 15, 5)];
+        let agents = [make_test_agent(0, 15, 5)];
         grid.get_mut(15, 5).unwrap().agent_id = Some(0);
 
         let mut objects: Vec<forge_types::Object> = Vec::new();

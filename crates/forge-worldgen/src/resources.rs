@@ -214,10 +214,12 @@ mod tests {
 
     #[test]
     fn test_zero_density_no_resources() {
-        let mut config = WorldConfig::default();
-        config.resource_density = 0.0;
-        config.width = 32;
-        config.height = 32;
+        let config = WorldConfig {
+            resource_density: 0.0,
+            width: 32,
+            height: 32,
+            ..Default::default()
+        };
         let gen = TerrainGenerator::new(&config, 42);
         let mut grid = Grid::new(config.width, config.height);
         gen.generate(&mut grid);

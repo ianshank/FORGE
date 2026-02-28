@@ -137,15 +137,15 @@ mod tests {
 
     #[test]
     fn test_min_less_than_max_world_dimension() {
-        assert!(MIN_WORLD_DIMENSION < MAX_WORLD_DIMENSION);
+        const { assert!(MIN_WORLD_DIMENSION < MAX_WORLD_DIMENSION) };
     }
 
     #[test]
     fn test_default_world_dimensions_within_range() {
-        assert!(DEFAULT_WORLD_WIDTH >= MIN_WORLD_DIMENSION);
-        assert!(DEFAULT_WORLD_WIDTH <= MAX_WORLD_DIMENSION);
-        assert!(DEFAULT_WORLD_HEIGHT >= MIN_WORLD_DIMENSION);
-        assert!(DEFAULT_WORLD_HEIGHT <= MAX_WORLD_DIMENSION);
+        const { assert!(DEFAULT_WORLD_WIDTH >= MIN_WORLD_DIMENSION) };
+        const { assert!(DEFAULT_WORLD_WIDTH <= MAX_WORLD_DIMENSION) };
+        const { assert!(DEFAULT_WORLD_HEIGHT >= MIN_WORLD_DIMENSION) };
+        const { assert!(DEFAULT_WORLD_HEIGHT <= MAX_WORLD_DIMENSION) };
     }
 
     #[test]
