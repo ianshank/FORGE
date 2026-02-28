@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir --break-system-packages "maturin>=1.0,<2.0"
 
 # Copy Python sources needed for the build
 COPY python/ python/
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 
 RUN maturin build --release --out /dist
 
