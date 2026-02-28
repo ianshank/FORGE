@@ -353,6 +353,10 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 | Test count | 389 (unit + property-based + integration) |
 | Dependencies | See [`Cargo.toml`](Cargo.toml) for full list |
 
+## Created by
+
+Ian Cruickshank
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) for details.

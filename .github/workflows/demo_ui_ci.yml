@@ -64,8 +64,10 @@ jobs:
       - name: Install maturin
         run: pip install "maturin>=1.0,<2.0"
 
-      - name: Build & install package (development mode)
-        run: maturin develop -m crates/forge-python/Cargo.toml
+      - name: Build & install package (wheel)
+        run: |
+          maturin build --release -m crates/forge-python/Cargo.toml
+          pip install target/wheels/*.whl
 
       - name: Install test dependencies
         run: pip install ".[test]"
@@ -110,7 +112,8 @@ jobs:
       - name: Install maturin + build
         run: |
           pip install "maturin>=1.0,<2.0"
-          maturin develop -m crates/forge-python/Cargo.toml
+          maturin build --release -m crates/forge-python/Cargo.toml
+          pip install target/wheels/*.whl
 
       - name: Install demo UI dependencies
         run: |
