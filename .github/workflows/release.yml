@@ -132,10 +132,6 @@ jobs:
         name: Publish to PyPI
         needs: test-wheels
         runs-on: ubuntu-latest
-        environment:
-            name: pypi
-            url: https://pypi.org/project/forge-env/
-
         steps:
             - uses: actions/download-artifact@v4
               with:

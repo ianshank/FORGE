@@ -7,6 +7,7 @@ so the tests run without a built Rust extension.
 from __future__ import annotations
 
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -59,7 +60,7 @@ def _make_mock_env() -> MagicMock:
 
 
 @pytest.fixture(autouse=True)
-def _patch_env():
+def _patch_env() -> Generator[None, None, None]:
     """Patch ForgeGymnasiumEnv, TimeLimit, FlattenObservationWrapper in api module."""
     _sessions.clear()
     mock_cls = MagicMock(side_effect=lambda **_kw: _make_mock_env())

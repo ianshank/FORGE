@@ -31,9 +31,13 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.callbacks import BaseCallback as SB3BaseCallback
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +45,10 @@ logger = logging.getLogger(__name__)
 # Optional: Stable Baselines3
 # ---------------------------------------------------------------------------
 try:
-    from stable_baselines3 import PPO  # type: ignore[import-untyped]
-    from stable_baselines3.common.callbacks import BaseCallback  # type: ignore[import-untyped]
+    import stable_baselines3 as _sb3  # noqa: F401  (availability flag only)
 
     SB3_AVAILABLE = True
 except ImportError:
-    PPO = None  # type: ignore[assignment]
-    BaseCallback = object  # type: ignore[assignment,misc]
     SB3_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
@@ -87,15 +88,22 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
-class _ForgeCallbackBridge(BaseCallback):  # type: ignore[misc]
-    """Adapts SB3's BaseCallback to fire forge_env LoggingCallbacks on episode end."""
+class _ForgeCallbackBridge:  # noqa: N801  (acts like SB3 callback, not a data class)
+    """Adapts SB3's BaseCallback to fire forge_env LoggingCallbacks on episode end.
+
+    At class definition time SB3 may not be installed, so we do NOT inherit from
+    BaseCallback statically.  The instance is only constructed inside
+    ``train_with_sb3`` which is guarded by ``SB3_AVAILABLE``.
+    """
 
     def __init__(self, forge_callback: Any, verbose: int = 0) -> None:
-        super().__init__(verbose=verbose)
         self._forge_cb = forge_callback
         self._episode = 0
         self._ep_start_step = 0
         self._ep_start_time: float = 0.0
+        self.n_calls: int = 0
+        self.num_timesteps: int = 0
+        self.locals: dict[str, Any] = {}
 
     def _on_training_start(self) -> None:
         import time
@@ -160,7 +168,8 @@ def make_env(
         "world": {"width": world_size, "height": world_size},
         "agents": {"num_agents": num_agents},
     }
-    env = ForgeGymnasiumEnv(config=config, seed=seed)
+    env: Any = ForgeGymnasiumEnv(config=config)
+    env.reset(seed=seed)  # seed is not a constructor arg — pass to reset
 
     if FORGE_EXTRAS_AVAILABLE:
         env = TimeLimit(env, max_steps=max_steps)

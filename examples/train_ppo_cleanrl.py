@@ -20,9 +20,16 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch as torch_t
+    from torch import nn as nn_t
+    from torch import optim as optim_t
+    from torch.distributions import Categorical as Categorical_t
+    from torch.utils.tensorboard import SummaryWriter as SummaryWriter_t
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +44,9 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
+    optim = None  # type: ignore[assignment]
+    Categorical = None  # type: ignore[assignment]
     TORCH_AVAILABLE = False
 
 try:
@@ -158,7 +168,8 @@ def make_env(args: Args) -> Any:
         "world": {"width": args.world_size, "height": args.world_size},
         "agents": {"num_agents": args.num_agents},
     }
-    env = ForgeGymnasiumEnv(config=config, seed=args.seed)
+    env = ForgeGymnasiumEnv(config=config)
+    env.reset(seed=args.seed)  # prime the seed; actual reset done in train()
     env = TimeLimit(env, max_steps=args.max_ep_steps)
     env = FlattenObservationWrapper(env)
     env = RecordEpisodeStatistics(env)
@@ -175,7 +186,7 @@ def train(args: Args) -> None:
         logger.error("PyTorch is required for CleanRL PPO. Install: pip install 'forge-env[sb3]'")
         sys.exit(1)
 
-    run_name = args.run_name or f"cleanrl_seed{args.seed}_{int(time.time())}"
+    run_name = args.run_name or f"cleanrl_seed{args.seed}_{int(time.time())}"  # noqa: F841
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     # Callbacks

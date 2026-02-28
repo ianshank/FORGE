@@ -23,7 +23,11 @@ import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, IO, Any
+
+if TYPE_CHECKING:
+    import mlflow as mlflow_t
+    import wandb as wandb_t
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +36,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 try:
-    import wandb  # type: ignore[import-untyped]
+    import wandb
 
     _HAS_WANDB = True
 except ImportError:
@@ -40,12 +44,16 @@ except ImportError:
     _HAS_WANDB = False
 
 try:
-    import mlflow  # type: ignore[import-untyped]
+    import mlflow
 
     _HAS_MLFLOW = True
 except ImportError:
     mlflow = None  # type: ignore[assignment]
     _HAS_MLFLOW = False
+
+# Runtime aliases used only inside type-annotated branches
+_wandb: wandb_t | None = wandb
+_mlflow: mlflow_t | None = mlflow
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +191,8 @@ class CsvCallback(LoggingCallback):
         self._path = Path(output_path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._flush_every = max(1, flush_every)
-        self._writer: csv.DictWriter | None = None
-        self._fh = None
+        self._writer: csv.DictWriter[str] | None = None
+        self._fh: IO[str] | None = None
 
     def on_training_start(self) -> None:
         self._fh = self._path.open("w", newline="", encoding="utf-8")

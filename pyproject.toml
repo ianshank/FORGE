@@ -117,7 +117,8 @@ ignore = [
 known-first-party = ["forge_env"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
+mypy_path = "python"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -129,8 +130,9 @@ warn_unused_ignores = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
+# The native Rust extension has no stub; all third-party libs without stubs.
 module = [
-    "forge_env.forge_env",
+    "forge_env.forge_env",  # Maturin/PyO3 native ext — no .pyi exists at dev time
     "jax",
     "jax.*",
     "numpy",
@@ -153,6 +155,10 @@ module = [
     "fastapi.*",
     "pydantic",
     "pydantic.*",
+    "wandb",
+    "wandb.*",
+    "mlflow",
+    "mlflow.*",
 ]
 ignore_missing_imports = true
 
@@ -168,8 +174,7 @@ python_functions = ["test_*"]
 addopts = "-v --tb=short"
 
 [[tool.mypy.overrides]]
-# Test files import the native ext; disable strict_optional and ignore
-# missing stubs / unused-ignore comments that arise from the installed pkg.
+# Test files and demo_ui import the native ext. Suppress missing-stub
+# noise but KEEP warn_unused_ignores=true (global) to catch stale suppresses.
 module = ["tests.*", "demo_ui.*"]
 ignore_missing_imports = true
-warn_unused_ignores = false

@@ -28,15 +28,17 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
+
+if TYPE_CHECKING:
+    import gymnasium
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,7 @@ class Session:
     """Holds a single live environment session."""
 
     session_id: str
-    env: Any
+    env: gymnasium.Env  # type: ignore[type-arg]
     config: dict[str, Any]
     created_at: float = field(default_factory=time.monotonic)
     last_used: float = field(default_factory=time.monotonic)
@@ -176,7 +178,7 @@ async def _start_janitor() -> None:
             await asyncio.sleep(60)
             await _evict_expired()
 
-    _janitor_task: asyncio.Task = asyncio.create_task(_janitor_loop())  # noqa: RUF006
+    _janitor_task: asyncio.Task[None] = asyncio.create_task(_janitor_loop())  # noqa: RUF006
 
 
 # ---------------------------------------------------------------------------

@@ -24,7 +24,13 @@
 }
 
 /* ─── Reset & Base ───────────────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
 html {
   font-size: clamp(14px, 1.5vw, 16px);
@@ -47,8 +53,11 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
+  -webkit-backdrop-filter: blur(12px);
+  /* Safari 9+, iOS Safari 9+ */
   backdrop-filter: blur(12px);
 }
+
 .header-inner {
   max-width: 1400px;
   margin: 0 auto;
@@ -58,16 +67,19 @@ body {
   justify-content: space-between;
   gap: 1rem;
 }
+
 .logo {
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--forge-orange);
 }
+
 .header-links {
   display: flex;
   gap: 1.25rem;
 }
+
 .header-links a {
   color: var(--forge-text-dim);
   text-decoration: none;
@@ -75,7 +87,10 @@ body {
   font-weight: 500;
   transition: color var(--forge-transition);
 }
-.header-links a:hover { color: var(--forge-text); }
+
+.header-links a:hover {
+  color: var(--forge-text);
+}
 
 /* ─── Error Banner ───────────────────────────────────────────────────────── */
 .error-banner {
@@ -90,7 +105,11 @@ body {
   font-size: 0.875rem;
   transition: opacity var(--forge-transition);
 }
-.error-banner.hidden { display: none; }
+
+.error-banner.hidden {
+  display: none;
+}
+
 .error-banner button {
   background: none;
   border: none;
@@ -101,7 +120,10 @@ body {
   border-radius: var(--forge-radius-sm);
   transition: background var(--forge-transition);
 }
-.error-banner button:hover { background: rgba(255,255,255,0.1); }
+
+.error-banner button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
 
 /* ─── Layout ─────────────────────────────────────────────────────────────── */
 .layout {
@@ -117,7 +139,9 @@ body {
 }
 
 @media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ─── Panel ──────────────────────────────────────────────────────────────── */
@@ -127,6 +151,7 @@ body {
   border-radius: var(--forge-radius);
   padding: 1rem 1.25rem;
 }
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -135,6 +160,7 @@ body {
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+
 .panel-title {
   font-size: 0.9rem;
   font-weight: 600;
@@ -142,11 +168,13 @@ body {
   letter-spacing: 0.06em;
   color: var(--forge-text-dim);
 }
+
 .status-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
+
 .tick-label {
   font-size: 0.8rem;
   color: var(--forge-text-dim);
@@ -164,14 +192,39 @@ body {
   border: 1px solid var(--forge-border);
   transition: background var(--forge-transition), color var(--forge-transition);
 }
-.badge[data-state="ready"]   { background: hsl(145, 50%, 15%); color: var(--forge-success); border-color: hsl(145, 50%, 25%); }
-.badge[data-state="done"]    { background: hsl(25, 60%, 15%); color: var(--forge-orange); border-color: var(--forge-orange-dim); }
-.badge[data-state="error"]   { background: hsl(0, 60%, 15%); color: var(--forge-danger); border-color: hsl(0, 50%, 25%); }
-.badge[data-state="loading"] { animation: pulse 1.5s infinite; }
+
+.badge[data-state="ready"] {
+  background: hsl(145, 50%, 15%);
+  color: var(--forge-success);
+  border-color: hsl(145, 50%, 25%);
+}
+
+.badge[data-state="done"] {
+  background: hsl(25, 60%, 15%);
+  color: var(--forge-orange);
+  border-color: var(--forge-orange-dim);
+}
+
+.badge[data-state="error"] {
+  background: hsl(0, 60%, 15%);
+  color: var(--forge-danger);
+  border-color: hsl(0, 50%, 25%);
+}
+
+.badge[data-state="loading"] {
+  animation: pulse 1.5s infinite;
+}
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* ─── ASCII Canvas ───────────────────────────────────────────────────────── */
@@ -198,6 +251,7 @@ body {
   margin-top: 0.5rem;
   min-height: 1.5rem;
 }
+
 .agent-badge {
   font-size: 0.72rem;
   font-family: var(--font-mono);
@@ -214,6 +268,7 @@ body {
   flex-direction: column;
   gap: 1rem;
 }
+
 .control-group {
   background: var(--forge-surface-2);
   border: 1px solid var(--forge-border);
@@ -223,6 +278,7 @@ body {
   flex-direction: column;
   gap: 0.6rem;
 }
+
 .control-heading {
   font-size: 0.75rem;
   font-weight: 600;
@@ -230,6 +286,8 @@ body {
   letter-spacing: 0.07em;
   color: var(--forge-text-dim);
   cursor: pointer;
+  -webkit-user-select: none;
+  /* Safari 3+, iOS Safari 3+ */
   user-select: none;
 }
 
@@ -240,11 +298,13 @@ body {
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+
 .input-label {
   font-size: 0.8rem;
   color: var(--forge-text-dim);
   min-width: 6rem;
 }
+
 .input-field {
   flex: 1;
   min-width: 0;
@@ -257,16 +317,19 @@ body {
   padding: 0.3em 0.55em;
   transition: border-color var(--forge-transition);
 }
+
 .input-field:focus {
   outline: none;
   border-color: var(--forge-orange);
   box-shadow: 0 0 0 2px hsl(25, 95%, 55%, 0.2);
 }
+
 .input-hint {
   font-size: 0.7rem;
   color: var(--forge-text-dim);
   font-family: var(--font-mono);
 }
+
 .range-input {
   flex: 1;
   accent-color: var(--forge-orange);
@@ -279,6 +342,7 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 0.4rem;
 }
+
 .btn {
   padding: 0.45em 0.75em;
   border-radius: var(--forge-radius-sm);
@@ -290,20 +354,54 @@ body {
   transition: background var(--forge-transition), transform 80ms ease, opacity var(--forge-transition);
   white-space: nowrap;
 }
-.btn:hover:not(:disabled) { transform: translateY(-1px); }
-.btn:active:not(:disabled) { transform: translateY(0); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.btn-primary   { background: var(--forge-orange); color: white; border-color: var(--forge-orange-dim); }
-.btn-primary:hover:not(:disabled) { background: hsl(25, 95%, 48%); }
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
 
-.btn-secondary { background: var(--forge-surface); color: var(--forge-text); border-color: var(--forge-border); }
-.btn-secondary:hover:not(:disabled) { background: hsl(220, 14%, 22%); }
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+}
 
-.btn-ghost { background: transparent; color: var(--forge-text-dim); border-color: var(--forge-border); }
-.btn-ghost:hover:not(:disabled) { background: var(--forge-surface-2); color: var(--forge-text); }
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
-.hidden { display: none !important; }
+.btn-primary {
+  background: var(--forge-orange);
+  color: white;
+  border-color: var(--forge-orange-dim);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: hsl(25, 95%, 48%);
+}
+
+.btn-secondary {
+  background: var(--forge-surface);
+  color: var(--forge-text);
+  border-color: var(--forge-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: hsl(220, 14%, 22%);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--forge-text-dim);
+  border-color: var(--forge-border);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--forge-surface-2);
+  color: var(--forge-text);
+}
+
+.hidden {
+  display: none !important;
+}
 
 /* ─── Stats grid ─────────────────────────────────────────────────────────── */
 .stats-grid {
@@ -311,11 +409,13 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 0.4rem 0.75rem;
 }
+
 .stats-grid dt {
   font-size: 0.72rem;
   color: var(--forge-text-dim);
   grid-column: 1;
 }
+
 .stats-grid dd {
   font-size: 0.8rem;
   font-family: var(--font-mono);
@@ -324,8 +424,14 @@ body {
 }
 
 /* ─── Space JSON ─────────────────────────────────────────────────────────── */
-.space-details summary { list-style: none; }
-.space-details summary::marker { display: none; }
+.space-details summary {
+  list-style: none;
+}
+
+.space-details summary::marker {
+  display: none;
+}
+
 .space-json {
   font-family: var(--font-mono);
   font-size: 0.7rem;
@@ -358,5 +464,12 @@ body {
   font-size: 0.75rem;
   color: var(--forge-text-dim);
 }
-.footer a { color: inherit; text-decoration: underline; }
-.footer a:hover { color: var(--forge-text); }
+
+.footer a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.footer a:hover {
+  color: var(--forge-text);
+}
