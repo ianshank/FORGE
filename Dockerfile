@@ -13,7 +13,7 @@
 #   FORGE_MAX_SESSIONS, FORGE_SESSION_TTL, FORGE_CORS_ORIGINS
 
 # ── Stage 1: Rust + maturin wheel builder ───────────────────────────────────
-FROM rust:1.75-slim AS builder
+FROM rust:1.82-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev libssl-dev pkg-config \
