@@ -45,10 +45,11 @@ forge-worldgen = { path = "crates/forge-worldgen" }
 forge-task = { path = "crates/forge-task" }
 forge-agent = { path = "crates/forge-agent" }
 
-# Serialization (bincode 1.x was unmaintained RUSTSEC-2025-0141; use 2.x)
+# Serialization (bincode 1.x is unmaintained per RUSTSEC-2025-0141 but 2.x
+# has an incompatible API; suppressed in audit config)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-bincode = "2"
+bincode = "1"
 toml = "0.8"
 
 # Fixed-point arithmetic for deterministic physics
