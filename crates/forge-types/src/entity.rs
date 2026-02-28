@@ -126,6 +126,22 @@ impl Inventory {
         self.occupied_slots() >= self.capacity()
     }
 
+    /// Checks whether an item could be added without modifying inventory.
+    ///
+    /// Returns `true` if [`add_item`](Self::add_item) would succeed for the
+    /// same arguments.
+    pub fn can_add_item(&self, item_type: ItemType, count: u16) -> bool {
+        for stack in self.slots.iter().flatten() {
+            if stack.item_type == item_type {
+                let space = crate::constants::MAX_STACK_SIZE - stack.count;
+                if space >= count {
+                    return true;
+                }
+            }
+        }
+        self.slots.iter().any(|slot| slot.is_none())
+    }
+
     /// Attempts to add an item. Returns true if successful.
     pub fn add_item(&mut self, item_type: ItemType, count: u16) -> bool {
         // First, try to stack with existing items of the same type

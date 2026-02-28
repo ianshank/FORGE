@@ -112,6 +112,7 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
             &[],
             Some(&state.grid),
             Some(&state.objects),
+            state.config.agents.max_health,
         );
         state.last_task_rewards = Some(task_result.rewards);
         if task_result.should_terminate {

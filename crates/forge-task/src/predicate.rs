@@ -22,10 +22,13 @@ pub struct EvalContext<'a> {
     pub agents: &'a [Agent],
     /// Current tick.
     pub tick: u64,
-    /// The world grid (optional — required for terrain predicates).
+    /// The world grid (optional — required for terrain and distance predicates).
     pub grid: Option<&'a Grid>,
     /// All objects in the simulation (optional — required for object predicates).
     pub objects: Option<&'a [Object]>,
+    /// Configured max health (fixed-point i32). Used for health normalization
+    /// instead of a hardcoded constant so custom configs work correctly.
+    pub max_health: i32,
 }
 
 /// Result of evaluating a predicate.
@@ -96,8 +99,9 @@ fn eval_agent_at(ctx: &EvalContext, agent_id: AgentId, target: &Position) -> Pre
             PredicateResult::satisfied()
         } else {
             let distance = agent.position.manhattan_distance(target) as f32;
-            // Progress based on proximity (inverse of distance, capped)
-            let max_dist = 100.0_f32;
+            // Scale max distance to grid dimensions so progress is meaningful on large grids.
+            // Falls back to 100.0 when grid is unavailable (backwards compatible).
+            let max_dist = ctx.grid.map_or(100.0_f32, |g| (g.width + g.height) as f32);
             let progress = 1.0 - (distance / max_dist).min(1.0);
             PredicateResult::unsatisfied(progress)
         }
@@ -144,7 +148,11 @@ fn eval_agent_near(
         if dist <= max_distance as u32 {
             PredicateResult::satisfied()
         } else {
-            let progress = 1.0 - ((dist as f32 - max_distance as f32) / 50.0).min(1.0);
+            // Scale divisor to grid dimensions so progress is meaningful on large grids.
+            let divisor = ctx
+                .grid
+                .map_or(50.0_f32, |g| ((g.width + g.height) as f32) / 2.0);
+            let progress = 1.0 - ((dist as f32 - max_distance as f32) / divisor).min(1.0);
             PredicateResult::unsatisfied(progress.max(0.0))
         }
     } else {
@@ -166,8 +174,8 @@ fn eval_time_elapsed(ctx: &EvalContext, target_tick: u64) -> PredicateResult {
 fn eval_health_above(ctx: &EvalContext, agent_id: AgentId, threshold: f32) -> PredicateResult {
     if let Some(agent) = find_agent(ctx.agents, agent_id) {
         // Health is stored as fixed-point i32. Threshold is normalized 0.0-1.0.
-        // max_health from constants = 655360 (10.0 in fixed-point)
-        let max_health = forge_types::constants::DEFAULT_MAX_HEALTH as f32;
+        // Use configured max_health from EvalContext so custom configs work.
+        let max_health = ctx.max_health as f32;
         let normalized = if max_health > 0.0 {
             agent.health as f32 / max_health
         } else {
@@ -251,7 +259,7 @@ fn eval_object_at(ctx: &EvalContext, obj_id: u32, target: &Position) -> Predicat
             PredicateResult::satisfied()
         } else {
             let distance = obj.position.manhattan_distance(target) as f32;
-            let max_dist = 100.0_f32;
+            let max_dist = ctx.grid.map_or(100.0_f32, |g| (g.width + g.height) as f32);
             let progress = 1.0 - (distance / max_dist).min(1.0);
             PredicateResult::unsatisfied(progress)
         }
@@ -301,6 +309,7 @@ mod tests {
             tick,
             grid: None,
             objects: None,
+            max_health: forge_types::constants::DEFAULT_MAX_HEALTH,
         }
     }
 
@@ -417,6 +426,7 @@ mod tests {
             tick: 0,
             grid: Some(&grid),
             objects: None,
+            max_health: forge_types::constants::DEFAULT_MAX_HEALTH,
         };
         // Forest = terrain_id 6
         let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
@@ -432,6 +442,7 @@ mod tests {
             tick: 0,
             grid: Some(&grid),
             objects: None,
+            max_health: forge_types::constants::DEFAULT_MAX_HEALTH,
         };
         // Forest = terrain_id 6, but agent is on Ground
         let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
@@ -466,6 +477,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            max_health: forge_types::constants::DEFAULT_MAX_HEALTH,
         };
         let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
         assert!(result.satisfied);
@@ -488,6 +500,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            max_health: forge_types::constants::DEFAULT_MAX_HEALTH,
         };
         let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
         assert!(!result.satisfied);
@@ -522,6 +535,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            max_health: forge_types::constants::DEFAULT_MAX_HEALTH,
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
         assert!(result.satisfied);
@@ -544,6 +558,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            max_health: forge_types::constants::DEFAULT_MAX_HEALTH,
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
         assert!(!result.satisfied);
@@ -566,6 +581,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            max_health: forge_types::constants::DEFAULT_MAX_HEALTH,
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "active".to_string()), &ctx);
         assert!(result.satisfied);

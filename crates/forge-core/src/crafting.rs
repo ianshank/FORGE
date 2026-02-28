@@ -96,6 +96,17 @@ pub fn process_crafting(
             continue;
         }
 
+        // Pre-check: ensure output will fit before consuming inputs
+        let (output_type, output_count) = recipe.output;
+        if !agents[i].inventory.can_add_item(output_type, output_count) {
+            trace!(
+                agent_id = agent.id,
+                recipe_id = recipe_id,
+                "craft failed: no space for output"
+            );
+            continue;
+        }
+
         // Remove inputs from inventory
         let mut all_removed = true;
         for (item_type, count) in &recipe.inputs {
@@ -115,18 +126,9 @@ pub fn process_crafting(
             continue;
         }
 
-        // Add output to inventory
-        let (output_type, output_count) = recipe.output;
-        if !agents[i].inventory.add_item(output_type, output_count) {
-            // Output doesn't fit -- we already consumed inputs, this is a problem.
-            // In a real game we might want to roll back. For determinism, we log and continue.
-            trace!(
-                agent_id = agents[i].id,
-                recipe_id = recipe_id,
-                "craft partially failed: inputs consumed but output does not fit in inventory"
-            );
-            continue;
-        }
+        // Add output to inventory (pre-checked above via can_add_item)
+        let added = agents[i].inventory.add_item(output_type, output_count);
+        debug_assert!(added, "add_item failed despite can_add_item pre-check");
 
         trace!(
             agent_id = agents[i].id,

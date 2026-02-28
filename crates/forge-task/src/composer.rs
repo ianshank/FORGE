@@ -169,6 +169,7 @@ mod tests {
             tick,
             grid: None,
             objects: None,
+            max_health: forge_types::constants::DEFAULT_MAX_HEALTH,
         }
     }
 
