@@ -122,7 +122,7 @@ def load_replay(path: str | Path) -> ReplayData:
                 replay_ver,
                 current_ver,
             )
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     return ReplayData(

@@ -45,10 +45,10 @@ forge-worldgen = { path = "crates/forge-worldgen" }
 forge-task = { path = "crates/forge-task" }
 forge-agent = { path = "crates/forge-agent" }
 
-# Serialization
+# Serialization (bincode 1.x was unmaintained RUSTSEC-2025-0141; use 2.x)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-bincode = "1"
+bincode = "2"
 toml = "0.8"
 
 # Fixed-point arithmetic for deterministic physics
@@ -75,9 +75,9 @@ proptest = "1"
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 
-# Python bindings
-pyo3 = { version = "0.22", features = ["extension-module"] }
-numpy = "0.22"
+# Python bindings (pyo3 0.22.x = RUSTSEC-2024-0422; upgrade to ≥0.24.1)
+pyo3 = { version = "0.24.1", features = ["extension-module"] }
+numpy = "0.24"
 
 [profile.release]
 lto = true

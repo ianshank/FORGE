@@ -35,7 +35,6 @@ from forge_env.replay import (  # noqa: E402
 )
 from forge_env.wrappers import RecordEpisodeWrapper  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -61,17 +60,17 @@ def _make_mock_env(
 
 
 def _make_replay_data(**overrides: Any) -> ReplayData:
-    defaults: dict[str, Any] = dict(
-        forge_version="0.2.0",
-        format_version=1,
-        seed=42,
-        config={"world": {"width": 4, "height": 4}},
-        actions=[0, 1, 2, 3, 0],
-        rewards=[0.0, 1.0, -0.5, 0.0, 1.0],
-        terminated_at=5,
-        observations=[[0.0] * 16] * 6,
-        timestamps_ms=[0.0, 16.0, 32.0, 48.0, 64.0],
-    )
+    defaults: dict[str, Any] = {
+        "forge_version": "0.2.0",
+        "format_version": 1,
+        "seed": 42,
+        "config": {"world": {"width": 4, "height": 4}},
+        "actions": [0, 1, 2, 3, 0],
+        "rewards": [0.0, 1.0, -0.5, 0.0, 1.0],
+        "terminated_at": 5,
+        "observations": [[0.0] * 16] * 6,
+        "timestamps_ms": [0.0, 16.0, 32.0, 48.0, 64.0],
+    }
     defaults.update(overrides)
     return ReplayData(**defaults)
 
@@ -102,11 +101,11 @@ class TestRecordEpisodeWrapper:
             wrapper.step(1)
         data = json.loads(out.read_text())
         assert "forge_version" in data
-        assert data["format_version"] == 1  # noqa: PLR2004
-        assert data["seed"] == 7  # noqa: PLR2004
+        assert data["format_version"] == 1
+        assert data["seed"] == 7
         assert data["config"] == {"test": True}
-        assert len(data["actions"]) == 3  # noqa: PLR2004
-        assert len(data["rewards"]) == 3  # noqa: PLR2004
+        assert len(data["actions"]) == 3
+        assert len(data["rewards"]) == 3
 
     def test_observations_stored_by_default(self, tmp_path: Path) -> None:
         out = tmp_path / "ep.forge"
@@ -117,7 +116,7 @@ class TestRecordEpisodeWrapper:
             wrapper.step(0)
         data = json.loads(out.read_text())
         assert "observations" in data
-        assert len(data["observations"]) == 4  # reset obs + 3 step obs  # noqa: PLR2004
+        assert len(data["observations"]) == 4  # reset obs + 3 step obs
 
     def test_observations_omitted_when_disabled(self, tmp_path: Path) -> None:
         out = tmp_path / "ep.forge"
@@ -155,7 +154,7 @@ class TestRecordEpisodeWrapper:
         for _ in range(2):
             wrapper.step(1)
         data = json.loads(out.read_text())
-        assert len(data["actions"]) == 2  # noqa: PLR2004
+        assert len(data["actions"]) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -173,8 +172,8 @@ class TestLoadReplay:
             wrapper.step(2)
         data = load_replay(out)
         assert isinstance(data, ReplayData)
-        assert data.seed == 42  # noqa: PLR2004
-        assert data.num_steps == 5  # noqa: PLR2004
+        assert data.seed == 42
+        assert data.num_steps == 5
 
     def test_missing_file_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError):
@@ -248,9 +247,8 @@ class TestPlayReplay:
 class TestExportGif:
     def test_raises_importerror_without_pillow(self, tmp_path: Path) -> None:
         data = _make_replay_data()
-        with patch.dict(sys.modules, {"PIL": None, "PIL.Image": None}):
-            with pytest.raises(ImportError, match="Pillow"):
-                export_gif(data, tmp_path / "out.gif")
+        with patch.dict(sys.modules, {"PIL": None, "PIL.Image": None}), pytest.raises(ImportError, match="Pillow"):
+            export_gif(data, tmp_path / "out.gif")
 
     def test_raises_valueerror_without_observations(self, tmp_path: Path) -> None:
         data = _make_replay_data(observations=[])
@@ -271,7 +269,7 @@ class TestCli:
 
     def test_missing_file_returns_1(self) -> None:
         rc = _cli(["/no/such/file.forge"])
-        assert rc == 1  # noqa: PLR2004
+        assert rc == 1
 
     def test_good_file_returns_0(self, tmp_path: Path) -> None:
         out = tmp_path / "ep.forge"

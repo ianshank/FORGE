@@ -23,7 +23,7 @@ import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, IO, Any
+from typing import IO, TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import mlflow as mlflow_t
@@ -136,7 +136,7 @@ class CompositeCallback(LoggingCallback):
         for cb in self._callbacks:
             try:
                 cb.on_episode_end(stats)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: PERF203
                 logger.warning("Callback %s raised: %s", cb, exc)
 
     def on_training_start(self) -> None:

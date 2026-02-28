@@ -438,7 +438,7 @@ class RecordEpisodeWrapper(_BaseWrapper):
         try:
             from importlib.metadata import version  # noqa: PLC0415
             forge_version = version("forge-env")
-        except Exception:  # noqa: BLE001
+        except Exception:
             forge_version = "dev"
 
         payload: dict[str, Any] = {

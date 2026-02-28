@@ -7,12 +7,15 @@ so the tests run without a built Rust extension.
 from __future__ import annotations
 
 import sys
-from collections.abc import Generator
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 # ---------------------------------------------------------------------------
 # Make forge_env importable from the repo's python/ directory
@@ -21,7 +24,7 @@ _PYTHON_DIR = Path(__file__).parent.parent.parent / "python"
 if str(_PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(_PYTHON_DIR))
 
-from forge_env.api import app, _sessions  # noqa: E402
+from forge_env.api import _sessions, app  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Test client
@@ -167,7 +170,7 @@ class TestResetAndStep:
         client.post(f"/envs/{sid}/step", json={"action": 0})
         client.post(f"/envs/{sid}/step", json={"action": 1})
         data = client.get(f"/envs/{sid}").json()
-        assert data["step_count"] == 2  # noqa: PLR2004
+        assert data["step_count"] == 2
 
     def test_step_unknown_session_404(self, client: TestClient) -> None:
         resp = client.post("/envs/ghost/step", json={"action": 0})
@@ -191,8 +194,8 @@ class TestSpaces:
         data = resp.json()
         assert "observation_space" in data
         assert "action_space" in data
-        assert data["action_space"]["n"] == 10  # noqa: PLR2004
-        assert data["observation_space"]["shape"] == [64]  # noqa: PLR2004
+        assert data["action_space"]["n"] == 10
+        assert data["observation_space"]["shape"] == [64]
 
 
 # ---------------------------------------------------------------------------
@@ -203,15 +206,15 @@ class TestSpaces:
 class TestValidation:
     def test_negative_world_size_rejected(self, client: TestClient) -> None:
         resp = client.post("/envs", json={"world_width": -1, "world_height": 32})
-        assert resp.status_code == 422  # noqa: PLR2004
+        assert resp.status_code == 422
 
     def test_zero_agents_rejected(self, client: TestClient) -> None:
         resp = client.post("/envs", json={"num_agents": 0})
-        assert resp.status_code == 422  # noqa: PLR2004
+        assert resp.status_code == 422
 
     def test_max_steps_zero_rejected(self, client: TestClient) -> None:
         resp = client.post("/envs", json={"max_steps": 0})
-        assert resp.status_code == 422  # noqa: PLR2004
+        assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -223,4 +226,4 @@ class TestUnavailable:
     def test_create_env_503_when_native_unavailable(self, client: TestClient) -> None:
         with patch("forge_env.api._ENV_AVAILABLE", False):
             resp = client.post("/envs", json={})
-        assert resp.status_code == 503  # noqa: PLR2004
+        assert resp.status_code == 503

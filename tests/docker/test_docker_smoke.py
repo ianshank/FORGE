@@ -38,7 +38,7 @@ def ui() -> httpx.Client:
 
 
 # ---------------------------------------------------------------------------
-# forge-env-api smoke tests (AC1 – AC6 from PRD)
+# forge-env-api smoke tests (AC1 - AC6 from PRD)
 # ---------------------------------------------------------------------------
 
 
@@ -48,13 +48,13 @@ class TestForgeEnvApiSmoke:
     def test_health_returns_ok(self, api: httpx.Client) -> None:
         """AC2: /health responds within 2s."""
         resp = api.get("/health")
-        assert resp.status_code == 200  # noqa: PLR2004
+        assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
     def test_create_session_returns_201(self, api: httpx.Client) -> None:
         """AC3: POST /envs returns 201 with session JSON."""
         resp = api.post("/envs", json={"world_width": 16, "world_height": 16, "num_agents": 1})
-        assert resp.status_code == 201  # noqa: PLR2004
+        assert resp.status_code == 201
         data = resp.json()
         assert "session_id" in data
 
@@ -62,11 +62,11 @@ class TestForgeEnvApiSmoke:
         """Basic lifecycle: create → reset → step."""
         sid = api.post("/envs", json={}).json()["session_id"]
         reset = api.post(f"/envs/{sid}/reset")
-        assert reset.status_code == 200  # noqa: PLR2004
+        assert reset.status_code == 200
         assert "observation" in reset.json()
 
         step = api.post(f"/envs/{sid}/step", json={"action": 0})
-        assert step.status_code == 200  # noqa: PLR2004
+        assert step.status_code == 200
         d = step.json()
         assert "reward" in d
         assert "terminated" in d
@@ -74,9 +74,9 @@ class TestForgeEnvApiSmoke:
     def test_session_limit_enforced(self, api: httpx.Client) -> None:
         """AC6: FORGE_MAX_SESSIONS=4 → 5th creation returns 429 or 503."""
         created: list[str] = []
-        for _ in range(4):  # noqa: PLR2004
+        for _ in range(4):
             r = api.post("/envs", json={})
-            if r.status_code == 201:  # noqa: PLR2004
+            if r.status_code == 201:
                 created.append(r.json()["session_id"])
         # The 5th request must be rejected
         r = api.post("/envs", json={})
@@ -96,14 +96,14 @@ class TestForgeDemoUiSmoke:
 
     def test_health_returns_ok(self, ui: httpx.Client) -> None:
         resp = ui.get("/health")
-        assert resp.status_code == 200  # noqa: PLR2004
+        assert resp.status_code == 200
 
     def test_index_returns_html(self, ui: httpx.Client) -> None:
         resp = ui.get("/")
-        assert resp.status_code == 200  # noqa: PLR2004
+        assert resp.status_code == 200
         assert "text/html" in resp.headers.get("content-type", "")
 
     def test_api_sections_endpoint(self, ui: httpx.Client) -> None:
         resp = ui.get("/api/sections")
-        assert resp.status_code == 200  # noqa: PLR2004
+        assert resp.status_code == 200
         assert isinstance(resp.json(), list)
