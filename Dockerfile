@@ -16,13 +16,13 @@
 FROM rust:1.75-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-dev libssl-dev pkg-config \
+    python3 python3-pip python3-dev libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /forge
 
-# Cache cargo dependencies
-COPY Cargo.toml Cargo.lock ./
+# Cache cargo dependencies (Cargo.lock is gitignored — cargo resolves fresh)
+COPY Cargo.toml ./
 COPY crates/ crates/
 
 RUN pip install --no-cache-dir maturin==1.4.*
@@ -62,7 +62,7 @@ HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 
 CMD ["python", "-m", "uvicorn", "demo_ui.backend.main:app", \
-     "--host", "0.0.0.0", "--port", "8080"]
+    "--host", "0.0.0.0", "--port", "8080"]
 
 # ── Stage 3: FORGE Env REST API ─────────────────────────────────────────────
 FROM python:3.11-slim AS forge-env-api
@@ -87,4 +87,4 @@ HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8765/health')"
 
 CMD ["python", "-m", "uvicorn", "forge_env.api:app", \
-     "--host", "0.0.0.0", "--port", "8765"]
+    "--host", "0.0.0.0", "--port", "8765"]
