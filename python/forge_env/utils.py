@@ -218,22 +218,12 @@ def seed_everything(seed: int) -> None:
     random.seed(seed)
 
     if HAS_NUMPY:
-        # Seed both the legacy global RNG (used by Gymnasium/SB3) and the
-        # modern Generator API. np.random.default_rng returns a Generator
-        # but does NOT change np.random state — we must call np.random.seed
-        # explicitly for the global state that most RL libraries read.
+        # Seed the legacy global RNG (used by Gymnasium/SB3 etc.)
         np.random.seed(seed)
-        # Also prime the default BitGenerator so new-style code is seeded.
-        try:
-            _rng = np.random.default_rng(seed)
-            # Propagate to the global default_rng cache (NumPy ≥ 1.25)
-            np.random.set_state(_rng.bit_generator.state if hasattr(_rng.bit_generator, "state") else np.random.get_state())
-        except AttributeError:  # pragma: no cover -- very old numpy
-            pass
 
     # Optional: seed PyTorch if installed
     try:
-        import torch  # noqa: PLC0415
+        import torch
 
         torch.manual_seed(seed)
         if torch.cuda.is_available():

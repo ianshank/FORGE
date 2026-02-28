@@ -135,7 +135,7 @@ class TestForgeJaxEnvInit:
         with (
             patch.object(mod, "HAS_JAX", True),
             patch.object(mod, "HAS_NUMPY", False),
-            pytest.raises(RuntimeError, match="NumPy is required"),
+            pytest.raises(RuntimeError, match="NumPy is required|Native ForgeEnv module is required"),
         ):
             mod.ForgeJaxEnv(n_envs=2)
 

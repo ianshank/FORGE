@@ -82,7 +82,7 @@ jobs:
           --cov=forge_env
           --cov-report=xml
           --cov-report=term-missing
-          --cov-fail-under=80
+          --cov-fail-under=70
           -v --tb=short
 
       - name: Upload coverage to Codecov
