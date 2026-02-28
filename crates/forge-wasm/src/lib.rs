@@ -164,7 +164,7 @@ impl ForgeWasmEnv {
     pub fn observation_space_json(&self) -> String {
         let vr = self.config.agents.default_vision_radius;
         let view_side = 2 * vr as usize + 1;
-        let features_per_tile = 7;
+        let features_per_tile = forge_types::constants::OBS_FEATURES_PER_TILE;
 
         let flat_size = forge_types::observation::Observation::flat_size(
             vr,
