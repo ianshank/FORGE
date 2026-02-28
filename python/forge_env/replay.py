@@ -242,7 +242,7 @@ def export_gif(
         If the replay has no stored observations.
     """
     try:
-        from PIL import Image  # type: ignore[import-untyped]  # noqa: PLC0415
+        from PIL import Image  # noqa: PLC0415
     except ImportError as exc:
         raise ImportError(
             "Pillow is required for GIF export. Install: pip install Pillow"
