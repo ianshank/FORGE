@@ -40,6 +40,34 @@ Placement probability = `config.resource_density * rule.weight`. One resource pe
 ### Grid Registration
 Resources and objects are stored in separate `Vec` collections and registered on tiles via ID references (`tile.resource_id`, `tile.object_id`). This avoids data duplication and keeps tile size minimal.
 
+## Crate Dependencies
+
+- **Depends on**: `forge-types` (Grid, Tile, TerrainType, ResourceNode, Object, Position, config structs)
+- **Depended on by**: `forge-core` (called in `WorldState::new()` to generate the initial world)
+- **External dependencies**: `rand`, `rand_pcg`, `tracing`
+
+## Module Layout
+
+| File | Purpose |
+|------|---------|
+| `src/lib.rs` | `WorldGenerator` struct — orchestrates terrain, resources, objects, and spawn placement |
+| `src/terrain.rs` | `TerrainGenerator` — dual-layer Perlin noise sampling and tile generation |
+| `src/biome.rs` | `BiomeClassifier` — maps (elevation, moisture) to `TerrainType` via threshold rules |
+| `src/noise.rs` | Self-contained Perlin noise implementation with fractal Brownian motion (octave noise) |
+| `src/resources.rs` | `ResourcePlacer` — terrain-affinity-based resource node placement |
+| `src/objects.rs` | `ObjectPlacer` — entity-budget-constrained interactive object placement |
+| `src/entities.rs` | `SpawnPlacer` — greedy agent spawn point selection with minimum distance constraint |
+
+## Key Invariants
+
+- **Determinism**: Same `WorldConfig::seed` = identical grid, resources, objects, and spawn positions
+- **Moisture noise independence**: Moisture seed is offset by `0xDEAD_BEEF_CAFE_BABE` from elevation seed
+- **One resource per tile**: A tile can hold at most one `ResourceNode`
+- **Object budget**: Total objects capped at `max_entities / 2` to reserve capacity for agents
+- **Spawn distance**: Agents are placed with minimum `MIN_SPAWN_DISTANCE = 3` Manhattan distance (relaxed on small grids)
+- **Resources match terrain affinity**: Wood only on Forest, Fish only on Water, etc.
+- **No external noise crate**: Perlin implementation is self-contained in `noise.rs`
+
 ## Skills
 
 - **Noise tuning**: Adjust octaves, persistence, and biome scale to produce desired terrain distributions

@@ -50,6 +50,33 @@ Per-tick reward = `progress_delta × reward_scale` distributed equally to all al
 ### EvalContext Pattern
 `EvalContext` provides an immutable snapshot of world state (agents, tick, grid, objects) for predicate evaluation. This decouples evaluation from mutation — tasks never modify world state.
 
+## Crate Dependencies
+
+- **Depends on**: `forge-types` (Predicate, TaskComposition, ActiveTask, Agent, Grid, Object, config structs)
+- **Depended on by**: `forge-core` (called at step 10 of `run_systems()` via `evaluate_tasks()`)
+- **External dependencies**: `rand`, `rand_pcg`, `tracing`
+
+## Module Layout
+
+| File | Purpose |
+|------|---------|
+| `src/lib.rs` | Crate root — re-exports evaluator, generator, curriculum public API |
+| `src/predicate.rs` | `EvalContext`, `PredicateResult`, atomic predicate evaluation against world state |
+| `src/composer.rs` | `evaluate_composition()` — recursive evaluation of `TaskComposition` trees, `CompositionResult` |
+| `src/evaluator.rs` | `evaluate_tasks()` — top-level task evaluation, dense/sparse reward computation, termination logic |
+| `src/generator.rs` | `generate_task()` — procedural task generation across 6 difficulty tiers |
+| `src/curriculum.rs` | `CurriculumController` — adaptive tier sampling via rolling-window success tracking |
+| `src/difficulty.rs` | Difficulty estimation heuristics for auto-tier and step-count inference |
+
+## Key Invariants
+
+- **Evaluation is pure**: Task evaluation never mutates world state — `EvalContext` is read-only
+- **Progress values in [0.0, 1.0]**: All `PredicateResult::progress` values are clamped to this range
+- **Sequence tracking is monotonic**: `sequence_index` only advances forward, never regresses
+- **Dense reward weights normalize to ~1.0**: Per-atom weights across a task sum to approximately 1.0
+- **Tier range**: `TaskTier` values are clamped to 1-6 on construction
+- **Reward distribution**: Dense per-tick rewards are split equally among alive agents
+
 ## Skills
 
 - **Predicate design**: Define new atomic conditions (e.g., AgentCrafted, ZoneControl, ResourceDepleted)

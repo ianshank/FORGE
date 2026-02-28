@@ -7,20 +7,22 @@ You are the **Simulation Engine** — the deterministic heart of FORGE. You exec
 ## Design Patterns
 
 ### Deterministic System Pipeline
-`run_systems()` executes subsystems in a strict, fixed order every tick:
+`run_systems()` in `src/systems.rs` executes subsystems in a strict, fixed order every tick. The numbering matches the source code comments:
 
-1. **Validate actions** — replace invalid actions with Noop
+1. **Validate actions** — replace invalid actions with Noop (dead agents, out-of-range slots/tokens)
 2. **Physics: movement & collision** — priority-based resolution (lower agent ID wins)
-3. **Physics: object pushing** — push boulders/objects via `AgentPushData` snapshots
-4. **Stamina regeneration** — fixed-point regeneration per tick
-5. **Resource harvesting & respawn** — tool checks, inventory capacity, respawn timers
-6. **Crafting** — recipe validation, atomic input removal + output addition
-7. **Combat & environmental damage** — sword attacks on adjacent tiles, lava damage
-8. **Communication** — Manhattan-distance broadcast with FIFO buffer eviction
-9. **Day/night phase** — tick-to-phase mapping with vision modifiers
-10. **Visibility** — Bresenham line-of-sight, fog-of-war updates
-11. **Task evaluation** — delegate to forge-task, compute dense + sparse rewards
-12. **Tick increment**
+2b. **Physics: object pushing** — push boulders/objects via `AgentPushData` snapshots (avoids full agent clone)
+3. **Stamina regeneration** — fixed-point regeneration per tick
+4. **Resource harvesting & respawn** — tool checks, inventory capacity, respawn timers
+5. **Crafting** — recipe validation, station proximity check, atomic input removal + output addition
+6. **Combat & environmental damage** — sword attacks on adjacent tiles, lava/water damage
+7. **Communication** — Manhattan-distance broadcast with FIFO buffer eviction
+8. **Day/night phase** — tick-to-phase mapping (computed before visibility so phase affects vision range)
+9. **Visibility** — Bresenham line-of-sight, fog-of-war updates with day/night vision modifiers
+10. **Task evaluation** — delegates to `forge_task::evaluator::evaluate_tasks()`, computes dense + sparse rewards
+11. **Tick increment**
+
+Observation generation happens in `WorldState::step()` after `run_systems()` returns — it is not part of the system pipeline.
 
 This ordering is the simulation contract. Changing it changes behavior.
 
@@ -44,6 +46,37 @@ When multiple agents target the same tile, the agent with the lower ID wins. A t
 
 ### Arc-Shared Configuration
 `config: Arc<ForgeConfig>` is shared immutably across all systems within a step. Cloning the world state for MCTS only increments the reference count, not the config data.
+
+## Crate Dependencies
+
+- **Depends on**: `forge-types` (all shared types), `forge-worldgen` (world generation in `WorldState::new()`), `forge-task` (task evaluation in `run_systems()` step 10)
+- **Depended on by**: `forge-agent` (forward model clones + steps), `forge-python` (Gymnasium wrapper), `forge-wasm` (browser wrapper), `forge-bench` (performance measurement)
+- **External dependencies**: `serde`, `serde_json`, `bincode`, `fixed`, `smallvec`, `rand`, `rand_pcg`, `tracing`
+
+## Module Layout
+
+| File | Purpose |
+|------|---------|
+| `src/lib.rs` | Crate root — re-exports `WorldState` and public API |
+| `src/world.rs` | `WorldState` struct, `new()`, `step()`, `reset()`, `generate_observation()`, serialization (`to_bytes`/`from_bytes`/`to_json`) |
+| `src/systems.rs` | `run_systems()` — the deterministic system pipeline orchestrator, action validation |
+| `src/physics.rs` | `process_movements()`, `process_pushes()`, `regenerate_stamina()`, collision resolution |
+| `src/combat.rs` | `process_combat()` (melee attacks), `apply_environmental_damage()` (lava, water) |
+| `src/communication.rs` | `process_communication()` — Manhattan-distance token broadcast with FIFO eviction |
+| `src/crafting.rs` | `process_crafting()` — recipe validation, station proximity, atomic inventory swaps |
+| `src/day_night.rs` | `compute_day_phase()` — tick-to-phase mapping (dawn/day/dusk/night) |
+| `src/resource.rs` | `process_harvesting()`, `tick_respawn()` — resource extraction and regeneration |
+| `src/visibility.rs` | `update_visibility()` — Bresenham line-of-sight, fog-of-war, day/night vision modifiers |
+| `src/rng.rs` | `ForgeRng` — `Pcg64Mcg` wrapper with seed tracking, derive, save/restore |
+
+## Key Invariants
+
+- **Determinism**: Same seed + same action sequence = identical `WorldState` on any platform
+- **Zero allocation on hot path**: `run_systems()` must not heap-allocate (SmallVec for temporaries, integer math only)
+- **System ordering is the contract**: Changing the order of steps in `run_systems()` changes simulation behavior
+- **Config is immutable during step**: `Arc<ForgeConfig>` is shared read-only across all systems
+- **Observation generation happens outside `run_systems()`**: in `WorldState::step()` after the pipeline returns
+- **Action padding**: If fewer actions than agents are provided, excess agents receive Noop
 
 ## Skills
 

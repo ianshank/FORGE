@@ -35,6 +35,27 @@ Five benchmark groups cover the critical operations:
 4. **world_creation** — `WorldState::new()` including full world generation
 5. **serialization** — `to_bytes()` state snapshot performance
 
+## Crate Dependencies
+
+- **Depends on**: `forge-types` (ForgeConfig), `forge-core` (WorldState — the primary benchmark target), `forge-agent` (agent baselines for episode benchmarks)
+- **Depended on by**: None (leaf benchmarking crate)
+- **External dependencies**: `criterion`, `rand`, `rand_pcg`
+
+## Module Layout
+
+| File | Purpose |
+|------|---------|
+| `benches/step_throughput.rs` | All Criterion benchmarks — step single/multi-agent, noop baseline, world creation, serialization |
+
+## Key Invariants
+
+- **All benchmarks use seed 42**: Fixed seed ensures deterministic, reproducible measurements
+- **`max_episode_length = 0`**: Disables truncation during measurement to prevent early termination
+- **`black_box()` on all results**: Prevents dead-code elimination of benchmark outputs
+- **Grid size parameters**: 16x16, 32x32, 64x64, 128x128 (quadratic tile count scaling)
+- **Agent count parameters**: 1, 2, 4, 8 on fixed 64x64 grid
+- **Noop baseline measures pure overhead**: Minimum cost of the system pipeline without meaningful work
+
 ## Skills
 
 - **Benchmark authoring**: Add new Criterion benchmarks for new systems or operations

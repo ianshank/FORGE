@@ -30,6 +30,39 @@ Config structs are deliberately not validated at construction. `validation::vali
 ### Error Hierarchy with thiserror
 `ForgeError` is a top-level enum wrapping domain-specific error types (`WorldGenError`, `SimulationError`, `ConfigError`, `TaskError`). Each uses `#[derive(thiserror::Error)]` for `Display` and `From` impls. `ForgeResult<T>` aliases `Result<T, ForgeError>`.
 
+## Crate Dependencies
+
+- **Depends on**: No FORGE crates (foundation layer)
+- **Depended on by**: forge-core, forge-worldgen, forge-task, forge-agent, forge-python, forge-bench, forge-wasm (all 7 other crates)
+- **External dependencies**: `serde`, `serde_json`, `bincode`, `fixed`, `smallvec`, `thiserror`, `tracing`, `toml`
+
+## Module Layout
+
+| File | Purpose |
+|------|---------|
+| `src/lib.rs` | Crate root — re-exports primary types from all modules |
+| `src/action.rs` | `Action` enum with discrete encoding (`to_discrete` / `from_discrete`), `ActionSpace` |
+| `src/config.rs` | `ForgeConfig` and all nested config structs (`WorldConfig`, `PhysicsConfig`, `AgentConfig`, `TaskConfig`, `CurriculumConfig`, `RenderConfig`, `CraftingConfig`, `TeamStructure`) |
+| `src/constants.rs` | All default values organized by subsystem (world, physics, agents, crafting, tasks, curriculum, rendering, inventory, fixed-point, observation, day/night) |
+| `src/entity.rs` | `Agent`, `AgentCapabilities`, `Inventory`, `ItemStack`, `Object`, `ObjectType`, `ObjectState`, `AgentId`, `ObjectId`, `TeamId`, `CommToken` |
+| `src/error.rs` | `ForgeError`, `WorldGenError`, `SimulationError`, `ConfigError`, `TaskError`, `ForgeResult<T>` |
+| `src/grid.rs` | `Grid` (flat row-major tile storage), `Tile`, `Position`, `Direction`, `TerrainType`, `VisibilityState` |
+| `src/observation.rs` | `Observation`, `TileObservation`, `InventoryObservation`, `StepResult`, `StepInfo`, `ObservationSpace` |
+| `src/resource.rs` | `ItemType`, `ResourceType`, `ResourceNode`, `CraftingRecipe`, `RecipeBook` |
+| `src/task.rs` | `Predicate`, `TaskComposition`, `TaskTier`, `TaskDefinition`, `ActiveTask` |
+| `src/validation.rs` | `validate_config()` — post-construction config validation |
+
+## Key Invariants
+
+- All config structs **must** derive `Clone, Debug, Serialize, Deserialize` and impl `Default`
+- Action discrete encoding **must** remain dense and contiguous: `[0..40+comm_vocab_size)`
+- `to_discrete()` and `from_discrete()` **must** be inverse operations for all valid actions
+- Fixed-point scale: `FIXED_POINT_ONE = 65536` (16 fractional bits) — never mix with raw floats
+- `Grid` indexing is row-major: `index = y * width + x`
+- `Inventory::add_item()` respects `MAX_STACK_SIZE = 64` — never exceed
+- All public items **must** have doc comments
+- Error types use `thiserror` derive macros — never manual `Display` impls
+
 ## Skills
 
 - **Type design**: Define serializable, deterministic types with minimal memory footprint

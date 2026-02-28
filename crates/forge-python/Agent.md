@@ -32,7 +32,8 @@ Observations are returned as Python dicts with numpy arrays:
     "stamina": float,                    # 0.0-1.0 normalized
     "position": (x, y),                  # uint16 tuple
     "messages": list[int],               # communication token buffer
-    "day_phase": int                     # 0=dawn, 1=day, 2=dusk, 3=night
+    "day_phase": int,                    # 0=dawn, 1=day, 2=dusk, 3=night
+    "task_progress": list[float]         # per-predicate progress, 0.0-1.0
 }
 ```
 
@@ -44,6 +45,29 @@ Observations are returned as Python dicts with numpy arrays:
 
 ### Single-Agent Action Interface
 `step()` accepts a single `int` action (discrete index) and internally wraps it for the multi-agent simulation engine. For multi-agent scenarios, the first agent is controlled and others execute Noop.
+
+## Crate Dependencies
+
+- **Depends on**: `forge-types` (ForgeConfig, Observation, StepInfo, Action), `forge-core` (WorldState — wrapped by ForgeEnv)
+- **Depended on by**: None (leaf binding crate)
+- **External dependencies**: `pyo3`, `numpy`, `serde_json`, `tracing`
+
+## Module Layout
+
+| File | Purpose |
+|------|---------|
+| `src/lib.rs` | PyO3 module definition (`#[pymodule]`), registers `ForgeEnv` class |
+| `src/env.rs` | `ForgeEnv` pyclass — `reset()`, `step()`, `render()`, space properties, GIL release |
+| `src/config.rs` | `config_from_dict()` — Python dict → JSON → `ForgeConfig` conversion |
+| `src/spaces.rs` | `observation_space_dict()`, `action_space_dict()` — space descriptor generation |
+
+## Key Invariants
+
+- **GIL must be released during `step()`**: `py.allow_threads()` wraps CPU-intensive Rust computation
+- **Observation dict keys must match Gymnasium conventions**: `"grid_view"`, `"inventory"`, `"health"`, `"stamina"`, `"position"`, `"messages"`, `"day_phase"`, `"task_progress"`
+- **Config conversion via JSON intermediary**: Python dict → `serde_json::Value` → `ForgeConfig` — never direct field mapping
+- **Single-agent action interface**: `step()` takes one `u32`, wraps for multi-agent engine; other agents get Noop
+- **Missing config fields use Rust defaults**: Partial Python dicts are valid — `ForgeConfig::default()` fills gaps
 
 ## Skills
 

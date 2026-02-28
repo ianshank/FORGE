@@ -42,6 +42,26 @@ Useful for debugging and text-based displays in the browser console.
 ### Deterministic Reset with Optional Seed
 `reset(seed: Option<u64>)` supports both reproducible runs (fixed seed) and varied exploration (no seed, uses config default). The simulation re-creates `WorldState` from scratch, ensuring clean episode boundaries.
 
+## Crate Dependencies
+
+- **Depends on**: `forge-types` (ForgeConfig, Action, ObservationSpace, ActionSpace), `forge-core` (WorldState — wrapped by ForgeWasmEnv)
+- **Depended on by**: None (leaf binding crate)
+- **External dependencies**: `wasm-bindgen`, `serde`, `serde_json`
+
+## Module Layout
+
+| File | Purpose |
+|------|---------|
+| `src/lib.rs` | Complete crate — `ForgeWasmEnv` (wasm_bindgen), `StepResponse`, `SerializableState`, ASCII rendering |
+
+## Key Invariants
+
+- **All I/O is JSON strings**: No complex WASM marshalling — JavaScript consumes/produces plain strings
+- **Out-of-range actions default to Noop**: `Action::from_discrete()` returns Noop for invalid indices
+- **Empty/null config string triggers defaults**: `new("")` and `new("null")` both use `ForgeConfig::default()`
+- **Single-agent interface**: `step(action: u32)` controls one agent; multi-agent requires API extension
+- **Built as `cdylib` + `rlib`**: `cdylib` for WASM compilation, `rlib` for Rust-side testing
+
 ## Skills
 
 - **WASM bindings**: Expose new Rust functionality via `#[wasm_bindgen]` methods

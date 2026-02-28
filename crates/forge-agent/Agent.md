@@ -15,10 +15,12 @@ fn name(&self) -> &str
 This loose coupling allows drop-in replacement of any agent implementation — random, heuristic, MCTS, or learned policy networks — without changing orchestration code.
 
 ### Forward Model for Planning
-The `ForwardModel` trait abstracts simulation for tree search:
+The `ForwardModel` trait abstracts simulation for tree search with five methods:
+- `snapshot() -> WorldState` — clone state for branching
 - `simulate(state, actions) -> (WorldState, StepResult)` — step without mutating the original
 - `is_terminal(state) -> bool` — check episode end
-- `snapshot(state) -> WorldState` — clone state for branching
+- `num_agents(state) -> usize` — query agent count for joint action construction
+- `action_space_size() -> u32` — query discrete action space size for expansion
 
 `DefaultForwardModel` implements this by cloning state and calling `WorldState::step()`. The deterministic simulation guarantees that forward model rollouts are exact.
 
@@ -59,6 +61,33 @@ Four concrete agents form a difficulty ladder:
 
 ### Episode Runner
 `run_episode()` orchestrates a full episode: runs agents for up to `max_steps`, collects cumulative per-agent rewards, terminates early on episode end. Used for baseline evaluation and curriculum assessment.
+
+## Crate Dependencies
+
+- **Depends on**: `forge-types` (Action, ForgeConfig, observation types), `forge-core` (WorldState — cloned and stepped in ForwardModel)
+- **Depended on by**: `forge-bench` (agent episode benchmarking)
+- **External dependencies**: `rand`, `rand_pcg`, `tracing`
+
+## Module Layout
+
+| File | Purpose |
+|------|---------|
+| `src/lib.rs` | Crate root — `Agent` trait, `run_episode()`, re-exports |
+| `src/baselines.rs` | `RandomAgent`, `NoopAgent`, `GreedyNavigator`, `HeuristicAgent` implementations |
+| `src/forward_model.rs` | `ForwardModel` trait (5 methods), `DefaultForwardModel` implementation |
+| `src/mcts/mod.rs` | MCTS module root — `MctsConfig`, `MctsAgent` (implements `Agent` trait) |
+| `src/mcts/policy.rs` | `PolicyValue` trait, `UniformPolicy`, `HeuristicPolicy` implementations |
+| `src/mcts/search.rs` | `MctsSearch` — 4-phase search (selection, expansion, evaluation, backpropagation) |
+| `src/mcts/tree.rs` | `MctsTree`, `MctsNode` — flat `Vec<MctsNode>` storage with index-based parent/child links |
+
+## Key Invariants
+
+- **ForwardModel::simulate is non-mutating**: Always clones state before stepping — never modifies the input
+- **MCTS tree uses flat Vec, never pointers**: `NodeId = usize` indices for cache-friendly iteration
+- **PUCT exploration constant**: Default `c_puct = 1.41` (configurable via `MctsConfig`)
+- **Discounted backup**: Values decay by `config.discount` (default 0.99) per tree depth
+- **Baseline agent ordering**: NoopAgent < RandomAgent < GreedyNavigator < HeuristicAgent (expected performance)
+- **Agent trait is object-safe**: Can be used as `Box<dyn Agent>` for polymorphic dispatch
 
 ## Skills
 
