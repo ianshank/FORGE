@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import time as _time
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ __all__ = [
     "FlattenObservationWrapper",
     "NormalizeRewardWrapper",
     "RecordEpisodeStatistics",
+    "RecordEpisodeWrapper",
     "TimeLimit",
 ]
 
@@ -339,3 +341,122 @@ class RecordEpisodeStatistics(_BaseWrapper):
             info["episode"] = episode_info
 
         return obs, reward, terminated, truncated, info
+
+
+# ---------------------------------------------------------------------------
+# RecordEpisodeWrapper — writes .forge replay files
+# ---------------------------------------------------------------------------
+
+
+class RecordEpisodeWrapper(_BaseWrapper):
+    """Record a full episode to a ``.forge`` JSON replay file.
+
+    The file is written when the episode ends (``terminated`` or ``truncated``).
+    Target per-step overhead: ≤ 1%.
+
+    Parameters
+    ----------
+    env:
+        The environment to wrap.
+    output_path:
+        Path where the ``.forge`` file will be written.
+    seed:
+        Optional seed to embed in the replay header.
+    config:
+        Optional env config dict to embed in the replay header.
+    store_observations:
+        If ``True`` (default), observations are stored alongside actions.
+
+    Examples
+    --------
+    >>> wrapper = RecordEpisodeWrapper(env, "replay.forge")
+    >>> obs, _ = wrapper.reset(seed=42)
+    """
+
+    FORMAT_VERSION: int = 1
+
+    def __init__(
+        self,
+        env: Any,
+        output_path: str | Path,
+        *,
+        seed: int | None = None,
+        config: dict[str, Any] | None = None,
+        store_observations: bool = True,
+    ) -> None:
+        super().__init__(env)
+        self._out_path = Path(output_path)
+        self._out_path.parent.mkdir(parents=True, exist_ok=True)
+        self._seed = seed
+        self._config: dict[str, Any] = config or {}
+        self._store_obs = store_observations
+        self._actions: list[int] = []
+        self._observations: list[list[float]] = []
+        self._rewards: list[float] = []
+        self._timestamps_ms: list[float] = []
+        self._ep_start_ms: float = 0.0
+
+    def reset(
+        self, *, seed: int | None = None, options: dict[str, Any] | None = None
+    ) -> tuple[Any, dict[str, Any]]:
+        """Reset and start a fresh recording."""
+        obs, info = self.env.reset(seed=seed, options=options)
+        if seed is not None:
+            self._seed = seed
+        self._actions = []
+        self._observations = [self._to_list(obs)] if self._store_obs else []
+        self._rewards = []
+        self._timestamps_ms = []
+        self._ep_start_ms = _time.monotonic() * 1000.0
+        return obs, info
+
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
+        """Record action/obs/reward, delegate to inner env, flush on done."""
+        t_ms = _time.monotonic() * 1000.0 - self._ep_start_ms
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self._actions.append(int(action))
+        self._rewards.append(float(reward))
+        self._timestamps_ms.append(round(t_ms, 3))
+        if self._store_obs:
+            self._observations.append(self._to_list(obs))
+        if terminated or truncated:
+            self._flush(len(self._actions))
+        return obs, reward, terminated, truncated, info
+
+    @staticmethod
+    def _to_list(obs: Any) -> list[float]:
+        if HAS_NUMPY:
+            import numpy as np  # noqa: PLC0415
+            return np.asarray(obs).flatten().tolist()  # type: ignore[no-any-return]
+        if hasattr(obs, "tolist"):
+            return obs.tolist()  # type: ignore[no-any-return]
+        return list(obs)
+
+    def _flush(self, terminated_at: int) -> None:
+        import json  # noqa: PLC0415
+
+        try:
+            from importlib.metadata import version  # noqa: PLC0415
+            forge_version = version("forge-env")
+        except Exception:  # noqa: BLE001
+            forge_version = "dev"
+
+        payload: dict[str, Any] = {
+            "forge_version": forge_version,
+            "format_version": self.FORMAT_VERSION,
+            "seed": self._seed,
+            "config": self._config,
+            "actions": self._actions,
+            "rewards": self._rewards,
+            "terminated_at": terminated_at,
+            "timestamps_ms": self._timestamps_ms,
+        }
+        if self._store_obs:
+            payload["observations"] = self._observations
+
+        self._out_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info("Replay saved → %s (%d steps)", self._out_path, terminated_at)
+

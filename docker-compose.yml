@@ -1,0 +1,68 @@
+# FORGE Docker Compose Stack
+# Starts forge-demo-ui + forge-env-api services.
+#
+# Quick start:
+#   cp .env.example .env          # configure ports / session limits
+#   docker compose up --build -d  # build images and start services
+#   docker compose logs -f        # stream logs
+#   docker compose down -v        # stop + remove everything
+#
+# Services:
+#   forge-demo-ui   http://localhost:${DEMO_UI_PORT:-8080}
+#   forge-env-api   http://localhost:${API_PORT:-8765}
+
+services:
+  # ── FORGE Env REST API ─────────────────────────────────────────────────────
+  forge-env-api:
+    build:
+      context: .
+      target: forge-env-api
+    image: ghcr.io/ianshank/forge-env-api:latest
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8765}:8765"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      FORGE_MAX_SESSIONS: "${FORGE_MAX_SESSIONS:-64}"
+      FORGE_SESSION_TTL: "${FORGE_SESSION_TTL:-3600}"
+      FORGE_CORS_ORIGINS: "${FORGE_CORS_ORIGINS:-*}"
+    networks:
+      - forge-net
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/health')" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Demo UI (FastAPI + SSE streaming frontend) ─────────────────────────────
+  forge-demo-ui:
+    build:
+      context: .
+      target: demo-ui
+    image: ghcr.io/ianshank/forge-demo-ui:latest
+    restart: unless-stopped
+    ports:
+      - "${DEMO_UI_PORT:-8080}:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      FORGE_API_URL: "http://forge-env-api:8765"
+    networks:
+      - forge-net
+    depends_on:
+      forge-env-api:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  forge-net:
+    driver: bridge

@@ -1,0 +1,51 @@
+# FORGE .dockerignore
+# Excludes build artifacts and dev files from the Docker build context.
+
+# Rust build artifacts (can be hundreds of MB)
+target/
+
+# Git history
+.git/
+.gitignore
+.gitattributes
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+*.whl
+
+# Mypy / pytest caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.benchmarks/
+.coverage
+htmlcov/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Node
+node_modules/
+
+# Env files (don't bake secrets into image)
+.env
+*.local
+
+# CI / docs that aren't needed in the image
+.github/
+docs/
+*.md
+!README.md
+
+# Test artifacts (not needed in production image)
+tests/

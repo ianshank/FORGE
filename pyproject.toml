@@ -36,6 +36,9 @@ Documentation = "https://ianshank.github.io/FORGE"
 Changelog = "https://github.com/ianshank/FORGE/blob/main/CHANGELOG.md"
 "Bug Tracker" = "https://github.com/ianshank/FORGE/issues"
 
+[project.scripts]
+forge-replay = "forge_env.replay:_cli"
+
 [project.optional-dependencies]
 # Base test utilities
 test = [
@@ -69,6 +72,10 @@ cleanrl = [
 logging-hooks = [
     "wandb>=0.17",
     "mlflow>=2.0",
+]
+# Replay / GIF export
+replay = [
+    "Pillow>=10.0",
 ]
 # Dev tools (lint, type check)
 dev = [

@@ -9,37 +9,37 @@
    --------------------------------------------------------- */
 :root {
   /* Color palette */
-  --bg-base:      #060a14;
-  --bg-card:      #0d1525;
-  --bg-card-2:    #111d35;
-  --bg-glass:     rgba(13, 21, 37, 0.7);
-  --border:       rgba(0, 212, 255, 0.12);
-  --border-glow:  rgba(0, 212, 255, 0.35);
+  --bg-base: #060a14;
+  --bg-card: #0d1525;
+  --bg-card-2: #111d35;
+  --bg-glass: rgba(13, 21, 37, 0.7);
+  --border: rgba(0, 212, 255, 0.12);
+  --border-glow: rgba(0, 212, 255, 0.35);
 
-  --cyan:         #00d4ff;
-  --cyan-dim:     #0099bb;
-  --green:        #39ff7e;
-  --green-dim:    #27c05a;
-  --amber:        #ffb347;
-  --red:          #ff4558;
-  --purple:       #a855f7;
+  --cyan: #00d4ff;
+  --cyan-dim: #0099bb;
+  --green: #39ff7e;
+  --green-dim: #27c05a;
+  --amber: #ffb347;
+  --red: #ff4558;
+  --purple: #a855f7;
   --text-primary: #e8edf5;
-  --text-muted:   #6b7a9a;
-  --text-dim:     #3d4f6e;
+  --text-muted: #6b7a9a;
+  --text-dim: #3d4f6e;
 
   /* Typography */
-  --font-ui:   'Inter', system-ui, sans-serif;
+  --font-ui: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   /* Sizing */
-  --sidebar-w:  240px;
-  --stats-w:    260px;
-  --radius-sm:  6px;
-  --radius:     10px;
-  --radius-lg:  16px;
+  --sidebar-w: 240px;
+  --stats-w: 260px;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
 
   /* Shadows */
-  --glow-cyan:  0 0 20px rgba(0, 212, 255, 0.25);
+  --glow-cyan: 0 0 20px rgba(0, 212, 255, 0.25);
   --glow-green: 0 0 20px rgba(57, 255, 126, 0.25);
   --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.5);
 }
@@ -47,9 +47,16 @@
 /* ---------------------------------------------------------
    2. Reset & Base
    --------------------------------------------------------- */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
-html, body {
+html,
+body {
   height: 100%;
   background: var(--bg-base);
   color: var(--text-primary);
@@ -87,7 +94,7 @@ html, body {
   display: flex;
   align-items: center;
   padding: 0 20px;
-  background: linear-gradient(90deg, rgba(0,212,255,0.08), transparent 60%);
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.08), transparent 60%);
   border-bottom: 1px solid var(--border);
   gap: 16px;
   position: relative;
@@ -256,8 +263,15 @@ html, body {
 }
 
 @keyframes pulse-badge {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
 }
 
 /* ---------------------------------------------------------
@@ -294,12 +308,22 @@ html, body {
 }
 
 .tl {
-  width: 10px; height: 10px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
 }
-.tl-red    { background: #ff5f57; }
-.tl-yellow { background: #ffbd2e; }
-.tl-green  { background: #28c941; }
+
+.tl-red {
+  background: #ff5f57;
+}
+
+.tl-yellow {
+  background: #ffbd2e;
+}
+
+.tl-green {
+  background: #28c941;
+}
 
 .terminal-card {
   flex: 1;
@@ -309,7 +333,7 @@ html, body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-card), inset 0 0 40px rgba(0,0,0,0.3);
+  box-shadow: var(--shadow-card), inset 0 0 40px rgba(0, 0, 0, 0.3);
 }
 
 #terminal-output {
@@ -327,23 +351,73 @@ html, body {
 }
 
 /* Syntax coloring for grid characters */
-.c-ground  { color: #556b7a; }
-.c-water   { color: #2196f3; }
-.c-wall    { color: #455a64; }
-.c-forest  { color: #4caf50; }
-.c-mountain{ color: #ff9800; }
-.c-sand    { color: #ffd54f; }
-.c-ice     { color: #80deea; }
-.c-lava    { color: #f44336; }
-.c-agent   { color: #ff1744; font-weight: bold; }
-.c-resource{ color: #e040fb; }
-.c-object  { color: #ffcc02; }
+.c-ground {
+  color: #556b7a;
+}
 
-.c-pass    { color: var(--green); font-weight: 600; }
-.c-fail    { color: var(--red);   font-weight: 600; }
-.c-header  { color: var(--cyan);  font-weight: 600; }
-.c-info    { color: var(--amber); }
-.c-muted   { color: var(--text-dim); }
+.c-water {
+  color: #2196f3;
+}
+
+.c-wall {
+  color: #455a64;
+}
+
+.c-forest {
+  color: #4caf50;
+}
+
+.c-mountain {
+  color: #ff9800;
+}
+
+.c-sand {
+  color: #ffd54f;
+}
+
+.c-ice {
+  color: #80deea;
+}
+
+.c-lava {
+  color: #f44336;
+}
+
+.c-agent {
+  color: #ff1744;
+  font-weight: bold;
+}
+
+.c-resource {
+  color: #e040fb;
+}
+
+.c-object {
+  color: #ffcc02;
+}
+
+.c-pass {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.c-fail {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.c-header {
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.c-info {
+  color: var(--amber);
+}
+
+.c-muted {
+  color: var(--text-dim);
+}
 
 .terminal-prompt {
   display: flex;
@@ -351,14 +425,16 @@ html, body {
   gap: 8px;
   padding: 8px 16px;
   border-top: 1px solid var(--border);
-  background: rgba(0,0,0,0.2);
+  background: rgba(0, 0, 0, 0.2);
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-dim);
   flex-shrink: 0;
 }
 
-.prompt-sym { color: var(--green); }
+.prompt-sym {
+  color: var(--green);
+}
 
 /* ---------------------------------------------------------
    7. Stats Panel
@@ -384,7 +460,9 @@ html, body {
   transition: border-color 0.3s ease;
 }
 
-.stat-card:hover { border-color: var(--border-glow); }
+.stat-card:hover {
+  border-color: var(--border-glow);
+}
 
 .stat-label {
   font-size: 10px;
@@ -451,9 +529,13 @@ html, body {
   border-bottom: 1px solid var(--border);
 }
 
-.mini-section:last-child { border-bottom: none; }
+.mini-section:last-child {
+  border-bottom: none;
+}
 
-.mini-section-name { color: var(--text-muted); }
+.mini-section-name {
+  color: var(--text-muted);
+}
 
 .mini-status {
   font-size: 9px;
@@ -462,10 +544,26 @@ html, body {
   border-radius: 3px;
 }
 
-.mini-status.idle    { background: rgba(107,122,154,0.15); color: var(--text-dim); }
-.mini-status.running { background: rgba(255,179,71,0.15);  color: var(--amber); animation: pulse-badge 1s infinite; }
-.mini-status.pass    { background: rgba(57,255,126,0.15);  color: var(--green); }
-.mini-status.fail    { background: rgba(255,69,88,0.15);   color: var(--red); }
+.mini-status.idle {
+  background: rgba(107, 122, 154, 0.15);
+  color: var(--text-dim);
+}
+
+.mini-status.running {
+  background: rgba(255, 179, 71, 0.15);
+  color: var(--amber);
+  animation: pulse-badge 1s infinite;
+}
+
+.mini-status.pass {
+  background: rgba(57, 255, 126, 0.15);
+  color: var(--green);
+}
+
+.mini-status.fail {
+  background: rgba(255, 69, 88, 0.15);
+  color: var(--red);
+}
 
 /* ---------------------------------------------------------
    8. Footer / Controls
@@ -506,7 +604,9 @@ html, body {
   outline: none;
 }
 
-.input-sm:focus { border-color: var(--cyan); }
+.input-sm:focus {
+  border-color: var(--cyan);
+}
 
 /* Toggle */
 .toggle-wrap {
@@ -526,14 +626,19 @@ html, body {
   transition: background 0.2s;
 }
 
-.toggle-track.on { background: rgba(0,212,255,0.25); border-color: var(--cyan); }
+.toggle-track.on {
+  background: rgba(0, 212, 255, 0.25);
+  border-color: var(--cyan);
+}
 
 .toggle-thumb {
-  width: 12px; height: 12px;
+  width: 12px;
+  height: 12px;
   background: var(--text-dim);
   border-radius: 50%;
   position: absolute;
-  top: 2px; left: 2px;
+  top: 2px;
+  left: 2px;
   transition: transform 0.25s ease, background 0.2s;
 }
 
@@ -602,19 +707,37 @@ html, body {
    9. Animations
    --------------------------------------------------------- */
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.fade-in { animation: fade-in 0.3s ease forwards; }
+.fade-in {
+  animation: fade-in 0.3s ease forwards;
+}
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
 }
+
 .cursor-blink {
   display: inline-block;
-  width: 7px; height: 13px;
+  width: 7px;
+  height: 13px;
   background: var(--green);
   vertical-align: middle;
   animation: blink 1s step-end infinite;
@@ -622,7 +745,175 @@ html, body {
 }
 
 /* Scrollbar styling */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border-glow); }
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-glow);
+}
+
+/* ---------------------------------------------------------
+   10. Multi-Agent Dashboard — CSS tokens & components
+   --------------------------------------------------------- */
+
+/* Oklab-rotated WCAG-AA colour palette for up to 8 agents.
+   Each colour has been verified for ≥ 4.5:1 contrast ratio on
+   --bg-card (#0d1525). Override in :root if your branding
+   requires different agent colours. */
+:root {
+  --agent-0-color: #60a5fa;
+  /* blue     */
+  --agent-1-color: #f472b6;
+  /* pink     */
+  --agent-2-color: #34d399;
+  /* emerald  */
+  --agent-3-color: #fbbf24;
+  /* amber    */
+  --agent-4-color: #a78bfa;
+  /* violet   */
+  --agent-5-color: #fb923c;
+  /* orange   */
+  --agent-6-color: #38bdf8;
+  /* sky      */
+  --agent-7-color: #4ade80;
+  /* green    */
+}
+
+/* Agent panel grid — horizontal scrolling strip */
+#agent-panels {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  flex-shrink: 0;
+}
+
+#agent-panels:empty {
+  display: none;
+}
+
+/* Individual agent card */
+.agent-panel {
+  min-width: 160px;
+  max-width: 200px;
+  flex-shrink: 0;
+  background: var(--bg-card-2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  padding: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  border-top: 3px solid var(--agent-color, var(--cyan));
+}
+
+.agent-panel:hover {
+  border-color: var(--agent-color, var(--cyan));
+}
+
+.agent-panel--selected {
+  box-shadow: 0 0 0 2px var(--agent-color, var(--cyan)),
+    0 0 12px rgba(255, 255, 255, 0.08);
+}
+
+/* Header row: colour badge + title + comm token count */
+.agent-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.agent-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  color: #04101e;
+  flex-shrink: 0;
+}
+
+.agent-panel__title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Comm-token badge */
+.comm-token-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.comm-count {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Sparkline SVG */
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 40px;
+  background: var(--bg-base);
+  border-radius: var(--radius-sm);
+  overflow: visible;
+}
+
+.sparkline__line {
+  transition: d 0.05s linear;
+}
+
+/* ---------------------------------------------------------
+   Responsive: collapse to horizontal tab strip on narrow screens
+   --------------------------------------------------------- */
+@media (max-width: 768px) {
+  #agent-panels {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    padding: 6px 8px;
+  }
+
+  .agent-panel {
+    min-width: 120px;
+    max-width: 140px;
+    padding: 7px 8px;
+  }
+
+  .sparkline {
+    height: 28px;
+  }
+}

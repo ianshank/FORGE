@@ -1,0 +1,161 @@
+name: Docker CI
+
+on:
+    push:
+        branches: [main, "feat/**"]
+    pull_request:
+        branches: [main]
+    release:
+        types: [published]
+
+concurrency:
+    group: docker-${{ github.ref }}
+    cancel-in-progress: true
+
+env:
+    REGISTRY: ghcr.io
+    DEMO_UI_IMAGE: ghcr.io/${{ github.repository_owner }}/forge-demo-ui
+    API_IMAGE: ghcr.io/${{ github.repository_owner }}/forge-env-api
+
+jobs:
+    # ── Build + smoke test ────────────────────────────────────────────────────
+    build-and-test:
+        name: Build images & run smoke tests
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+
+        steps:
+            - uses: actions/checkout@v4
+
+            # Cache Cargo registry to speed up maturin build
+            - name: Cache Cargo registry
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: cargo-${{ hashFiles('Cargo.lock') }}
+
+            # Cache pip packages
+            - name: Cache pip
+              uses: actions/cache@v4
+              with:
+                  path: ~/.cache/pip
+                  key: pip-docker-${{ hashFiles('pyproject.toml') }}
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Build forge-env-api image
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  target: forge-env-api
+                  push: false
+                  tags: ${{ env.API_IMAGE }}:ci
+                  cache-from: type=gha,scope=forge-env-api
+                  cache-to: type=gha,mode=max,scope=forge-env-api
+                  load: true
+
+            - name: Build forge-demo-ui image
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  target: demo-ui
+                  push: false
+                  tags: ${{ env.DEMO_UI_IMAGE }}:ci
+                  cache-from: type=gha,scope=forge-demo-ui
+                  cache-to: type=gha,mode=max,scope=forge-demo-ui
+                  load: true
+
+            - name: Start services via Compose
+              run: |
+                  # Override image names to use locally built CI images
+                  FORGE_ENV_API_IMAGE="${{ env.API_IMAGE }}:ci" \
+                  FORGE_DEMO_UI_IMAGE="${{ env.DEMO_UI_IMAGE }}:ci" \
+                  docker compose up -d
+              env:
+                  API_PORT: "8765"
+                  DEMO_UI_PORT: "8080"
+                  FORGE_MAX_SESSIONS: "4"
+                  FORGE_SESSION_TTL: "60"
+
+            - name: Wait for services to be healthy
+              run: |
+                  for i in $(seq 1 24); do
+                    api=$(curl -sf http://localhost:8765/health && echo ok || echo fail)
+                    ui=$(curl -sf http://localhost:8080/health && echo ok || echo fail)
+                    echo "Attempt $i — api=$api ui=$ui"
+                    [ "$api" = "ok" ] && [ "$ui" = "ok" ] && exit 0
+                    sleep 5
+                  done
+                  echo "Services failed to become healthy"
+                  docker compose logs
+                  exit 1
+
+            - name: Install Python test deps
+              run: pip install httpx pytest
+
+            - name: Run Docker smoke tests
+              run: pytest tests/docker/ -v --tb=short
+              env:
+                  FORGE_API_URL: "http://localhost:8765"
+                  FORGE_UI_URL: "http://localhost:8080"
+
+            - name: Dump logs on failure
+              if: failure()
+              run: docker compose logs
+
+            - name: Stop services
+              if: always()
+              run: docker compose down -v
+
+    # ── Push images on release ─────────────────────────────────────────────────
+    push-images:
+        name: Publish images to GHCR
+        runs-on: ubuntu-latest
+        needs: build-and-test
+        if: github.event_name == 'release' && github.event.action == 'published'
+        permissions:
+            contents: read
+            packages: write
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Log in to GHCR
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Extract release tag
+              id: meta
+              run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Push forge-env-api
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  target: forge-env-api
+                  push: true
+                  tags: |
+                      ${{ env.API_IMAGE }}:${{ steps.meta.outputs.tag }}
+                      ${{ env.API_IMAGE }}:latest
+                  cache-from: type=gha,scope=forge-env-api
+
+            - name: Push forge-demo-ui
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  target: demo-ui
+                  push: true
+                  tags: |
+                      ${{ env.DEMO_UI_IMAGE }}:${{ steps.meta.outputs.tag }}
+                      ${{ env.DEMO_UI_IMAGE }}:latest
+                  cache-from: type=gha,scope=forge-demo-ui

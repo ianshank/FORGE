@@ -558,10 +558,245 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("mini-section-list"),
     );
     runner = new Runner(terminal, nav);
+    dashboard = new AgentDashboard(document.getElementById("agent-panels"));
 
     // Expose globally so HTML onclick handlers work
     window.worldRenderer = worldRenderer;
     window.runner = runner;
+    window.dashboard = dashboard;
 
     loadResults();
 });
+
+/* =========================================================
+   AgentDashboard — multi-agent panel orchestrator
+   ========================================================= */
+
+/**
+ * WCAG-AA accessible Oklab-inspired agent colour palette.
+ * 8 colours, each with a readable contrast ratio ≥ 4.5:1 on dark bg.
+ * Defined as CSS custom properties (see styles.css --agent-N-color tokens).
+ */
+const AGENT_COLORS = [
+    "var(--agent-0-color, #60a5fa)", // blue
+    "var(--agent-1-color, #f472b6)", // pink
+    "var(--agent-2-color, #34d399)", // emerald
+    "var(--agent-3-color, #fbbf24)", // amber
+    "var(--agent-4-color, #a78bfa)", // violet
+    "var(--agent-5-color, #fb923c)", // orange
+    "var(--agent-6-color, #38bdf8)", // sky
+    "var(--agent-7-color, #4ade80)", // green
+];
+
+class AgentDashboard {
+    /**
+     * @param {HTMLElement|null} containerEl  — the `<section id="agent-panels">` element
+     */
+    constructor(containerEl) {
+        this._container = containerEl;
+        /** @type {Map<number, AgentPanel>} */
+        this._panels = new Map();
+        this._numAgents = 0;
+    }
+
+    /** Set up (or re-initialise) N agent panels. */
+    init(numAgents = 1) {
+        this._numAgents = numAgents;
+        if (!this._container) return;
+
+        // Teardown existing panels
+        this._panels.forEach(p => p.destroy());
+        this._panels.clear();
+        this._container.innerHTML = "";
+
+        // Single-agent → hide panel entirely (no regression, AC7)
+        if (numAgents <= 1) {
+            this._container.style.display = "none";
+            return;
+        }
+
+        this._container.style.display = "";
+        for (let i = 0; i < Math.min(numAgents, AGENT_COLORS.length); i++) {
+            const panel = new AgentPanel(i, AGENT_COLORS[i]);
+            this._container.appendChild(panel.element);
+            this._panels.set(i, panel);
+        }
+    }
+
+    /**
+     * Called after every /step response. Routes per-agent data to panels.
+     *
+     * @param {Object} stepResult  — parsed JSON from FORGE Env REST API /step
+     * @param {number[]} agentPositions — [{x, y}] array, one per agent
+     */
+    update(stepResult, agentPositions = []) {
+        const info = stepResult?.info ?? {};
+        const rewards = Array.isArray(stepResult?.reward)
+            ? stepResult.reward
+            : [stepResult?.reward ?? 0];
+        const commTokens = info?.comm_tokens ?? [];
+
+        this._panels.forEach((panel, i) => {
+            panel.addReward(rewards[i] ?? 0);
+            if (commTokens[i] !== undefined) panel.setCommTokens(commTokens[i]);
+            if (agentPositions[i]) panel.addPosition(agentPositions[i]);
+        });
+
+        // Redraw trajectory overlay on world canvas
+        this._drawTrajectories();
+    }
+
+    /** Render last-50-step trajectory polylines for each agent on the world canvas. */
+    _drawTrajectories() {
+        if (!window.worldRenderer) return;
+        const canvas = window.worldRenderer.canvas;
+        const ctx = window.worldRenderer.ctx;
+
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        ctx.lineWidth = 1.5;
+
+        this._panels.forEach((panel, i) => {
+            const positions = panel.recentPositions(50);
+            if (positions.length < 2) return;
+
+            ctx.strokeStyle = AGENT_COLORS[i % AGENT_COLORS.length];
+            ctx.beginPath();
+            positions.forEach(({ x, y }, idx) => {
+                const px = (x / 32) * canvas.width;   // normalise to canvas
+                const py = (y / 32) * canvas.height;
+                if (idx === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            });
+            ctx.stroke();
+        });
+
+        ctx.restore();
+    }
+
+    /** Select an agent panel (highlight, trajectory focus). */
+    selectAgent(agentIndex) {
+        this._panels.forEach((panel, i) => {
+            panel.setSelected(i === agentIndex);
+        });
+    }
+}
+
+/* =========================================================
+   AgentPanel — single-agent metric card
+   ========================================================= */
+
+const _SPARKLINE_MAX_POINTS = 200; // rolling window size
+const _TRAJECTORY_MAX_POINTS = 100;
+
+class AgentPanel {
+    /**
+     * @param {number} agentIndex
+     * @param {string} color  — CSS colour value
+     */
+    constructor(agentIndex, color) {
+        this._index = agentIndex;
+        this._color = color;
+        /** @type {number[]} reward history */
+        this._rewards = [];
+        /** @type {{x:number,y:number}[]} position history */
+        this._positions = [];
+        this._commTokens = 0;
+        this._selected = false;
+
+        this.element = this._build();
+    }
+
+    // ── Build DOM ──────────────────────────────────────────────────────────
+
+    _build() {
+        const card = document.createElement("div");
+        card.className = "agent-panel";
+        card.dataset.agentIndex = String(this._index);
+        card.setAttribute("role", "region");
+        card.setAttribute("aria-label", `Agent ${this._index}`);
+        card.style.setProperty("--agent-color", this._color);
+
+        card.innerHTML = `
+            <header class="agent-panel__header">
+                <span class="agent-badge" style="background:${this._color}">${this._index}</span>
+                <span class="agent-panel__title">Agent ${this._index}</span>
+                <span class="comm-token-badge" id="comm-${this._index}" title="comm tokens">
+                    🗨 <span class="comm-count">0</span>
+                </span>
+            </header>
+            <svg class="sparkline" id="sparkline-${this._index}"
+                 role="img" aria-label="Agent ${this._index} reward sparkline"
+                 viewBox="0 0 200 40" preserveAspectRatio="none">
+                <polyline class="sparkline__line" points="" fill="none"
+                    stroke="${this._color}" stroke-width="1.5"/>
+                <line class="sparkline__zero" x1="0" y1="20" x2="200" y2="20"
+                    stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/>
+            </svg>
+        `;
+
+        // Click to select / deselect
+        card.addEventListener("click", () => {
+            window.dashboard?.selectAgent(this._selected ? -1 : this._index);
+        });
+
+        return card;
+    }
+
+    // ── Public API ─────────────────────────────────────────────────────────
+
+    addReward(reward) {
+        this._rewards.push(Number(reward));
+        if (this._rewards.length > _SPARKLINE_MAX_POINTS) this._rewards.shift();
+        this._updateSparkline();
+    }
+
+    setCommTokens(count) {
+        this._commTokens = Number(count);
+        const el = this.element.querySelector(".comm-count");
+        if (el) el.textContent = String(this._commTokens);
+    }
+
+    addPosition(pos) {
+        this._positions.push({ x: Number(pos.x ?? 0), y: Number(pos.y ?? 0) });
+        if (this._positions.length > _TRAJECTORY_MAX_POINTS) this._positions.shift();
+    }
+
+    recentPositions(n = 50) {
+        return this._positions.slice(-n);
+    }
+
+    setSelected(selected) {
+        this._selected = selected;
+        this.element.classList.toggle("agent-panel--selected", selected);
+    }
+
+    destroy() {
+        this.element.remove();
+    }
+
+    // ── Private ────────────────────────────────────────────────────────────
+
+    _updateSparkline() {
+        const polyline = this.element.querySelector(".sparkline__line");
+        if (!polyline || !this._rewards.length) return;
+
+        const W = 200;
+        const H = 40;
+        const minR = Math.min(...this._rewards);
+        const maxR = Math.max(...this._rewards);
+        const range = maxR - minR || 1;
+
+        const pts = this._rewards.map((r, i) => {
+            const x = (i / Math.max(this._rewards.length - 1, 1)) * W;
+            const y = H - ((r - minR) / range) * H * 0.8 - H * 0.1;
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+        });
+
+        polyline.setAttribute("points", pts.join(" "));
+    }
+}
+
+// Re-export for HTML onclick compatibility
+function initDashboard(numAgents) { window.dashboard?.init(numAgents); }
+
