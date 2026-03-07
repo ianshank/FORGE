@@ -48,7 +48,7 @@ impl TerrainGenerator {
 
         // Derive octave count and persistence from biome_scale.
         // A scale of 0.1 (default) yields 4 octaves.
-        let octaves = ((biome_scale * constants::TERRAIN_NOISE_OCTAVES_MULTIPLIER as f64).clamp(
+        let octaves = ((biome_scale * constants::TERRAIN_NOISE_OCTAVES_MULTIPLIER).clamp(
             constants::TERRAIN_NOISE_OCTAVES_MIN as f64,
             constants::TERRAIN_NOISE_OCTAVES_MAX as f64,
         )) as u32;

@@ -130,6 +130,7 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
 /// or standing on a tile containing a CraftingStation object.
 ///
 /// Allocates a Vec with pre-sized capacity to reduce reallocation overhead.
+/// Uses a HashMap for O(1) object lookups instead of O(n) linear search.
 #[instrument(skip_all)]
 fn compute_near_station(
     agents: &[forge_types::entity::Agent],
@@ -137,6 +138,9 @@ fn compute_near_station(
     objects: &[forge_types::entity::Object],
 ) -> Vec<bool> {
     let mut result = Vec::with_capacity(agents.len());
+
+    // Pre-compute object map for O(1) lookups instead of O(n) linear search
+    let object_map: std::collections::HashMap<_, _> = objects.iter().map(|o| (o.id, o)).collect();
 
     for agent in agents {
         if !agent.alive {
@@ -155,7 +159,7 @@ fn compute_near_station(
         for pos in positions_to_check {
             if let Some(tile) = grid.get(pos.x, pos.y) {
                 if let Some(obj_id) = tile.object_id {
-                    if let Some(obj) = objects.iter().find(|o| o.id == obj_id) {
+                    if let Some(obj) = object_map.get(&obj_id) {
                         if obj.object_type == ObjectType::CraftingStation {
                             found_station = true;
                             break;
@@ -173,64 +177,68 @@ fn compute_near_station(
 
 /// Validates actions and replaces invalid ones with Noop.
 ///
+/// Always returns exactly one action per agent. If fewer actions are provided than agents,
+/// missing actions default to Noop. This prevents out-of-bounds panics in physics systems
+/// that expect an action for each agent.
+///
 /// Allocates a Vec with pre-sized capacity to reduce reallocation overhead.
 #[instrument(skip_all)]
 fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
     let mut result = Vec::with_capacity(state.agents.len());
 
-    for (i, action) in actions.iter().enumerate() {
-        let validated = if i >= state.agents.len() {
+    for i in 0..state.agents.len() {
+        let agent = &state.agents[i];
+
+        // Get action for this agent, default to Noop if not provided
+        let action = actions.get(i).unwrap_or(&Action::Noop);
+
+        let validated = if !agent.alive {
             Action::Noop
         } else {
-            let agent = &state.agents[i];
-            if !agent.alive {
-                Action::Noop
-            } else {
-                match action {
-                    Action::Move(dir) => {
-                        // Basic validation: direction is valid (always true for enum)
-                        Action::Move(*dir)
-                    }
-                    Action::Communicate(token) => {
-                        let vocab_size = state.config.agents.comm_vocab_size;
-                        if *token < vocab_size {
-                            Action::Communicate(*token)
-                        } else {
-                            warn!(
-                                agent_id = agent.id,
-                                token, vocab_size, "comm token out of range, falling back to Noop"
-                            );
-                            Action::Noop
-                        }
-                    }
-                    Action::Drop(slot) => {
-                        if (*slot as usize) < agent.inventory.capacity() {
-                            Action::Drop(*slot)
-                        } else {
-                            warn!(
-                                agent_id = agent.id,
-                                slot,
-                                capacity = agent.inventory.capacity(),
-                                "drop slot out of range, falling back to Noop"
-                            );
-                            Action::Noop
-                        }
-                    }
-                    Action::Use(slot) => {
-                        if (*slot as usize) < agent.inventory.capacity() {
-                            Action::Use(*slot)
-                        } else {
-                            warn!(
-                                agent_id = agent.id,
-                                slot,
-                                capacity = agent.inventory.capacity(),
-                                "use slot out of range, falling back to Noop"
-                            );
-                            Action::Noop
-                        }
-                    }
-                    _ => action.clone(),
+            match action {
+                Action::Move(dir) => {
+                    // Basic validation: direction is valid (always true for enum)
+                    Action::Move(*dir)
                 }
+                Action::Communicate(token) => {
+                    let vocab_size = state.config.agents.comm_vocab_size;
+                    if *token < vocab_size {
+                        Action::Communicate(*token)
+                    } else {
+                        warn!(
+                            agent_id = agent.id,
+                            token, vocab_size, "comm token out of range, falling back to Noop"
+                        );
+                        Action::Noop
+                    }
+                }
+                Action::Drop(slot) => {
+                    if (*slot as usize) < agent.inventory.capacity() {
+                        Action::Drop(*slot)
+                    } else {
+                        warn!(
+                            agent_id = agent.id,
+                            slot,
+                            capacity = agent.inventory.capacity(),
+                            "drop slot out of range, falling back to Noop"
+                        );
+                        Action::Noop
+                    }
+                }
+                Action::Use(slot) => {
+                    if (*slot as usize) < agent.inventory.capacity() {
+                        Action::Use(*slot)
+                    } else {
+                        warn!(
+                            agent_id = agent.id,
+                            slot,
+                            capacity = agent.inventory.capacity(),
+                            "use slot out of range, falling back to Noop"
+                        );
+                        Action::Noop
+                    }
+                }
+                _ => action.clone(),
             }
         };
 
@@ -266,8 +274,22 @@ mod tests {
 
         let actions = vec![Action::Noop, Action::Noop, Action::Noop]; // 3 actions for 1 agent
         let validated = validate_actions(&actions, &state);
+        // Should always return exactly one action per agent, ignoring excess actions
+        assert_eq!(validated.len(), 1);
+        assert_eq!(validated[0], Action::Noop);
+    }
+
+    #[test]
+    fn test_validate_actions_insufficient_actions() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 3;
+        let state = WorldState::new(config).unwrap();
+
+        let actions = vec![Action::Noop]; // Only 1 action for 3 agents
+        let validated = validate_actions(&actions, &state);
+        // Should return one action per agent, missing ones default to Noop
         assert_eq!(validated.len(), 3);
-        // Extra actions are noop
+        assert_eq!(validated[0], Action::Noop);
         assert_eq!(validated[1], Action::Noop);
         assert_eq!(validated[2], Action::Noop);
     }
@@ -453,7 +475,9 @@ mod tests {
 
         let actions: Vec<Action> = vec![];
         let validated = validate_actions(&actions, &state);
-        assert!(validated.is_empty());
+        // Should return one action per agent (defaulting to Noop if no actions provided)
+        assert_eq!(validated.len(), 1);
+        assert_eq!(validated[0], Action::Noop);
     }
 
     #[test]

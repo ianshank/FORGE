@@ -39,21 +39,21 @@ impl BiomeThresholds {
 
         // Sensible defaults that respond to biome_scale.
         // biome_scale of 0.1 (default) gives water≈0.35, mountain≈0.72
-        let water_level = (constants::BIOME_WATER_LEVEL_BASE as f64
-            - scale * constants::BIOME_WATER_LEVEL_SCALE_MULTIPLIER as f64)
+        let water_level = (constants::BIOME_WATER_LEVEL_BASE
+            - scale * constants::BIOME_WATER_LEVEL_SCALE_MULTIPLIER)
             .clamp(
-                constants::BIOME_WATER_LEVEL_MIN as f64,
-                constants::BIOME_WATER_LEVEL_MAX as f64,
+                constants::BIOME_WATER_LEVEL_MIN,
+                constants::BIOME_WATER_LEVEL_MAX,
             );
-        let mountain_level = (constants::BIOME_MOUNTAIN_LEVEL_BASE as f64
-            + scale * constants::BIOME_MOUNTAIN_LEVEL_SCALE_MULTIPLIER as f64)
+        let mountain_level = (constants::BIOME_MOUNTAIN_LEVEL_BASE
+            + scale * constants::BIOME_MOUNTAIN_LEVEL_SCALE_MULTIPLIER)
             .clamp(
-                constants::BIOME_MOUNTAIN_LEVEL_MIN as f64,
-                constants::BIOME_MOUNTAIN_LEVEL_MAX as f64,
+                constants::BIOME_MOUNTAIN_LEVEL_MIN,
+                constants::BIOME_MOUNTAIN_LEVEL_MAX,
             );
-        let sand_level = water_level + constants::BIOME_SAND_LEVEL_OFFSET as f64;
-        let forest_moisture = constants::BIOME_FOREST_MOISTURE_THRESHOLD as f64;
-        let desert_moisture = constants::BIOME_DESERT_MOISTURE_THRESHOLD as f64;
+        let sand_level = water_level + constants::BIOME_SAND_LEVEL_OFFSET;
+        let forest_moisture = constants::BIOME_FOREST_MOISTURE_THRESHOLD;
+        let desert_moisture = constants::BIOME_DESERT_MOISTURE_THRESHOLD;
 
         trace!(
             biome_scale = scale,
@@ -86,7 +86,7 @@ impl BiomeClassifier {
     /// Creates a new classifier from a [`WorldConfig`].
     pub fn new(config: &WorldConfig) -> Self {
         let thresholds = BiomeThresholds::from_config(config);
-        tracing::trace!(?thresholds, "created BiomeClassifier");
+        trace!(?thresholds, "created BiomeClassifier");
         Self { thresholds }
     }
 
