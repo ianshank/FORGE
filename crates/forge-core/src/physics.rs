@@ -105,6 +105,8 @@ pub fn process_movements(
         };
 
         // Check terrain walkability
+        // SAFETY: position is guaranteed to be in-bounds; we validated it via offset()
+        // which checks grid bounds before returning Some(pos).
         let target_tile = grid.get(target.x, target.y).unwrap();
         if !target_tile.terrain.is_walkable() {
             trace!(

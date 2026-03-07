@@ -104,6 +104,37 @@ pub const FIXED_POINT_SHIFT: u32 = 16;
 /// 1.0 in fixed-point representation.
 pub const FIXED_POINT_ONE: i32 = 1 << FIXED_POINT_SHIFT; // 65536
 
+/// Base water level threshold for biome classification (before scale adjustment).
+pub const BIOME_WATER_LEVEL_BASE: f32 = 0.35;
+/// Water level adjustment rate per biome scale unit.
+pub const BIOME_WATER_LEVEL_SCALE_MULTIPLIER: f32 = 0.3;
+/// Minimum water level threshold.
+pub const BIOME_WATER_LEVEL_MIN: f32 = 0.10;
+/// Maximum water level threshold.
+pub const BIOME_WATER_LEVEL_MAX: f32 = 0.50;
+/// Base mountain level threshold for biome classification.
+pub const BIOME_MOUNTAIN_LEVEL_BASE: f32 = 0.72;
+/// Mountain level adjustment rate per biome scale unit.
+pub const BIOME_MOUNTAIN_LEVEL_SCALE_MULTIPLIER: f32 = 0.3;
+/// Minimum mountain level threshold.
+pub const BIOME_MOUNTAIN_LEVEL_MIN: f32 = 0.60;
+/// Maximum mountain level threshold.
+pub const BIOME_MOUNTAIN_LEVEL_MAX: f32 = 0.90;
+/// Sand level offset from water level.
+pub const BIOME_SAND_LEVEL_OFFSET: f32 = 0.05;
+/// Moisture threshold for forest biome.
+pub const BIOME_FOREST_MOISTURE_THRESHOLD: f32 = 0.45;
+/// Moisture threshold for desert biome.
+pub const BIOME_DESERT_MOISTURE_THRESHOLD: f32 = 0.25;
+/// Number of octaves for terrain noise generation (before scale adjustment).
+pub const TERRAIN_NOISE_OCTAVES_MULTIPLIER: f32 = 40.0;
+/// Minimum octaves for terrain noise.
+pub const TERRAIN_NOISE_OCTAVES_MIN: u32 = 2;
+/// Maximum octaves for terrain noise.
+pub const TERRAIN_NOISE_OCTAVES_MAX: u32 = 8;
+/// Perlin noise persistence value (controls fractal amplitude decay).
+pub const TERRAIN_NOISE_PERSISTENCE: f64 = 0.5;
+
 /// Sentinel value for "no object" in observation encoding.
 pub const OBS_NO_OBJECT: u8 = 255;
 /// Sentinel value for "no resource" in observation encoding.

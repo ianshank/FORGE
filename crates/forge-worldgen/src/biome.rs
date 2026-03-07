@@ -5,6 +5,7 @@
 //! configurable thresholds derived from [`WorldConfig`].
 
 use forge_types::config::WorldConfig;
+use forge_types::constants;
 use forge_types::grid::TerrainType;
 use tracing::instrument;
 
@@ -37,12 +38,22 @@ impl BiomeThresholds {
         let scale = config.biome_scale as f64;
 
         // Sensible defaults that respond to biome_scale.
-        // biome_scale of 0.1 (default) gives water=0.35, mountain=0.72
-        let water_level = (0.35 - scale * 0.3).clamp(0.10, 0.50);
-        let mountain_level = (0.72 + scale * 0.3).clamp(0.60, 0.90);
-        let sand_level = water_level + 0.05;
-        let forest_moisture = 0.45;
-        let desert_moisture = 0.25;
+        // biome_scale of 0.1 (default) gives water≈0.35, mountain≈0.72
+        let water_level = (constants::BIOME_WATER_LEVEL_BASE as f64
+            - scale * constants::BIOME_WATER_LEVEL_SCALE_MULTIPLIER as f64)
+            .clamp(
+                constants::BIOME_WATER_LEVEL_MIN as f64,
+                constants::BIOME_WATER_LEVEL_MAX as f64,
+            );
+        let mountain_level = (constants::BIOME_MOUNTAIN_LEVEL_BASE as f64
+            + scale * constants::BIOME_MOUNTAIN_LEVEL_SCALE_MULTIPLIER as f64)
+            .clamp(
+                constants::BIOME_MOUNTAIN_LEVEL_MIN as f64,
+                constants::BIOME_MOUNTAIN_LEVEL_MAX as f64,
+            );
+        let sand_level = water_level + constants::BIOME_SAND_LEVEL_OFFSET as f64;
+        let forest_moisture = constants::BIOME_FOREST_MOISTURE_THRESHOLD as f64;
+        let desert_moisture = constants::BIOME_DESERT_MOISTURE_THRESHOLD as f64;
 
         Self {
             water_level,

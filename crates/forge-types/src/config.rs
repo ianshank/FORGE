@@ -391,6 +391,10 @@ pub enum TeamStructure {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::Mutex;
+
+    // Mutex to serialize env var tests and prevent race conditions
+    static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_from_toml_str_partial() {
@@ -449,6 +453,7 @@ num_agents = 4
 
     #[test]
     fn test_env_overrides() {
+        let _lock = ENV_TEST_LOCK.lock().unwrap();
         // Set env vars, apply overrides, then clean up
         std::env::set_var("FORGE_WORLD_WIDTH", "200");
         std::env::set_var("FORGE_AGENTS_NUM_AGENTS", "8");
@@ -462,6 +467,7 @@ num_agents = 4
 
     #[test]
     fn test_env_overrides_invalid_value() {
+        let _lock = ENV_TEST_LOCK.lock().unwrap();
         std::env::set_var("FORGE_WORLD_WIDTH", "not_a_number");
         let mut config = ForgeConfig::default();
         let original_width = config.world.width;
