@@ -393,7 +393,20 @@ mod tests {
     use std::io::Write;
     use std::sync::Mutex;
 
-    // Mutex to serialize env var tests and prevent race conditions
+    /// Mutex protecting environment variable access during tests.
+    ///
+    /// **IMPORTANT**: Tests that modify `std::env` (via `set_var`/`remove_var`) MUST
+    /// acquire this lock to prevent race conditions when tests run in parallel.
+    /// Environment variables are process-global state, so concurrent modification
+    /// by multiple tests can cause non-deterministic failures.
+    ///
+    /// **Usage**: Call `let _lock = ENV_TEST_LOCK.lock().unwrap();` at the start of
+    /// any test that modifies environment variables.
+    ///
+    /// **Monitoring Note**: If new tests are added that interact with `std::env`,
+    /// ensure they also acquire this lock. Consider refactoring env-dependent code
+    /// to accept a config parameter instead of reading from `std::env` directly
+    /// to improve testability and eliminate this class of race conditions.
     static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]

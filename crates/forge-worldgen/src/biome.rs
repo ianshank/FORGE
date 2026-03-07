@@ -7,7 +7,7 @@
 use forge_types::config::WorldConfig;
 use forge_types::constants;
 use forge_types::grid::TerrainType;
-use tracing::instrument;
+use tracing::{instrument, trace};
 
 /// Configurable thresholds that drive biome classification.
 ///
@@ -54,6 +54,16 @@ impl BiomeThresholds {
         let sand_level = water_level + constants::BIOME_SAND_LEVEL_OFFSET as f64;
         let forest_moisture = constants::BIOME_FOREST_MOISTURE_THRESHOLD as f64;
         let desert_moisture = constants::BIOME_DESERT_MOISTURE_THRESHOLD as f64;
+
+        trace!(
+            biome_scale = scale,
+            water_level,
+            mountain_level,
+            sand_level,
+            forest_moisture,
+            desert_moisture,
+            "initialized biome thresholds"
+        );
 
         Self {
             water_level,
