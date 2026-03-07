@@ -1,3 +1,2 @@
-"""FORGE utility functions."""
-
+"""FORGE utils module."""
 from __future__ import annotations

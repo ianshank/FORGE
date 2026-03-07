@@ -1,3 +1,2 @@
-"""FORGE decision trace recording and analysis."""
-
+"""FORGE traces module."""
 from __future__ import annotations

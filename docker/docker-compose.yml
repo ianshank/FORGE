@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  simulation:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../forge.toml:/app/forge.toml:ro
+      - ../configs:/app/configs:ro
+    environment:
+      - FORGE_SIMULATION_GRID_SIZE=64
+      - FORGE_HARDWARE_NUM_WORKERS=4
+      - RUST_LOG=info
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["npx", "serve", "-s", "/app/dashboard/dist", "-l", "3000"]
+    ports:
+      - "3000:3000"
+    depends_on:
+      - simulation
+
+  demo:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.demo
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../forge.toml:/app/forge.toml:ro

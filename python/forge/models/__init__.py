@@ -1,3 +1,2 @@
-"""FORGE model interfaces and stubs."""
-
+"""FORGE models module."""
 from __future__ import annotations

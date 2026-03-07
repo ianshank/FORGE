@@ -8,6 +8,8 @@ members = [
     "crates/forge-bench",
     "crates/forge-python",
     "crates/forge-wasm",
+    "crates/forge-procgen",
+    "crates/forge-server",
 ]
 resolver = "2"
 

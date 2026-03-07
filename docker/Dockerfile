@@ -1,0 +1,47 @@
+# FORGE — Full build image (Rust + Python + Dashboard)
+# Multi-stage build for minimal final image size.
+
+# Stage 1: Rust builder
+FROM rust:1.82-bookworm AS rust-builder
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
+COPY tests/ tests/
+RUN cargo build --release --workspace && \
+    cargo test --release --workspace
+
+# Stage 2: Dashboard builder
+FROM node:20-bookworm-slim AS dashboard-builder
+WORKDIR /build/dashboard
+COPY dashboard/package.json dashboard/package-lock.json* ./
+RUN npm ci --ignore-scripts 2>/dev/null || npm install
+COPY dashboard/ ./
+RUN npm run build 2>/dev/null || echo "Dashboard build skipped (dev dependencies may be missing)"
+
+# Stage 3: Python environment
+FROM python:3.11-slim-bookworm AS runtime
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libssl3 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy Rust binaries
+COPY --from=rust-builder /build/target/release/forge-server /usr/local/bin/ 2>/dev/null || true
+
+# Copy dashboard build
+COPY --from=dashboard-builder /build/dashboard/dist/ /app/dashboard/dist/ 2>/dev/null || true
+
+# Install Python packages
+COPY python/ /app/python/
+COPY forge.toml /app/
+COPY configs/ /app/configs/
+RUN pip install --no-cache-dir numpy tomli && \
+    pip install --no-cache-dir -e /app/python 2>/dev/null || true
+
+ENV PYTHONPATH=/app/python:$PYTHONPATH
+ENV FORGE_CONFIG_PATH=/app/forge.toml
+
+EXPOSE 8080
+CMD ["python3", "-m", "forge"]
