@@ -4,12 +4,13 @@ from __future__ import annotations
 import gzip
 import json
 import logging
-import os
 from pathlib import Path
-from types import TracebackType
-from typing import IO
+from typing import IO, TYPE_CHECKING
 
-from forge.traces.decision_trace import DecisionTrace
+if TYPE_CHECKING:
+    from types import TracebackType
+
+    from forge.traces.decision_trace import DecisionTrace
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,9 @@ class TraceLogger:
         """Open the output file for writing."""
         Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
         if self.compress:
-            self._file = gzip.open(self.output_path, "wt", encoding="utf-8")
+            self._file = gzip.open(self.output_path, "wt", encoding="utf-8")  # noqa: SIM115
         else:
-            self._file = open(self.output_path, "w", encoding="utf-8")
+            self._file = Path(self.output_path).open("w", encoding="utf-8")  # noqa: SIM115
         logger.info("TraceLogger opened %s (compress=%s)", self.output_path, self.compress)
 
     def log(self, trace: DecisionTrace) -> None:
@@ -67,7 +68,7 @@ class TraceLogger:
     def _exceeds_size_limit(self) -> bool:
         """Check if the file exceeds the configured size limit."""
         try:
-            size = os.path.getsize(self.output_path)
+            size = Path(self.output_path).stat().st_size
         except OSError:
             return False
         return size > self.max_file_size_mb * BYTES_PER_MB

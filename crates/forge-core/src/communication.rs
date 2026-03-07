@@ -177,7 +177,13 @@ impl CommChannel {
     }
 
     /// Queues a message for delivery after the configured latency.
-    pub fn queue_message(&mut self, sender_id: u32, token: u16, recipient_idx: usize, current_tick: u64) {
+    pub fn queue_message(
+        &mut self,
+        sender_id: u32,
+        token: u16,
+        recipient_idx: usize,
+        current_tick: u64,
+    ) {
         let delivery_tick = current_tick + self.config.latency_ticks;
         self.pending.push(PendingMessage {
             sender_id,

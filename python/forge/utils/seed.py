@@ -21,7 +21,7 @@ def set_all_seeds(seed: int) -> None:
         seed: The seed value to use.
     """
     random.seed(seed)
-    np.random.seed(seed)  # noqa: NPY002
+    np.random.seed(seed)
     logger.info("All seeds set to %d", seed)
 
 

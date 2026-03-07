@@ -2,25 +2,20 @@
 
 from __future__ import annotations
 
-import os
 import textwrap
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-
 from forge.config import (
     ForgeConfig,
     HardwareConfig,
     SimulationConfig,
     TrainingConfig,
-    _apply_env_overrides,
     _build_section,
 )
 
 if TYPE_CHECKING:
-    pass
-
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Defaults

@@ -1,14 +1,10 @@
 """Tests for FORGE agent framework."""
 from __future__ import annotations
 
-import json
-import os
 import tempfile
-from typing import Any
 
 import numpy as np
 import pytest
-
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.agents.mcts_agent import MCTSAgent, MCTSConfig, MCTSNode
 from forge.agents.random_agent import RandomAgent
@@ -120,7 +116,7 @@ class TestRolloutBuffer:
     def test_is_full(self) -> None:
         """is_full() should return True when buffer is at capacity."""
         buf = RolloutBuffer(capacity=3, obs_shape=(2,))
-        for i in range(3):
+        for _i in range(3):
             buf.add(np.zeros(2), 0, 0.0, False, {})
         assert buf.is_full()
 
@@ -175,9 +171,9 @@ class TestSeed:
     def test_deterministic(self) -> None:
         """set_all_seeds should produce deterministic results."""
         set_all_seeds(123)
-        a = np.random.random()  # noqa: NPY002
+        a = np.random.random()
         set_all_seeds(123)
-        b = np.random.random()  # noqa: NPY002
+        b = np.random.random()
         assert a == b
 
 

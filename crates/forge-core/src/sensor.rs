@@ -262,8 +262,14 @@ mod tests {
 
         let mask = compute_observation(&agent, &[agent.clone()], &grid, &config);
 
-        assert!(mask.visible_cells.is_empty(), "jammed sensor should see no tiles");
-        assert!(mask.detected_entities.is_empty(), "jammed sensor should detect no entities");
+        assert!(
+            mask.visible_cells.is_empty(),
+            "jammed sensor should see no tiles"
+        );
+        assert!(
+            mask.detected_entities.is_empty(),
+            "jammed sensor should detect no entities"
+        );
     }
 
     // ---- Default config detects nearby agents ----
@@ -318,10 +324,16 @@ mod tests {
         let mask = compute_observation(&agent, &[agent.clone()], &grid, &config);
 
         // Tile within range should be visible.
-        assert!(mask.is_visible(13, 10), "tile at distance 3 should be visible");
+        assert!(
+            mask.is_visible(13, 10),
+            "tile at distance 3 should be visible"
+        );
 
         // Tile beyond range should not be visible.
-        assert!(!mask.is_visible(15, 10), "tile at distance 5 should not be visible");
+        assert!(
+            !mask.is_visible(15, 10),
+            "tile at distance 5 should not be visible"
+        );
     }
 
     #[test]
@@ -359,7 +371,11 @@ mod tests {
         assert!(mask_a.is_visible(1, 1));
         assert!(mask_a.is_visible(2, 2));
         assert!(mask_a.is_visible(3, 3));
-        assert_eq!(mask_a.visible_cells.len(), 3, "union should have 3 unique cells");
+        assert_eq!(
+            mask_a.visible_cells.len(),
+            3,
+            "union should have 3 unique cells"
+        );
     }
 
     #[test]
@@ -427,7 +443,10 @@ mod tests {
 
         let mask = compute_observation(&observer, &agents, &grid, &config);
 
-        assert!(mask.is_detected(1), "acoustic sensor should detect nearby agent");
+        assert!(
+            mask.is_detected(1),
+            "acoustic sensor should detect nearby agent"
+        );
     }
 
     #[test]
@@ -443,7 +462,10 @@ mod tests {
 
         let mask = compute_observation(&observer, &agents, &grid, &config);
 
-        assert!(mask.is_detected(1), "radar sensor should detect nearby agent");
+        assert!(
+            mask.is_detected(1),
+            "radar sensor should detect nearby agent"
+        );
     }
 
     #[test]
@@ -461,8 +483,14 @@ mod tests {
 
         let mask = compute_observation(&observer, &agents, &grid, &config);
 
-        assert!(mask.is_visible(9, 5), "acoustic sensor should see through walls");
-        assert!(mask.is_detected(1), "acoustic sensor should detect agent behind wall");
+        assert!(
+            mask.is_visible(9, 5),
+            "acoustic sensor should see through walls"
+        );
+        assert!(
+            mask.is_detected(1),
+            "acoustic sensor should detect agent behind wall"
+        );
     }
 
     #[test]
@@ -480,8 +508,14 @@ mod tests {
 
         let mask = compute_observation(&observer, &agents, &grid, &config);
 
-        assert!(mask.is_visible(9, 5), "radar sensor should see through walls");
-        assert!(mask.is_detected(1), "radar sensor should detect agent behind wall");
+        assert!(
+            mask.is_visible(9, 5),
+            "radar sensor should see through walls"
+        );
+        assert!(
+            mask.is_detected(1),
+            "radar sensor should detect agent behind wall"
+        );
     }
 
     // ---- Entity detection edge cases ----
@@ -513,8 +547,14 @@ mod tests {
 
         let mask = compute_observation(&observer, &agents, &grid, &config);
 
-        assert!(!mask.is_visible(9, 5), "tile behind wall should not be visible");
-        assert!(!mask.is_detected(1), "agent behind wall should not be detected");
+        assert!(
+            !mask.is_visible(9, 5),
+            "tile behind wall should not be visible"
+        );
+        assert!(
+            !mask.is_detected(1),
+            "agent behind wall should not be detected"
+        );
     }
 
     #[test]
@@ -569,6 +609,9 @@ mod tests {
 
         let mask = compute_observation(&observer, &agents, &grid, &config);
 
-        assert!(mask.is_detected(1), "noise_sigma should not prevent detection");
+        assert!(
+            mask.is_detected(1),
+            "noise_sigma should not prevent detection"
+        );
     }
 }

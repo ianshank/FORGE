@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
-from forge.agents.base_agent import BaseAgent
+if TYPE_CHECKING:
+    from forge.agents.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 

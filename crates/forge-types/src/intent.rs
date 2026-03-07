@@ -226,7 +226,10 @@ mod tests {
             confidence: 0.73,
             search_depth: 8,
             ucb1_score: 2.1,
-            preconditions: vec!["resource_nearby".to_string(), "inventory_not_full".to_string()],
+            preconditions: vec![
+                "resource_nearby".to_string(),
+                "inventory_not_full".to_string(),
+            ],
             expected_outcome: "collect 5 wood".to_string(),
             tick: 100,
         });

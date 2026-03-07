@@ -48,8 +48,8 @@ def main() -> None:
     )
     logger = logging.getLogger("forge.train")
 
-    from forge.config import ForgeConfig
-    from forge.utils.seed import set_all_seeds
+    from forge.config import ForgeConfig  # noqa: PLC0415
+    from forge.utils.seed import set_all_seeds  # noqa: PLC0415
 
     config = ForgeConfig.from_file(args.config)
     set_all_seeds(args.seed)

@@ -33,7 +33,7 @@ def main() -> None:
         logger.error("Replay file not found: %s", path)
         return
 
-    with open(path) as f:
+    with path.open() as f:
         data = json.load(f)
 
     frames = data if isinstance(data, list) else data.get("frames", [])

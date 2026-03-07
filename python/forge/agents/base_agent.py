@@ -6,9 +6,10 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class BaseAgent(ABC):
     def save(self, path: str) -> None:
         """Save agent state to disk."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
+        with Path(path).open("w") as f:
             json.dump(
                 {"config": self.config.__dict__, "step_count": self._step_count}, f
             )
@@ -50,7 +51,7 @@ class BaseAgent(ABC):
 
     def load(self, path: str) -> None:
         """Load agent state from disk."""
-        with open(path) as f:
+        with Path(path).open() as f:
             data = json.load(f)
         self._step_count = data.get("step_count", 0)
         logger.info("Loaded agent from %s", path)

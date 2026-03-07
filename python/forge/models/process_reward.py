@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 

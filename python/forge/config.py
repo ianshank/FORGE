@@ -132,9 +132,9 @@ class ForgeConfig:
             Parsed configuration with env overrides applied.
         """
         try:
-            import tomllib  # Python 3.11+
+            import tomllib  # noqa: PLC0415  # Python 3.11+
         except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]
+            import tomli as tomllib  # type: ignore[no-redef]  # noqa: PLC0415
 
         resolved = cls._resolve_path(path)
         if resolved is not None:
@@ -209,7 +209,7 @@ class ForgeConfig:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise the full config as a nested dict."""
-        from dataclasses import asdict
+        from dataclasses import asdict  # noqa: PLC0415
 
         return asdict(self)
 

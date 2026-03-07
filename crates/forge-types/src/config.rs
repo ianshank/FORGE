@@ -297,10 +297,12 @@ impl ForgeConfig {
     ///
     /// Returns [`ForgeError::Config`] if the string is not valid TOML.
     pub fn from_toml_str(toml_str: &str) -> Result<Self, ForgeError> {
-        toml::from_str(toml_str).map_err(|e| {
-            warn!(error = %e, "failed to parse TOML config");
-            ConfigError::ParseError(format!("invalid TOML: {e}"))
-        }).map_err(ForgeError::from)
+        toml::from_str(toml_str)
+            .map_err(|e| {
+                warn!(error = %e, "failed to parse TOML config");
+                ConfigError::ParseError(format!("invalid TOML: {e}"))
+            })
+            .map_err(ForgeError::from)
     }
 
     /// Applies environment variable overrides with the `FORGE_` prefix.

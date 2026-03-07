@@ -5,8 +5,10 @@ import json
 import logging
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from forge.agents.base_agent import BaseAgent
+if TYPE_CHECKING:
+    from forge.agents.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,7 @@ class CheckpointManager:
             "step_count": agent.step_count,
         }
         meta_path = checkpoint_path / "metadata.json"
-        with open(meta_path, "w") as f:
+        with meta_path.open("w") as f:
             json.dump(metadata, f, indent=2)
 
         logger.info("Saved checkpoint at episode %d to %s", episode, checkpoint_path)
@@ -80,7 +82,7 @@ class CheckpointManager:
         for entry in sorted(self.checkpoint_dir.iterdir()):
             meta_path = entry / "metadata.json"
             if meta_path.exists():
-                with open(meta_path) as f:
+                with meta_path.open() as f:
                     metadata = json.load(f)
                 metadata["path"] = str(entry)
                 checkpoints.append(metadata)
@@ -95,7 +97,7 @@ class CheckpointManager:
             oldest = checkpoints.pop(0)
             oldest_path = Path(str(oldest["path"]))
             if oldest_path.exists():
-                import shutil
+                import shutil  # noqa: PLC0415
 
                 shutil.rmtree(oldest_path)
                 logger.info("Removed old checkpoint: %s", oldest_path)
