@@ -12,28 +12,43 @@ use crate::grid::{Position, TerrainType};
 #[non_exhaustive]
 #[repr(u8)]
 pub enum ItemType {
-    // Raw resources
+    /// Raw wood resource.
     Wood = 0,
+    /// Raw stone resource.
     Stone = 1,
+    /// Raw ore resource.
     Ore = 2,
+    /// Raw fish resource.
     Fish = 3,
+    /// Raw fiber resource.
     Fiber = 4,
+    /// Raw clay resource.
     Clay = 5,
 
-    // Crafted items
+    /// Crafted axe tool (wood harvesting).
     Axe = 10,
+    /// Crafted pickaxe tool (stone/ore mining).
     Pickaxe = 11,
+    /// Crafted sword weapon (combat).
     Sword = 12,
+    /// Crafted shield (defense).
     Shield = 13,
+    /// Crafted plank (intermediate material).
     Plank = 14,
+    /// Crafted bridge (terrain crossing).
     Bridge = 15,
+    /// Crafted rope (utility).
     Rope = 16,
+    /// Crafted brick (construction material).
     Brick = 17,
+    /// Crafted key (unlocking).
     Key = 18,
+    /// Crafted torch (illumination).
     Torch = 19,
 
-    // Food
+    /// Cooked fish food item.
     CookedFish = 30,
+    /// Bread food item.
     Bread = 31,
 }
 

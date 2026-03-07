@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(clippy::all)]
+
 //! # forge-core
 //!
 //! Core simulation engine for the FORGE platform.
@@ -11,6 +14,7 @@ pub mod communication;
 pub mod crafting;
 pub mod day_night;
 pub mod physics;
+pub mod prelude;
 pub mod resource;
 pub mod rng;
 pub mod systems;

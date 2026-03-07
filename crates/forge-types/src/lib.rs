@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(clippy::all)]
+
 //! # forge-types
 //!
 //! Shared types, traits, and configuration for the FORGE simulation platform.
@@ -19,6 +22,7 @@ pub mod entity;
 pub mod error;
 pub mod grid;
 pub mod observation;
+pub mod prelude;
 pub mod resource;
 pub mod task;
 pub mod validation;

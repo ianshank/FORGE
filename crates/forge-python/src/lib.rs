@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(clippy::all)]
+
 //! # forge-python
 //!
 //! Python bindings for the FORGE simulation platform via PyO3.

@@ -1,10 +1,10 @@
 /**
- * app.js — FORGE Demo UI logic
+ * app.js — FORGE Demo UI logic (v4)
  *
  * Classes:
  *   ForgeTerminal  – live SSE output with colour syntax
- *   WorldRenderer  – ASCII grid → canvas
- *   StatsPanel     – numeric metric cards
+ *   WorldRenderer  – ASCII grid -> canvas with agent trails
+ *   StatsPanel     – numeric metric cards, inventory, day/night
  *   SectionNav     – sidebar state management
  *   Runner         – orchestrates SSE fetch calls & progress
  */
@@ -15,14 +15,14 @@
    Constants
    ========================================================= */
 const SECTIONS_META = [
-    { key: "worldgen", name: "World Generation", icon: "🌍" },
-    { key: "navigation", name: "Navigation", icon: "🧭" },
-    { key: "gathering", name: "Resource Gathering", icon: "🪵" },
-    { key: "crafting", name: "Crafting", icon: "⚒️" },
-    { key: "multiagent", name: "Multi-Agent", icon: "🤝" },
-    { key: "daynight", name: "Day/Night Cycle", icon: "🌙" },
-    { key: "determinism", name: "Determinism", icon: "🔁" },
-    { key: "performance", name: "Performance", icon: "⚡" },
+    { key: "worldgen", name: "World Generation", icon: "\u{1F30D}" },
+    { key: "navigation", name: "Navigation", icon: "\u{1F9ED}" },
+    { key: "gathering", name: "Resource Gathering", icon: "\u{1FAB5}" },
+    { key: "crafting", name: "Crafting", icon: "\u2692\uFE0F" },
+    { key: "multiagent", name: "Multi-Agent", icon: "\u{1F91D}" },
+    { key: "daynight", name: "Day/Night Cycle", icon: "\u{1F319}" },
+    { key: "determinism", name: "Determinism", icon: "\u{1F501}" },
+    { key: "performance", name: "Performance", icon: "\u26A1" },
 ];
 
 const TERRAIN_COLORS = {
@@ -37,6 +37,13 @@ const TERRAIN_COLORS = {
     "A": "#ff1744",  // agent
     "R": "#e040fb",  // resource
     "O": "#ffcc02",  // object
+};
+
+const ITEM_NAMES = {
+    0: "Wood", 1: "Stone", 2: "Ore", 3: "Fish", 4: "Fiber", 5: "Clay",
+    10: "Axe", 11: "Pickaxe", 12: "Sword", 13: "Shield", 14: "Plank",
+    15: "Bridge", 16: "Rope", 17: "Brick", 18: "Key", 19: "Torch",
+    30: "CookedFish", 31: "Bread",
 };
 
 /* =========================================================
@@ -74,6 +81,9 @@ class ForgeTerminal {
                 this._gridBuffer = [];
             }
         } else {
+            if (this._gridBuffer.length > 0) {
+                window.worldRenderer.renderGrid(this._gridBuffer.join("\n"));
+            }
             this._gridBuffer = [];
         }
 
@@ -87,7 +97,6 @@ class ForgeTerminal {
     _isGridLine(line) {
         const t = line.trim();
         if (t.length < 4) return false;
-        // A grid line consists mostly of terrain characters
         const terrain = new Set(['.', '~', '#', 'T', 'M', 'S', 'I', 'L', 'A', 'R', 'O', ' ']);
         const ratio = [...t].filter(c => terrain.has(c)).length / t.length;
         return ratio > 0.7;
@@ -96,29 +105,14 @@ class ForgeTerminal {
     _colourize(text) {
         const escaped = this._esc(text);
 
-        // Section headers (=== ... ===)
         if (/={3,}/.test(text)) return `<span class="c-header">${escaped}</span>`;
-
-        // PASS / FAIL markers
         if (/\bPASS\b/.test(text)) return escaped.replace(/PASS/g, '<span class="c-pass">PASS</span>');
         if (/\bFAIL\b/.test(text)) return escaped.replace(/FAIL/g, '<span class="c-fail">FAIL</span>');
-
-        // Step / Move info lines
         if (/^  (Move|Step|\[Step)/.test(text)) return `<span class="c-info">${escaped}</span>`;
-
-        // Crafted / picked up
         if (/Crafted|icked up/.test(text)) return `<span class="c-pass">${escaped}</span>`;
-
-        // Insufficient / insufficient materials
         if (/nsufficient|ERROR/.test(text)) return `<span class="c-fail">${escaped}</span>`;
-
-        // Sub-headers (--- ... ---)
         if (/^---/.test(text)) return `<span class="c-info">${escaped}</span>`;
-
-        // Grid lines: colorize char by char
         if (this._isGridLine(text)) return this._colourizeGrid(text);
-
-        // Dim separators / empty
         if (text.trim() === "" || /^={2,}$/.test(text.trim())) {
             return `<span class="c-muted">${escaped}</span>`;
         }
@@ -143,12 +137,15 @@ class ForgeTerminal {
 }
 
 /* =========================================================
-   WorldRenderer
+   WorldRenderer — with agent trail support
    ========================================================= */
 class WorldRenderer {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d");
+        this._agentTrail = []; // array of {x, y} positions
+        this._maxTrailLen = 50;
+        this._lastGrid = null;
         this._drawIdle();
     }
 
@@ -166,6 +163,7 @@ class WorldRenderer {
         const lines = gridStr.split("\n").filter(l => l.trim().length > 0);
         if (!lines.length) return;
 
+        this._lastGrid = lines;
         const rows = lines.length;
         const cols = Math.max(...lines.map(l => l.length));
         const { canvas, ctx } = this;
@@ -176,14 +174,66 @@ class WorldRenderer {
         ctx.fillStyle = "#050c18";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // Find agent positions and track trail
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < lines[r].length; c++) {
                 const ch_char = lines[r][c];
+
+                // Draw base terrain
                 ctx.fillStyle = TERRAIN_COLORS[ch_char] || "#1a2540";
                 ctx.fillRect(Math.floor(c * cw), Math.floor(r * ch),
                     Math.ceil(cw) + 1, Math.ceil(ch) + 1);
+
+                if (ch_char === 'A') {
+                    this._agentTrail.push({ x: c, y: r });
+                    if (this._agentTrail.length > this._maxTrailLen) {
+                        this._agentTrail.shift();
+                    }
+                }
             }
         }
+
+        // Draw agent trail (fading from old to new)
+        if (this._agentTrail.length > 1) {
+            for (let i = 0; i < this._agentTrail.length - 1; i++) {
+                const alpha = (i / this._agentTrail.length) * 0.6;
+                const p = this._agentTrail[i];
+                ctx.fillStyle = `rgba(255, 23, 68, ${alpha})`;
+                const dotSize = Math.max(2, Math.min(cw, ch) * 0.4);
+                ctx.beginPath();
+                ctx.arc(
+                    p.x * cw + cw / 2,
+                    p.y * ch + ch / 2,
+                    dotSize,
+                    0, Math.PI * 2
+                );
+                ctx.fill();
+            }
+        }
+
+        // Redraw agent on top with glow
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < lines[r].length; c++) {
+                if (lines[r][c] === 'A') {
+                    const cx_pos = c * cw + cw / 2;
+                    const cy_pos = r * ch + ch / 2;
+                    const agentSize = Math.max(3, Math.min(cw, ch) * 0.5);
+
+                    // Glow
+                    ctx.shadowColor = "#ff1744";
+                    ctx.shadowBlur = 8;
+                    ctx.fillStyle = "#ff1744";
+                    ctx.beginPath();
+                    ctx.arc(cx_pos, cy_pos, agentSize, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+            }
+        }
+    }
+
+    clearTrail() {
+        this._agentTrail = [];
     }
 }
 
@@ -196,7 +246,7 @@ class SectionNav {
     constructor(listEl, miniListEl) {
         this.listEl = listEl;
         this.miniListEl = miniListEl;
-        this.states = {}; // key -> "idle"|"running"|"pass"|"fail"
+        this.states = {};
         this._build();
     }
 
@@ -207,7 +257,6 @@ class SectionNav {
         for (const s of SECTIONS_META) {
             this.states[s.key] = "idle";
 
-            // Sidebar button
             const btn = document.createElement("button");
             btn.className = "section-btn";
             btn.id = `sbtn-${s.key}`;
@@ -219,7 +268,6 @@ class SectionNav {
             btn.onclick = () => window.runner.runSection(s.key);
             this.listEl.appendChild(btn);
 
-            // Mini row for stats panel
             const row = document.createElement("div");
             row.className = "mini-section";
             row.innerHTML = `
@@ -237,7 +285,6 @@ class SectionNav {
         const mini = document.getElementById(`mini-${key}`);
         if (!btn || !badge || !mini) return;
 
-        // Remove all status classes
         btn.classList.remove(...STATUSES);
         mini.classList.remove(...STATUSES);
 
@@ -263,12 +310,137 @@ class SectionNav {
 }
 
 /* =========================================================
+   StatsTracker — parses output for live stats
+   ========================================================= */
+class StatsTracker {
+    constructor() {
+        this._inventory = {};
+        this._dayPhase = null;
+        this._tick = 0;
+        this._agentCount = 0;
+    }
+
+    /** Parse a line for stats data. */
+    parseLine(line) {
+        // Steps/second
+        const fpsMatch = line.match(/Steps\/second\s*:\s*([\d,]+)/);
+        if (fpsMatch) {
+            document.getElementById("stat-fps").textContent = fpsMatch[1];
+        }
+        const usMatch = line.match(/us\/step\s*:\s*([\d.]+)/);
+        if (usMatch) {
+            document.getElementById("stat-us").textContent = usMatch[1] + " \u03BCs";
+        }
+
+        // Inventory tracking: "Picked up Wood" or "Inventory: {Wood: 2, Stone: 1}"
+        const pickupMatch = line.match(/Picked up (\w+)/i);
+        if (pickupMatch) {
+            const item = pickupMatch[1];
+            this._inventory[item] = (this._inventory[item] || 0) + 1;
+            this._updateInventoryDisplay();
+        }
+
+        const invMatch = line.match(/Inventory:\s*\{([^}]+)\}/);
+        if (invMatch) {
+            this._inventory = {};
+            const pairs = invMatch[1].split(",");
+            for (const pair of pairs) {
+                const [name, count] = pair.split(":").map(s => s.trim());
+                if (name && count) {
+                    this._inventory[name] = parseInt(count, 10);
+                }
+            }
+            this._updateInventoryDisplay();
+        }
+
+        // Crafting: "Crafted Axe"
+        const craftMatch = line.match(/Crafted\s+(\w+)/i);
+        if (craftMatch) {
+            const item = craftMatch[1];
+            this._inventory[item] = (this._inventory[item] || 0) + 1;
+            this._updateInventoryDisplay();
+        }
+
+        // Day/night phase detection
+        const phaseMatch = line.match(/Phase:\s*(Dawn|Day|Dusk|Night)/i);
+        if (phaseMatch) {
+            this._setDayPhase(phaseMatch[1].toLowerCase());
+        }
+        if (/\bdawn\b/i.test(line) && /phase|cycle/i.test(line)) {
+            this._setDayPhase("dawn");
+        } else if (/\bday\b/i.test(line) && /phase|cycle/i.test(line)) {
+            this._setDayPhase("day");
+        } else if (/\bdusk\b/i.test(line) && /phase|cycle/i.test(line)) {
+            this._setDayPhase("dusk");
+        } else if (/\bnight\b/i.test(line) && /phase|cycle/i.test(line)) {
+            this._setDayPhase("night");
+        }
+
+        // Tick tracking
+        const tickMatch = line.match(/\[?(?:Step|Tick)\s*(\d+)/i);
+        if (tickMatch) {
+            this._tick = parseInt(tickMatch[1], 10);
+            document.getElementById("footer-tick").textContent = `Tick: ${this._tick}`;
+        }
+
+        // Agent count
+        const agentMatch = line.match(/(\d+)\s*agents?/i);
+        if (agentMatch) {
+            this._agentCount = parseInt(agentMatch[1], 10);
+            document.getElementById("footer-agents").textContent = `Agents: ${this._agentCount}`;
+        }
+    }
+
+    _setDayPhase(phase) {
+        this._dayPhase = phase;
+        const phases = ["dawn", "day", "dusk", "night"];
+        for (const p of phases) {
+            const el = document.getElementById(`phase-${p}`);
+            if (el) {
+                el.classList.toggle("active", p === phase);
+            }
+        }
+    }
+
+    _updateInventoryDisplay() {
+        const el = document.getElementById("inventory-display");
+        if (!el) return;
+
+        const entries = Object.entries(this._inventory).filter(([, v]) => v > 0);
+        if (entries.length === 0) {
+            el.innerHTML = '<span class="inventory-empty">No items yet</span>';
+            return;
+        }
+
+        el.innerHTML = entries.map(([name, count]) =>
+            `<span class="inventory-item">${name} <span class="item-count">x${count}</span></span>`
+        ).join("");
+    }
+
+    reset() {
+        this._inventory = {};
+        this._dayPhase = null;
+        this._tick = 0;
+        this._agentCount = 0;
+        this._updateInventoryDisplay();
+        const phases = ["dawn", "day", "dusk", "night"];
+        for (const p of phases) {
+            const el = document.getElementById(`phase-${p}`);
+            if (el) el.classList.remove("active");
+        }
+        document.getElementById("footer-tick").textContent = "Tick: \u2014";
+        document.getElementById("footer-agents").textContent = "Agents: \u2014";
+    }
+}
+
+/* =========================================================
    Runner — SSE orchestrator
    ========================================================= */
 class Runner {
-    constructor(terminal, nav) {
+    constructor(terminal, nav, stats) {
         this.terminal = terminal;
         this.nav = nav;
+        this.stats = stats;
         this._abortCtrl = null;
         this._running = false;
         this._startTime = 0;
@@ -323,11 +495,13 @@ class Runner {
         if (this._running) return;
         this.terminal.clear();
         this.nav.resetAll();
+        this.stats.reset();
+        window.worldRenderer.clearTrail();
         this._setRunning(true);
         this._startTimer();
         this._completedSections = 0;
         this._setProgress(0, this._totalSections);
-        document.getElementById("current-section-label").textContent = "— All sections";
+        document.getElementById("current-section-label").textContent = "\u2014 All sections";
 
         this._abortCtrl = new AbortController();
 
@@ -357,12 +531,14 @@ class Runner {
         if (!meta) return;
 
         this.terminal.clear();
+        this.stats.reset();
+        window.worldRenderer.clearTrail();
         this._setRunning(true);
         this._startTimer();
         this.nav.setActive(sectionKey);
         this.nav.setStatus(sectionKey, "running");
         this._setProgress(0, 1);
-        document.getElementById("current-section-label").textContent = `— ${meta.icon} ${meta.name}`;
+        document.getElementById("current-section-label").textContent = `\u2014 ${meta.icon} ${meta.name}`;
         this._setPrompt(`running ${sectionKey}`);
 
         this._abortCtrl = new AbortController();
@@ -409,13 +585,11 @@ class Runner {
 
                 const rawSlice = raw.slice(6).trim();
 
-                // Sentinel detecting — may be bare or JSON-encoded
                 if (rawSlice === "__STREAM_END__" || rawSlice === '"__STREAM_END__"') {
                     streamDone = true;
                     break outer;
                 }
 
-                // Safe JSON parse — fall back to raw string; always trim whitespace
                 let payload;
                 try {
                     payload = JSON.parse(rawSlice);
@@ -433,18 +607,17 @@ class Runner {
                         this.nav.setStatus(currentSection, "running");
                         this._setPrompt(`running ${currentSection}`);
                         document.getElementById("current-section-label").textContent =
-                            `— ${meta.icon} ${meta.name}`;
+                            `\u2014 ${meta.icon} ${meta.name}`;
                     }
+                    window.worldRenderer.clearTrail();
                     continue;
                 }
 
                 if (typeof payload === "string" && payload.startsWith("__SECTION_END__ ")) {
                     const sec = payload.replace("__SECTION_END__ ", "").trim();
-                    // Mark section done — determine pass/fail from nav state
                     if (sec === currentSection) {
                         this._completedSections++;
                         this._setProgress(this._completedSections, this._totalSections);
-                        // If no status set yet, default to pass
                         const st = this.nav.states[sec];
                         if (st === "running") this.nav.setStatus(sec, "pass");
                     }
@@ -464,23 +637,11 @@ class Runner {
 
                 this.terminal.appendLine(payload);
 
-                // Parse perf stats if present
-                this._extractStats(payload);
+                // Parse live stats
+                if (typeof payload === "string") {
+                    this.stats.parseLine(payload);
+                }
             }
-        }
-    }
-
-
-    /** Pull performance numbers out of demo output. */
-    _extractStats(line) {
-        const fpsMatch = line.match(/Steps\/second\s*:\s*([\d,]+)/);
-        if (fpsMatch) {
-            document.getElementById("stat-fps").textContent =
-                fpsMatch[1].replace(/,/g, ",");
-        }
-        const usMatch = line.match(/us\/step\s*:\s*([\d.]+)/);
-        if (usMatch) {
-            document.getElementById("stat-us").textContent = usMatch[1] + " μs";
         }
     }
 
@@ -505,16 +666,23 @@ class Runner {
 /* =========================================================
    Init
    ========================================================= */
-let terminal, worldRenderer, nav, runner;
+let terminal, worldRenderer, nav, stats, runner;
 
 function clearTerminal() {
     terminal.clear();
     worldRenderer._drawIdle();
+    worldRenderer.clearTrail();
+    stats.reset();
 }
 
 function toggleQuick() {
     const el = document.getElementById("quick-toggle");
     el.classList.toggle("on");
+}
+
+function updateSpeedLabel() {
+    const slider = document.getElementById("speed-slider");
+    document.getElementById("speed-label").textContent = slider.value + "x";
 }
 
 function runAll() {
@@ -531,33 +699,34 @@ async function loadResults() {
         const data = await r.json();
 
         document.getElementById("chip-platform").textContent =
-            (data.platform || "—").substring(0, 30);
-        document.getElementById("chip-date").textContent = data.date || "—";
-        document.getElementById("chip-result").textContent = data.result || "—";
+            (data.platform || "\u2014").substring(0, 30);
+        document.getElementById("chip-date").textContent = data.date || "\u2014";
+        document.getElementById("chip-result").textContent = data.result || "\u2014";
         document.getElementById("stat-seed").textContent = data.seed ?? 42;
         document.getElementById("seed-input").value = data.seed ?? 42;
 
         if (data.performance) {
             document.getElementById("stat-fps").textContent =
-                data.performance.steps_per_second || "—";
+                data.performance.steps_per_second || "\u2014";
             document.getElementById("stat-us").textContent =
                 data.performance.us_per_step
-                    ? data.performance.us_per_step + " μs"
-                    : "—";
+                    ? data.performance.us_per_step + " \u03BCs"
+                    : "\u2014";
         }
     } catch (_) {
-        // Offline / no results yet — that's fine
+        // Offline / no results yet
     }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
     terminal = new ForgeTerminal(document.getElementById("terminal-output"));
     worldRenderer = new WorldRenderer(document.getElementById("world-canvas"));
+    stats = new StatsTracker();
     nav = new SectionNav(
         document.getElementById("section-list"),
         document.getElementById("mini-section-list"),
     );
-    runner = new Runner(terminal, nav);
+    runner = new Runner(terminal, nav, stats);
 
     // Expose globally so HTML onclick handlers work
     window.worldRenderer = worldRenderer;

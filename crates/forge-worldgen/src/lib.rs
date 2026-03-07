@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(clippy::all)]
+
 //! # forge-worldgen
 //!
 //! Procedural world generation for the FORGE platform.

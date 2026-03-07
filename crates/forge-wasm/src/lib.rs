@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(clippy::all)]
+
 //! # forge-wasm
 //!
 //! WebAssembly visualization module for the FORGE simulation platform.

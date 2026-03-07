@@ -35,9 +35,13 @@ pub enum WorldGenError {
     /// The world dimensions are invalid.
     #[error("invalid world dimensions: {width}x{height} (min: {min_size}, max: {max_size})")]
     InvalidDimensions {
+        /// Requested world width.
         width: u16,
+        /// Requested world height.
         height: u16,
+        /// Minimum allowed dimension.
         min_size: u16,
+        /// Maximum allowed dimension.
         max_size: u16,
     },
 
@@ -48,8 +52,11 @@ pub enum WorldGenError {
     /// Too many entities requested for the world size.
     #[error("max entities {requested} exceeds capacity for {width}x{height} world")]
     TooManyEntities {
+        /// Number of entities requested.
         requested: u16,
+        /// World width in tiles.
         width: u16,
+        /// World height in tiles.
         height: u16,
     },
 }
@@ -59,11 +66,21 @@ pub enum WorldGenError {
 pub enum SimulationError {
     /// An invalid action was submitted.
     #[error("invalid action for agent {agent_id}: {reason}")]
-    InvalidAction { agent_id: u32, reason: String },
+    InvalidAction {
+        /// ID of the agent that submitted the action.
+        agent_id: u32,
+        /// Description of why the action was invalid.
+        reason: String,
+    },
 
     /// Wrong number of actions provided.
     #[error("expected {expected} actions, got {got}")]
-    ActionCountMismatch { expected: usize, got: usize },
+    ActionCountMismatch {
+        /// Expected number of actions.
+        expected: usize,
+        /// Actual number of actions received.
+        got: usize,
+    },
 
     /// Agent referenced does not exist.
     #[error("agent {0} not found")]
@@ -75,7 +92,12 @@ pub enum SimulationError {
 
     /// Inventory operation failed.
     #[error("inventory error for agent {agent_id}: {reason}")]
-    InventoryError { agent_id: u32, reason: String },
+    InventoryError {
+        /// ID of the agent whose inventory operation failed.
+        agent_id: u32,
+        /// Description of the inventory error.
+        reason: String,
+    },
 }
 
 /// Errors related to configuration.
@@ -84,9 +106,13 @@ pub enum ConfigError {
     /// A configuration value is out of its valid range.
     #[error("config field '{field}': value {value} out of range [{min}, {max}]")]
     OutOfRange {
+        /// Name of the configuration field.
         field: String,
+        /// The invalid value that was provided.
         value: String,
+        /// Minimum allowed value.
         min: String,
+        /// Maximum allowed value.
         max: String,
     },
 
