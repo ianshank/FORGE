@@ -4,6 +4,8 @@
 //! agent intents — the symbolic layer that bridges neural network outputs
 //! (e.g., MCTS rollouts) with human-interpretable goals.
 
+use std::collections::VecDeque;
+
 use serde::{Deserialize, Serialize};
 
 /// Default maximum number of historical intents retained by [`AgentIntent`].
@@ -73,7 +75,7 @@ pub struct AgentIntent {
     /// The currently active intent declaration.
     pub current: IntentDeclaration,
     /// Past intent declarations, ordered oldest-first.
-    pub history: Vec<IntentDeclaration>,
+    pub history: VecDeque<IntentDeclaration>,
     /// Maximum number of entries retained in [`history`](Self::history).
     pub max_history: usize,
 }
@@ -82,7 +84,7 @@ impl Default for AgentIntent {
     fn default() -> Self {
         Self {
             current: IntentDeclaration::default(),
-            history: Vec::new(),
+            history: VecDeque::new(),
             max_history: DEFAULT_MAX_HISTORY,
         }
     }
@@ -103,10 +105,10 @@ impl AgentIntent {
     /// the oldest entry is evicted first.
     pub fn declare(&mut self, intent: IntentDeclaration) {
         let old = std::mem::replace(&mut self.current, intent);
-        if self.history.len() >= self.max_history {
-            self.history.remove(0);
+        if self.max_history > 0 && self.history.len() >= self.max_history {
+            self.history.pop_front();
         }
-        self.history.push(old);
+        self.history.push_back(old);
     }
 
     /// Return a reference to the current intent's label.

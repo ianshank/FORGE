@@ -198,16 +198,9 @@ impl CommChannel {
     /// Returns the delivered messages and removes them from the queue.
     #[instrument(skip_all)]
     pub fn deliver_pending(&mut self, current_tick: u64, agents: &mut [Agent], buffer_size: usize) {
-        let mut delivered = Vec::new();
-        let mut remaining = Vec::new();
-
-        for msg in self.pending.drain(..) {
-            if msg.delivery_tick <= current_tick {
-                delivered.push(msg);
-            } else {
-                remaining.push(msg);
-            }
-        }
+        let (delivered, remaining): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pending)
+            .into_iter()
+            .partition(|msg| msg.delivery_tick <= current_tick);
         self.pending = remaining;
 
         for msg in delivered {

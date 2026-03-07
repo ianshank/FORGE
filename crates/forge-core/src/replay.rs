@@ -4,6 +4,8 @@
 //! agent positions, health values, and serialized event summaries. Frames
 //! can be exported as JSON for offline analysis or playback in the dashboard.
 
+use std::collections::VecDeque;
+
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -62,7 +64,7 @@ pub struct ReplayRecorder {
     /// Active configuration.
     config: ReplayConfig,
     /// Recorded frames in insertion order.
-    frames: Vec<ReplayFrame>,
+    frames: VecDeque<ReplayFrame>,
 }
 
 impl ReplayRecorder {
@@ -71,7 +73,7 @@ impl ReplayRecorder {
     pub fn new(config: ReplayConfig) -> Self {
         Self {
             config,
-            frames: Vec::new(),
+            frames: VecDeque::new(),
         }
     }
 
@@ -87,16 +89,19 @@ impl ReplayRecorder {
     /// Records a frame, evicting the oldest frame if the buffer is full.
     #[instrument(level = "trace", skip(self, frame))]
     pub fn record_frame(&mut self, frame: ReplayFrame) {
-        if self.frames.len() >= self.config.max_frames {
-            self.frames.remove(0);
+        if self.config.max_frames > 0 && self.frames.len() >= self.config.max_frames {
+            self.frames.pop_front();
         }
-        self.frames.push(frame);
+        self.frames.push_back(frame);
     }
 
     /// Returns a slice of all recorded frames.
+    ///
+    /// This calls [`VecDeque::make_contiguous`] to ensure contiguous memory
+    /// layout before returning the slice.
     #[instrument(level = "trace", skip(self))]
-    pub fn frames(&self) -> &[ReplayFrame] {
-        &self.frames
+    pub fn frames(&mut self) -> &[ReplayFrame] {
+        self.frames.make_contiguous()
     }
 
     /// Returns the number of recorded frames.

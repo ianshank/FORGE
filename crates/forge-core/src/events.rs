@@ -4,6 +4,8 @@
 //! and an [`EventLog`] buffer for collecting and querying them. Events are
 //! consumed by the dashboard, replay recorder, and analytics pipelines.
 
+use std::collections::VecDeque;
+
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -106,7 +108,7 @@ pub enum SimulationEvent {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EventLog {
     /// The stored events, ordered by insertion time.
-    events: Vec<SimulationEvent>,
+    events: VecDeque<SimulationEvent>,
     /// Maximum number of events to retain before eviction.
     max_events: usize,
 }
@@ -114,7 +116,7 @@ pub struct EventLog {
 impl Default for EventLog {
     fn default() -> Self {
         Self {
-            events: Vec::new(),
+            events: VecDeque::new(),
             max_events: DEFAULT_MAX_EVENTS,
         }
     }
@@ -125,7 +127,7 @@ impl EventLog {
     #[instrument(level = "debug")]
     pub fn new(max_events: usize) -> Self {
         Self {
-            events: Vec::new(),
+            events: VecDeque::new(),
             max_events,
         }
     }
@@ -134,10 +136,10 @@ impl EventLog {
     /// has reached its maximum capacity.
     #[instrument(level = "trace", skip(self))]
     pub fn push(&mut self, event: SimulationEvent) {
-        if self.events.len() >= self.max_events {
-            self.events.remove(0);
+        if self.max_events > 0 && self.events.len() >= self.max_events {
+            self.events.pop_front();
         }
-        self.events.push(event);
+        self.events.push_back(event);
     }
 
     /// Returns references to all events that occurred at the given tick.
