@@ -186,9 +186,7 @@ fn compute_near_station(
 fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
     let mut result = Vec::with_capacity(state.agents.len());
 
-    for i in 0..state.agents.len() {
-        let agent = &state.agents[i];
-
+    for (i, agent) in state.agents.iter().enumerate() {
         // Get action for this agent, default to Noop if not provided
         let action = actions.get(i).unwrap_or(&Action::Noop);
 

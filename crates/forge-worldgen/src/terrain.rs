@@ -46,7 +46,7 @@ impl TerrainGenerator {
         let classifier = BiomeClassifier::new(config);
         let biome_scale = config.biome_scale as f64;
 
-        // Derive octave count and persistence from biome_scale.
+        // Derive octave count from biome_scale; persistence is a fixed constant.
         // A scale of 0.1 (default) yields 4 octaves.
         let octaves = ((biome_scale * constants::TERRAIN_NOISE_OCTAVES_MULTIPLIER).clamp(
             constants::TERRAIN_NOISE_OCTAVES_MIN as f64,

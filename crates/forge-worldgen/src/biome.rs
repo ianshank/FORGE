@@ -38,7 +38,7 @@ impl BiomeThresholds {
         let scale = config.biome_scale as f64;
 
         // Sensible defaults that respond to biome_scale.
-        // biome_scale of 0.1 (default) gives water≈0.35, mountain≈0.72
+        // biome_scale of 0.1 (default) gives water≈0.32, mountain≈0.75
         let water_level = (constants::BIOME_WATER_LEVEL_BASE
             - scale * constants::BIOME_WATER_LEVEL_SCALE_MULTIPLIER)
             .clamp(
