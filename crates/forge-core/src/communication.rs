@@ -109,6 +109,126 @@ pub fn process_communication(agents: &mut [Agent], actions: &[Action], config: &
     }
 }
 
+/// Configuration for enhanced communication channels with bandwidth and latency.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CommChannelConfig {
+    /// Maximum messages that can be sent per tick across all agents.
+    pub max_messages_per_tick: u32,
+    /// Latency in ticks: message arrives at `sent_tick + latency`.
+    pub latency_ticks: u64,
+    /// Whether any comm jamming zones are active.
+    pub jamming_enabled: bool,
+}
+
+impl Default for CommChannelConfig {
+    fn default() -> Self {
+        Self {
+            max_messages_per_tick: 64,
+            latency_ticks: 0,
+            jamming_enabled: false,
+        }
+    }
+}
+
+/// A pending message waiting for delivery after latency.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PendingMessage {
+    /// Sender agent ID.
+    pub sender_id: u32,
+    /// Communication token.
+    pub token: u16,
+    /// Tick when the message should be delivered.
+    pub delivery_tick: u64,
+    /// Recipient agent index.
+    pub recipient_idx: usize,
+}
+
+/// Enhanced communication channel with bandwidth limits and latency modeling.
+#[derive(Debug, Clone, Default)]
+pub struct CommChannel {
+    /// Channel configuration.
+    pub config: CommChannelConfig,
+    /// Queue of messages waiting for delivery.
+    pub pending: Vec<PendingMessage>,
+    /// Positions of jammed zones: (center_x, center_y, radius).
+    pub jammed_zones: Vec<(u16, u16, u16)>,
+}
+
+impl CommChannel {
+    /// Creates a new comm channel with the given config.
+    pub fn new(config: CommChannelConfig) -> Self {
+        Self {
+            config,
+            pending: Vec::new(),
+            jammed_zones: Vec::new(),
+        }
+    }
+
+    /// Returns `true` if the position is inside a jammed zone.
+    pub fn is_jammed(&self, x: u16, y: u16) -> bool {
+        if !self.config.jamming_enabled {
+            return false;
+        }
+        let pos = forge_types::grid::Position::new(x, y);
+        self.jammed_zones.iter().any(|&(cx, cy, r)| {
+            let center = forge_types::grid::Position::new(cx, cy);
+            pos.manhattan_distance(&center) <= r as u32
+        })
+    }
+
+    /// Queues a message for delivery after the configured latency.
+    pub fn queue_message(&mut self, sender_id: u32, token: u16, recipient_idx: usize, current_tick: u64) {
+        let delivery_tick = current_tick + self.config.latency_ticks;
+        self.pending.push(PendingMessage {
+            sender_id,
+            token,
+            delivery_tick,
+            recipient_idx,
+        });
+    }
+
+    /// Delivers all messages whose `delivery_tick` has arrived.
+    ///
+    /// Returns the delivered messages and removes them from the queue.
+    #[instrument(skip_all)]
+    pub fn deliver_pending(&mut self, current_tick: u64, agents: &mut [Agent], buffer_size: usize) {
+        let mut delivered = Vec::new();
+        let mut remaining = Vec::new();
+
+        for msg in self.pending.drain(..) {
+            if msg.delivery_tick <= current_tick {
+                delivered.push(msg);
+            } else {
+                remaining.push(msg);
+            }
+        }
+        self.pending = remaining;
+
+        for msg in delivered {
+            if msg.recipient_idx < agents.len() {
+                let recipient = &mut agents[msg.recipient_idx];
+                if recipient.alive {
+                    if buffer_size > 0 && recipient.comm_buffer.len() >= buffer_size {
+                        recipient.comm_buffer.remove(0);
+                    }
+                    recipient.comm_buffer.push(msg.token);
+                    trace!(
+                        sender_id = msg.sender_id,
+                        recipient_id = recipient.id,
+                        token = msg.token,
+                        "delayed message delivered"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Returns the number of pending messages.
+    pub fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,5 +527,83 @@ mod tests {
 
         // The second action should be skipped (index >= agents.len())
         assert!(agents[0].comm_buffer.is_empty());
+    }
+
+    // ---- CommChannel tests ----
+
+    #[test]
+    fn test_comm_channel_default() {
+        let ch = CommChannel::default();
+        assert_eq!(ch.config.max_messages_per_tick, 64);
+        assert_eq!(ch.config.latency_ticks, 0);
+        assert!(!ch.config.jamming_enabled);
+        assert!(ch.pending.is_empty());
+    }
+
+    #[test]
+    fn test_comm_channel_queue_and_deliver() {
+        let config = CommChannelConfig {
+            latency_ticks: 2,
+            ..CommChannelConfig::default()
+        };
+        let mut ch = CommChannel::new(config);
+        let mut agents = vec![make_agent(0, 0, 0), make_agent(1, 1, 0)];
+
+        ch.queue_message(0, 5, 1, 10); // should deliver at tick 12
+        assert_eq!(ch.pending_count(), 1);
+
+        ch.deliver_pending(11, &mut agents, 8);
+        assert!(agents[1].comm_buffer.is_empty()); // not yet
+
+        ch.deliver_pending(12, &mut agents, 8);
+        assert_eq!(agents[1].comm_buffer.len(), 1);
+        assert_eq!(agents[1].comm_buffer[0], 5);
+        assert_eq!(ch.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_comm_channel_zero_latency() {
+        let mut ch = CommChannel::new(CommChannelConfig::default());
+        let mut agents = vec![make_agent(0, 0, 0), make_agent(1, 1, 0)];
+
+        ch.queue_message(0, 7, 1, 5);
+        ch.deliver_pending(5, &mut agents, 8);
+        assert_eq!(agents[1].comm_buffer.len(), 1);
+        assert_eq!(agents[1].comm_buffer[0], 7);
+    }
+
+    #[test]
+    fn test_comm_channel_jammed_zone() {
+        let config = CommChannelConfig {
+            jamming_enabled: true,
+            ..CommChannelConfig::default()
+        };
+        let mut ch = CommChannel::new(config);
+        ch.jammed_zones.push((5, 5, 3));
+
+        assert!(ch.is_jammed(5, 5)); // center
+        assert!(ch.is_jammed(6, 5)); // within radius
+        assert!(!ch.is_jammed(20, 20)); // far away
+    }
+
+    #[test]
+    fn test_comm_channel_jamming_disabled() {
+        let ch = CommChannel::default();
+        // Even if zones exist, jamming is disabled
+        assert!(!ch.is_jammed(0, 0));
+    }
+
+    #[test]
+    fn test_comm_channel_config_serialization() {
+        let config = CommChannelConfig {
+            max_messages_per_tick: 128,
+            latency_ticks: 3,
+            jamming_enabled: true,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: CommChannelConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.max_messages_per_tick, 128);
+        assert_eq!(deser.latency_ticks, 3);
+        assert!(deser.jamming_enabled);
     }
 }

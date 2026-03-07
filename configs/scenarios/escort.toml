@@ -1,0 +1,23 @@
+# Escort scenario: protect a VIP unit moving to a destination.
+[scenario]
+name = "escort"
+description = "Escort a VIP unit safely to the destination"
+min_agents = 2
+max_agents = 6
+
+[scenario.map]
+grid_size = 96
+terrain_type = "mixed"
+path_length = 40
+
+[scenario.objectives]
+type = "escort"
+time_limit = 4000
+vip_health_threshold = 0.5
+reward_per_step_alive = 0.005
+completion_bonus = 15.0
+
+[scenario.difficulty]
+base_tier = 4
+fog_of_war = true
+ambush_count = 3

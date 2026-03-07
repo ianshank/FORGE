@@ -165,6 +165,81 @@ pub enum VisibilityState {
     Visible = 2,
 }
 
+/// Configurable terrain properties, complementing the static [`TerrainType`] methods.
+///
+/// These are driven by config and can be tuned per scenario.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TerrainProperties {
+    /// Movement cost multiplier (1.0 = normal).
+    pub movement_cost: f64,
+    /// Concealment bonus applied to agents on this terrain (0.0-1.0).
+    pub concealment_bonus: f64,
+    /// Whether the terrain blocks line-of-sight.
+    pub blocks_los: bool,
+    /// Whether agents can traverse this terrain.
+    pub passable: bool,
+    /// Defensive bonus for agents standing here (0.0-1.0).
+    pub defense_bonus: f64,
+}
+
+impl Default for TerrainProperties {
+    fn default() -> Self {
+        Self {
+            movement_cost: 1.0,
+            concealment_bonus: 0.0,
+            blocks_los: false,
+            passable: true,
+            defense_bonus: 0.0,
+        }
+    }
+}
+
+impl TerrainProperties {
+    /// Returns default properties for a given terrain type.
+    pub fn for_terrain(terrain: TerrainType) -> Self {
+        match terrain {
+            TerrainType::Ground => Self::default(),
+            TerrainType::Water => Self {
+                movement_cost: f64::MAX,
+                passable: false,
+                ..Self::default()
+            },
+            TerrainType::Wall => Self {
+                movement_cost: f64::MAX,
+                blocks_los: true,
+                passable: false,
+                defense_bonus: 0.5,
+                ..Self::default()
+            },
+            TerrainType::Lava => Self {
+                movement_cost: f64::MAX,
+                passable: false,
+                ..Self::default()
+            },
+            TerrainType::Ice => Self {
+                movement_cost: 0.5,
+                ..Self::default()
+            },
+            TerrainType::Sand => Self {
+                movement_cost: 1.5,
+                ..Self::default()
+            },
+            TerrainType::Forest => Self {
+                movement_cost: 2.0,
+                concealment_bonus: 0.3,
+                ..Self::default()
+            },
+            TerrainType::Mountain => Self {
+                movement_cost: f64::MAX,
+                blocks_los: true,
+                passable: false,
+                defense_bonus: 0.3,
+                ..Self::default()
+            },
+        }
+    }
+}
+
 /// A single tile in the world grid.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Tile {

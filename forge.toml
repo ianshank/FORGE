@@ -1,0 +1,65 @@
+# FORGE — Flexible Open-ended Reasoning & Game Environment
+# Root configuration file. All values are overridable via environment
+# variables with the FORGE_ prefix (e.g. FORGE_SIMULATION_GRID_SIZE=128).
+
+[hardware]
+# Number of parallel simulation workers.
+num_workers = 4
+# Device for ML inference: "cpu", "cuda", "mps".
+device = "cpu"
+# Whether to pin memory for faster GPU transfers.
+pin_memory = false
+# Maximum GPU memory fraction to use (0.0-1.0).
+gpu_memory_fraction = 0.9
+
+[simulation]
+# Grid dimensions (width × height).
+grid_size = 64
+# Maximum agents per team.
+max_agents_per_team = 16
+# Random seed (0 = random).
+seed = 0
+# Maximum episode length in ticks.
+max_episode_length = 10000
+# Whether fog-of-war is enabled.
+fog_of_war = true
+# Biome noise scale for terrain generation.
+biome_scale = 0.1
+# Resource spawn density (0.0-1.0).
+resource_density = 0.3
+# Day/night cycle length in ticks (0 = disabled).
+day_night_cycle_length = 1000
+# Communication vocabulary size (0 = disabled).
+comm_vocab_size = 16
+# Communication broadcast radius in tiles.
+comm_radius = 10
+# Schema version for serialized state.
+schema_version = 1
+
+[training]
+# Learning rate for policy optimisation.
+learning_rate = 3e-4
+# Discount factor (gamma).
+gamma = 0.99
+# GAE lambda for advantage estimation.
+gae_lambda = 0.95
+# PPO clip ratio.
+clip_ratio = 0.2
+# Number of training epochs per rollout.
+epochs = 4
+# Batch size for training updates.
+batch_size = 256
+# Rollout buffer length in timesteps.
+rollout_length = 2048
+# Target success rate for curriculum advancement.
+target_success_rate = 0.5
+# Curriculum window size for rolling statistics.
+curriculum_window_size = 100
+# Checkpoint save interval in episodes.
+checkpoint_interval = 100
+# Entropy bonus coefficient.
+entropy_coeff = 0.01
+# Value loss coefficient.
+value_coeff = 0.5
+# Maximum gradient norm for clipping.
+max_grad_norm = 0.5

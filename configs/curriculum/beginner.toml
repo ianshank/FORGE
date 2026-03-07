@@ -1,0 +1,24 @@
+# Beginner curriculum: small maps, few agents, simple objectives.
+[curriculum]
+name = "beginner"
+description = "Entry-level curriculum for initial policy training"
+
+[curriculum.params]
+grid_size = 32
+num_agents = 2
+fog_of_war = false
+enemy_skill = 0.1
+terrain_complexity = 0.2
+resource_scarcity = 0.1
+
+[curriculum.advancement]
+target_success_rate = 0.6
+window_size = 50
+warmup_episodes = 20
+advance_threshold = 0.7
+retreat_threshold = 0.3
+
+[curriculum.tiers]
+min_tier = 1
+max_tier = 2
+starting_tier = 1

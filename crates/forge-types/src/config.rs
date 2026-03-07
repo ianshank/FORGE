@@ -3,10 +3,24 @@
 //! All simulation parameters are configurable through these structs.
 //! No hard-coded values — defaults are provided via `Default` trait
 //! and can be overridden at construction time.
+//!
+//! # Loading from TOML
+//!
+//! ```no_run
+//! use forge_types::config::ForgeConfig;
+//! let config = ForgeConfig::from_toml("forge.toml").unwrap();
+//! ```
+//!
+//! Environment variables with the `FORGE_` prefix override file values:
+//! `FORGE_WORLD_WIDTH=128` overrides `world.width`.
+
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
 use crate::constants;
+use crate::error::{ConfigError, ForgeError};
 
 /// Top-level configuration for a FORGE simulation instance.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -254,6 +268,110 @@ impl Default for RenderConfig {
     }
 }
 
+/// Environment variable prefix for config overrides.
+const ENV_PREFIX: &str = "FORGE_";
+
+impl ForgeConfig {
+    /// Loads configuration from a TOML file, falling back to defaults for
+    /// missing fields. Environment variable overrides are applied after loading.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ForgeError::Config`] if the file cannot be read or parsed.
+    pub fn from_toml<P: AsRef<Path>>(path: P) -> Result<Self, ForgeError> {
+        let path = path.as_ref();
+        let contents = std::fs::read_to_string(path).map_err(|e| {
+            warn!(?path, error = %e, "failed to read config file");
+            ConfigError::ParseError(format!("cannot read {}: {e}", path.display()))
+        })?;
+        let mut config = Self::from_toml_str(&contents)?;
+        config.apply_env_overrides();
+        debug!(?path, "loaded config from TOML");
+        Ok(config)
+    }
+
+    /// Parses configuration from a TOML string, falling back to defaults for
+    /// missing fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ForgeError::Config`] if the string is not valid TOML.
+    pub fn from_toml_str(toml_str: &str) -> Result<Self, ForgeError> {
+        toml::from_str(toml_str).map_err(|e| {
+            warn!(error = %e, "failed to parse TOML config");
+            ConfigError::ParseError(format!("invalid TOML: {e}"))
+        }).map_err(ForgeError::from)
+    }
+
+    /// Applies environment variable overrides with the `FORGE_` prefix.
+    ///
+    /// Mapping: `FORGE_<SECTION>_<FIELD>` (uppercase, underscores).
+    /// For example, `FORGE_WORLD_WIDTH=128` sets `world.width = 128`.
+    pub fn apply_env_overrides(&mut self) {
+        macro_rules! env_override {
+            ($section:ident . $field:ident, $ty:ty) => {
+                let key = format!(
+                    "{}{}_{}", ENV_PREFIX,
+                    stringify!($section).to_uppercase(),
+                    stringify!($field).to_uppercase()
+                );
+                if let Ok(val) = std::env::var(&key) {
+                    match val.parse::<$ty>() {
+                        Ok(parsed) => {
+                            debug!(key = %key, value = %val, "applying env override");
+                            self.$section.$field = parsed;
+                        }
+                        Err(e) => {
+                            warn!(key = %key, value = %val, error = %e, "invalid env override");
+                        }
+                    }
+                }
+            };
+        }
+
+        // World overrides
+        env_override!(world.width, u16);
+        env_override!(world.height, u16);
+        env_override!(world.seed, u64);
+        env_override!(world.biome_scale, f32);
+        env_override!(world.resource_density, f32);
+        env_override!(world.day_night_cycle_length, u32);
+        env_override!(world.max_entities, u16);
+
+        // Physics overrides
+        env_override!(physics.collision_enabled, bool);
+        env_override!(physics.stamina_cost_move, i32);
+        env_override!(physics.stamina_regen_rate, i32);
+        env_override!(physics.max_velocity, i32);
+        env_override!(physics.friction, i32);
+        env_override!(physics.projectiles_enabled, bool);
+
+        // Agent overrides
+        env_override!(agents.num_agents, u32);
+        env_override!(agents.default_vision_radius, u8);
+        env_override!(agents.default_carry_capacity, u8);
+        env_override!(agents.comm_vocab_size, u16);
+        env_override!(agents.comm_radius, u16);
+
+        // Task overrides
+        env_override!(task.max_tier, u8);
+        env_override!(task.max_episode_length, u64);
+        env_override!(task.reward_scale, f32);
+        env_override!(task.dense_rewards, bool);
+
+        // Curriculum overrides
+        env_override!(curriculum.enabled, bool);
+        env_override!(curriculum.target_success_rate, f32);
+        env_override!(curriculum.window_size, u32);
+
+        // Rendering overrides
+        env_override!(rendering.pixel_observations, bool);
+        env_override!(rendering.pixel_width, u32);
+        env_override!(rendering.pixel_height, u32);
+        env_override!(rendering.record_replays, bool);
+    }
+}
+
 /// Team configuration for multi-agent scenarios.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[non_exhaustive]
@@ -270,6 +388,86 @@ pub enum TeamStructure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_from_toml_str_partial() {
+        let toml_str = r#"
+[world]
+width = 128
+height = 128
+
+[agents]
+num_agents = 4
+"#;
+        let config = ForgeConfig::from_toml_str(toml_str).unwrap();
+        assert_eq!(config.world.width, 128);
+        assert_eq!(config.world.height, 128);
+        assert_eq!(config.agents.num_agents, 4);
+        // Defaults should fill in
+        assert_eq!(config.world.seed, constants::DEFAULT_SEED);
+        assert_eq!(config.physics.collision_enabled, true);
+    }
+
+    #[test]
+    fn test_from_toml_str_empty() {
+        let config = ForgeConfig::from_toml_str("").unwrap();
+        let defaults = ForgeConfig::default();
+        assert_eq!(config.world.width, defaults.world.width);
+        assert_eq!(config.agents.num_agents, defaults.agents.num_agents);
+    }
+
+    #[test]
+    fn test_from_toml_str_invalid() {
+        let result = ForgeConfig::from_toml_str("invalid [[[ toml");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_toml_file() {
+        let dir = std::env::temp_dir().join("forge_test_config");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test_config.toml");
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(f, "[world]\nwidth = 32\nheight = 32").unwrap();
+        drop(f);
+
+        let config = ForgeConfig::from_toml(&path).unwrap();
+        assert_eq!(config.world.width, 32);
+        assert_eq!(config.world.height, 32);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_from_toml_missing_file() {
+        let result = ForgeConfig::from_toml("/nonexistent/path/config.toml");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_env_overrides() {
+        // Set env vars, apply overrides, then clean up
+        std::env::set_var("FORGE_WORLD_WIDTH", "200");
+        std::env::set_var("FORGE_AGENTS_NUM_AGENTS", "8");
+        let mut config = ForgeConfig::default();
+        config.apply_env_overrides();
+        assert_eq!(config.world.width, 200);
+        assert_eq!(config.agents.num_agents, 8);
+        std::env::remove_var("FORGE_WORLD_WIDTH");
+        std::env::remove_var("FORGE_AGENTS_NUM_AGENTS");
+    }
+
+    #[test]
+    fn test_env_overrides_invalid_value() {
+        std::env::set_var("FORGE_WORLD_WIDTH", "not_a_number");
+        let mut config = ForgeConfig::default();
+        let original_width = config.world.width;
+        config.apply_env_overrides();
+        // Invalid value should be ignored
+        assert_eq!(config.world.width, original_width);
+        std::env::remove_var("FORGE_WORLD_WIDTH");
+    }
 
     #[test]
     fn test_default_config_is_valid() {

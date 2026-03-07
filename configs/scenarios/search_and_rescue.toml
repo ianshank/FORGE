@@ -1,0 +1,23 @@
+# Search and rescue: locate and extract targets under time pressure.
+[scenario]
+name = "search_and_rescue"
+description = "Find and rescue scattered targets before time expires"
+min_agents = 2
+max_agents = 8
+
+[scenario.map]
+grid_size = 128
+terrain_type = "wilderness"
+target_count = 5
+extraction_zone_count = 2
+
+[scenario.objectives]
+type = "collect"
+time_limit = 5000
+reward_per_rescue = 3.0
+completion_bonus = 20.0
+
+[scenario.difficulty]
+base_tier = 4
+fog_of_war = true
+hazard_zones = 2

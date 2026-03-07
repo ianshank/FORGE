@@ -1,0 +1,23 @@
+# Patrol scenario: agents must visit a sequence of waypoints.
+[scenario]
+name = "patrol"
+description = "Agents patrol a route, visiting waypoints in order"
+min_agents = 1
+max_agents = 4
+
+[scenario.map]
+grid_size = 64
+terrain_type = "mixed"
+num_waypoints = 6
+waypoint_radius = 3
+
+[scenario.objectives]
+type = "sequence"
+time_limit = 2000
+reward_per_waypoint = 1.0
+completion_bonus = 5.0
+
+[scenario.difficulty]
+base_tier = 2
+fog_of_war = true
+enemy_patrols = false

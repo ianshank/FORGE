@@ -1,0 +1,24 @@
+# Intermediate curriculum: medium maps, more agents, compound objectives.
+[curriculum]
+name = "intermediate"
+description = "Mid-level curriculum introducing fog-of-war and multi-agent coordination"
+
+[curriculum.params]
+grid_size = 64
+num_agents = 4
+fog_of_war = true
+enemy_skill = 0.4
+terrain_complexity = 0.5
+resource_scarcity = 0.4
+
+[curriculum.advancement]
+target_success_rate = 0.5
+window_size = 100
+warmup_episodes = 50
+advance_threshold = 0.65
+retreat_threshold = 0.25
+
+[curriculum.tiers]
+min_tier = 2
+max_tier = 4
+starting_tier = 2
