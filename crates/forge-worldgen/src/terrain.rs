@@ -228,6 +228,37 @@ mod tests {
     }
 
     #[test]
+    fn test_moisture_at_values_in_range() {
+        let config = default_config();
+        let gen = TerrainGenerator::new(&config, 42);
+
+        for y in 0..config.height.min(20) {
+            for x in 0..config.width.min(20) {
+                let moisture = gen.moisture_at(x, y);
+                assert!(
+                    (0.0..=1.0).contains(&moisture),
+                    "Moisture out of range at ({x}, {y}): {moisture}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_moisture_at_determinism() {
+        let config = default_config();
+        let gen1 = TerrainGenerator::new(&config, 42);
+        let gen2 = TerrainGenerator::new(&config, 42);
+
+        for y in 0..config.height.min(10) {
+            for x in 0..config.width.min(10) {
+                let m1 = gen1.moisture_at(x, y);
+                let m2 = gen2.moisture_at(x, y);
+                assert_eq!(m1, m2, "Moisture not deterministic at ({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
     fn test_all_tiles_have_valid_terrain() {
         let config = default_config();
         let gen = TerrainGenerator::new(&config, 777);

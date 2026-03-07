@@ -17,6 +17,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
     from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -62,7 +63,7 @@ def sample_results_md(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-async def client():
+async def client() -> AsyncIterator[AsyncClient]:
     """AsyncClient over the FastAPI ASGI app."""
     from demo_ui.backend.main import app  # noqa: PLC0415
 
@@ -136,7 +137,7 @@ def test_parse_results_md_missing_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_health_endpoint(client) -> None:
+async def test_health_endpoint(client: AsyncClient) -> None:
     """GET /health returns 200 and ok status."""
     resp = await client.get("/health")
     assert resp.status_code == 200
@@ -144,7 +145,7 @@ async def test_health_endpoint(client) -> None:
 
 
 @pytest.mark.anyio
-async def test_sections_endpoint_count(client) -> None:
+async def test_sections_endpoint_count(client: AsyncClient) -> None:
     """GET /api/sections returns exactly 8 sections."""
     resp = await client.get("/api/sections")
     assert resp.status_code == 200
@@ -154,7 +155,7 @@ async def test_sections_endpoint_count(client) -> None:
 
 
 @pytest.mark.anyio
-async def test_sections_endpoint_keys(client) -> None:
+async def test_sections_endpoint_keys(client: AsyncClient) -> None:
     """GET /api/sections contains all expected section keys."""
     from demo_ui.backend.forge_runner import SECTIONS  # noqa: PLC0415
 
@@ -164,7 +165,7 @@ async def test_sections_endpoint_keys(client) -> None:
 
 
 @pytest.mark.anyio
-async def test_sections_endpoint_schema(client) -> None:
+async def test_sections_endpoint_schema(client: AsyncClient) -> None:
     """Each section object has key, name, and index fields."""
     resp = await client.get("/api/sections")
     for sec in resp.json():
@@ -174,7 +175,7 @@ async def test_sections_endpoint_schema(client) -> None:
 
 
 @pytest.mark.anyio
-async def test_results_endpoint(client) -> None:
+async def test_results_endpoint(client: AsyncClient) -> None:
     """GET /api/results returns a dict with expected keys."""
     resp = await client.get("/api/results")
     assert resp.status_code == 200
@@ -185,14 +186,14 @@ async def test_results_endpoint(client) -> None:
 
 
 @pytest.mark.anyio
-async def test_run_unknown_section(client) -> None:
+async def test_run_unknown_section(client: AsyncClient) -> None:
     """POST /api/run/<bad> returns 404."""
     resp = await client.post("/api/run/not_a_section", json={"seed": 42, "quick": True})
     assert resp.status_code == 404
 
 
 @pytest.mark.anyio
-async def test_run_section_returns_stream(client) -> None:
+async def test_run_section_returns_stream(client: AsyncClient) -> None:
     """POST /api/run/worldgen returns text/event-stream content type."""
     resp = await client.post("/api/run/worldgen", json={"seed": 42, "quick": True})
     assert resp.status_code == 200
@@ -201,7 +202,7 @@ async def test_run_section_returns_stream(client) -> None:
 
 
 @pytest.mark.anyio
-async def test_run_all_returns_stream(client) -> None:
+async def test_run_all_returns_stream(client: AsyncClient) -> None:
     """POST /api/run-all returns text/event-stream content type."""
     resp = await client.post("/api/run-all", json={"seed": 42, "quick": True})
     assert resp.status_code == 200
