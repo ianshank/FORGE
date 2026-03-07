@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(clippy::all)]
+
 //! # forge-task
 //!
 //! Task DSL, procedural task generation, and curriculum controller
@@ -15,3 +18,4 @@ pub mod difficulty;
 pub mod evaluator;
 pub mod generator;
 pub mod predicate;
+pub mod prelude;

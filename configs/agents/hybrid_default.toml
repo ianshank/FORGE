@@ -1,0 +1,29 @@
+# Hybrid agent: MAPPO policy guided by MCTS lookahead.
+[agent]
+name = "hybrid_default"
+type = "hybrid"
+description = "MAPPO + MCTS: neural policy with tree-search refinement"
+
+[agent.policy]
+hidden_sizes = [256, 256]
+activation = "relu"
+use_recurrent = false
+
+[agent.search]
+num_simulations = 50
+max_depth = 10
+exploration_constant = 1.414
+mcts_weight = 0.3
+
+[agent.training]
+learning_rate = 3e-4
+gamma = 0.99
+gae_lambda = 0.95
+clip_ratio = 0.2
+epochs = 4
+batch_size = 256
+
+[agent.intent]
+enable_declarations = true
+confidence_threshold = 0.7
+max_history = 50

@@ -144,7 +144,10 @@ pub fn evaluate_composition(
         }
 
         other => {
-            warn!(?other, "unhandled TaskComposition variant in evaluate_composition");
+            warn!(
+                ?other,
+                "unhandled TaskComposition variant in evaluate_composition"
+            );
             PredicateResult {
                 satisfied: false,
                 progress: 0.0,

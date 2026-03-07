@@ -366,6 +366,73 @@ mod tests {
     }
 
     #[test]
+    fn test_greedy_navigator_out_of_bounds_agent_idx() {
+        let state = make_test_world();
+        let mut agent = GreedyNavigator::new(5, 5);
+        // agent_idx 99 is out of bounds
+        let action = agent.select_action(&state, 99);
+        assert_eq!(action, Action::Noop);
+    }
+
+    #[test]
+    fn test_greedy_navigator_dead_agent() {
+        let mut state = make_test_world();
+        state.agents[0].alive = false;
+        let mut agent = GreedyNavigator::new(5, 5);
+        let action = agent.select_action(&state, 0);
+        assert_eq!(action, Action::Noop);
+    }
+
+    #[test]
+    fn test_greedy_navigator_left_movement() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.agents.num_agents = 1;
+        let mut state = WorldState::new(config).unwrap();
+
+        // Agent at (8, 5), target at (2, 5) — should move left
+        state.agents[0].position = Position::new(8, 5);
+        let mut agent = GreedyNavigator::new(2, 5);
+        let action = agent.select_action(&state, 0);
+        assert_eq!(action, Action::Move(Direction::Left));
+    }
+
+    #[test]
+    fn test_greedy_navigator_up_movement() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.agents.num_agents = 1;
+        let mut state = WorldState::new(config).unwrap();
+
+        // Agent at (5, 8), target at (5, 2) — should move up
+        state.agents[0].position = Position::new(5, 8);
+        let mut agent = GreedyNavigator::new(5, 2);
+        let action = agent.select_action(&state, 0);
+        assert_eq!(action, Action::Move(Direction::Up));
+    }
+
+    #[test]
+    fn test_heuristic_agent_out_of_bounds_agent_idx() {
+        let state = make_test_world();
+        let rng = Pcg64Mcg::seed_from_u64(42);
+        let mut agent = HeuristicAgent::new(rng, 0);
+        let action = agent.select_action(&state, 99);
+        assert_eq!(action, Action::Noop);
+    }
+
+    #[test]
+    fn test_heuristic_agent_dead_agent() {
+        let mut state = make_test_world();
+        state.agents[0].alive = false;
+        let rng = Pcg64Mcg::seed_from_u64(42);
+        let mut agent = HeuristicAgent::new(rng, 0);
+        let action = agent.select_action(&state, 0);
+        assert_eq!(action, Action::Noop);
+    }
+
+    #[test]
     fn test_agent_name() {
         let noop = NoopAgent;
         assert_eq!(noop.name(), "NoopAgent");

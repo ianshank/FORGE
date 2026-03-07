@@ -1,0 +1,24 @@
+# Area denial scenario: team must prevent opponents from entering a zone.
+[scenario]
+name = "area_denial"
+description = "Defend a zone from opposing agents"
+min_agents = 2
+max_agents = 8
+
+[scenario.map]
+grid_size = 64
+terrain_type = "urban"
+zone_radius = 8
+zone_count = 1
+
+[scenario.objectives]
+type = "hold_area"
+time_limit = 3000
+hold_duration = 500
+reward_per_tick_held = 0.01
+completion_bonus = 10.0
+
+[scenario.difficulty]
+base_tier = 3
+fog_of_war = true
+enemy_skill = 0.5

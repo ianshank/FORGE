@@ -1,0 +1,28 @@
+# MCTS (Monte Carlo Tree Search) default agent configuration.
+[agent]
+name = "mcts_default"
+type = "mcts"
+description = "MCTS with UCB1 selection and optional learned value/policy"
+
+[agent.search]
+num_simulations = 100
+max_depth = 20
+exploration_constant = 1.414
+temperature = 1.0
+dirichlet_alpha = 0.3
+dirichlet_weight = 0.25
+
+[agent.world_model]
+type = "learned"
+hidden_sizes = [128, 128]
+predict_reward = true
+predict_done = true
+
+[agent.value_network]
+hidden_sizes = [128, 128]
+learning_rate = 1e-3
+
+[agent.training]
+buffer_size = 10000
+batch_size = 64
+train_interval = 10

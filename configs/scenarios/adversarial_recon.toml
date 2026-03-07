@@ -1,0 +1,25 @@
+# Adversarial recon: gather intel while avoiding detection.
+[scenario]
+name = "adversarial_recon"
+description = "Scout enemy positions without being detected"
+min_agents = 1
+max_agents = 4
+
+[scenario.map]
+grid_size = 96
+terrain_type = "forest"
+intel_point_count = 8
+enemy_patrol_count = 6
+
+[scenario.objectives]
+type = "recon"
+time_limit = 3000
+intel_points_required = 5
+reward_per_intel = 2.0
+detection_penalty = -5.0
+completion_bonus = 15.0
+
+[scenario.difficulty]
+base_tier = 5
+fog_of_war = true
+enemy_vision_radius = 6

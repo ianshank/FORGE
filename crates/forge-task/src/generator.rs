@@ -673,6 +673,126 @@ mod tests {
     }
 
     #[test]
+    fn test_describe_predicate_object_at() {
+        let task = TaskComposition::Atom(Predicate::ObjectAt(5, Position::new(10, 20)));
+        let desc = describe_task(&task);
+        assert!(desc.contains("object 5"));
+        assert!(desc.contains("10"));
+        assert!(desc.contains("20"));
+    }
+
+    #[test]
+    fn test_describe_predicate_object_in_state() {
+        let task = TaskComposition::Atom(Predicate::ObjectInState(3, "Open".to_string()));
+        let desc = describe_task(&task);
+        assert!(desc.contains("object 3"));
+        assert!(desc.contains("Open"));
+    }
+
+    #[test]
+    fn test_describe_predicate_time_elapsed() {
+        let task = TaskComposition::Atom(Predicate::TimeElapsed(100));
+        let desc = describe_task(&task);
+        assert!(desc.contains("100"));
+        assert!(desc.contains("elapsed"));
+    }
+
+    #[test]
+    fn test_describe_predicate_health_above() {
+        let task = TaskComposition::Atom(Predicate::HealthAbove(0, 0.5));
+        let desc = describe_task(&task);
+        assert!(desc.contains("agent 0"));
+        assert!(desc.contains("health"));
+        assert!(desc.contains("50"));
+    }
+
+    #[test]
+    fn test_describe_predicate_resource_count() {
+        let task = TaskComposition::Atom(Predicate::ResourceCount(1, ItemType::Ore, 5));
+        let desc = describe_task(&task);
+        assert!(desc.contains("agent 1"));
+        assert!(desc.contains("5"));
+    }
+
+    #[test]
+    fn test_describe_predicate_team_alive() {
+        let task = TaskComposition::Atom(Predicate::TeamAlive(2));
+        let desc = describe_task(&task);
+        assert!(desc.contains("team 2"));
+        assert!(desc.contains("alive"));
+    }
+
+    #[test]
+    fn test_describe_predicate_agent_on_terrain() {
+        let task = TaskComposition::Atom(Predicate::AgentOnTerrain(0, 3));
+        let desc = describe_task(&task);
+        assert!(desc.contains("agent 0"));
+        assert!(desc.contains("terrain"));
+    }
+
+    #[test]
+    fn test_describe_task_or() {
+        let task = TaskComposition::Or(vec![
+            TaskComposition::Atom(Predicate::AgentAt(0, Position::new(1, 1))),
+            TaskComposition::Atom(Predicate::AgentHas(0, ItemType::Wood, 1)),
+        ]);
+        let desc = describe_task(&task);
+        assert!(desc.contains("OR"));
+    }
+
+    #[test]
+    fn test_describe_task_while() {
+        let task = TaskComposition::While(
+            Box::new(TaskComposition::Atom(Predicate::HealthAbove(0, 0.5))),
+            Box::new(TaskComposition::Atom(Predicate::AgentAt(
+                0,
+                Position::new(5, 5),
+            ))),
+        );
+        let desc = describe_task(&task);
+        assert!(desc.contains("While"));
+    }
+
+    #[test]
+    fn test_describe_task_without() {
+        let task = TaskComposition::Without(
+            Box::new(TaskComposition::Atom(Predicate::AgentHas(
+                0,
+                ItemType::Wood,
+                1,
+            ))),
+            0,
+        );
+        let desc = describe_task(&task);
+        assert!(desc.contains("without"));
+        assert!(desc.contains("action 0"));
+    }
+
+    #[test]
+    fn test_task_gen_config_default() {
+        let config = TaskGenConfig::default();
+        assert_eq!(config.max_tier, 6);
+        assert_eq!(config.world_width, 64);
+        assert_eq!(config.world_height, 64);
+        assert_eq!(config.num_agents, 1);
+        assert_eq!(config.max_predicates, 32);
+        assert_eq!(config.base_reward, 1.0);
+    }
+
+    #[test]
+    fn test_generate_tier6_single_agent() {
+        let config = TaskGenConfig {
+            num_agents: 1,
+            ..default_config()
+        };
+        let mut rng = make_rng(42);
+        let task = generate_task(&mut rng, 6, &config, 0);
+        assert!(!task.description.is_empty());
+        // Single agent path should still produce a valid task
+        assert!(task.estimated_steps >= 1);
+    }
+
+    #[test]
     fn test_count_atoms() {
         let task = TaskComposition::And(vec![
             TaskComposition::Atom(Predicate::AgentAt(0, Position::new(0, 0))),

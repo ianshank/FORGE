@@ -79,6 +79,15 @@ pub fn update_visibility(agents: &[Agent], grid: &mut Grid, day_phase: u8) {
     }
 }
 
+/// Public accessor for line-of-sight queries from other modules.
+///
+/// Returns `true` if there is a clear line of sight from `(x0, y0)` to
+/// `(x1, y1)` on the given grid using Bresenham ray casting.
+#[instrument(skip_all)]
+pub fn check_line_of_sight(grid: &Grid, x0: u16, y0: u16, x1: u16, y1: u16) -> bool {
+    has_line_of_sight(grid, x0 as i32, y0 as i32, x1 as i32, y1 as i32)
+}
+
 /// Checks line of sight between two positions using Bresenham's line algorithm.
 ///
 /// Only intermediate tiles are checked for vision blockers — the start and end

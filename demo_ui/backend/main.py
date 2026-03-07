@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -80,7 +83,7 @@ async def run_demo_section(section: str, req: RunRequest) -> StreamingResponse:
     if section not in SECTIONS:
         raise HTTPException(status_code=404, detail=f"Unknown section: {section}")
 
-    async def event_stream():
+    async def event_stream() -> AsyncIterator[str]:
         async for line in run_section(section, seed=req.seed, quick=req.quick):
             # SSE format: "data: <payload>\n\n"
             payload = line.rstrip("\n").rstrip("\r")
@@ -101,7 +104,7 @@ async def run_demo_section(section: str, req: RunRequest) -> StreamingResponse:
 async def run_all_sections(req: RunRequest) -> StreamingResponse:
     """Stream all 8 sections sequentially via SSE."""
 
-    async def event_stream():
+    async def event_stream() -> AsyncIterator[str]:
         async for line in run_all(seed=req.seed, quick=req.quick):
             payload = line.rstrip("\n").rstrip("\r")
             yield f"data: {json.dumps(payload)}\n\n"

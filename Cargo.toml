@@ -8,6 +8,8 @@ members = [
     "crates/forge-bench",
     "crates/forge-python",
     "crates/forge-wasm",
+    "crates/forge-procgen",
+    "crates/forge-server",
 ]
 resolver = "2"
 
@@ -36,6 +38,9 @@ authors = ["Ian Shank"]
 license = "Apache-2.0"
 repository = "https://github.com/ianshank/FORGE"
 description = "Fast Open-source Runtime for Generalist Environments"
+rust-version = "1.75"
+keywords = ["simulation", "reinforcement-learning", "multi-agent", "game-engine"]
+categories = ["simulation", "game-engines"]
 
 [workspace.dependencies]
 # Shared types crate

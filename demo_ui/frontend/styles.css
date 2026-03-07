@@ -621,7 +621,168 @@ html, body {
   border-radius: 1px;
 }
 
-/* Scrollbar styling */
+/* ---------------------------------------------------------
+   10. Day/Night Indicator
+   --------------------------------------------------------- */
+.daynight-indicator {
+  display: flex;
+  gap: 4px;
+}
+
+.daynight-phase {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  opacity: 0.35;
+  transition: all 0.3s ease;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.daynight-phase.active {
+  opacity: 1;
+  border-color: var(--cyan);
+}
+
+#phase-dawn.active  { background: rgba(255,179,71,0.15); border-color: var(--amber); color: var(--amber); }
+#phase-day.active   { background: rgba(255,213,77,0.15); border-color: #ffd54f; color: #ffd54f; }
+#phase-dusk.active  { background: rgba(255,87,34,0.15); border-color: #ff5722; color: #ff5722; }
+#phase-night.active { background: rgba(100,149,237,0.15); border-color: #6495ed; color: #6495ed; }
+
+.phase-icon { font-size: 16px; line-height: 1; }
+.phase-name { font-size: 9px; font-weight: 600; letter-spacing: 0.5px; margin-top: 2px; }
+
+/* ---------------------------------------------------------
+   11. Terrain Legend
+   --------------------------------------------------------- */
+.terrain-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------
+   12. Inventory Display
+   --------------------------------------------------------- */
+.inventory-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 28px;
+}
+
+.inventory-item {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--cyan);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inventory-item .item-count {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.inventory-empty {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------
+   13. Speed Slider
+   --------------------------------------------------------- */
+.speed-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 60px;
+  height: 4px;
+  background: var(--bg-base);
+  border-radius: 2px;
+  outline: none;
+  border: 1px solid var(--border);
+}
+
+.speed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--cyan);
+  cursor: pointer;
+  border: none;
+}
+
+.speed-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--cyan);
+  cursor: pointer;
+  border: none;
+}
+
+/* ---------------------------------------------------------
+   14. Footer Stats
+   --------------------------------------------------------- */
+.footer-stats {
+  display: flex;
+  gap: 12px;
+  margin-left: 8px;
+}
+
+.footer-stat {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ---------------------------------------------------------
+   15. Stat Card Row Layout
+   --------------------------------------------------------- */
+.stat-card-row {
+  display: flex;
+  gap: 12px;
+}
+
+.stat-card-row > div {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------
+   16. Scrollbar Styling
+   --------------------------------------------------------- */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }

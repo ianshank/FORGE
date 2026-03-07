@@ -224,13 +224,21 @@ pub struct Object {
 #[non_exhaustive]
 #[repr(u8)]
 pub enum ObjectType {
+    /// Heavy pushable boulder.
     Boulder = 0,
+    /// Openable/closeable door.
     Door = 1,
+    /// Toggleable switch or lever.
     Switch = 2,
+    /// Storage container for items.
     Container = 3,
+    /// Station required for advanced crafting recipes.
     CraftingStation = 4,
+    /// Placeable bridge for crossing water.
     Bridge = 5,
+    /// Floor-activated pressure plate.
     PressurePlate = 6,
+    /// Light-emitting torch object.
     Torch = 7,
 }
 

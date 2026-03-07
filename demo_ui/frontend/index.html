@@ -13,7 +13,7 @@
 <body>
   <div id="app">
 
-    <!-- ───────────────── HEADER ───────────────── -->
+    <!-- HEADER -->
     <header id="header">
       <div class="traffic-lights" style="margin-right:4px">
         <div class="tl tl-red"></div>
@@ -38,13 +38,13 @@
       </div>
       <div class="header-right">
         <div style="font-size:11px;color:var(--text-dim)">
-          🔗 <a href="https://github.com/iansherer/forge" target="_blank"
+          <a href="https://github.com/ianshank/FORGE" target="_blank"
             style="color:var(--cyan-dim);text-decoration:none;">GitHub</a>
         </div>
       </div>
     </header>
 
-    <!-- ───────────────── SIDEBAR ───────────────── -->
+    <!-- SIDEBAR -->
     <nav id="sidebar">
       <div class="sidebar-title">Demo Sections</div>
       <div id="section-list">
@@ -52,7 +52,7 @@
       </div>
     </nav>
 
-    <!-- ───────────────── TERMINAL ───────────────── -->
+    <!-- TERMINAL -->
     <main id="terminal-panel">
       <div class="panel-header">
         <div class="panel-title">Live Output</div>
@@ -62,7 +62,7 @@
       </div>
       <div class="terminal-card">
         <div id="terminal-output">
-          <span class="c-muted">Waiting for FORGE… Click a section or Run All to start.</span><span
+          <span class="c-muted">Waiting for FORGE... Click a section or Run All to start.</span><span
             class="cursor-blink"></span>
         </div>
         <div class="terminal-prompt">
@@ -72,7 +72,7 @@
       </div>
     </main>
 
-    <!-- ───────────────── STATS PANEL ───────────────── -->
+    <!-- STATS PANEL -->
     <aside id="stats-panel">
 
       <!-- Live metrics -->
@@ -82,22 +82,66 @@
         <div class="stat-sub">deterministic run</div>
       </div>
 
-      <div class="stat-card">
-        <div class="stat-label">Steps / Second</div>
-        <div class="stat-value" id="stat-fps">—</div>
-        <div class="stat-sub" id="stat-fps-sub">from baseline results</div>
+      <div class="stat-card stat-card-row">
+        <div>
+          <div class="stat-label">Steps / Second</div>
+          <div class="stat-value" id="stat-fps">—</div>
+          <div class="stat-sub" id="stat-fps-sub">from baseline results</div>
+        </div>
+        <div>
+          <div class="stat-label">us / Step</div>
+          <div class="stat-value" id="stat-us">—</div>
+          <div class="stat-sub">Python + PyO3 overhead</div>
+        </div>
       </div>
 
+      <!-- Day/Night Phase Indicator -->
       <div class="stat-card">
-        <div class="stat-label">us / Step</div>
-        <div class="stat-value" id="stat-us">—</div>
-        <div class="stat-sub">Python + PyO3 overhead</div>
+        <div class="stat-label">Day/Night Phase</div>
+        <div class="daynight-indicator">
+          <div class="daynight-phase" id="phase-dawn" title="Dawn">
+            <span class="phase-icon">&#x1F305;</span>
+            <span class="phase-name">Dawn</span>
+          </div>
+          <div class="daynight-phase" id="phase-day" title="Day">
+            <span class="phase-icon">&#x2600;</span>
+            <span class="phase-name">Day</span>
+          </div>
+          <div class="daynight-phase" id="phase-dusk" title="Dusk">
+            <span class="phase-icon">&#x1F307;</span>
+            <span class="phase-name">Dusk</span>
+          </div>
+          <div class="daynight-phase" id="phase-night" title="Night">
+            <span class="phase-icon">&#x1F319;</span>
+            <span class="phase-name">Night</span>
+          </div>
+        </div>
       </div>
 
-      <!-- World canvas -->
+      <!-- World canvas (enlarged) -->
       <div id="world-canvas-wrap">
         <div class="stat-label">World View</div>
-        <canvas id="world-canvas" width="220" height="220"></canvas>
+        <canvas id="world-canvas" width="280" height="280"></canvas>
+        <div class="terrain-legend">
+          <span class="legend-item"><span class="legend-swatch" style="background:#4a5568"></span>Ground</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#2196F3"></span>Water</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#4caf50"></span>Forest</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#ffd54f"></span>Sand</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#80deea"></span>Ice</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#f44336"></span>Lava</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#ff9800"></span>Mountain</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#ff1744"></span>Agent</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#e040fb"></span>Resource</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#ffcc02"></span>Object</span>
+        </div>
+      </div>
+
+      <!-- Agent Inventory -->
+      <div class="stat-card">
+        <div class="stat-label">Agent Inventory</div>
+        <div id="inventory-display" class="inventory-grid">
+          <span class="inventory-empty">No items yet</span>
+        </div>
       </div>
 
       <!-- Progress -->
@@ -119,7 +163,7 @@
 
     </aside>
 
-    <!-- ───────────────── FOOTER / CONTROLS ───────────────── -->
+    <!-- FOOTER / CONTROLS -->
     <footer id="footer">
       <div class="control-group">
         <span class="control-label">Seed</span>
@@ -135,23 +179,35 @@
         </div>
       </div>
 
+      <div class="control-group">
+        <span class="control-label">Speed</span>
+        <input id="speed-slider" class="speed-slider" type="range" min="1" max="10" value="5"
+          oninput="updateSpeedLabel()" />
+        <span class="control-label" id="speed-label">5x</span>
+      </div>
+
       <div style="width:1px;height:28px;background:var(--border)"></div>
 
       <button class="btn btn-primary" id="btn-run-all" onclick="runAll()">
-        ▶ Run All
+        Run All
       </button>
       <button class="btn btn-secondary" id="btn-stop" onclick="stopRun()" disabled>
-        ⏹ Stop
+        Stop
       </button>
 
       <div class="footer-timer">
         Elapsed: <span id="footer-elapsed">0.0s</span>
       </div>
+
+      <div class="footer-stats">
+        <span class="footer-stat" id="footer-tick">Tick: —</span>
+        <span class="footer-stat" id="footer-agents">Agents: —</span>
+      </div>
     </footer>
 
   </div>
 
-  <script src="/static/app.js?v=3"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 
 </html>

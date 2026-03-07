@@ -1,0 +1,24 @@
+# Advanced curriculum: large maps, many agents, complex objectives, full fog-of-war.
+[curriculum]
+name = "advanced"
+description = "High-difficulty curriculum for fine-tuning against skilled opponents"
+
+[curriculum.params]
+grid_size = 128
+num_agents = 16
+fog_of_war = true
+enemy_skill = 0.8
+terrain_complexity = 0.8
+resource_scarcity = 0.7
+
+[curriculum.advancement]
+target_success_rate = 0.4
+window_size = 200
+warmup_episodes = 100
+advance_threshold = 0.6
+retreat_threshold = 0.2
+
+[curriculum.tiers]
+min_tier = 4
+max_tier = 6
+starting_tier = 4

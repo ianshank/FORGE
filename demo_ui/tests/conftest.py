@@ -5,5 +5,5 @@ import pytest
 
 # Use anyio as the async backend (supports asyncio and trio)
 @pytest.fixture(scope="session")
-def anyio_backend():
+def anyio_backend() -> str:
     return "asyncio"

@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(clippy::all)]
+
 //! # forge-types
 //!
 //! Shared types, traits, and configuration for the FORGE simulation platform.
@@ -18,7 +21,9 @@ pub mod constants;
 pub mod entity;
 pub mod error;
 pub mod grid;
+pub mod intent;
 pub mod observation;
+pub mod prelude;
 pub mod resource;
 pub mod task;
 pub mod validation;
@@ -29,6 +34,7 @@ pub use config::ForgeConfig;
 pub use entity::{Agent, AgentId, Object, ObjectId};
 pub use error::{ForgeError, ForgeResult};
 pub use grid::{Direction, Grid, Position, TerrainType, Tile};
+pub use intent::{AgentIntent, IntentDeclaration, IntentLabel};
 pub use observation::{Observation, StepResult};
 pub use resource::{CraftingRecipe, ItemType, RecipeBook, ResourceNode};
 pub use task::{ActiveTask, Predicate, TaskComposition, TaskDefinition, TaskTier};

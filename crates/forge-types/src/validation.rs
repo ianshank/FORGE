@@ -226,4 +226,44 @@ mod tests {
         config.world.resource_density = 1.0;
         assert!(validate_config(&config).is_ok());
     }
+
+    #[test]
+    fn test_invalid_max_health_zero() {
+        let mut config = ForgeConfig::default();
+        config.agents.max_health = 0;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("max_health"));
+    }
+
+    #[test]
+    fn test_invalid_max_health_negative() {
+        let mut config = ForgeConfig::default();
+        config.agents.max_health = -100;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("max_health"));
+    }
+
+    #[test]
+    fn test_invalid_max_stamina_zero() {
+        let mut config = ForgeConfig::default();
+        config.agents.max_stamina = 0;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("max_stamina"));
+    }
+
+    #[test]
+    fn test_invalid_max_stamina_negative() {
+        let mut config = ForgeConfig::default();
+        config.agents.max_stamina = -50;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("max_stamina"));
+    }
 }

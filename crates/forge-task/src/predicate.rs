@@ -405,6 +405,276 @@ mod tests {
         assert_eq!(result.progress, 0.0);
     }
 
+    #[test]
+    fn test_resource_count_predicate() {
+        let mut agents = vec![make_agent(0, 0, 0)];
+        agents[0].inventory.add_item(ItemType::Stone, 5);
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::ResourceCount(0, ItemType::Stone, 3), &ctx);
+        assert!(result.satisfied);
+    }
+
+    #[test]
+    fn test_agent_has_zero_count() {
+        let agents = vec![make_agent(0, 0, 0)];
+        let ctx = make_ctx(&agents, 0);
+        // Requesting 0 items should always be satisfied
+        let result = evaluate_predicate(&Predicate::AgentHas(0, ItemType::Wood, 0), &ctx);
+        assert!(result.satisfied);
+    }
+
+    #[test]
+    fn test_agent_has_nonexistent_agent() {
+        let agents = vec![make_agent(0, 0, 0)];
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::AgentHas(99, ItemType::Wood, 1), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_agent_near_both_missing() {
+        let agents = vec![make_agent(0, 0, 0)];
+        let ctx = make_ctx(&agents, 0);
+        // Agent 5 and 6 don't exist
+        let result = evaluate_predicate(&Predicate::AgentNear(5, 6, 3), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_time_elapsed_zero_deadline() {
+        let agents = vec![];
+        let ctx = make_ctx(&agents, 0);
+        // target_tick == 0 should be satisfied immediately
+        let result = evaluate_predicate(&Predicate::TimeElapsed(0), &ctx);
+        assert!(result.satisfied);
+    }
+
+    #[test]
+    fn test_health_above_low_health() {
+        let mut agents = vec![make_agent(0, 0, 0)];
+        // Set health to very low value
+        agents[0].health = 1;
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::HealthAbove(0, 0.5), &ctx);
+        assert!(!result.satisfied);
+        assert!(result.progress >= 0.0);
+    }
+
+    #[test]
+    fn test_health_above_zero_threshold() {
+        let agents = vec![make_agent(0, 0, 0)];
+        let ctx = make_ctx(&agents, 0);
+        // threshold == 0.0 should always be satisfied
+        let result = evaluate_predicate(&Predicate::HealthAbove(0, 0.0), &ctx);
+        assert!(result.satisfied);
+    }
+
+    #[test]
+    fn test_health_above_nonexistent_agent() {
+        let agents = vec![make_agent(0, 0, 0)];
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::HealthAbove(99, 0.5), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_team_alive_empty_team() {
+        let agents = vec![make_agent(0, 0, 0)];
+        // Agent 0 defaults to team 0, so team 99 is empty
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::TeamAlive(99), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_agent_on_terrain_invalid_terrain_id() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let grid = Grid::new(16, 16);
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: Some(&grid),
+            objects: None,
+        };
+        // terrain_id 255 is invalid
+        let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 255), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_agent_on_terrain_nonexistent_agent() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let grid = Grid::new(16, 16);
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: Some(&grid),
+            objects: None,
+        };
+        let result = evaluate_predicate(&Predicate::AgentOnTerrain(99, 0), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_agent_on_terrain_all_terrain_ids() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let grid = Grid::new(16, 16);
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: Some(&grid),
+            objects: None,
+        };
+        // Test all valid terrain IDs (0-7) don't panic
+        for terrain_id in 0..=7 {
+            let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, terrain_id), &ctx);
+            // Only terrain_id 0 (Ground) should be satisfied on default grid
+            if terrain_id == 0 {
+                assert!(result.satisfied);
+            } else {
+                assert!(!result.satisfied);
+            }
+        }
+    }
+
+    #[test]
+    fn test_object_at_nonexistent_object() {
+        use forge_types::entity::ObjectType;
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(5, 5),
+            object_type: ObjectType::Boulder,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Active,
+        }];
+        let ctx = EvalContext {
+            agents: &[],
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        // Object 99 doesn't exist
+        let result = evaluate_predicate(&Predicate::ObjectAt(99, Position::new(5, 5)), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_object_in_state_no_objects() {
+        let ctx = EvalContext {
+            agents: &[],
+            tick: 0,
+            grid: None,
+            objects: None,
+        };
+        let result = evaluate_predicate(&Predicate::ObjectInState(0, "Active".to_string()), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_object_in_state_invalid_state_name() {
+        use forge_types::entity::ObjectType;
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(0, 0),
+            object_type: ObjectType::Boulder,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Active,
+        }];
+        let ctx = EvalContext {
+            agents: &[],
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        let result = evaluate_predicate(
+            &Predicate::ObjectInState(0, "InvalidState".to_string()),
+            &ctx,
+        );
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_object_in_state_nonexistent_object() {
+        use forge_types::entity::ObjectType;
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(0, 0),
+            object_type: ObjectType::Boulder,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Active,
+        }];
+        let ctx = EvalContext {
+            agents: &[],
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        let result = evaluate_predicate(&Predicate::ObjectInState(99, "Active".to_string()), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_object_in_state_all_valid_states() {
+        use forge_types::entity::ObjectType;
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(0, 0),
+            object_type: ObjectType::Door,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Closed,
+        }];
+        let ctx = EvalContext {
+            agents: &[],
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        // Test all valid state names
+        for state_name in &[
+            "Active",
+            "active",
+            "Inactive",
+            "inactive",
+            "Open",
+            "open",
+            "Closed",
+            "closed",
+            "Destroyed",
+            "destroyed",
+        ] {
+            let result =
+                evaluate_predicate(&Predicate::ObjectInState(0, state_name.to_string()), &ctx);
+            // Only "Closed" and "closed" should match
+            if *state_name == "Closed" || *state_name == "closed" {
+                assert!(
+                    result.satisfied,
+                    "Expected satisfied for state '{}'",
+                    state_name
+                );
+            } else {
+                assert!(
+                    !result.satisfied,
+                    "Expected unsatisfied for state '{}'",
+                    state_name
+                );
+            }
+        }
+    }
+
     // ---- AgentOnTerrain tests ----
 
     #[test]

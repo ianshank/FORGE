@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 /// A 2D position on the grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Position {
+    /// Horizontal coordinate (column).
     pub x: u16,
+    /// Vertical coordinate (row).
     pub y: u16,
 }
 
@@ -41,9 +43,13 @@ impl Position {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Direction {
+    /// Upward (decreasing y).
     Up = 0,
+    /// Downward (increasing y).
     Down = 1,
+    /// Leftward (decreasing x).
     Left = 2,
+    /// Rightward (increasing x).
     Right = 3,
 }
 
@@ -85,13 +91,21 @@ impl Direction {
 #[non_exhaustive]
 #[repr(u8)]
 pub enum TerrainType {
+    /// Normal walkable ground.
     Ground = 0,
+    /// Impassable water terrain.
     Water = 1,
+    /// Impassable wall (blocks vision).
     Wall = 2,
+    /// Damaging lava terrain.
     Lava = 3,
+    /// Slippery ice (reduced stamina cost).
     Ice = 4,
+    /// Sandy terrain (increased stamina cost).
     Sand = 5,
+    /// Dense forest (high stamina cost).
     Forest = 6,
+    /// Impassable mountain (blocks vision).
     Mountain = 7,
 }
 
@@ -149,6 +163,81 @@ pub enum VisibilityState {
     Explored = 1,
     /// Currently visible to at least one agent.
     Visible = 2,
+}
+
+/// Configurable terrain properties, complementing the static [`TerrainType`] methods.
+///
+/// These are driven by config and can be tuned per scenario.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TerrainProperties {
+    /// Movement cost multiplier (1.0 = normal).
+    pub movement_cost: f64,
+    /// Concealment bonus applied to agents on this terrain (0.0-1.0).
+    pub concealment_bonus: f64,
+    /// Whether the terrain blocks line-of-sight.
+    pub blocks_los: bool,
+    /// Whether agents can traverse this terrain.
+    pub passable: bool,
+    /// Defensive bonus for agents standing here (0.0-1.0).
+    pub defense_bonus: f64,
+}
+
+impl Default for TerrainProperties {
+    fn default() -> Self {
+        Self {
+            movement_cost: 1.0,
+            concealment_bonus: 0.0,
+            blocks_los: false,
+            passable: true,
+            defense_bonus: 0.0,
+        }
+    }
+}
+
+impl TerrainProperties {
+    /// Returns default properties for a given terrain type.
+    pub fn for_terrain(terrain: TerrainType) -> Self {
+        match terrain {
+            TerrainType::Ground => Self::default(),
+            TerrainType::Water => Self {
+                movement_cost: f64::MAX,
+                passable: false,
+                ..Self::default()
+            },
+            TerrainType::Wall => Self {
+                movement_cost: f64::MAX,
+                blocks_los: true,
+                passable: false,
+                defense_bonus: 0.5,
+                ..Self::default()
+            },
+            TerrainType::Lava => Self {
+                movement_cost: f64::MAX,
+                passable: false,
+                ..Self::default()
+            },
+            TerrainType::Ice => Self {
+                movement_cost: 0.5,
+                ..Self::default()
+            },
+            TerrainType::Sand => Self {
+                movement_cost: 1.5,
+                ..Self::default()
+            },
+            TerrainType::Forest => Self {
+                movement_cost: 2.0,
+                concealment_bonus: 0.3,
+                ..Self::default()
+            },
+            TerrainType::Mountain => Self {
+                movement_cost: f64::MAX,
+                blocks_los: true,
+                passable: false,
+                defense_bonus: 0.3,
+                ..Self::default()
+            },
+        }
+    }
 }
 
 /// A single tile in the world grid.
