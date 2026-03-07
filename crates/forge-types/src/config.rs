@@ -409,6 +409,25 @@ mod tests {
     /// to improve testability and eliminate this class of race conditions.
     static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    /// RAII guard for restoring environment variables on drop.
+    ///
+    /// Ensures that environment variables are restored even if the test panics,
+    /// preventing variable leakage into subsequent tests.
+    struct EnvironmentGuard {
+        var_name: &'static str,
+        original_value: Option<String>,
+    }
+
+    impl Drop for EnvironmentGuard {
+        fn drop(&mut self) {
+            if let Some(value) = &self.original_value {
+                std::env::set_var(self.var_name, value);
+            } else {
+                std::env::remove_var(self.var_name);
+            }
+        }
+    }
+
     #[test]
     fn test_from_toml_str_partial() {
         let toml_str = r#"
@@ -467,27 +486,41 @@ num_agents = 4
     #[test]
     fn test_env_overrides() {
         let _lock = ENV_TEST_LOCK.lock().unwrap();
-        // Set env vars, apply overrides, then clean up
+        // Use EnvironmentGuard to ensure vars are restored even if test panics
+        let _width_guard = EnvironmentGuard {
+            var_name: "FORGE_WORLD_WIDTH",
+            original_value: std::env::var("FORGE_WORLD_WIDTH").ok(),
+        };
+        let _agents_guard = EnvironmentGuard {
+            var_name: "FORGE_AGENTS_NUM_AGENTS",
+            original_value: std::env::var("FORGE_AGENTS_NUM_AGENTS").ok(),
+        };
+
         std::env::set_var("FORGE_WORLD_WIDTH", "200");
         std::env::set_var("FORGE_AGENTS_NUM_AGENTS", "8");
         let mut config = ForgeConfig::default();
         config.apply_env_overrides();
         assert_eq!(config.world.width, 200);
         assert_eq!(config.agents.num_agents, 8);
-        std::env::remove_var("FORGE_WORLD_WIDTH");
-        std::env::remove_var("FORGE_AGENTS_NUM_AGENTS");
+        // Guards automatically restore on drop
     }
 
     #[test]
     fn test_env_overrides_invalid_value() {
         let _lock = ENV_TEST_LOCK.lock().unwrap();
+        // Use EnvironmentGuard to ensure var is restored even if test panics
+        let _width_guard = EnvironmentGuard {
+            var_name: "FORGE_WORLD_WIDTH",
+            original_value: std::env::var("FORGE_WORLD_WIDTH").ok(),
+        };
+
         std::env::set_var("FORGE_WORLD_WIDTH", "not_a_number");
         let mut config = ForgeConfig::default();
         let original_width = config.world.width;
         config.apply_env_overrides();
         // Invalid value should be ignored
         assert_eq!(config.world.width, original_width);
-        std::env::remove_var("FORGE_WORLD_WIDTH");
+        // Guard automatically restores on drop
     }
 
     #[test]

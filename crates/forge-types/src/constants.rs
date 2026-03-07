@@ -126,7 +126,8 @@ pub const BIOME_SAND_LEVEL_OFFSET: f64 = 0.05;
 pub const BIOME_FOREST_MOISTURE_THRESHOLD: f64 = 0.45;
 /// Moisture threshold for desert biome.
 pub const BIOME_DESERT_MOISTURE_THRESHOLD: f64 = 0.25;
-/// Number of octaves for terrain noise generation (before scale adjustment).
+/// Multiplier used to compute terrain noise octaves from biome_scale.
+/// Higher values produce more octaves (more detail) in terrain generation.
 pub const TERRAIN_NOISE_OCTAVES_MULTIPLIER: f64 = 40.0;
 /// Minimum octaves for terrain noise.
 pub const TERRAIN_NOISE_OCTAVES_MIN: u32 = 2;
