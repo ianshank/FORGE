@@ -72,12 +72,22 @@ def test_import_utils() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Native-dependent tests
+# Native-dependent tests — skip gracefully when Rust extension is unavailable
 # ---------------------------------------------------------------------------
+
+def _skip_if_no_native() -> None:
+    """Skip the calling test when the forge_env native extension is not built."""
+    try:
+        from forge_env.gymnasium_env import ForgeGymnasiumEnv
+        if ForgeGymnasiumEnv is None:
+            pytest.skip("forge_env running in pure-Python mode (no native backend)")
+    except ImportError as exc:
+        pytest.skip(f"forge_env native extension not available: {exc}")
 
 
 def test_env_creation() -> None:
     """Creating a ForgeGymnasiumEnv with default config should not raise."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     env = ForgeGymnasiumEnv()
@@ -87,6 +97,7 @@ def test_env_creation() -> None:
 
 def test_reset_returns_tuple() -> None:
     """reset() must return a (obs, info) 2-tuple."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     env = ForgeGymnasiumEnv()
@@ -101,6 +112,7 @@ def test_reset_returns_tuple() -> None:
 
 def test_step_returns_tuple() -> None:
     """step() must return a (obs, reward, term, trunc, info) 5-tuple."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     env = ForgeGymnasiumEnv()
@@ -119,6 +131,7 @@ def test_step_returns_tuple() -> None:
 
 def test_observation_keys() -> None:
     """Observation dict should contain the expected keys."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     env = ForgeGymnasiumEnv()
@@ -134,6 +147,7 @@ def test_observation_keys() -> None:
 
 def test_deterministic_seed() -> None:
     """Same seed should produce the same initial observation."""
+    _skip_if_no_native()
     import numpy as np
 
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
@@ -153,6 +167,7 @@ def test_deterministic_seed() -> None:
 
 def test_wrapper_flatten() -> None:
     """FlattenObservationWrapper should produce a 1-D array."""
+    _skip_if_no_native()
     import numpy as np
 
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
@@ -168,6 +183,7 @@ def test_wrapper_flatten() -> None:
 
 def test_wrapper_time_limit() -> None:
     """TimeLimit wrapper should truncate at max_steps."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
     from forge_env.wrappers import TimeLimit
 
@@ -186,6 +202,7 @@ def test_wrapper_time_limit() -> None:
 
 def test_multi_agent_env() -> None:
     """ForgeParallelEnv with 2 agents should return per-agent dicts."""
+    _skip_if_no_native()
     from forge_env.pettingzoo_env import ForgeParallelEnv
 
     env = ForgeParallelEnv(n_agents=2)
@@ -204,6 +221,7 @@ def test_multi_agent_env() -> None:
 
 def test_benchmark_fps() -> None:
     """benchmark_fps should return a positive float."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
     from forge_env.utils import benchmark_fps
 
@@ -216,6 +234,7 @@ def test_benchmark_fps() -> None:
 
 def test_check_env() -> None:
     """check_env should pass for a valid environment."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
     from forge_env.utils import check_env
 

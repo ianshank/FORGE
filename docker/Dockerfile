@@ -1,45 +1,64 @@
 # FORGE — Simulation backend (Rust server + Python forge-env)
 # Multi-stage build for minimal final image size.
+# Stage 1: Rust builder — compiles forge-server binary
+# Stage 2: Wheel builder — compiles forge-env native Python extension
+# Stage 3: Runtime    — slim image with only what's needed at runtime
 
+# ---------------------------------------------------------------------------
 # Stage 1: Rust builder
+# ---------------------------------------------------------------------------
 FROM rust:1.85-bookworm AS rust-builder
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
-COPY tests/ tests/
+# Note: tests/ is intentionally excluded — not needed for cargo build --release
 RUN cargo build --release --workspace
 
-# Stage 2: Python environment with native extension
-FROM python:3.11-slim-bookworm AS runtime
+# ---------------------------------------------------------------------------
+# Stage 2: Python wheel builder (separate from runtime to avoid Rust toolchain
+# and build-essential ending up in the final image — Gemini review: critical)
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS wheel-builder
 WORKDIR /app
 
-# Install system dependencies + Rust toolchain for maturin build
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libssl3 curl build-essential && \
+    apt-get install -y --no-install-recommends curl build-essential && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Copy Rust binaries
-COPY --from=rust-builder /build/target/release/forge-server /usr/local/bin/
-
-# Build and install the forge-env Python native extension via maturin
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY python/ /app/python/
 COPY pyproject.toml /app/
 RUN pip install --no-cache-dir maturin && \
-    maturin build --release -m crates/forge-python/Cargo.toml --out /app/dist && \
-    pip install --no-cache-dir /app/dist/*.whl && \
-    rm -rf /app/dist
+    maturin build --release -m crates/forge-python/Cargo.toml --out /app/dist
 
-# Install remaining Python dependencies
+# ---------------------------------------------------------------------------
+# Stage 3: Runtime — slim image, no compilers, no Rust toolchain
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS runtime
+WORKDIR /app
+
+# Runtime-only system deps: libssl3 for TLS, curl for HEALTHCHECK
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libssl3 curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy compiled Rust server binary from Stage 1
+COPY --from=rust-builder /build/target/release/forge-server /usr/local/bin/
+
+# Copy and install the wheel from Stage 2 (no Rust toolchain needed at runtime)
+COPY --from=wheel-builder /app/dist/*.whl /tmp/
+RUN pip install --no-cache-dir /tmp/*.whl && rm -rf /tmp/
+
+# Install remaining Python runtime dependencies
 COPY forge.toml /app/
 COPY configs/ /app/configs/
 RUN pip install --no-cache-dir numpy tomli
 
-# Create non-root user and switch
+# Run as non-root user
 RUN useradd --create-home forge
 USER forge
 

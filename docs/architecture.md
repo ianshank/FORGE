@@ -159,7 +159,7 @@ The production deployment packages FORGE as three Docker containers orchestrated
 │  │  /ws   ──────────────┤│   │                              │    │
 │  └──────────────────────┼┘   └─────────────┬────────────────┘    │
 │                         │                  │                      │
-│                         │ proxy to         │ forge_env calls      │
+│                         │ proxy to         │ HTTP/WS to sim svc   │
 │                         ▼                  ▼                      │
 │              ┌───────────────────────────────────┐               │
 │              │  simulation                        │               │
