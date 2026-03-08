@@ -67,7 +67,7 @@ jobs:
       - name: Build native extension
         run: maturin develop
       - name: Ruff lint
-        run: ruff check python/ tests/python/
+        run: ruff check python/ tests/python/ scripts/ demo_ui/
       - name: Mypy type check
         run: mypy python/forge_env/ tests/python/ --ignore-missing-imports
       - name: Pytest
