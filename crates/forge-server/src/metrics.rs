@@ -3,6 +3,8 @@
 //! The `MetricsCollector` tracks simulation ticks.
 //! Use `snapshot()` to get a point-in-time `ServerMetrics` for API responses.
 
+use std::time::Instant;
+
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -24,6 +26,8 @@ pub struct ServerMetrics {
 #[derive(Debug)]
 pub struct MetricsCollector {
     simulation_ticks: u64,
+    last_snapshot_time: Instant,
+    ticks_since_last_snapshot: u64,
     steps_per_second: f64,
 }
 
@@ -34,6 +38,8 @@ impl MetricsCollector {
         tracing::debug!("Creating new MetricsCollector");
         Self {
             simulation_ticks: 0,
+            last_snapshot_time: Instant::now(),
+            ticks_since_last_snapshot: 0,
             steps_per_second: 0.0,
         }
     }
@@ -42,13 +48,26 @@ impl MetricsCollector {
     #[instrument(skip(self))]
     pub fn record_tick(&mut self) {
         self.simulation_ticks += 1;
+        self.ticks_since_last_snapshot += 1;
         tracing::trace!(ticks = self.simulation_ticks, "Recorded simulation tick");
     }
 
     /// Returns a snapshot of the current server metrics.
+    ///
+    /// Also updates the `steps_per_second` rate based on ticks since the
+    /// last snapshot call.
     #[instrument(skip(self))]
-    pub fn snapshot(&self) -> ServerMetrics {
+    pub fn snapshot(&mut self) -> ServerMetrics {
         tracing::trace!("Taking metrics snapshot");
+
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_snapshot_time).as_secs_f64();
+        if elapsed > 0.0 {
+            self.steps_per_second = self.ticks_since_last_snapshot as f64 / elapsed;
+        }
+        self.ticks_since_last_snapshot = 0;
+        self.last_snapshot_time = now;
+
         ServerMetrics {
             simulation_ticks: self.simulation_ticks,
             steps_per_second: self.steps_per_second,

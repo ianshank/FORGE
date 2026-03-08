@@ -173,15 +173,24 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
 
     // Forward broadcast messages to this client
     let mut send_task = tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            match serialize_ws_message(&msg) {
-                Ok(json) => {
-                    if ws_tx.send(Message::Text(json)).await.is_err() {
-                        break;
+        loop {
+            match rx.recv().await {
+                Ok(msg) => match serialize_ws_message(&msg) {
+                    Ok(json) => {
+                        if ws_tx.send(Message::Text(json)).await.is_err() {
+                            break;
+                        }
                     }
+                    Err(e) => {
+                        tracing::warn!("Failed to serialize WsMessage: {}", e);
+                    }
+                },
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(lagged = n, "Broadcast receiver lagged, skipping messages");
+                    continue;
                 }
-                Err(e) => {
-                    tracing::warn!("Failed to serialize WsMessage: {}", e);
+                Err(broadcast::error::RecvError::Closed) => {
+                    break;
                 }
             }
         }

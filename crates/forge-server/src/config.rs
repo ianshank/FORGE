@@ -56,6 +56,7 @@ impl ServerConfig {
     /// - `FORGE_SERVER_TICK_MS` — tick interval in ms (default `100`)
     /// - `FORGE_SERVER_BROADCAST_CAPACITY` — WS channel size (default `64`)
     /// - `FORGE_SERVER_LOG_FILTER` — tracing filter (default `forge_server=info,forge_core=info`)
+    /// - `FORGE_SERVER_ALLOWED_ORIGINS` — allowed CORS origins, comma-separated (default `http://localhost:5173`)
     #[tracing::instrument]
     pub fn from_env() -> Self {
         let mut config = Self::default();

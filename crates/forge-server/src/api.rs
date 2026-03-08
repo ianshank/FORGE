@@ -53,7 +53,7 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthRespons
 /// Returns current server metrics from the `MetricsCollector`.
 #[instrument(skip_all)]
 pub async fn metrics_handler(State(state): State<AppState>) -> Json<crate::metrics::ServerMetrics> {
-    let mut metrics = if let Ok(mc) = state.metrics_collector.lock() {
+    let mut metrics = if let Ok(mut mc) = state.metrics_collector.lock() {
         mc.snapshot()
     } else {
         tracing::warn!("MetricsCollector lock poisoned, returning defaults");
@@ -132,7 +132,13 @@ pub async fn remix_handler(
             // Send the new world to the simulation loop so it adopts it
             // on the next tick instead of continuing with the old world.
             if state.world_replacement_tx.try_send(world).is_err() {
-                tracing::warn!("Failed to send replacement world to simulation loop");
+                tracing::warn!("Replacement channel full — a prior remix is still pending");
+                return Json(RemixResponse {
+                    success: false,
+                    seed,
+                    grid_width,
+                    grid_height,
+                });
             }
 
             Json(RemixResponse {

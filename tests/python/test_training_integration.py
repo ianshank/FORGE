@@ -270,8 +270,14 @@ class TestParseArgs:
 
 @pytest.fixture()
 def env():
-    """Create a ForgeGymnasiumEnv for testing."""
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+    """Create a ForgeGymnasiumEnv for testing.
+
+    Skips if the native Rust extension is not built.
+    """
+    try:
+        from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+    except ImportError:
+        pytest.skip("Native Rust extension not built (run `maturin develop` first)")
 
     e = ForgeGymnasiumEnv()
     yield e
