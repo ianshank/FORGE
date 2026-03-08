@@ -1,10 +1,14 @@
 //! Server metrics collection and reporting.
+//!
+//! The `MetricsCollector` tracks simulation ticks and WebSocket connections.
+//! Use `snapshot()` to get a point-in-time `ServerMetrics` for API responses.
 
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 /// A point-in-time snapshot of server metrics.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerMetrics {
     /// Total number of simulation ticks processed.
     pub simulation_ticks: u64,
@@ -65,6 +69,12 @@ impl MetricsCollector {
         );
     }
 
+    /// Updates the uptime field.
+    #[instrument(skip(self))]
+    pub fn update_uptime(&mut self, seconds: u64) {
+        self.uptime_seconds = seconds;
+    }
+
     /// Returns a snapshot of the current server metrics.
     #[instrument(skip(self))]
     pub fn snapshot(&self) -> ServerMetrics {
@@ -117,5 +127,27 @@ mod tests {
         collector.record_ws_disconnect();
         collector.record_ws_disconnect();
         assert_eq!(collector.snapshot().ws_connections, 0);
+    }
+
+    #[test]
+    fn test_uptime_update() {
+        let mut collector = MetricsCollector::new();
+        collector.update_uptime(120);
+        assert_eq!(collector.snapshot().uptime_seconds, 120);
+    }
+
+    #[test]
+    fn test_metrics_serialization() {
+        let metrics = ServerMetrics {
+            simulation_ticks: 100,
+            steps_per_second: 10.5,
+            ws_connections: 3,
+            uptime_seconds: 60,
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        assert!(json.contains("simulationTicks"));
+        assert!(json.contains("stepsPerSecond"));
+        assert!(json.contains("wsConnections"));
+        assert!(json.contains("uptimeSeconds"));
     }
 }

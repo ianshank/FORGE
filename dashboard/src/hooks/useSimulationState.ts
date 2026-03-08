@@ -4,8 +4,12 @@ import type {
   ServerMetrics,
   SimulationState,
 } from "../types/simulation";
+import { createLogger } from "../utils/logger";
+import { parseServerMessage } from "../utils/messageParser";
 import { useWebSocket } from "./useWebSocket";
 import { getConfig } from "../config/environment";
+
+const log = createLogger("useSimulationState");
 
 interface SimulationHookResult {
   /** Current simulation state (latest from WebSocket). */
@@ -27,14 +31,22 @@ export function useSimulationState(): SimulationHookResult {
   const maxTraces = useRef(config.maxTraceEntries);
 
   const onMessage = useCallback((data: unknown) => {
-    const msg = data as {
-      type?: string;
-      payload?: SimulationState | ServerMetrics;
-    };
-    if (msg.type === "StateUpdate" && msg.payload) {
-      setState(msg.payload as SimulationState);
-    } else if (msg.type === "Metrics" && msg.payload) {
-      setServerMetrics(msg.payload as ServerMetrics);
+    const msg = parseServerMessage(data);
+    if (!msg) {
+      log.debug("Skipping unparseable message");
+      return;
+    }
+
+    switch (msg.type) {
+      case "StateUpdate":
+        setState(msg.payload);
+        break;
+      case "Metrics":
+        setServerMetrics(msg.payload);
+        break;
+      case "Error":
+        log.error("Server error:", msg.payload);
+        break;
     }
   }, []);
 

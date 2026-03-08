@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getConfig } from "../config/environment";
+import { createLogger } from "../utils/logger";
+
+const log = createLogger("useWebSocket");
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
-
-const MAX_RECONNECT_ATTEMPTS = 10;
 
 interface UseWebSocketOptions {
   url: string;
@@ -14,8 +16,10 @@ interface UseWebSocketOptions {
 export function useWebSocket({
   url,
   onMessage,
-  reconnectInterval = 3000,
+  reconnectInterval,
 }: UseWebSocketOptions) {
+  const config = getConfig();
+  const reconnectMs = reconnectInterval ?? config.metricsPollingInterval;
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -29,40 +33,45 @@ export function useWebSocket({
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    if (reconnectCount.current >= MAX_RECONNECT_ATTEMPTS) return;
+    if (reconnectCount.current >= config.maxReconnectAttempts) {
+      log.warn("Max reconnect attempts reached");
+      return;
+    }
 
     setStatus("connecting");
+    log.info("Connecting to", url);
 
     let ws: WebSocket;
     try {
       ws = new WebSocket(url);
     } catch (err) {
-      console.error(`Failed to create WebSocket with URL '${url}':`, err);
+      log.error(`Failed to create WebSocket with URL '${url}':`, err);
       setStatus("disconnected");
       reconnectCount.current += 1;
-      if (reconnectCount.current < MAX_RECONNECT_ATTEMPTS) {
-        reconnectTimer.current = setTimeout(connect, reconnectInterval);
+      if (reconnectCount.current < config.maxReconnectAttempts) {
+        reconnectTimer.current = setTimeout(connect, reconnectMs);
       }
       return;
     }
     wsRef.current = ws;
 
     ws.onopen = () => {
+      log.info("Connected");
       setStatus("connected");
       reconnectCount.current = 0;
     };
     ws.onclose = (event) => {
-      console.warn(
-        `WebSocket disconnected: code=${event.code}, reason='${event.reason}'`,
+      log.warn(
+        `Disconnected: code=${event.code}, reason='${event.reason}'`,
       );
       setStatus("disconnected");
       reconnectCount.current += 1;
-      if (reconnectCount.current < MAX_RECONNECT_ATTEMPTS) {
-        reconnectTimer.current = setTimeout(connect, reconnectInterval);
+      if (reconnectCount.current < config.maxReconnectAttempts) {
+        reconnectTimer.current = setTimeout(connect, reconnectMs);
       }
     };
     ws.onerror = (event) => {
-      console.error("WebSocket error:", event);
+      log.error("WebSocket error:", event);
       ws.close();
     };
     ws.onmessage = (event) => {
@@ -70,10 +79,10 @@ export function useWebSocket({
         const data: unknown = JSON.parse(event.data as string);
         onMessageRef.current?.(data);
       } catch (err) {
-        console.warn("WebSocket: failed to parse message", err);
+        log.warn("Failed to parse message", err);
       }
     };
-  }, [url, reconnectInterval]);
+  }, [url, reconnectMs, config.maxReconnectAttempts]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
@@ -81,6 +90,7 @@ export function useWebSocket({
     wsRef.current = null;
     reconnectCount.current = 0;
     setStatus("disconnected");
+    log.info("Disconnected (manual)");
   }, []);
 
   useEffect(() => {

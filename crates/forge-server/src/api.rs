@@ -40,26 +40,33 @@ pub async fn config_handler() -> Json<ConfigResponse> {
 }
 
 /// Returns the current health status of the server.
-#[instrument]
-pub async fn health_handler() -> Json<HealthResponse> {
+#[instrument(skip_all)]
+pub async fn health_handler(State(state): State<AppState>) -> Json<HealthResponse> {
     tracing::debug!("Handling health request");
+    let uptime = state.start_time.elapsed().as_secs();
     Json(HealthResponse {
         status: "ok".to_string(),
-        uptime_seconds: 0,
+        uptime_seconds: uptime,
     })
 }
 
-/// Returns current server metrics.
+/// Returns current server metrics from the `MetricsCollector`.
 #[instrument(skip_all)]
 pub async fn metrics_handler(State(state): State<AppState>) -> Json<crate::metrics::ServerMetrics> {
-    let subs = state.subscriptions.lock().expect("lock poisoned");
-    let snapshot = state.shared_state.read();
-    Json(crate::metrics::ServerMetrics {
-        simulation_ticks: snapshot.tick,
-        steps_per_second: 0.0,
-        ws_connections: subs.active_clients() as u32,
-        uptime_seconds: 0,
-    })
+    let mut metrics = if let Ok(mc) = state.metrics_collector.lock() {
+        mc.snapshot()
+    } else {
+        tracing::warn!("MetricsCollector lock poisoned, returning defaults");
+        crate::metrics::ServerMetrics::default()
+    };
+
+    // Populate live values
+    metrics.uptime_seconds = state.start_time.elapsed().as_secs();
+    if let Ok(subs) = state.subscriptions.lock() {
+        metrics.ws_connections = subs.active_clients() as u32;
+    }
+
+    Json(metrics)
 }
 
 /// Request body for the scenario remix endpoint.
@@ -73,6 +80,8 @@ pub struct RemixRequest {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemixResponse {
+    /// Whether the remix was successful.
+    pub success: bool,
     /// The seed used for the new scenario.
     pub seed: u64,
     /// Grid width of the new scenario.
@@ -105,17 +114,21 @@ pub async fn remix_handler(
             state.shared_state.update(snapshot.clone());
 
             // Broadcast the new state to all connected clients
-            let _ = state.tx.send(WsMessage::StateUpdate(snapshot));
+            if state.tx.send(WsMessage::StateUpdate(snapshot)).is_err() {
+                tracing::trace!("No active subscribers for remix broadcast");
+            }
 
             Json(RemixResponse {
+                success: true,
                 seed,
                 grid_width,
                 grid_height,
             })
         }
         Err(e) => {
-            tracing::error!("Failed to create world: {}", e);
+            tracing::error!(seed, error = %e, "Failed to create world for remix");
             Json(RemixResponse {
+                success: false,
                 seed,
                 grid_width,
                 grid_height,
@@ -125,6 +138,10 @@ pub async fn remix_handler(
 }
 
 /// Builds a `SimulationSnapshot` from a `WorldState`.
+///
+/// Maps each agent in the world to an `AgentSnapshot` for serialization
+/// to dashboard clients.
+#[instrument(skip_all, fields(tick = world.tick, agents = world.agents.len()))]
 pub fn build_snapshot_from_world(world: &forge_core::WorldState) -> SimulationSnapshot {
     let agents: Vec<AgentSnapshot> = world
         .agents
@@ -168,6 +185,7 @@ mod tests {
     #[test]
     fn test_remix_response_serialization() {
         let resp = RemixResponse {
+            success: true,
             seed: 42,
             grid_width: 64,
             grid_height: 64,
@@ -175,5 +193,40 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("gridWidth"));
         assert!(json.contains("gridHeight"));
+        assert!(json.contains("\"success\":true"));
+    }
+
+    #[test]
+    fn test_remix_response_failure() {
+        let resp = RemixResponse {
+            success: false,
+            seed: 0,
+            grid_width: 32,
+            grid_height: 32,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"success\":false"));
+    }
+
+    #[test]
+    fn test_health_response_serialization() {
+        let resp = HealthResponse {
+            status: "ok".to_string(),
+            uptime_seconds: 120,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("uptimeSeconds"));
+        assert!(json.contains("120"));
+    }
+
+    #[test]
+    fn test_build_snapshot_from_world() {
+        let config = forge_types::config::ForgeConfig::default();
+        let world = forge_core::WorldState::new(config).unwrap();
+        let snapshot = build_snapshot_from_world(&world);
+        assert_eq!(snapshot.tick, 0);
+        assert_eq!(snapshot.schema_version, SCHEMA_VERSION);
+        assert!(snapshot.grid_width > 0);
+        assert!(snapshot.grid_height > 0);
     }
 }

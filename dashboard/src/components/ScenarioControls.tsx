@@ -1,5 +1,8 @@
 import { useCallback, useState } from "react";
 import { getConfig } from "../config/environment";
+import { createLogger } from "../utils/logger";
+
+const log = createLogger("ScenarioControls");
 
 interface ScenarioControlsProps {
   onRemix?: (seed: number) => void;
@@ -11,18 +14,33 @@ export function ScenarioControls({ onRemix }: ScenarioControlsProps) {
   const [seed, setSeed] = useState(42);
   const [gridSize, setGridSize] = useState(64);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleRemix = useCallback(async () => {
     setLoading(true);
+    setError(null);
+    log.info("Remixing scenario with seed=%d, gridSize=%d", seed, gridSize);
+
     try {
-      await fetch(`${config.apiBaseUrl}/api/scenario/remix`, {
+      const res = await fetch(`${config.apiBaseUrl}/api/scenario/remix`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seed, gridSize }),
       });
+
+      if (!res.ok) {
+        const msg = `Remix failed: HTTP ${res.status}`;
+        log.error(msg);
+        setError(msg);
+        return;
+      }
+
+      log.info("Remix successful");
       onRemix?.(seed);
-    } catch {
-      // Silently fail — server may not be running
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Server unreachable";
+      log.warn("Remix request failed:", msg);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -36,6 +54,7 @@ export function ScenarioControls({ onRemix }: ScenarioControlsProps) {
           type="number"
           value={seed}
           onChange={(e) => setSeed(Number(e.target.value))}
+          aria-label="Random seed"
           className="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm"
         />
       </label>
@@ -48,6 +67,7 @@ export function ScenarioControls({ onRemix }: ScenarioControlsProps) {
           step={16}
           value={gridSize}
           onChange={(e) => setGridSize(Number(e.target.value))}
+          aria-label="Grid size"
           className="w-24"
         />
         <span className="text-white text-sm w-8">{gridSize}</span>
@@ -59,6 +79,11 @@ export function ScenarioControls({ onRemix }: ScenarioControlsProps) {
       >
         {loading ? "Remixing..." : "Remix"}
       </button>
+      {error && (
+        <span className="text-red-400 text-xs" role="alert">
+          {error}
+        </span>
+      )}
     </div>
   );
 }

@@ -16,6 +16,9 @@ use crate::metrics::ServerMetrics;
 use crate::state::SimulationSnapshot;
 
 /// Messages sent over WebSocket connections to clients.
+///
+/// Serialized with `{ "type": "...", "payload": ... }` envelope for
+/// backwards-compatible message dispatch on the client side.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum WsMessage {
@@ -23,7 +26,7 @@ pub enum WsMessage {
     StateUpdate(SimulationSnapshot),
     /// Current server metrics.
     Metrics(ServerMetrics),
-    /// An error message.
+    /// An error description sent to the client.
     Error(String),
 }
 
@@ -95,7 +98,7 @@ impl Default for SubscriptionManager {
     }
 }
 
-/// Shared application state passed to WebSocket handlers.
+/// Shared application state passed to WebSocket and REST handlers.
 #[derive(Clone)]
 pub struct AppState {
     /// Broadcast channel for simulation state updates.
@@ -106,6 +109,18 @@ pub struct AppState {
     pub shared_state: crate::state::SharedState,
     /// Next client ID counter.
     pub next_client_id: Arc<std::sync::atomic::AtomicU64>,
+    /// Server metrics collector.
+    pub metrics_collector: Arc<Mutex<crate::metrics::MetricsCollector>>,
+    /// Server start time for uptime calculation.
+    pub start_time: std::time::Instant,
+}
+
+/// Serializes a `WsMessage` to a JSON string for sending over WebSocket.
+///
+/// This helper centralizes serialization to avoid repeating the pattern
+/// across initial-snapshot and broadcast code paths.
+fn serialize_ws_message(msg: &WsMessage) -> Result<String, serde_json::Error> {
+    serde_json::to_string(msg)
 }
 
 /// Axum handler that upgrades an HTTP request to a WebSocket connection.
@@ -118,17 +133,26 @@ pub async fn ws_upgrade_handler(
     ws.on_upgrade(move |socket| handle_ws_connection(socket, state))
 }
 
-/// Handles an individual WebSocket connection.
+/// Handles an individual WebSocket connection lifecycle.
+///
+/// 1. Registers the client with the `SubscriptionManager`
+/// 2. Sends the current simulation snapshot immediately
+/// 3. Forwards broadcast messages until the client disconnects
+/// 4. Unregisters the client on disconnect
 async fn handle_ws_connection(socket: WebSocket, state: AppState) {
     let client_id = state
         .next_client_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    // Register client
+    // Register client and record connection in metrics
     {
         let current_tick = state.shared_state.read().tick;
-        let mut subs = state.subscriptions.lock().expect("lock poisoned");
-        subs.add_client(client_id, current_tick);
+        if let Ok(mut subs) = state.subscriptions.lock() {
+            subs.add_client(client_id, current_tick);
+        }
+        if let Ok(mut mc) = state.metrics_collector.lock() {
+            mc.record_ws_connect();
+        }
     }
 
     tracing::info!(client_id, "WebSocket client connected");
@@ -138,8 +162,10 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
     // Send current state immediately on connect
     let initial_snapshot = state.shared_state.read();
     let initial_msg = WsMessage::StateUpdate(initial_snapshot);
-    if let Ok(json) = serde_json::to_string(&initial_msg) {
-        let _ = ws_tx.send(Message::Text(json)).await;
+    if let Ok(json) = serialize_ws_message(&initial_msg) {
+        if let Err(e) = ws_tx.send(Message::Text(json)).await {
+            tracing::warn!(client_id, error = %e, "Failed to send initial snapshot");
+        }
     }
 
     // Subscribe to broadcast channel
@@ -148,7 +174,7 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
     // Forward broadcast messages to this client
     let send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
-            match serde_json::to_string(&msg) {
+            match serialize_ws_message(&msg) {
                 Ok(json) => {
                     if ws_tx.send(Message::Text(json)).await.is_err() {
                         break;
@@ -178,10 +204,14 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
         _ = recv_task => {},
     }
 
-    // Unregister client
+    // Unregister client and record disconnection
     {
-        let mut subs = state.subscriptions.lock().expect("lock poisoned");
-        subs.remove_client(client_id);
+        if let Ok(mut subs) = state.subscriptions.lock() {
+            subs.remove_client(client_id);
+        }
+        if let Ok(mut mc) = state.metrics_collector.lock() {
+            mc.record_ws_disconnect();
+        }
     }
 
     tracing::info!(client_id, "WebSocket client disconnected");
@@ -230,5 +260,36 @@ mod tests {
         assert!(json.contains("StateUpdate"));
         assert!(json.contains("\"type\""));
         assert!(json.contains("\"payload\""));
+    }
+
+    #[test]
+    fn test_serialize_ws_message_helper() {
+        let msg = WsMessage::Error("test error".to_string());
+        let result = serialize_ws_message(&msg);
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        assert!(json.contains("Error"));
+        assert!(json.contains("test error"));
+    }
+
+    #[test]
+    fn test_ws_message_metrics_variant() {
+        let metrics = ServerMetrics::default();
+        let msg = WsMessage::Metrics(metrics);
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("Metrics"));
+        assert!(json.contains("\"type\""));
+    }
+
+    #[test]
+    fn test_ws_message_roundtrip() {
+        let snapshot = SimulationSnapshot::default();
+        let msg = WsMessage::StateUpdate(snapshot);
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: WsMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            WsMessage::StateUpdate(s) => assert_eq!(s.tick, 0),
+            _ => panic!("Expected StateUpdate variant"),
+        }
     }
 }

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ServerMetrics } from "../types/simulation";
 import { getConfig } from "../config/environment";
+import { createLogger } from "../utils/logger";
+
+const log = createLogger("useMetrics");
 
 /** Hook for polling server metrics via REST API. */
 export function useMetrics() {
@@ -11,13 +14,19 @@ export function useMetrics() {
   const fetchMetrics = useCallback(async () => {
     try {
       const res = await fetch(`${config.apiBaseUrl}/api/metrics`);
-      if (res.ok) {
-        const data = (await res.json()) as ServerMetrics;
-        setMetrics(data);
-        setError(null);
+      if (!res.ok) {
+        const msg = `Metrics fetch failed: HTTP ${res.status}`;
+        log.warn(msg);
+        setError(msg);
+        return;
       }
+      const data = (await res.json()) as ServerMetrics;
+      setMetrics(data);
+      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to fetch metrics");
+      const msg = e instanceof Error ? e.message : "Failed to fetch metrics";
+      log.debug("Metrics fetch error:", msg);
+      setError(msg);
     }
   }, [config.apiBaseUrl]);
 
