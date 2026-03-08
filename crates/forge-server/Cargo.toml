@@ -14,8 +14,16 @@ forge-core = { path = "../forge-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["cors"] }
+futures = "0.3"
+rand = "0.8"
+
+[[bin]]
+name = "forge-server"
+path = "src/main.rs"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros"] }

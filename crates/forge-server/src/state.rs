@@ -8,6 +8,7 @@ use crate::SCHEMA_VERSION;
 
 /// A snapshot of a single agent's state for visualization.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentSnapshot {
     /// Unique agent identifier.
     pub id: u32,
@@ -23,10 +24,13 @@ pub struct AgentSnapshot {
     pub team_id: Option<u32>,
     /// Optional description of the agent's current intent.
     pub intent: Option<String>,
+    /// Sensor/vision radius in grid cells.
+    pub vision_radius: u16,
 }
 
 /// A point-in-time snapshot of the entire simulation state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SimulationSnapshot {
     /// Current simulation tick.
     pub tick: u64,
@@ -111,6 +115,7 @@ mod tests {
                 alive: true,
                 team_id: Some(0),
                 intent: Some("move_north".to_string()),
+                vision_radius: 5,
             }],
             grid_width: 64,
             grid_height: 64,
@@ -140,5 +145,37 @@ mod tests {
         assert_eq!(snapshot.grid_height, 0);
         assert!(snapshot.events.is_empty());
         assert_eq!(snapshot.schema_version, 1);
+    }
+
+    #[test]
+    fn test_camel_case_serialization() {
+        let snapshot = SimulationSnapshot {
+            tick: 1,
+            agents: vec![AgentSnapshot {
+                id: 0,
+                x: 5,
+                y: 10,
+                health: 80,
+                alive: true,
+                team_id: None,
+                intent: None,
+                vision_radius: 7,
+            }],
+            grid_width: 32,
+            grid_height: 32,
+            events: vec![],
+            schema_version: SCHEMA_VERSION,
+        };
+        let json = serde_json::to_string(&snapshot).unwrap();
+        // Verify camelCase keys are used
+        assert!(json.contains("gridWidth"));
+        assert!(json.contains("gridHeight"));
+        assert!(json.contains("schemaVersion"));
+        assert!(json.contains("teamId"));
+        assert!(json.contains("visionRadius"));
+        // Verify snake_case keys are NOT used
+        assert!(!json.contains("grid_width"));
+        assert!(!json.contains("grid_height"));
+        assert!(!json.contains("schema_version"));
     }
 }

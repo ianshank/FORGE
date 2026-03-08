@@ -1,8 +1,15 @@
 //! WebSocket subscription handler types and logic.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::State;
+use axum::response::IntoResponse;
+use futures::SinkExt;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast;
 use tracing::instrument;
 
 use crate::metrics::ServerMetrics;
@@ -10,6 +17,7 @@ use crate::state::SimulationSnapshot;
 
 /// Messages sent over WebSocket connections to clients.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload")]
 pub enum WsMessage {
     /// A full simulation state update.
     StateUpdate(SimulationSnapshot),
@@ -87,6 +95,98 @@ impl Default for SubscriptionManager {
     }
 }
 
+/// Shared application state passed to WebSocket handlers.
+#[derive(Clone)]
+pub struct AppState {
+    /// Broadcast channel for simulation state updates.
+    pub tx: broadcast::Sender<WsMessage>,
+    /// Subscription manager for tracking connected clients.
+    pub subscriptions: Arc<Mutex<SubscriptionManager>>,
+    /// Shared simulation state for initial snapshot.
+    pub shared_state: crate::state::SharedState,
+    /// Next client ID counter.
+    pub next_client_id: Arc<std::sync::atomic::AtomicU64>,
+}
+
+/// Axum handler that upgrades an HTTP request to a WebSocket connection.
+#[instrument(skip_all)]
+pub async fn ws_upgrade_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    tracing::info!("WebSocket upgrade requested");
+    ws.on_upgrade(move |socket| handle_ws_connection(socket, state))
+}
+
+/// Handles an individual WebSocket connection.
+async fn handle_ws_connection(socket: WebSocket, state: AppState) {
+    let client_id = state
+        .next_client_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    // Register client
+    {
+        let current_tick = state.shared_state.read().tick;
+        let mut subs = state.subscriptions.lock().expect("lock poisoned");
+        subs.add_client(client_id, current_tick);
+    }
+
+    tracing::info!(client_id, "WebSocket client connected");
+
+    let (mut ws_tx, mut ws_rx) = socket.split();
+
+    // Send current state immediately on connect
+    let initial_snapshot = state.shared_state.read();
+    let initial_msg = WsMessage::StateUpdate(initial_snapshot);
+    if let Ok(json) = serde_json::to_string(&initial_msg) {
+        let _ = ws_tx.send(Message::Text(json)).await;
+    }
+
+    // Subscribe to broadcast channel
+    let mut rx = state.tx.subscribe();
+
+    // Forward broadcast messages to this client
+    let send_task = tokio::spawn(async move {
+        while let Ok(msg) = rx.recv().await {
+            match serde_json::to_string(&msg) {
+                Ok(json) => {
+                    if ws_tx.send(Message::Text(json)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to serialize WsMessage: {}", e);
+                }
+            }
+        }
+    });
+
+    // Consume incoming messages (keepalive / close detection)
+    let recv_task = tokio::spawn(async move {
+        while let Some(result) = ws_rx.next().await {
+            match result {
+                Ok(Message::Close(_)) => break,
+                Err(_) => break,
+                _ => {} // Ignore other messages
+            }
+        }
+    });
+
+    // Wait for either task to complete (client disconnect)
+    tokio::select! {
+        _ = send_task => {},
+        _ = recv_task => {},
+    }
+
+    // Unregister client
+    {
+        let mut subs = state.subscriptions.lock().expect("lock poisoned");
+        subs.remove_client(client_id);
+    }
+
+    tracing::info!(client_id, "WebSocket client disconnected");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,5 +220,15 @@ mod tests {
         let mut ids = manager.client_ids();
         ids.sort();
         assert_eq!(ids, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn test_ws_message_serialization() {
+        let snapshot = SimulationSnapshot::default();
+        let msg = WsMessage::StateUpdate(snapshot);
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("StateUpdate"));
+        assert!(json.contains("\"type\""));
+        assert!(json.contains("\"payload\""));
     }
 }
