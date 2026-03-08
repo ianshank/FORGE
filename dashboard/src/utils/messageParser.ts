@@ -42,6 +42,10 @@ export function parseServerMessage(data: unknown): ServerMessage | null {
 
   switch (msg.type) {
     case "StateUpdate": {
+      if (typeof msg.payload !== "object" || msg.payload === null) {
+        log.warn("Expected object payload for StateUpdate");
+        return null;
+      }
       const payload = msg.payload as Record<string, unknown>;
       if (typeof payload.tick !== "number" || !Array.isArray(payload.agents)) {
         log.warn("Invalid StateUpdate payload structure");
@@ -50,6 +54,10 @@ export function parseServerMessage(data: unknown): ServerMessage | null {
       return { type: "StateUpdate", payload: payload as unknown as SimulationState };
     }
     case "Metrics": {
+      if (typeof msg.payload !== "object" || msg.payload === null) {
+        log.warn("Expected object payload for Metrics");
+        return null;
+      }
       const payload = msg.payload as Record<string, unknown>;
       if (typeof payload.simulationTicks !== "number") {
         log.warn("Invalid Metrics payload structure");

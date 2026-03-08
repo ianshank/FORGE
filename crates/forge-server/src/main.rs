@@ -43,6 +43,7 @@ async fn main() {
     let shared_state = SharedState::new();
     let metrics_collector = Arc::new(Mutex::new(MetricsCollector::new()));
     let (tx, _rx) = broadcast::channel::<WsMessage>(config.broadcast_capacity);
+    let (world_tx, world_rx) = tokio::sync::mpsc::channel::<forge_core::WorldState>(1);
 
     let app_state = AppState {
         tx: tx.clone(),
@@ -51,6 +52,7 @@ async fn main() {
         next_client_id: Arc::new(AtomicU64::new(1)),
         metrics_collector: metrics_collector.clone(),
         start_time: Instant::now(),
+        world_replacement_tx: Arc::new(world_tx),
     };
 
     // Create initial world
@@ -75,7 +77,15 @@ async fn main() {
     let sim_metrics = metrics_collector.clone();
     let tick_interval_ms = config.tick_interval_ms;
     tokio::spawn(async move {
-        simulation_loop(world, sim_state, sim_tx, tick_interval_ms, sim_metrics).await;
+        simulation_loop(
+            world,
+            sim_state,
+            sim_tx,
+            tick_interval_ms,
+            sim_metrics,
+            world_rx,
+        )
+        .await;
     });
 
     // CORS layer — restrict to configured origins
@@ -122,11 +132,12 @@ async fn main() {
 /// Background loop that steps the simulation and broadcasts state.
 ///
 /// On each tick this function:
-/// 1. Steps the `WorldState` with no-op actions (demo/visualization mode)
-/// 2. Builds a `SimulationSnapshot` and updates shared state
-/// 3. Broadcasts the snapshot to all WebSocket clients
-/// 4. Records tick metrics
-/// 5. Resets the world if the simulation ended
+/// 1. Checks for a replacement world from the remix endpoint
+/// 2. Steps the `WorldState` with no-op actions (demo/visualization mode)
+/// 3. Records tick metrics
+/// 4. Builds a `SimulationSnapshot` and updates shared state
+/// 5. Broadcasts the snapshot to all WebSocket clients
+/// 6. Resets the world if the simulation ended
 #[tracing::instrument(skip_all, fields(tick_interval_ms))]
 async fn simulation_loop(
     mut world: forge_core::WorldState,
@@ -134,6 +145,7 @@ async fn simulation_loop(
     tx: broadcast::Sender<WsMessage>,
     tick_interval_ms: u64,
     metrics_collector: Arc<Mutex<MetricsCollector>>,
+    mut world_rx: tokio::sync::mpsc::Receiver<forge_core::WorldState>,
 ) {
     let interval = Duration::from_millis(tick_interval_ms);
     let mut tick_timer = tokio::time::interval(interval);
@@ -142,6 +154,15 @@ async fn simulation_loop(
 
     loop {
         tick_timer.tick().await;
+
+        // Check for a replacement world from the remix endpoint
+        if let Ok(new_world) = world_rx.try_recv() {
+            info!(
+                "Adopting remixed world (seed={})",
+                new_world.config.world.seed
+            );
+            world = new_world;
+        }
 
         // Step the world with no-op actions (demo/visualization mode)
         let num_agents = world.agents.len();

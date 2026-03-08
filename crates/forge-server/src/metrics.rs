@@ -1,6 +1,6 @@
 //! Server metrics collection and reporting.
 //!
-//! The `MetricsCollector` tracks simulation ticks and WebSocket connections.
+//! The `MetricsCollector` tracks simulation ticks.
 //! Use `snapshot()` to get a point-in-time `ServerMetrics` for API responses.
 
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,6 @@ pub struct ServerMetrics {
 pub struct MetricsCollector {
     simulation_ticks: u64,
     steps_per_second: f64,
-    ws_connections: u32,
 }
 
 impl MetricsCollector {
@@ -36,7 +35,6 @@ impl MetricsCollector {
         Self {
             simulation_ticks: 0,
             steps_per_second: 0.0,
-            ws_connections: 0,
         }
     }
 
@@ -47,26 +45,6 @@ impl MetricsCollector {
         tracing::trace!(ticks = self.simulation_ticks, "Recorded simulation tick");
     }
 
-    /// Records a new WebSocket client connection.
-    #[instrument(skip(self))]
-    pub fn record_ws_connect(&mut self) {
-        self.ws_connections += 1;
-        tracing::debug!(
-            connections = self.ws_connections,
-            "WebSocket client connected"
-        );
-    }
-
-    /// Records a WebSocket client disconnection.
-    #[instrument(skip(self))]
-    pub fn record_ws_disconnect(&mut self) {
-        self.ws_connections = self.ws_connections.saturating_sub(1);
-        tracing::debug!(
-            connections = self.ws_connections,
-            "WebSocket client disconnected"
-        );
-    }
-
     /// Returns a snapshot of the current server metrics.
     #[instrument(skip(self))]
     pub fn snapshot(&self) -> ServerMetrics {
@@ -74,7 +52,7 @@ impl MetricsCollector {
         ServerMetrics {
             simulation_ticks: self.simulation_ticks,
             steps_per_second: self.steps_per_second,
-            ws_connections: self.ws_connections,
+            ws_connections: 0,
             uptime_seconds: 0,
         }
     }
@@ -101,24 +79,6 @@ mod tests {
 
         let metrics = collector.snapshot();
         assert_eq!(metrics.simulation_ticks, 3);
-    }
-
-    #[test]
-    fn test_connection_tracking() {
-        let mut collector = MetricsCollector::new();
-        assert_eq!(collector.snapshot().ws_connections, 0);
-
-        collector.record_ws_connect();
-        collector.record_ws_connect();
-        assert_eq!(collector.snapshot().ws_connections, 2);
-
-        collector.record_ws_disconnect();
-        assert_eq!(collector.snapshot().ws_connections, 1);
-
-        // Verify saturating subtraction prevents underflow.
-        collector.record_ws_disconnect();
-        collector.record_ws_disconnect();
-        assert_eq!(collector.snapshot().ws_connections, 0);
     }
 
     #[test]

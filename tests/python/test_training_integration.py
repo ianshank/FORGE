@@ -317,19 +317,12 @@ class TestRandomAgentTraining:
         assert episodes_completed == 5
 
 
-_torch_available = True
-try:
-    import torch as _torch  # noqa: F401
-except ImportError:
-    _torch_available = False
-
-
-@pytest.mark.skipif(not _torch_available, reason="torch not installed")
 class TestMAPPOTraining:
     """Test MAPPO agent with PPOTrainer."""
 
     def test_mappo_training_completes(self, env: Any) -> None:
         """MAPPO training runs for a small number of updates without error."""
+        pytest.importorskip("torch")
         from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig  # noqa: PLC0415
         from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
 
@@ -366,6 +359,7 @@ class TestMAPPOTraining:
 
     def test_training_metrics_keys(self, env: Any) -> None:
         """Training metrics contain expected keys."""
+        pytest.importorskip("torch")
         from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig  # noqa: PLC0415
         from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
 

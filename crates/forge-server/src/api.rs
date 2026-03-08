@@ -129,6 +129,12 @@ pub async fn remix_handler(
                 tracing::trace!("No active subscribers for remix broadcast");
             }
 
+            // Send the new world to the simulation loop so it adopts it
+            // on the next tick instead of continuing with the old world.
+            if state.world_replacement_tx.try_send(world).is_err() {
+                tracing::warn!("Failed to send replacement world to simulation loop");
+            }
+
             Json(RemixResponse {
                 success: true,
                 seed,

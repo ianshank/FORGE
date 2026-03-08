@@ -113,6 +113,8 @@ pub struct AppState {
     pub metrics_collector: Arc<Mutex<crate::metrics::MetricsCollector>>,
     /// Server start time for uptime calculation.
     pub start_time: std::time::Instant,
+    /// Channel to send a replacement world to the simulation loop (e.g. from remix).
+    pub world_replacement_tx: Arc<tokio::sync::mpsc::Sender<forge_core::WorldState>>,
 }
 
 /// Serializes a `WsMessage` to a JSON string for sending over WebSocket.
@@ -144,20 +146,21 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
         .next_client_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    // Register client and record connection in metrics
+    // Register client
     {
         let current_tick = state.shared_state.read().tick;
         if let Ok(mut subs) = state.subscriptions.lock() {
             subs.add_client(client_id, current_tick);
-        }
-        if let Ok(mut mc) = state.metrics_collector.lock() {
-            mc.record_ws_connect();
         }
     }
 
     tracing::info!(client_id, "WebSocket client connected");
 
     let (mut ws_tx, mut ws_rx) = socket.split();
+
+    // Subscribe to broadcast channel *before* reading the initial snapshot,
+    // so any ticks that occur while sending the snapshot are queued.
+    let mut rx = state.tx.subscribe();
 
     // Send current state immediately on connect
     let initial_snapshot = state.shared_state.read();
@@ -167,9 +170,6 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
             tracing::warn!(client_id, error = %e, "Failed to send initial snapshot");
         }
     }
-
-    // Subscribe to broadcast channel
-    let mut rx = state.tx.subscribe();
 
     // Forward broadcast messages to this client
     let mut send_task = tokio::spawn(async move {
@@ -204,13 +204,10 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
         _ = &mut recv_task => { send_task.abort(); },
     }
 
-    // Unregister client and record disconnection
+    // Unregister client
     {
         if let Ok(mut subs) = state.subscriptions.lock() {
             subs.remove_client(client_id);
-        }
-        if let Ok(mut mc) = state.metrics_collector.lock() {
-            mc.record_ws_disconnect();
         }
     }
 
