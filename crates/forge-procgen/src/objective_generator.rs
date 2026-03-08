@@ -20,6 +20,18 @@ pub struct ObjectiveGenConfig {
     pub difficulty_tier: u8,
     /// Range of time limits for timed objectives `(min_ticks, max_ticks)`.
     pub time_limit_range: (u64, u64),
+    /// Probability of emitting a primitive node instead of a combinator at non-root depth.
+    pub primitive_probability: f64,
+    /// Inclusive range for the hold-area radius `(min, max)`.
+    pub hold_radius_range: (u16, u16),
+    /// Range for hold-area duration in ticks `(min, max)`.
+    pub hold_duration_range: (u64, u64),
+    /// Range for survive duration in ticks `(min, max)`.
+    pub survive_duration_range: (u64, u64),
+    /// Range for resource collection count `(min, max)`.
+    pub collect_count_range: (u32, u32),
+    /// Available resource type names for `CollectResource` objectives.
+    pub resource_types: Vec<String>,
 }
 
 impl Default for ObjectiveGenConfig {
@@ -29,6 +41,17 @@ impl Default for ObjectiveGenConfig {
             max_breadth: 3,
             difficulty_tier: 1,
             time_limit_range: (1000, 5000),
+            primitive_probability: 0.4,
+            hold_radius_range: (1, 5),
+            hold_duration_range: (50, 500),
+            survive_duration_range: (100, 1000),
+            collect_count_range: (1, 20),
+            resource_types: vec![
+                "gold".to_string(),
+                "wood".to_string(),
+                "stone".to_string(),
+                "food".to_string(),
+            ],
         }
     }
 }
@@ -66,8 +89,8 @@ fn build_objective(
     max_depth: u32,
 ) -> Objective {
     // At max depth or with some probability, emit a primitive
-    if depth >= max_depth || (depth > 0 && rng.gen_bool(0.4)) {
-        return Objective::Primitive(random_primitive(rng, grid_width, grid_height));
+    if depth >= max_depth || (depth > 0 && rng.gen_bool(config.primitive_probability)) {
+        return Objective::Primitive(random_primitive(rng, config, grid_width, grid_height));
     }
 
     let breadth = rng.gen_range(2..=config.max_breadth.max(2));
@@ -94,7 +117,12 @@ fn build_objective(
 }
 
 /// Generates a random primitive objective within grid bounds.
-fn random_primitive(rng: &mut Pcg64Mcg, grid_width: u16, grid_height: u16) -> ObjectivePrimitive {
+fn random_primitive(
+    rng: &mut Pcg64Mcg,
+    config: &ObjectiveGenConfig,
+    grid_width: u16,
+    grid_height: u16,
+) -> ObjectivePrimitive {
     let w = grid_width.max(1);
     let h = grid_height.max(1);
     match rng.gen_range(0u8..5) {
@@ -105,18 +133,34 @@ fn random_primitive(rng: &mut Pcg64Mcg, grid_width: u16, grid_height: u16) -> Ob
         1 => ObjectivePrimitive::HoldArea {
             x: rng.gen_range(0..w),
             y: rng.gen_range(0..h),
-            radius: rng.gen_range(1..=5),
-            duration_ticks: rng.gen_range(50..500),
+            radius: rng.gen_range(config.hold_radius_range.0..=config.hold_radius_range.1),
+            duration_ticks: rng
+                .gen_range(config.hold_duration_range.0..config.hold_duration_range.1),
         },
         2 => ObjectivePrimitive::EliminateTarget {
             target_id: rng.gen_range(0..10),
         },
-        3 => ObjectivePrimitive::CollectResource {
-            resource_type: ["gold", "wood", "stone", "food"][rng.gen_range(0..4)].to_string(),
-            count: rng.gen_range(1..20),
-        },
+        3 => {
+            if config.resource_types.is_empty() {
+                // Fall back to Survive when no resource types are configured.
+                ObjectivePrimitive::Survive {
+                    duration_ticks: rng.gen_range(
+                        config.survive_duration_range.0..config.survive_duration_range.1,
+                    ),
+                }
+            } else {
+                ObjectivePrimitive::CollectResource {
+                    resource_type: config.resource_types
+                        [rng.gen_range(0..config.resource_types.len())]
+                    .clone(),
+                    count: rng
+                        .gen_range(config.collect_count_range.0..config.collect_count_range.1),
+                }
+            }
+        }
         4 => ObjectivePrimitive::Survive {
-            duration_ticks: rng.gen_range(100..1000),
+            duration_ticks: rng
+                .gen_range(config.survive_duration_range.0..config.survive_duration_range.1),
         },
         _ => unreachable!(),
     }

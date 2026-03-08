@@ -24,6 +24,7 @@ pub enum UnitType {
 
 impl UnitType {
     /// Returns all available unit types.
+    #[instrument]
     pub fn all() -> &'static [UnitType] {
         &[
             UnitType::Scout,
