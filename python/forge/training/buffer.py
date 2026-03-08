@@ -8,13 +8,21 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_RNG_SEED = 0
+
 
 class RolloutBuffer:
     """Fixed-capacity buffer for storing rollout transitions."""
 
-    def __init__(self, capacity: int, obs_shape: tuple[int, ...]) -> None:
+    def __init__(
+        self,
+        capacity: int,
+        obs_shape: tuple[int, ...],
+        seed: int = DEFAULT_RNG_SEED,
+    ) -> None:
         self.capacity = capacity
         self.obs_shape = obs_shape
+        self._rng = np.random.default_rng(seed)
         self._observations = np.zeros((capacity, *obs_shape), dtype=np.float32)
         self._actions = np.zeros(capacity, dtype=np.int64)
         self._rewards = np.zeros(capacity, dtype=np.float32)
@@ -51,7 +59,7 @@ class RolloutBuffer:
         if self._size == 0:
             msg = "Cannot sample from empty buffer"
             raise ValueError(msg)
-        indices = np.random.default_rng().integers(0, self._size, size=batch_size)
+        indices = self._rng.integers(0, self._size, size=batch_size)
         return {
             "observations": self._observations[indices],
             "actions": self._actions[indices],

@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_primitive_ids_unique() {
-        let primitives = vec![
+        let primitives = [
             ObjectivePrimitive::ReachLocation { x: 1, y: 2 },
             ObjectivePrimitive::ReachLocation { x: 3, y: 4 },
             ObjectivePrimitive::HoldArea {

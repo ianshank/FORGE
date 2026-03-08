@@ -123,6 +123,7 @@ impl<F: ForwardModel, P: PolicyValue> MctsSearch<F, P> {
     }
 
     /// Returns the MCTS config.
+    #[instrument(skip(self))]
     pub fn config(&self) -> &MctsConfig {
         &self.config
     }
@@ -135,6 +136,7 @@ pub struct MctsAgent<F: ForwardModel, P: PolicyValue> {
 
 impl<F: ForwardModel, P: PolicyValue> MctsAgent<F, P> {
     /// Creates a new MCTS agent.
+    #[instrument(skip_all)]
     pub fn new(model: F, policy: P, config: MctsConfig, comm_vocab_size: u16) -> Self {
         Self {
             search: MctsSearch::new(model, policy, config, comm_vocab_size),

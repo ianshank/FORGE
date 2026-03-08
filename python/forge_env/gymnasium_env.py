@@ -106,7 +106,7 @@ class ForgeGymnasiumEnv:
 
         # Action space is Discrete
         action_n = native_act_space.get("n", _DEFAULT_ACTION_N)
-        self.action_space = spaces.Discrete(action_n)
+        self.action_space: spaces.Discrete = spaces.Discrete(action_n)
 
     def reset(
         self,

@@ -156,6 +156,7 @@ pub struct CommChannel {
 
 impl CommChannel {
     /// Creates a new comm channel with the given config.
+    #[instrument(skip_all)]
     pub fn new(config: CommChannelConfig) -> Self {
         Self {
             config,
@@ -165,6 +166,7 @@ impl CommChannel {
     }
 
     /// Returns `true` if the position is inside a jammed zone.
+    #[instrument(skip_all)]
     pub fn is_jammed(&self, x: u16, y: u16) -> bool {
         if !self.config.jamming_enabled {
             return false;
@@ -177,6 +179,7 @@ impl CommChannel {
     }
 
     /// Queues a message for delivery after the configured latency.
+    #[instrument(skip_all)]
     pub fn queue_message(
         &mut self,
         sender_id: u32,
@@ -223,6 +226,7 @@ impl CommChannel {
     }
 
     /// Returns the number of pending messages.
+    #[instrument(skip_all)]
     pub fn pending_count(&self) -> usize {
         self.pending.len()
     }

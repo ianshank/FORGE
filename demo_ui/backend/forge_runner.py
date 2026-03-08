@@ -12,7 +12,7 @@ import asyncio
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 FORGE_ROOT = Path(__file__).parent.parent.parent  # FORGE/
 DEMO_SCRIPT = FORGE_ROOT / "examples" / "forge_demo.py"
 RESULTS_MD = FORGE_ROOT / "demo_results.md"
+
+DEFAULT_SEED = 42
 
 SECTIONS: dict[str, str] = {
     "worldgen": "World Generation",
@@ -43,7 +45,7 @@ SECTIONS: dict[str, str] = {
 
 async def run_section(
     section: str,
-    seed: int = 42,
+    seed: int = DEFAULT_SEED,
     quick: bool = True,
 ) -> AsyncGenerator[str, None]:
     """Async generator that yields stdout lines from forge_demo.py."""
@@ -70,7 +72,7 @@ async def run_section(
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(FORGE_ROOT),
         )
-    except Exception as exc:
+    except OSError as exc:
         yield f"ERROR: Failed to start process: {exc}\n"
         return
 
@@ -87,7 +89,7 @@ async def run_section(
 
 
 async def run_all(
-    seed: int = 42,
+    seed: int = DEFAULT_SEED,
     quick: bool = True,
 ) -> AsyncGenerator[str, None]:
     """Async generator that runs all 8 sections sequentially."""
@@ -103,7 +105,7 @@ async def run_all(
 # ---------------------------------------------------------------------------
 
 
-def parse_results_md(path: Path | None = None) -> dict:
+def parse_results_md(path: Path | None = None) -> dict[str, Any]:
     """Parse demo_results.md into a structured dict."""
     md_path = path or RESULTS_MD
     if not md_path.exists():
@@ -138,7 +140,7 @@ def parse_results_md(path: Path | None = None) -> dict:
 
     return {
         "date": date_match.group(1).strip() if date_match else "N/A",
-        "seed": int(seed_match.group(1)) if seed_match else 42,
+        "seed": int(seed_match.group(1)) if seed_match else DEFAULT_SEED,
         "platform": platform_match.group(1).strip() if platform_match else "N/A",
         "result": result_match.group(1).strip() if result_match else "N/A",
         "sections": sections,

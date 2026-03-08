@@ -38,6 +38,8 @@ __all__ = [
     "TimeLimit",
 ]
 
+DEFAULT_REWARD_CLIP = 10.0
+DEFAULT_REWARD_EPSILON = 1e-8
 
 # ---------------------------------------------------------------------------
 # Base helper
@@ -156,8 +158,8 @@ class NormalizeRewardWrapper(_BaseWrapper):
     def __init__(
         self,
         env: Any,
-        clip: float = 10.0,
-        epsilon: float = 1e-8,
+        clip: float = DEFAULT_REWARD_CLIP,
+        epsilon: float = DEFAULT_REWARD_EPSILON,
     ) -> None:
         super().__init__(env)
         self.reward_mean: float = 0.0

@@ -1,12 +1,10 @@
-version: "3.9"
-
 services:
   simulation:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ../forge.toml:/app/forge.toml:ro
       - ../configs:/app/configs:ro
@@ -19,9 +17,9 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    command: ["npx", "serve", "-s", "/app/dashboard/dist", "-l", "3000"]
+    command: ["python3", "-m", "http.server", "3000", "--directory", "/app/dashboard/dist"]
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - simulation
 
@@ -30,6 +28,6 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.demo
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ../forge.toml:/app/forge.toml:ro

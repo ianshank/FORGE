@@ -64,13 +64,22 @@ Shows the major containers (deployable units) within FORGE.
 │  │  └────────────┘  └────────────┘  └────────────┘  └───────────┘  │   │
 │  │                                                                  │   │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌───────────┐  │   │
-│  │  │forge-agent │  │forge-python│  │forge-wasm  │  │forge-bench│  │   │
-│  │  │            │  │            │  │            │  │           │  │   │
-│  │  │ MCTS       │  │ PyO3       │  │ wasm-      │  │ Criterion │  │   │
-│  │  │ planner,   │  │ bindings,  │  │ bindgen,   │  │ benchmarks│  │   │
-│  │  │ baselines, │  │ numpy obs  │  │ JSON I/O   │  │ step      │  │   │
-│  │  │ policies   │  │ GIL release│  │            │  │ throughput│  │   │
+│  │  │forge-agent │  │forge-      │  │forge-server│  │forge-bench│  │   │
+│  │  │            │  │procgen     │  │            │  │           │  │   │
+│  │  │ MCTS       │  │            │  │ HTTP/WS    │  │ Criterion │  │   │
+│  │  │ planner,   │  │ Maps,      │  │ API,       │  │ benchmarks│  │   │
+│  │  │ baselines, │  │ objectives,│  │ metrics,   │  │ step      │  │   │
+│  │  │ policies   │  │ curriculum │  │ live state │  │ throughput│  │   │
 │  │  └────────────┘  └────────────┘  └────────────┘  └───────────┘  │   │
+│  │                                                                  │   │
+│  │  ┌────────────┐  ┌────────────┐                                  │   │
+│  │  │forge-python│  │forge-wasm  │                                  │   │
+│  │  │            │  │            │                                  │   │
+│  │  │ PyO3       │  │ wasm-      │                                  │   │
+│  │  │ bindings,  │  │ bindgen,   │                                  │   │
+│  │  │ numpy obs  │  │ JSON I/O   │                                  │   │
+│  │  │ GIL release│  │            │                                  │   │
+│  │  └────────────┘  └────────────┘                                  │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                         │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
@@ -85,6 +94,26 @@ Shows the major containers (deployable units) within FORGE.
 │  │  │ wrapper      │ │ Parallel API │ │ vectorize│ │ TimeLimit  │   │   │
 │  │  └──────────────┘ └──────────────┘ └─────────┘ └────────────┘   │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │               Python Package (forge — training & agents)        │   │
+│  │                                                                  │   │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌─────────┐ ┌────────────┐   │   │
+│  │  │ agents/      │ │ training/    │ │ models/ │ │ traces/    │   │   │
+│  │  │              │ │              │ │         │ │            │   │   │
+│  │  │ BaseAgent,   │ │ Trainer,     │ │ Policy  │ │ Decision   │   │   │
+│  │  │ RandomAgent, │ │ RolloutBuffer│ │ network,│ │ trace      │   │   │
+│  │  │ MCTSAgent    │ │ Checkpointing│ │ world   │ │ logging    │   │   │
+│  │  │              │ │              │ │ model   │ │            │   │   │
+│  │  └──────────────┘ └──────────────┘ └─────────┘ └────────────┘   │   │
+│  │  ┌──────────────┐ ┌──────────────┐                               │   │
+│  │  │ config.py    │ │ utils/       │                               │   │
+│  │  │              │ │              │                               │   │
+│  │  │ TOML config  │ │ Device,      │                               │   │
+│  │  │ loader       │ │ logging,     │                               │   │
+│  │  │              │ │ metrics,seed │                               │   │
+│  │  └──────────────┘ └──────────────┘                               │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,10 +126,13 @@ Shows the major containers (deployable units) within FORGE.
 | **forge-worldgen** | Rust crate | Procedural world generation: Perlin noise terrain, biome classification, resource/object placement. |
 | **forge-task** | Rust crate | Composable task DSL with 7 operators, 10 predicates, 6 tiers, and adaptive curriculum. |
 | **forge-agent** | Rust crate | MCTS planner with PUCT selection, forward model, baseline agents (Random, Greedy, Heuristic). |
+| **forge-procgen** | Rust crate | Procedural content generation: map generator, objective generator, team composer, curriculum controller with configurable difficulty scaling. |
+| **forge-server** | Rust crate | HTTP/WebSocket API server: REST endpoints, metrics collection, live simulation state streaming. |
 | **forge-python** | Rust crate (PyO3) | Python bindings exposing `ForgeEnv` with numpy observations, GIL release during step. |
 | **forge-wasm** | Rust crate (wasm-bindgen) | WebAssembly bindings with JSON-string I/O for browser environments. |
 | **forge-bench** | Rust crate (Criterion) | Performance benchmarks: step throughput, world creation, serialization. |
-| **Python wrappers** | Python package | Gymnasium, PettingZoo, JAX wrappers, observation/reward transforms. |
+| **Python wrappers** | Python package (forge_env) | Gymnasium, PettingZoo, JAX wrappers, observation/reward transforms. |
+| **Python framework** | Python package (forge) | Training pipeline, agent implementations, policy networks, decision traces, TOML config loader, utility modules. |
 
 ---
 
@@ -355,7 +387,73 @@ The core engine executes a deterministic pipeline of systems every tick.
          └──────────┘ └───────────────┘ └────────────────┘ └──────┘
 ```
 
-### 3.5 Python Bindings — Data Flow
+### 3.5 forge-procgen — Procedural Content Generation
+
+```
+         ┌──────────────────────────────────────┐
+         │          forge-procgen                 │
+         │                                        │
+         │  ┌──────────────┐  ┌───────────────┐  │
+         │  │MapGenerator  │  │ObjectiveGen   │  │
+         │  │              │  │               │  │
+         │  │ generate()   │  │ generate()    │  │
+         │  │ → Grid with  │  │ → Task tree   │  │
+         │  │   terrain,   │  │   from tier + │  │
+         │  │   resources, │  │   seed        │  │
+         │  │   spawns     │  │               │  │
+         │  └──────────────┘  └───────────────┘  │
+         │                                        │
+         │  ┌──────────────┐  ┌───────────────┐  │
+         │  │TeamComposer  │  │CurriculumCtrl │  │
+         │  │              │  │               │  │
+         │  │ compose()    │  │ update_params │  │
+         │  │ → Agent team │  │ Adaptive      │  │
+         │  │   layout,    │  │ difficulty    │  │
+         │  │   roles,     │  │ scaling with  │  │
+         │  │   loadouts   │  │ configurable  │  │
+         │  │              │  │ thresholds    │  │
+         │  └──────────────┘  └───────────────┘  │
+         │                                        │
+         │  ┌──────────────┐  ┌───────────────┐  │
+         │  │GrammarSystem │  │SeedManager    │  │
+         │  │              │  │               │  │
+         │  │ L-system     │  │ Deterministic │  │
+         │  │ rules for    │  │ seed chain    │  │
+         │  │ structure    │  │ for           │  │
+         │  │ generation   │  │ reproducible  │  │
+         │  │              │  │ content       │  │
+         │  └──────────────┘  └───────────────┘  │
+         └────────────────────────────────────────┘
+```
+
+### 3.6 forge-server — API Server
+
+```
+         ┌──────────────────────────────────────┐
+         │          forge-server                  │
+         │                                        │
+         │  ┌──────────────┐  ┌───────────────┐  │
+         │  │  REST API    │  │  WebSocket    │  │
+         │  │              │  │  Handler      │  │
+         │  │ GET /api/    │  │               │  │
+         │  │   state,     │  │ /ws           │  │
+         │  │   metrics,   │  │ Live state    │  │
+         │  │   config     │  │ streaming     │  │
+         │  └──────────────┘  └───────────────┘  │
+         │                                        │
+         │  ┌──────────────┐  ┌───────────────┐  │
+         │  │ MetricsStore │  │ SimState      │  │
+         │  │              │  │               │  │
+         │  │ Tracks       │  │ Thread-safe   │  │
+         │  │ steps/sec,   │  │ simulation    │  │
+         │  │ episode      │  │ state with    │  │
+         │  │ stats,       │  │ schema        │  │
+         │  │ agent perf   │  │ versioning    │  │
+         │  └──────────────┘  └───────────────┘  │
+         └────────────────────────────────────────┘
+```
+
+### 3.7 Python Bindings — Data Flow
 
 ```
      Python User Code
@@ -519,17 +617,18 @@ Observation
 ```
                     forge-types
                    (shared types)
-                  ╱    │    ╲    ╲
-                 ╱     │     ╲    ╲
-                ▼      ▼      ▼    ▼
-          forge-    forge-  forge-  forge-
-          worldgen  core    task    agent
-               ╲     │     ╱      ╱
-                ╲    │    ╱      ╱
-                 ▼   ▼   ▼     ╱
-               forge-python   ╱
-               forge-wasm    ╱
-               forge-bench ─╱
+                ╱   │   │    ╲    ╲
+               ╱    │   │     ╲    ╲
+              ▼     ▼   ▼      ▼    ▼
+        forge-  forge- forge- forge- forge-
+        worldgen core   task  agent  procgen
+             ╲    │    ╱     ╱    ╱
+              ╲   │   ╱     ╱    ╱
+               ▼  ▼  ▼    ╱    ╱
+             forge-python ╱    ╱
+             forge-wasm  ╱    ╱
+             forge-server    ╱
+             forge-bench ───╱
 ```
 
 | Crate | Dependencies |
@@ -538,7 +637,9 @@ Observation
 | forge-worldgen | forge-types, rand_pcg, tracing |
 | forge-core | forge-types, forge-worldgen, rand, rand_pcg, fixed, serde, bincode, smallvec, tracing |
 | forge-task | forge-types, rand, tracing |
-| forge-agent | forge-types, forge-core, rand, rand_pcg, tracing |
+| forge-agent | forge-types, forge-core, rand, rand_pcg, serde, tracing |
+| forge-procgen | forge-types, forge-core, rand, rand_pcg, serde, tracing |
+| forge-server | forge-types, forge-core, serde, serde_json, tracing |
 | forge-python | forge-types, forge-core, forge-worldgen, forge-task, pyo3, numpy, serde_json, tracing |
 | forge-wasm | forge-types, forge-core, serde, serde_json, wasm-bindgen, tracing |
 | forge-bench | forge-types, forge-core, rand, rand_pcg, criterion |
@@ -609,13 +710,13 @@ Index:  0   1   2   3   4   5   6 ··· 15  16 ··· 25  26 ··· 34  35 36 3
   git push / PR
        │
        ▼
-  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
-  │   fmt    │  │  clippy  │  │   test   │  │  bench   │
-  │          │  │          │  │          │  │          │
-  │ cargo    │  │ cargo    │  │ cargo    │  │ cargo    │
-  │ fmt --   │  │ clippy   │  │ test     │  │ bench    │
-  │ check    │  │ -D warn  │  │ --verbose│  │ --no-run │
-  └──────────┘  └──────────┘  └──────────┘  └──────────┘
+  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+  │   fmt    │  │  clippy  │  │   test   │  │  bench   │  │  python  │
+  │          │  │          │  │          │  │          │  │          │
+  │ cargo    │  │ cargo    │  │ cargo    │  │ cargo    │  │ ruff     │
+  │ fmt --   │  │ clippy   │  │ test     │  │ bench    │  │ mypy     │
+  │ check    │  │ -D warn  │  │ --verbose│  │ --no-run │  │ pytest   │
+  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘
        All run on: ubuntu-latest, stable Rust, with caching
 ```
 

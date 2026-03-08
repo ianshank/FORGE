@@ -3,6 +3,8 @@
 use serde::Serialize;
 use tracing::instrument;
 
+use crate::SCHEMA_VERSION;
+
 /// Response payload for the `/config` endpoint.
 #[derive(Debug, Serialize)]
 pub struct ConfigResponse {
@@ -27,7 +29,7 @@ pub fn config_handler() -> ConfigResponse {
     tracing::debug!("Handling config request");
     ConfigResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        schema_version: 1,
+        schema_version: SCHEMA_VERSION,
     }
 }
 
@@ -49,7 +51,7 @@ mod tests {
     fn test_config_handler() {
         let response = config_handler();
         assert!(!response.version.is_empty());
-        assert_eq!(response.schema_version, 1);
+        assert_eq!(response.schema_version, SCHEMA_VERSION);
     }
 
     #[test]

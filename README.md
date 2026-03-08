@@ -35,7 +35,8 @@ A high-performance simulation platform for training and evaluating AI agents, bu
 - **MCTS planning**: Built-in Monte Carlo Tree Search agent with configurable PUCT exploration
 - **Cross-platform**: Native Python bindings (PyO3/maturin) and WebAssembly bindings (wasm-bindgen)
 - **Zero allocation hot path**: `WorldState::step()` is designed to avoid heap allocation
-- **389 tests**: Comprehensive test suite with property-based testing via `proptest`
+- **Structured tracing**: `#[instrument]` on public functions throughout with `tracing` crate
+- **685+ tests**: 614 Rust + 71 Python tests with property-based testing via `proptest`
 
 ## Quick Start
 
@@ -119,13 +120,21 @@ FORGE/
 │   ├── forge-types/     # Shared types, configs, errors (no heavy deps)
 │   ├── forge-core/      # Simulation engine — deterministic step function
 │   ├── forge-worldgen/  # Procedural generation (Perlin noise, biomes)
+│   ├── forge-procgen/   # Procedural content: maps, objectives, curriculum
 │   ├── forge-task/      # Task DSL and curriculum system
 │   ├── forge-agent/     # MCTS planner and baseline agents
+│   ├── forge-server/    # HTTP/WebSocket API server (metrics, live state)
 │   ├── forge-python/    # PyO3 bindings for Python/Gymnasium API
 │   ├── forge-wasm/      # wasm-bindgen bindings for browser/JS
 │   └── forge-bench/     # Criterion benchmarks
 ├── python/
-│   └── forge_env/       # Python wrappers (Gymnasium, PettingZoo, JAX)
+│   ├── forge_env/       # Python wrappers (Gymnasium, PettingZoo, JAX)
+│   └── forge/           # Training, agents, models, traces, config, utils
+├── configs/             # TOML configs (agents, curriculum, scenarios)
+├── scripts/             # CLI tools (train, evaluate, demo, replay, export)
+├── dashboard/           # React/TypeScript real-time simulation dashboard
+├── demo_ui/             # Lightweight SSE-based demo web UI
+├── docker/              # Docker and Compose deployment files
 ├── examples/            # Python demo scripts
 └── tests/               # Integration and Python tests
 ```
@@ -300,11 +309,11 @@ All WASM I/O uses JSON strings for JavaScript compatibility.
 # Build all crates
 cargo build --workspace
 
-# Run all tests (389 tests)
+# Run all tests (614 Rust tests)
 cargo test --workspace
 
 # Lint (must pass with zero warnings)
-cargo clippy --workspace -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 
 # Format
 cargo fmt --check
@@ -312,11 +321,13 @@ cargo fmt --check
 # Run benchmarks
 cargo bench -p forge-bench
 
-# Python tests (requires maturin build first)
+# Python tests (requires maturin develop first)
+maturin develop
 pytest tests/python/ -v
 
-# Python lint
-ruff check examples/ python/
+# Python lint + type check
+ruff check python/ tests/python/ scripts/ demo_ui/
+mypy python/forge_env/ tests/python/ --ignore-missing-imports
 ```
 
 ## Performance
@@ -343,14 +354,52 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 | [`mcts_planning.py`](examples/mcts_planning.py) | Monte Carlo Tree Search planning concept |
 | [`train_ppo.py`](examples/train_ppo.py) | PPO training with Stable Baselines3 integration |
 
+## Scripts
+
+| File | Description |
+|------|-------------|
+| [`scripts/train.py`](scripts/train.py) | Training loop with checkpointing |
+| [`scripts/evaluate.py`](scripts/evaluate.py) | Model evaluation and metrics |
+| [`scripts/demo.py`](scripts/demo.py) | Launch demo server |
+| [`scripts/replay_viewer.py`](scripts/replay_viewer.py) | Replay visualization tool |
+| [`scripts/export_edge.py`](scripts/export_edge.py) | Export models for edge deployment |
+
+## Configuration
+
+FORGE uses TOML configuration files under `configs/`:
+
+```
+configs/
+├── agents/          # Agent configs (mappo_default, mcts_default, hybrid_default)
+├── curriculum/      # Curriculum tiers (beginner, intermediate, advanced)
+└── scenarios/       # Scenario configs (patrol, escort, search_and_rescue, etc.)
+```
+
+All config structs derive `Clone, Debug, Serialize, Deserialize` and implement `Default` for programmatic use without config files.
+
+## Docker
+
+```bash
+# Build and run with Docker Compose
+cd docker
+docker compose up --build
+
+# Or build individually
+docker build -f docker/Dockerfile -t forge .
+docker build -f docker/Dockerfile.demo -t forge-demo .
+```
+
+Ports are bound to `127.0.0.1` by default for security. Override via environment variables.
+
 ## Project Stats
 
 | | |
 |---|---|
-| Rust source | ~13,400 lines across 8 crates |
-| Python source | ~1,200 lines (wrappers + utilities) |
-| Examples + tests | ~2,200 lines |
-| Test count | 389 (unit + property-based + integration) |
+| Rust source | ~19,500 lines across 10 crates |
+| Python source | ~2,500 lines (wrappers, training, agents, utils) |
+| Examples, tests, scripts | ~4,500 lines |
+| Rust tests | 614 (unit + property-based + integration) |
+| Python tests | 71 (pytest) |
 | Dependencies | See [`Cargo.toml`](Cargo.toml) for full list |
 
 ## Developed By

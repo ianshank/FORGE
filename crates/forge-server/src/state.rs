@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 use tracing::instrument;
 
+use crate::SCHEMA_VERSION;
+
 /// A snapshot of a single agent's state for visualization.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AgentSnapshot {
@@ -48,7 +50,7 @@ impl Default for SimulationSnapshot {
             grid_width: 0,
             grid_height: 0,
             events: Vec::new(),
-            schema_version: 1,
+            schema_version: SCHEMA_VERSION,
         }
     }
 }
@@ -113,7 +115,7 @@ mod tests {
             grid_width: 64,
             grid_height: 64,
             events: vec!["agent_spawned".to_string()],
-            schema_version: 1,
+            schema_version: SCHEMA_VERSION,
         };
 
         shared.update(snapshot);

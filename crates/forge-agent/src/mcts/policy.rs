@@ -5,6 +5,7 @@
 //! as a default.
 
 use forge_core::WorldState;
+use tracing::instrument;
 
 /// A policy/value function that guides MCTS search.
 ///
@@ -33,6 +34,7 @@ pub struct UniformPolicy {
 
 impl UniformPolicy {
     /// Creates a new uniform policy for the given action space.
+    #[instrument]
     pub fn new(action_space: u32) -> Self {
         Self { action_space }
     }
@@ -56,6 +58,7 @@ pub struct HeuristicPolicy {
 
 impl HeuristicPolicy {
     /// Creates a new heuristic policy.
+    #[instrument]
     pub fn new(action_space: u32) -> Self {
         Self { action_space }
     }
