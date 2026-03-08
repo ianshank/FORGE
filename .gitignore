@@ -51,5 +51,13 @@ htmlcov/
 .coverage
 coverage.xml
 
+# Node
+node_modules/
+
+# Playwright
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+
 # Claude agent configuration (not for repo)
 .claude/

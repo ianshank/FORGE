@@ -1,0 +1,16 @@
+{
+  "name": "forge-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:dashboard": "playwright test --project=dashboard",
+    "test:demo": "playwright test --project=demo-ui",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^25.3.5"
+  }
+}
