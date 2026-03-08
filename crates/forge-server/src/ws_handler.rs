@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tracing::instrument;
 
-use crate::metrics::ServerMetrics;
 use crate::state::SimulationSnapshot;
 
 /// Messages sent over WebSocket connections to clients.
@@ -24,8 +23,6 @@ use crate::state::SimulationSnapshot;
 pub enum WsMessage {
     /// A full simulation state update.
     StateUpdate(SimulationSnapshot),
-    /// Current server metrics.
-    Metrics(ServerMetrics),
     /// An error description sent to the client.
     Error(String),
 }
@@ -276,15 +273,6 @@ mod tests {
         let json = result.unwrap();
         assert!(json.contains("Error"));
         assert!(json.contains("test error"));
-    }
-
-    #[test]
-    fn test_ws_message_metrics_variant() {
-        let metrics = ServerMetrics::default();
-        let msg = WsMessage::Metrics(metrics);
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("Metrics"));
-        assert!(json.contains("\"type\""));
     }
 
     #[test]

@@ -27,7 +27,6 @@ logger = logging.getLogger("forge.train")
 # --- CLI argument defaults (no magic numbers) ---
 _DEFAULT_EPISODES = 100
 _DEFAULT_NUM_UPDATES = 10
-_DEFAULT_EVAL_EPISODES = 5
 _DEFAULT_SEED = 42
 _DEFAULT_CHECKPOINT_DIR = "checkpoints"
 _DEFAULT_LOG_LEVEL = "INFO"
@@ -66,12 +65,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=_DEFAULT_NUM_UPDATES,
         help="PPO update iterations (mappo only)",
-    )
-    parser.add_argument(
-        "--eval-episodes",
-        type=int,
-        default=_DEFAULT_EVAL_EPISODES,
-        help="Evaluation episodes per eval",
     )
     parser.add_argument(
         "--seed",

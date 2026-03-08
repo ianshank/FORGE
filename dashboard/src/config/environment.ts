@@ -61,9 +61,10 @@ export const DEFAULT_CONFIG: DashboardConfig = {
     MIN_CELL_SIZE,
     MAX_CELL_SIZE,
   ),
-  maxReconnectAttempts: parseIntWithDefault(
-    import.meta.env.VITE_MAX_RECONNECT_ATTEMPTS,
-    10,
+  maxReconnectAttempts: clamp(
+    parseIntWithDefault(import.meta.env.VITE_MAX_RECONNECT_ATTEMPTS, 10),
+    1,
+    100,
   ),
 };
 

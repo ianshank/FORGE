@@ -120,17 +120,8 @@ pub async fn remix_handler(
 
     match forge_core::WorldState::new(config) {
         Ok(world) => {
-            // Build snapshot from the new world
-            let snapshot = build_snapshot_from_world(&world);
-            state.shared_state.update(snapshot.clone());
-
-            // Broadcast the new state to all connected clients
-            if state.tx.send(WsMessage::StateUpdate(snapshot)).is_err() {
-                tracing::trace!("No active subscribers for remix broadcast");
-            }
-
-            // Send the new world to the simulation loop so it adopts it
-            // on the next tick instead of continuing with the old world.
+            // Send the new world to the simulation loop first — if the
+            // channel is full a prior remix is still pending and we bail.
             if state.world_replacement_tx.try_send(world).is_err() {
                 tracing::warn!("Replacement channel full — a prior remix is still pending");
                 return Json(RemixResponse {
@@ -139,6 +130,22 @@ pub async fn remix_handler(
                     grid_width,
                     grid_height,
                 });
+            }
+
+            // Build snapshot from the new world config (world was moved,
+            // but we can reconstruct a minimal snapshot for immediate broadcast).
+            let mut snapshot_config = forge_types::config::ForgeConfig::default();
+            snapshot_config.world.seed = seed;
+            if let Some(gs) = grid_size {
+                snapshot_config.world.width = gs;
+                snapshot_config.world.height = gs;
+            }
+            if let Ok(snapshot_world) = forge_core::WorldState::new(snapshot_config) {
+                let snapshot = build_snapshot_from_world(&snapshot_world);
+                state.shared_state.update(snapshot.clone());
+                if state.tx.send(WsMessage::StateUpdate(snapshot)).is_err() {
+                    tracing::trace!("No active subscribers for remix broadcast");
+                }
             }
 
             Json(RemixResponse {

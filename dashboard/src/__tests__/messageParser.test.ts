@@ -24,25 +24,6 @@ describe("parseServerMessage", () => {
     }
   });
 
-  it("parses a valid Metrics message", () => {
-    const data = {
-      type: "Metrics",
-      payload: {
-        simulationTicks: 100,
-        stepsPerSecond: 10.5,
-        wsConnections: 3,
-        uptimeSeconds: 60,
-      },
-    };
-
-    const result = parseServerMessage(data);
-    expect(result).not.toBeNull();
-    expect(result?.type).toBe("Metrics");
-    if (result?.type === "Metrics") {
-      expect(result.payload.simulationTicks).toBe(100);
-    }
-  });
-
   it("parses a valid Error message", () => {
     const data = { type: "Error", payload: "something went wrong" };
     const result = parseServerMessage(data);
@@ -70,11 +51,6 @@ describe("parseServerMessage", () => {
 
   it("returns null for invalid StateUpdate payload", () => {
     const data = { type: "StateUpdate", payload: { tick: "not_a_number" } };
-    expect(parseServerMessage(data)).toBeNull();
-  });
-
-  it("returns null for invalid Metrics payload", () => {
-    const data = { type: "Metrics", payload: { invalid: true } };
     expect(parseServerMessage(data)).toBeNull();
   });
 

@@ -5,7 +5,7 @@
  * dispatching to typed handlers.
  */
 
-import type { ServerMetrics, SimulationState } from "../types/simulation";
+import type { SimulationState } from "../types/simulation";
 import { createLogger } from "./logger";
 
 const log = createLogger("messageParser");
@@ -13,7 +13,6 @@ const log = createLogger("messageParser");
 /** Discriminated union of all server->client WebSocket messages. */
 export type ServerMessage =
   | { type: "StateUpdate"; payload: SimulationState }
-  | { type: "Metrics"; payload: ServerMetrics }
   | { type: "Error"; payload: string };
 
 /**
@@ -52,18 +51,6 @@ export function parseServerMessage(data: unknown): ServerMessage | null {
         return null;
       }
       return { type: "StateUpdate", payload: payload as unknown as SimulationState };
-    }
-    case "Metrics": {
-      if (typeof msg.payload !== "object" || msg.payload === null) {
-        log.warn("Expected object payload for Metrics");
-        return null;
-      }
-      const payload = msg.payload as Record<string, unknown>;
-      if (typeof payload.simulationTicks !== "number") {
-        log.warn("Invalid Metrics payload structure");
-        return null;
-      }
-      return { type: "Metrics", payload: payload as unknown as ServerMetrics };
     }
     case "Error": {
       if (typeof msg.payload !== "string") {

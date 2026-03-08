@@ -96,8 +96,8 @@ async fn main() {
         .collect();
     let cors = CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods(tower_http::cors::Any)
-        .allow_headers(tower_http::cors::Any);
+        .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+        .allow_headers([axum::http::header::CONTENT_TYPE]);
 
     // Build router
     let app = Router::new()
