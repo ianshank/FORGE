@@ -413,9 +413,11 @@ mod tests {
     ///
     /// Ensures that environment variables are restored even if the test panics,
     /// preventing variable leakage into subsequent tests.
+    ///
+    /// Uses OsString to properly handle non-UTF8 environment variable values.
     struct EnvironmentGuard {
         var_name: &'static str,
-        original_value: Option<String>,
+        original_value: Option<std::ffi::OsString>,
     }
 
     impl Drop for EnvironmentGuard {
@@ -489,11 +491,11 @@ num_agents = 4
         // Use EnvironmentGuard to ensure vars are restored even if test panics
         let _width_guard = EnvironmentGuard {
             var_name: "FORGE_WORLD_WIDTH",
-            original_value: std::env::var("FORGE_WORLD_WIDTH").ok(),
+            original_value: std::env::var_os("FORGE_WORLD_WIDTH"),
         };
         let _agents_guard = EnvironmentGuard {
             var_name: "FORGE_AGENTS_NUM_AGENTS",
-            original_value: std::env::var("FORGE_AGENTS_NUM_AGENTS").ok(),
+            original_value: std::env::var_os("FORGE_AGENTS_NUM_AGENTS"),
         };
 
         std::env::set_var("FORGE_WORLD_WIDTH", "200");
@@ -511,7 +513,7 @@ num_agents = 4
         // Use EnvironmentGuard to ensure var is restored even if test panics
         let _width_guard = EnvironmentGuard {
             var_name: "FORGE_WORLD_WIDTH",
-            original_value: std::env::var("FORGE_WORLD_WIDTH").ok(),
+            original_value: std::env::var_os("FORGE_WORLD_WIDTH"),
         };
 
         std::env::set_var("FORGE_WORLD_WIDTH", "not_a_number");
