@@ -23,14 +23,13 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .forge_runner import SECTIONS, parse_results_md, run_all, run_section
+from .forge_runner import DEFAULT_SEED, SECTIONS, parse_results_md, run_all, run_section
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 _APP_VERSION = "1.0.0"
-DEFAULT_SEED = 42
 SSE_STREAM_END = "__STREAM_END__"
 
 # ---------------------------------------------------------------------------

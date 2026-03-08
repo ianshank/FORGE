@@ -88,7 +88,7 @@ pub struct AgentCapabilities {
 impl Default for AgentCapabilities {
     fn default() -> Self {
         Self {
-            speed_multiplier: 65536, // 1.0x
+            speed_multiplier: crate::constants::FIXED_POINT_ONE, // 1.0x
             crafting_level: 1,
             can_communicate: true,
             can_trade: true,
