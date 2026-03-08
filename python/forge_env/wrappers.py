@@ -109,7 +109,7 @@ class FlattenObservationWrapper(_BaseWrapper):
             np.asarray(obs_dict[key], dtype=np.float32).ravel()
             for key in sorted(obs_dict.keys())
         ]
-        return np.concatenate(parts)
+        return np.concatenate(parts)  # type: ignore[no-any-return]
 
     # -- env interface ------------------------------------------------------
 

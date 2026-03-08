@@ -170,7 +170,7 @@ class PPOTrainer:
 
         # Pre-allocate arrays
         observations = np.zeros((T, obs_dim), dtype=np.float32)
-        actions = np.zeros(T, dtype=np.int64)
+        actions: np.ndarray = np.zeros(T, dtype=np.int64)
         rewards = np.zeros(T, dtype=np.float32)
         dones = np.zeros(T, dtype=np.float32)
         log_probs = np.zeros(T, dtype=np.float32)

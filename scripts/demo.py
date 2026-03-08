@@ -72,7 +72,7 @@ def _start_process(
     """Start a subprocess and register cleanup."""
     logger.info("Starting %s: %s", label, " ".join(cmd))
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    atexit.register(lambda p=proc, lbl=label: _cleanup(p, lbl, logger))
+    atexit.register(lambda p=proc, lbl=label: _cleanup(p, lbl, logger))  # type: ignore[misc]
     return proc
 
 

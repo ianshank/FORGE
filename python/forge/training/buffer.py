@@ -24,9 +24,9 @@ class RolloutBuffer:
         self.obs_shape = obs_shape
         self._rng = np.random.default_rng(seed)
         self._observations = np.zeros((capacity, *obs_shape), dtype=np.float32)
-        self._actions = np.zeros(capacity, dtype=np.int64)
-        self._rewards = np.zeros(capacity, dtype=np.float32)
-        self._dones = np.zeros(capacity, dtype=np.bool_)
+        self._actions: np.ndarray = np.zeros(capacity, dtype=np.int64)
+        self._rewards: np.ndarray = np.zeros(capacity, dtype=np.float32)
+        self._dones: np.ndarray = np.zeros(capacity, dtype=np.bool_)
         self._infos: list[dict[str, Any]] = []
         self._size: int = 0
         self._pos: int = 0

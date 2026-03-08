@@ -51,7 +51,8 @@ class RandomPolicyNetwork(PolicyNetwork):
 
     def forward(self, obs: np.ndarray) -> np.ndarray:
         """Return uniform action probabilities."""
-        return np.ones(self.action_size, dtype=np.float32) / self.action_size
+        result: np.ndarray = np.ones(self.action_size, dtype=np.float32) / self.action_size
+        return result
 
     def train_step(self, batch: dict[str, np.ndarray]) -> dict[str, float]:
         """No-op training step."""

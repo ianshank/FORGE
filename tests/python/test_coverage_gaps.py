@@ -553,6 +553,14 @@ class TestDecisionTraceMigration:
 # ============================================================
 
 
+_torch_available = True
+try:
+    import torch as _torch  # noqa: F401
+except ImportError:
+    _torch_available = False
+
+
+@pytest.mark.skipif(not _torch_available, reason="torch not installed")
 class TestActorCriticDimensionValidation:
     """Tests for ActorCriticNetwork load-time dimension validation."""
 

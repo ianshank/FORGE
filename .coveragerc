@@ -1,0 +1,20 @@
+[run]
+source = forge,forge_env
+
+[report]
+# Exclude modules requiring torch/jax (not available in CI without GPU)
+omit =
+    python/forge/agents/mappo_agent.py
+    python/forge/models/policy_network.py
+    python/forge/training/trainer.py
+    python/forge_env/jax_env.py
+
+# Lines to exclude from coverage counting
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    pass
+    \.\.\.
+
+fail_under = 80

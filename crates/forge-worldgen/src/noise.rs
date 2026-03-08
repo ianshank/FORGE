@@ -48,6 +48,7 @@ impl PerlinNoise {
     /// Samples 2D Perlin noise at the given coordinates.
     ///
     /// Returns a value in the range \[-1.0, 1.0\].
+    #[instrument(skip(self), level = "trace")]
     pub fn sample_2d(&self, x: f64, y: f64) -> f64 {
         // Determine grid cell coordinates
         let xi = fast_floor(x);

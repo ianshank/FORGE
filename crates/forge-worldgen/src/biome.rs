@@ -84,6 +84,7 @@ pub struct BiomeClassifier {
 
 impl BiomeClassifier {
     /// Creates a new classifier from a [`WorldConfig`].
+    #[instrument(skip_all)]
     pub fn new(config: &WorldConfig) -> Self {
         let thresholds = BiomeThresholds::from_config(config);
         trace!(?thresholds, "created BiomeClassifier");
@@ -91,6 +92,7 @@ impl BiomeClassifier {
     }
 
     /// Creates a classifier with explicit thresholds.
+    #[instrument(skip_all)]
     pub fn with_thresholds(thresholds: BiomeThresholds) -> Self {
         Self { thresholds }
     }

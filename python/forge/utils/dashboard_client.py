@@ -24,6 +24,10 @@ class DashboardClient:
     never blocked by dashboard connectivity issues.
     """
 
+    _METRICS_ENDPOINT = "/api/training-metrics"
+    _TRACES_ENDPOINT = "/api/decision-traces"
+    _SUCCESS_STATUS = 200
+
     def __init__(self, base_url: str, timeout: float = _DEFAULT_TIMEOUT_S) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -48,7 +52,7 @@ class DashboardClient:
             True if the server accepted the payload, False otherwise.
         """
         payload = _to_camel_case(kwargs)
-        return self._post("/api/training-metrics", payload)
+        return self._post(self._METRICS_ENDPOINT, payload)
 
     def post_decision_traces(self, traces: list[dict[str, Any]]) -> bool:
         """POST a batch of decision trace entries to /api/decision-traces.
@@ -60,18 +64,21 @@ class DashboardClient:
             True if the server accepted the payload, False otherwise.
         """
         payload = [_to_camel_case(t) for t in traces]
-        return self._post("/api/decision-traces", payload)
+        return self._post(self._TRACES_ENDPOINT, payload)
 
     def _post(self, path: str, payload: Any) -> bool:
         """Send a POST request and return whether it succeeded."""
+        import httpx  # noqa: PLC0415
+
         url = f"{self.base_url}{path}"
+        logger.debug("Dashboard POST %s payload_size=%d", path, len(str(payload)))
         try:
             session = self._get_session()
             resp = session.post(url, json=payload)
-            if resp.status_code == 200:
+            if resp.status_code == self._SUCCESS_STATUS:
                 return True
             logger.warning("Dashboard POST %s returned %d", path, resp.status_code)
-        except Exception:
+        except (httpx.HTTPError, OSError):
             logger.debug("Dashboard POST %s failed (server may be offline)", path, exc_info=True)
         return False
 
@@ -80,6 +87,7 @@ class DashboardClient:
         if self._session is not None:
             self._session.close()
             self._session = None
+            logger.debug("DashboardClient session closed")
 
 
 def _to_camel_case(d: dict[str, Any]) -> dict[str, Any]:
