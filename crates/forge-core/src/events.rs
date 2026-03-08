@@ -228,7 +228,7 @@ mod tests {
         log.push(combat_event(4));
         assert_eq!(log.len(), 3);
 
-        let ticks: Vec<u64> = log.events.iter().map(|e| event_tick(e)).collect();
+        let ticks: Vec<u64> = log.events.iter().map(event_tick).collect();
         assert_eq!(ticks, vec![2, 3, 4]);
     }
 

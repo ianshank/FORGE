@@ -4,13 +4,14 @@
 //! Each node tracks visit counts, cumulative value, prior probabilities,
 //! and child indices.
 
+use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 /// Index into the tree node vector.
 pub type NodeId = usize;
 
 /// Configuration for the MCTS tree.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MctsConfig {
     /// PUCT exploration constant (c_puct). Higher = more exploration.
     pub c_puct: f32,

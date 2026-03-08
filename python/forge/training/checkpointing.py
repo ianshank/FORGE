@@ -68,7 +68,7 @@ class CheckpointManager:
             return None
 
         latest = checkpoints[-1]
-        checkpoint_path = Path(latest["path"])
+        checkpoint_path = Path(str(latest["path"]))
         agent.load(str(checkpoint_path / "agent.json"))
         logger.info("Loaded latest checkpoint from %s", checkpoint_path)
         return latest
@@ -87,7 +87,7 @@ class CheckpointManager:
                 metadata["path"] = str(entry)
                 checkpoints.append(metadata)
 
-        checkpoints.sort(key=lambda c: c.get("episode", 0))
+        checkpoints.sort(key=lambda c: int(str(c.get("episode", 0))))
         return checkpoints
 
     def _rotate_checkpoints(self) -> None:

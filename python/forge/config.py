@@ -44,6 +44,7 @@ def _apply_env_overrides(obj: Any, section: str) -> None:
         if val is None:
             continue
         try:
+            parsed: bool | int | float | str
             if f.type in ("bool", bool):
                 parsed = val.lower() in ("1", "true", "yes")
             elif f.type in ("int", int):
@@ -134,7 +135,7 @@ class ForgeConfig:
         try:
             import tomllib  # noqa: PLC0415  # Python 3.11+
         except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]  # noqa: PLC0415
+            import tomli as tomllib  # type: ignore  # noqa: PLC0415
 
         resolved = cls._resolve_path(path)
         if resolved is not None:

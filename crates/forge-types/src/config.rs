@@ -444,7 +444,7 @@ num_agents = 4
         assert_eq!(config.agents.num_agents, 4);
         // Defaults should fill in
         assert_eq!(config.world.seed, constants::DEFAULT_SEED);
-        assert_eq!(config.physics.collision_enabled, true);
+        assert!(config.physics.collision_enabled);
     }
 
     #[test]

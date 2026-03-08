@@ -260,7 +260,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mask = compute_observation(&agent, &[agent.clone()], &grid, &config);
+        let mask = compute_observation(&agent, std::slice::from_ref(&agent), &grid, &config);
 
         assert!(
             mask.visible_cells.is_empty(),
@@ -294,7 +294,7 @@ mod tests {
         let agent = make_agent(0, 5, 5);
         let config = SensorConfig::default();
 
-        let mask = compute_observation(&agent, &[agent.clone()], &grid, &config);
+        let mask = compute_observation(&agent, std::slice::from_ref(&agent), &grid, &config);
 
         assert!(mask.is_visible(5, 5), "agent should see its own tile");
     }
@@ -305,7 +305,7 @@ mod tests {
         let agent = make_agent(0, 5, 5);
         let config = SensorConfig::default();
 
-        let mask = compute_observation(&agent, &[agent.clone()], &grid, &config);
+        let mask = compute_observation(&agent, std::slice::from_ref(&agent), &grid, &config);
 
         assert!(!mask.is_detected(0), "agent should not detect itself");
     }
@@ -321,7 +321,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mask = compute_observation(&agent, &[agent.clone()], &grid, &config);
+        let mask = compute_observation(&agent, std::slice::from_ref(&agent), &grid, &config);
 
         // Tile within range should be visible.
         assert!(
