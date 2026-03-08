@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
+from forge.agents.random_agent import DEFAULT_ACTION_SPACE_SIZE, DEFAULT_SEED
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +84,8 @@ class MCTSAgent(BaseAgent):
     def __init__(
         self,
         config: MCTSConfig,
-        action_space_size: int = 8,
-        seed: int = 42,
+        action_space_size: int = DEFAULT_ACTION_SPACE_SIZE,
+        seed: int = DEFAULT_SEED,
     ) -> None:
         super().__init__(config)
         self.mcts_config = config

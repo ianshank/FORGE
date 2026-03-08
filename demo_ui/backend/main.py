@@ -26,10 +26,18 @@ from pydantic import BaseModel
 from .forge_runner import SECTIONS, parse_results_md, run_all, run_section
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_APP_VERSION = "1.0.0"
+DEFAULT_SEED = 42
+SSE_STREAM_END = "__STREAM_END__"
+
+# ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="FORGE Demo UI", version="1.0.0")
+app = FastAPI(title="FORGE Demo UI", version=_APP_VERSION)
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
@@ -44,7 +52,7 @@ if FRONTEND_DIR.exists():
 
 
 class RunRequest(BaseModel):
-    seed: int = 42
+    seed: int = DEFAULT_SEED
     quick: bool = True
 
 
@@ -88,7 +96,7 @@ async def run_demo_section(section: str, req: RunRequest) -> StreamingResponse:
             # SSE format: "data: <payload>\n\n"
             payload = line.rstrip("\n").rstrip("\r")
             yield f"data: {json.dumps(payload)}\n\n"
-        yield "data: __STREAM_END__\n\n"
+        yield f"data: {SSE_STREAM_END}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -108,7 +116,7 @@ async def run_all_sections(req: RunRequest) -> StreamingResponse:
         async for line in run_all(seed=req.seed, quick=req.quick):
             payload = line.rstrip("\n").rstrip("\r")
             yield f"data: {json.dumps(payload)}\n\n"
-        yield "data: __STREAM_END__\n\n"
+        yield f"data: {SSE_STREAM_END}\n\n"
 
     return StreamingResponse(
         event_stream(),

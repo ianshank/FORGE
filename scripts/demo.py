@@ -16,12 +16,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
+DEFAULT_PORT = 8000
+DEFAULT_HOST = "127.0.0.1"
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Launch FORGE demo")
-    parser.add_argument("--port", type=int, default=8000, help="Server port")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="Server host")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Server port")
+    parser.add_argument("--host", type=str, default=DEFAULT_HOST, help="Server host")
     return parser.parse_args()
 
 

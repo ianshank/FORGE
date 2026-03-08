@@ -8,6 +8,10 @@ RUN pip install --no-cache-dir fastapi uvicorn httpx
 COPY demo_ui/ /app/demo_ui/
 COPY forge.toml /app/
 
+# Run as non-root user
+RUN useradd --create-home forge
+USER forge
+
 ENV PYTHONPATH=/app:$PYTHONPATH
 
 EXPOSE 8000

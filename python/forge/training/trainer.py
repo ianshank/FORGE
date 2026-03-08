@@ -16,6 +16,7 @@ DEFAULT_MAX_EPISODES = 1000
 DEFAULT_EVAL_INTERVAL = 100
 DEFAULT_CHECKPOINT_INTERVAL = 100
 DEFAULT_LOG_INTERVAL = 10
+DEFAULT_EVAL_EPISODES = 10
 
 
 @dataclass
@@ -69,7 +70,7 @@ class Trainer:
     def evaluate(
         self,
         env_step_fn: Callable[[int], tuple[np.ndarray, float, bool, dict[str, Any]]],
-        num_episodes: int = 10,
+        num_episodes: int = DEFAULT_EVAL_EPISODES,
     ) -> dict[str, float]:
         """Evaluate the agent over multiple episodes.
 

@@ -8,6 +8,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_ACTION_SIZE = 8
+
 
 class PolicyNetwork(ABC):
     """Abstract base class for policy networks."""
@@ -32,7 +34,7 @@ class PolicyNetwork(ABC):
 class RandomPolicyNetwork(PolicyNetwork):
     """Policy network that returns uniform random action probabilities."""
 
-    def __init__(self, action_size: int = 8) -> None:
+    def __init__(self, action_size: int = DEFAULT_ACTION_SIZE) -> None:
         self.action_size = action_size
         logger.info("RandomPolicyNetwork initialized with action_size=%d", action_size)
 
