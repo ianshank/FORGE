@@ -63,6 +63,7 @@ pub struct MctsNode {
 
 impl MctsNode {
     /// Creates a new root node.
+    #[instrument]
     pub fn root(action_space: u32) -> Self {
         Self {
             parent: None,
@@ -77,6 +78,7 @@ impl MctsNode {
     }
 
     /// Creates a new child node.
+    #[instrument]
     pub fn child(parent: NodeId, action: u32, prior: f32, depth: u32, action_space: u32) -> Self {
         Self {
             parent: Some(parent),
@@ -91,6 +93,7 @@ impl MctsNode {
     }
 
     /// Returns the mean value estimate Q(s, a).
+    #[instrument(skip(self))]
     pub fn mean_value(&self) -> f64 {
         if self.visits == 0 {
             0.0
@@ -100,11 +103,13 @@ impl MctsNode {
     }
 
     /// Whether this node has been expanded (has any children).
+    #[instrument(skip(self))]
     pub fn is_expanded(&self) -> bool {
         self.children.iter().any(|c| c.is_some())
     }
 
     /// Returns the number of expanded children.
+    #[instrument(skip(self))]
     pub fn num_children(&self) -> usize {
         self.children.iter().filter(|c| c.is_some()).count()
     }
@@ -131,22 +136,26 @@ impl MctsTree {
     }
 
     /// Returns the root node index (always 0).
+    #[instrument(skip(self))]
     pub fn root_id(&self) -> NodeId {
         0
     }
 
     /// Returns a reference to a node.
+    #[instrument(skip(self))]
     pub fn node(&self, id: NodeId) -> &MctsNode {
         &self.nodes[id]
     }
 
     /// Returns a mutable reference to a node.
+    #[instrument(skip(self))]
     pub fn node_mut(&mut self, id: NodeId) -> &mut MctsNode {
         &mut self.nodes[id]
     }
 
     /// Adds a new child node to the tree.
     /// Returns the new node's ID.
+    #[instrument(skip(self))]
     pub fn add_child(&mut self, parent: NodeId, action: u32, prior: f32) -> NodeId {
         let depth = self.nodes[parent].depth + 1;
         let child = MctsNode::child(parent, action, prior, depth, self.config.action_space);
@@ -226,6 +235,7 @@ impl MctsTree {
     }
 
     /// Returns the total number of nodes in the tree.
+    #[instrument(skip(self))]
     pub fn size(&self) -> usize {
         self.nodes.len()
     }

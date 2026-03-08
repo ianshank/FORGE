@@ -73,6 +73,7 @@ pub struct ObservationMask {
 
 impl ObservationMask {
     /// Creates an empty observation mask with no visible cells or detected entities.
+    #[instrument(skip_all)]
     pub fn new() -> Self {
         Self {
             visible_cells: HashSet::new(),
@@ -81,11 +82,13 @@ impl ObservationMask {
     }
 
     /// Returns `true` if the tile at `(x, y)` is visible in this mask.
+    #[instrument(skip_all)]
     pub fn is_visible(&self, x: u16, y: u16) -> bool {
         self.visible_cells.contains(&(x, y))
     }
 
     /// Returns `true` if the entity with the given ID has been detected.
+    #[instrument(skip_all)]
     pub fn is_detected(&self, entity_id: u32) -> bool {
         self.detected_entities.contains(&entity_id)
     }
@@ -94,6 +97,7 @@ impl ObservationMask {
     ///
     /// After merging, this mask contains all visible cells and detected
     /// entities from both masks.
+    #[instrument(skip_all)]
     pub fn merge(&mut self, other: &ObservationMask) {
         self.visible_cells
             .extend(other.visible_cells.iter().copied());

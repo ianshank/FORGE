@@ -27,6 +27,7 @@ pub struct RandomAgent<R: Rng> {
 
 impl<R: Rng> RandomAgent<R> {
     /// Creates a new random agent.
+    #[instrument(skip_all)]
     pub fn new(rng: R, comm_vocab_size: u16) -> Self {
         Self {
             rng,
@@ -71,6 +72,7 @@ pub struct GreedyNavigator {
 
 impl GreedyNavigator {
     /// Creates a new greedy navigator targeting the given position.
+    #[instrument]
     pub fn new(target_x: u16, target_y: u16) -> Self {
         Self { target_x, target_y }
     }
@@ -133,6 +135,7 @@ pub struct HeuristicAgent<R: Rng> {
 
 impl<R: Rng> HeuristicAgent<R> {
     /// Creates a new heuristic agent.
+    #[instrument(skip_all)]
     pub fn new(rng: R, comm_vocab_size: u16) -> Self {
         Self {
             rng,

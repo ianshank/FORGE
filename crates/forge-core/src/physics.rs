@@ -218,6 +218,7 @@ pub struct AgentPushData {
 impl AgentPushData {
     /// Creates push data from an agent reference.
     #[inline]
+    #[instrument(skip_all)]
     pub fn from_agent(agent: &Agent) -> Self {
         Self {
             id: agent.id,
