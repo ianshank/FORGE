@@ -167,6 +167,49 @@ pub async fn remix_handler(
     }
 }
 
+/// Accepts training metrics from the Python training loop and broadcasts
+/// them to all WebSocket clients.
+#[instrument(skip_all)]
+pub async fn training_metrics_handler(
+    State(state): State<AppState>,
+    Json(metrics): Json<crate::metrics::TrainingMetrics>,
+) -> Json<AckResponse> {
+    tracing::debug!(
+        episode = metrics.episode,
+        mean_reward = metrics.mean_reward,
+        "Received training metrics"
+    );
+
+    if state.tx.send(WsMessage::TrainingMetrics(metrics)).is_err() {
+        tracing::trace!("No active subscribers for training metrics broadcast");
+    }
+
+    Json(AckResponse { accepted: true })
+}
+
+/// Accepts decision trace entries from agent planning and broadcasts
+/// them to all WebSocket clients.
+#[instrument(skip_all)]
+pub async fn decision_traces_handler(
+    State(state): State<AppState>,
+    Json(traces): Json<Vec<crate::metrics::DecisionTraceEntry>>,
+) -> Json<AckResponse> {
+    tracing::debug!(count = traces.len(), "Received decision traces");
+
+    if state.tx.send(WsMessage::DecisionTraces(traces)).is_err() {
+        tracing::trace!("No active subscribers for decision traces broadcast");
+    }
+
+    Json(AckResponse { accepted: true })
+}
+
+/// Simple acknowledgement response for POST endpoints.
+#[derive(Debug, Serialize)]
+pub struct AckResponse {
+    /// Whether the payload was accepted.
+    pub accepted: bool,
+}
+
 /// Builds a `SimulationSnapshot` from a `WorldState`.
 ///
 /// Maps each agent in the world to an `AgentSnapshot` for serialization

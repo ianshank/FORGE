@@ -22,6 +22,71 @@ pub struct ServerMetrics {
     pub uptime_seconds: u64,
 }
 
+/// Training metrics pushed from the Python training loop via REST.
+///
+/// These are forwarded to WebSocket clients so the dashboard can render
+/// live training charts.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrainingMetrics {
+    /// Current training episode number.
+    #[serde(default)]
+    pub episode: u64,
+    /// Total environment steps taken.
+    #[serde(default)]
+    pub total_steps: u64,
+    /// Mean reward over recent episodes.
+    #[serde(default)]
+    pub mean_reward: f64,
+    /// Win rate over recent episodes (0.0 to 1.0).
+    #[serde(default)]
+    pub win_rate: f64,
+    /// Current curriculum difficulty level (0.0 to 1.0).
+    #[serde(default)]
+    pub curriculum_difficulty: f64,
+    /// Environment steps per second throughput.
+    #[serde(default)]
+    pub steps_per_second: f64,
+    /// Policy loss from the most recent update.
+    #[serde(default)]
+    pub loss_policy: f64,
+    /// Value loss from the most recent update.
+    #[serde(default)]
+    pub loss_value: f64,
+    /// Entropy from the most recent update.
+    #[serde(default)]
+    pub entropy: f64,
+}
+
+/// Decision trace entry pushed from the Python training loop.
+///
+/// Forwarded to dashboard clients for live decision reasoning display.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTraceEntry {
+    /// Which agent produced this trace.
+    #[serde(default)]
+    pub agent_id: u32,
+    /// Simulation tick at which the decision was made.
+    #[serde(default)]
+    pub tick: u64,
+    /// Human-readable intent label.
+    #[serde(default)]
+    pub intent_label: String,
+    /// Agent confidence in this decision (0.0 to 1.0).
+    #[serde(default)]
+    pub confidence: f64,
+    /// MCTS search depth that produced this decision.
+    #[serde(default)]
+    pub search_depth: u32,
+    /// UCB1 score of the selected action.
+    #[serde(default)]
+    pub ucb1_score: f64,
+    /// Number of alternative actions considered.
+    #[serde(default)]
+    pub alternatives_considered: u32,
+}
+
 /// Collects and aggregates server metrics over time.
 #[derive(Debug)]
 pub struct MetricsCollector {
@@ -113,5 +178,48 @@ mod tests {
         assert!(json.contains("stepsPerSecond"));
         assert!(json.contains("wsConnections"));
         assert!(json.contains("uptimeSeconds"));
+    }
+
+    #[test]
+    fn test_training_metrics_serialization() {
+        let metrics = TrainingMetrics {
+            episode: 50,
+            total_steps: 10000,
+            mean_reward: 2.75,
+            loss_policy: 0.01,
+            loss_value: 0.02,
+            entropy: 1.5,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        assert!(json.contains("meanReward"));
+        assert!(json.contains("lossPolicy"));
+        assert!(json.contains("lossValue"));
+        assert!(json.contains("totalSteps"));
+    }
+
+    #[test]
+    fn test_training_metrics_defaults() {
+        let json = "{}";
+        let metrics: TrainingMetrics = serde_json::from_str(json).unwrap();
+        assert_eq!(metrics.episode, 0);
+        assert_eq!(metrics.mean_reward, 0.0);
+    }
+
+    #[test]
+    fn test_decision_trace_entry_serialization() {
+        let entry = DecisionTraceEntry {
+            agent_id: 1,
+            tick: 42,
+            intent_label: "flank_east".to_string(),
+            confidence: 0.85,
+            search_depth: 5,
+            ucb1_score: 1.23,
+            alternatives_considered: 4,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("intentLabel"));
+        assert!(json.contains("ucb1Score"));
+        assert!(json.contains("searchDepth"));
     }
 }

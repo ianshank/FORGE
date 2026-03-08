@@ -72,3 +72,25 @@ jobs:
         run: mypy python/forge_env/ tests/python/ --ignore-missing-imports
       - name: Pytest
         run: pytest tests/python/ -v
+
+  demo-ui:
+    name: Demo UI Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install demo UI dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r demo_ui/backend/requirements.txt
+      - name: Run demo UI tests
+        run: pytest demo_ui/tests/ -v --tb=short
+      - name: Smoke-test server health endpoint
+        run: |
+          python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765 &
+          SERVER_PID=$!
+          sleep 3
+          python -c "import httpx; r = httpx.get('http://127.0.0.1:8765/health'); assert r.status_code == 200, f'Health check failed: {r.status_code}'; print('Health check passed:', r.json())"
+          kill $SERVER_PID

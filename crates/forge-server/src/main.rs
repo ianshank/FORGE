@@ -17,7 +17,8 @@ use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use forge_server::api::{
-    build_snapshot_from_world, config_handler, health_handler, metrics_handler, remix_handler,
+    build_snapshot_from_world, config_handler, decision_traces_handler, health_handler,
+    metrics_handler, remix_handler, training_metrics_handler,
 };
 use forge_server::config::ServerConfig;
 use forge_server::metrics::MetricsCollector;
@@ -105,6 +106,8 @@ async fn main() {
         .route("/api/config", get(config_handler))
         .route("/api/metrics", get(metrics_handler))
         .route("/api/scenario/remix", post(remix_handler))
+        .route("/api/training-metrics", post(training_metrics_handler))
+        .route("/api/decision-traces", post(decision_traces_handler))
         .route("/ws", get(ws_upgrade_handler))
         .layer(cors)
         .with_state(app_state);

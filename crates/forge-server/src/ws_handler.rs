@@ -23,6 +23,10 @@ use crate::state::SimulationSnapshot;
 pub enum WsMessage {
     /// A full simulation state update.
     StateUpdate(SimulationSnapshot),
+    /// Training metrics from the Python training loop.
+    TrainingMetrics(crate::metrics::TrainingMetrics),
+    /// A batch of decision trace entries from agent planning.
+    DecisionTraces(Vec<crate::metrics::DecisionTraceEntry>),
     /// An error description sent to the client.
     Error(String),
 }
@@ -285,5 +289,41 @@ mod tests {
             WsMessage::StateUpdate(s) => assert_eq!(s.tick, 0),
             _ => panic!("Expected StateUpdate variant"),
         }
+    }
+
+    #[test]
+    fn test_training_metrics_ws_message() {
+        let metrics = crate::metrics::TrainingMetrics {
+            episode: 10,
+            mean_reward: 2.5,
+            ..Default::default()
+        };
+        let msg = WsMessage::TrainingMetrics(metrics);
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("TrainingMetrics"));
+        assert!(json.contains("meanReward"));
+
+        let parsed: WsMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            WsMessage::TrainingMetrics(m) => {
+                assert_eq!(m.episode, 10);
+            }
+            _ => panic!("Expected TrainingMetrics variant"),
+        }
+    }
+
+    #[test]
+    fn test_decision_traces_ws_message() {
+        let traces = vec![crate::metrics::DecisionTraceEntry {
+            agent_id: 0,
+            tick: 5,
+            intent_label: "hold".to_string(),
+            confidence: 0.9,
+            ..Default::default()
+        }];
+        let msg = WsMessage::DecisionTraces(traces);
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("DecisionTraces"));
+        assert!(json.contains("intentLabel"));
     }
 }
