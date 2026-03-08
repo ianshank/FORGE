@@ -429,16 +429,18 @@ class TestRandomAgentExtended:
         """RandomAgent state should survive save/load."""
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
-        agent = RandomAgent(AgentConfig(name="test_save"))
-        obs = np.zeros(4, dtype=np.float32)
-        agent.act(obs)
-        agent.act(obs)
-        agent.save(path)
+        try:
+            agent = RandomAgent(AgentConfig(name="test_save"))
+            obs = np.zeros(4, dtype=np.float32)
+            agent.act(obs)
+            agent.act(obs)
+            agent.save(path)
 
-        agent2 = RandomAgent(AgentConfig(name="test_save"))
-        agent2.load(path)
-        assert agent2.step_count == 2
-        Path(path).unlink()
+            agent2 = RandomAgent(AgentConfig(name="test_save"))
+            agent2.load(path)
+            assert agent2.step_count == 2
+        finally:
+            Path(path).unlink(missing_ok=True)
 
 
 # ============================================================
@@ -553,6 +555,14 @@ class TestDecisionTraceMigration:
 # ============================================================
 
 
+_torch_available = True
+try:
+    import torch as _torch  # noqa: F401
+except ImportError:
+    _torch_available = False
+
+
+@pytest.mark.skipif(not _torch_available, reason="torch not installed")
 class TestActorCriticDimensionValidation:
     """Tests for ActorCriticNetwork load-time dimension validation."""
 
@@ -561,24 +571,28 @@ class TestActorCriticDimensionValidation:
         net1 = ActorCriticNetwork(obs_dim=16, action_dim=4, hidden_sizes=[32])
         with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
             path = f.name
-        net1.save(path)
+        try:
+            net1.save(path)
 
-        net2 = ActorCriticNetwork(obs_dim=32, action_dim=4, hidden_sizes=[32])
-        with pytest.raises(ValueError, match="obs_dim"):
-            net2.load(path)
-        Path(path).unlink()
+            net2 = ActorCriticNetwork(obs_dim=32, action_dim=4, hidden_sizes=[32])
+            with pytest.raises(ValueError, match="obs_dim"):
+                net2.load(path)
+        finally:
+            Path(path).unlink(missing_ok=True)
 
     def test_load_mismatched_action_dim_raises(self) -> None:
         """Loading checkpoint with wrong action_dim should raise ValueError."""
         net1 = ActorCriticNetwork(obs_dim=16, action_dim=4, hidden_sizes=[32])
         with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
             path = f.name
-        net1.save(path)
+        try:
+            net1.save(path)
 
-        net2 = ActorCriticNetwork(obs_dim=16, action_dim=8, hidden_sizes=[32])
-        with pytest.raises(ValueError, match="action_dim"):
-            net2.load(path)
-        Path(path).unlink()
+            net2 = ActorCriticNetwork(obs_dim=16, action_dim=8, hidden_sizes=[32])
+            with pytest.raises(ValueError, match="action_dim"):
+                net2.load(path)
+        finally:
+            Path(path).unlink(missing_ok=True)
 
 
 # ============================================================

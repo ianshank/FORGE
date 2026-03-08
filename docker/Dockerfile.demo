@@ -3,9 +3,12 @@
 FROM python:3.11-slim-bookworm
 WORKDIR /app
 
-RUN pip install --no-cache-dir fastapi uvicorn httpx
+# Install dependencies from requirements file (not hardcoded)
+COPY demo_ui/backend/requirements.txt /app/demo_ui/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/demo_ui/backend/requirements.txt
 
 COPY demo_ui/ /app/demo_ui/
+COPY examples/ /app/examples/
 COPY forge.toml /app/
 
 # Run as non-root user
@@ -14,5 +17,8 @@ USER forge
 
 ENV PYTHONPATH=/app:$PYTHONPATH
 
-EXPOSE 8000
-CMD ["uvicorn", "demo_ui.backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8765
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python -c "import httpx; httpx.get('http://127.0.0.1:8765/health').raise_for_status()" || exit 1
+
+CMD ["uvicorn", "demo_ui.backend.main:app", "--host", "0.0.0.0", "--port", "8765"]

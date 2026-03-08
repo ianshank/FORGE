@@ -31,6 +31,13 @@ try:
 except ImportError:
     HAS_NUMPY = False
 
+try:
+    from forge.utils.observation import flatten_obs as _flatten_obs
+
+    _HAS_FORGE_UTILS = True
+except ImportError:
+    _HAS_FORGE_UTILS = False
+
 __all__ = [
     "FlattenObservationWrapper",
     "NormalizeRewardWrapper",
@@ -98,6 +105,9 @@ class FlattenObservationWrapper(_BaseWrapper):
     def flatten_obs(self, obs_dict: dict[str, Any]) -> np.ndarray:
         """Flatten a dict observation into a 1-D float32 numpy array.
 
+        Delegates to :func:`forge.utils.observation.flatten_obs` when
+        available, falling back to an inline implementation otherwise.
+
         Args:
             obs_dict: Dictionary mapping observation keys to array-like values.
 
@@ -105,6 +115,9 @@ class FlattenObservationWrapper(_BaseWrapper):
             A 1-D ``np.float32`` array containing all observation values
             concatenated in sorted-key order.
         """
+        if _HAS_FORGE_UTILS:
+            return _flatten_obs(obs_dict)
+        # Inline fallback for standalone forge_env usage without forge package
         parts = [
             np.asarray(obs_dict[key], dtype=np.float32).ravel()
             for key in sorted(obs_dict.keys())

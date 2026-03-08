@@ -76,6 +76,8 @@ module = [
     "stable_baselines3.*",
     "torch",
     "torch.*",
+    "httpx",
+    "httpx.*",
 ]
 ignore_missing_imports = true
 

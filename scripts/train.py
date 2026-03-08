@@ -31,6 +31,7 @@ _DEFAULT_SEED = 42
 _DEFAULT_CHECKPOINT_DIR = "checkpoints"
 _DEFAULT_LOG_LEVEL = "INFO"
 _DEFAULT_MAX_EPISODE_STEPS = 1000
+_DEFAULT_DASHBOARD_URL = ""
 _AGENT_CHOICES = ("random", "mcts", "mappo")
 
 
@@ -83,6 +84,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         default=_DEFAULT_LOG_LEVEL,
         help="Logging level",
+    )
+    parser.add_argument(
+        "--dashboard-url",
+        type=str,
+        default=_DEFAULT_DASHBOARD_URL,
+        help="URL of forge-server for live dashboard metrics (e.g. http://localhost:8080)",
     )
     return parser.parse_args(argv)
 
@@ -147,14 +154,36 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
         obs, reward, terminated, truncated, info = env.step(action)
         return flatten_obs(obs), reward, terminated, truncated, info
 
+    # Optional dashboard client for live metrics streaming
+    dashboard = None
+    if getattr(args, "dashboard_url", ""):
+        from forge.utils.dashboard_client import DashboardClient  # noqa: PLC0415
+
+        dashboard = DashboardClient(args.dashboard_url)
+
     logger.info("Starting MAPPO training: %d updates", args.num_updates)
     all_metrics = trainer.train(reset_fn, step_fn, num_updates=args.num_updates)
+
+    # Post each update's metrics to the dashboard
+    for metrics in all_metrics:
+        if dashboard is not None:
+            dashboard.post_training_metrics(
+                episode=int(metrics.get("episodes", 0)),
+                total_steps=int(metrics.get("total_steps", 0)),
+                mean_reward=metrics.get("mean_reward", 0.0),
+                loss_policy=metrics.get("policy_loss", 0.0),
+                loss_value=metrics.get("value_loss", 0.0),
+                entropy=metrics.get("entropy", 0.0),
+            )
 
     if all_metrics:
         checkpoint_mgr.save(
             agent, episode=trainer.episode_count, metrics=all_metrics[-1]
         )
         logger.info("Final checkpoint saved to %s", args.checkpoint_dir)
+
+    if dashboard is not None:
+        dashboard.close()
 
     logger.info(
         "Training complete: %d updates, %d episodes, %d total steps",
@@ -186,7 +215,14 @@ def _train_basic(
     """
     from forge.utils.observation import flatten_obs  # noqa: PLC0415
 
+    dashboard = None
+    if getattr(args, "dashboard_url", ""):
+        from forge.utils.dashboard_client import DashboardClient  # noqa: PLC0415
+
+        dashboard = DashboardClient(args.dashboard_url)
+
     log_interval = max(1, args.episodes // 10)
+    total_steps = 0
 
     for episode in range(1, args.episodes + 1):
         obs, _info = env.reset()
@@ -203,6 +239,8 @@ def _train_basic(
             done = terminated or truncated
             steps += 1
 
+        total_steps += steps
+
         if episode % log_interval == 0:
             logger.info(
                 "Episode %d/%d: reward=%.2f, steps=%d",
@@ -211,6 +249,15 @@ def _train_basic(
                 total_reward,
                 steps,
             )
+            if dashboard is not None:
+                dashboard.post_training_metrics(
+                    episode=episode,
+                    total_steps=total_steps,
+                    mean_reward=total_reward,
+                )
+
+    if dashboard is not None:
+        dashboard.close()
 
     logger.info("Training complete: %d episodes", args.episodes)
 

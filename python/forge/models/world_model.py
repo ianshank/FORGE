@@ -36,7 +36,8 @@ class IdentityWorldModel(WorldModel):
 
     def predict(self, state: np.ndarray, action: int) -> np.ndarray:
         """Return state unchanged."""
-        return state.copy()
+        result: np.ndarray = state.copy()
+        return result
 
     def train_step(self, batch: dict[str, np.ndarray]) -> dict[str, float]:
         """No-op training step."""

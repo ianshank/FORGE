@@ -43,7 +43,7 @@ def flatten_obs(obs: dict[str, Any]) -> np.ndarray:
         np.asarray(obs[key], dtype=np.float32).ravel()
         for key in sorted(obs.keys())
     ]
-    result = np.concatenate(parts)
+    result: np.ndarray = np.concatenate(parts)
     logger.debug("Flattened obs: %d keys -> %d dims", len(obs), result.shape[0])
     return result
 

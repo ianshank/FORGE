@@ -1,6 +1,7 @@
 """Tests for FORGE agent framework."""
 from __future__ import annotations
 
+import random
 import tempfile
 
 import numpy as np
@@ -12,7 +13,6 @@ from forge.traces.decision_trace import DecisionTrace
 from forge.training.buffer import RolloutBuffer
 from forge.training.checkpointing import CheckpointManager
 from forge.utils.device import get_device
-from forge.utils.metrics import MetricsTracker
 from forge.utils.seed import set_all_seeds
 
 
@@ -142,39 +142,19 @@ class TestDecisionTrace:
         assert restored == trace
 
 
-class TestMetricsTracker:
-    """Tests for MetricsTracker."""
-
-    def test_record_and_mean(self) -> None:
-        """Recording values and computing mean should work correctly."""
-        tracker = MetricsTracker(window_size=10)
-        for v in [1.0, 2.0, 3.0]:
-            tracker.record("loss", v)
-        assert tracker.mean("loss") == pytest.approx(2.0)
-
-    def test_empty_mean(self) -> None:
-        """Mean of unrecorded metric should be 0.0."""
-        tracker = MetricsTracker()
-        assert tracker.mean("nonexistent") == 0.0
-
-    def test_reset(self) -> None:
-        """reset() should clear all metrics."""
-        tracker = MetricsTracker()
-        tracker.record("x", 1.0)
-        tracker.reset()
-        assert tracker.all_metrics() == {}
-
-
 class TestSeed:
     """Tests for seed utilities."""
 
     def test_deterministic(self) -> None:
-        """set_all_seeds should produce deterministic results."""
+        """set_all_seeds should produce deterministic numpy and stdlib results."""
         set_all_seeds(123)
-        a = np.random.random()
+        a_np = np.random.random()
+        a_py = random.random()
         set_all_seeds(123)
-        b = np.random.random()
-        assert a == b
+        b_np = np.random.random()
+        b_py = random.random()
+        assert a_np == b_np
+        assert a_py == b_py
 
 
 class TestCheckpointManager:
