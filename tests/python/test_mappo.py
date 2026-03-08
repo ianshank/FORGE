@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import tempfile
+from pathlib import Path
 
 import numpy as np
 import pytest
-import torch
-from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig
-from forge.models.policy_network import ActorCriticNetwork
-from forge.training.trainer import PPOTrainer, PPOTrainerConfig
+
+torch = pytest.importorskip("torch")
+from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig  # noqa: E402
+from forge.models.policy_network import ActorCriticNetwork  # noqa: E402
+from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: E402
 
 # Test dimensions
 OBS_DIM = 16
@@ -89,16 +91,19 @@ class TestActorCriticNetwork:
 
         with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
             path = f.name
-        net1.save(path)
+        try:
+            net1.save(path)
 
-        net2 = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
-        net2.load(path)
-        logits2, val2 = net2.forward(obs)
+            net2 = ActorCriticNetwork(
+                obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
+            )
+            net2.load(path)
+            logits2, val2 = net2.forward(obs)
 
-        assert torch.allclose(logits1, logits2, atol=1e-6)
-        assert torch.allclose(val1, val2, atol=1e-6)
+            assert torch.allclose(logits1, logits2, atol=1e-6)
+            assert torch.allclose(val1, val2, atol=1e-6)
+        finally:
+            Path(path).unlink()
 
     def test_train_eval_mode(self) -> None:
         """train_mode and eval_mode should toggle dropout/batchnorm behavior."""

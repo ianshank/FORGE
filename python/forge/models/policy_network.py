@@ -1,8 +1,10 @@
 """Policy network implementations for FORGE agents.
 
-Provides an abstract PolicyNetwork base class and concrete implementations:
-- RandomPolicyNetwork: uniform random baseline
-- ActorCriticNetwork: PyTorch actor-critic for PPO/MAPPO training
+Provides an abstract PolicyNetwork base class and a concrete implementation:
+- RandomPolicyNetwork: uniform random baseline implementing the PolicyNetwork ABC
+
+Also defines:
+- ActorCriticNetwork: PyTorch actor-critic for PPO/MAPPO training (does not implement PolicyNetwork)
 """
 from __future__ import annotations
 

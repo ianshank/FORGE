@@ -78,11 +78,11 @@ class TestWorldModel:
         metrics = model.train_step({"obs": np.zeros(4)})
         assert metrics == {}
 
-    def test_identity_save_load_noop(self) -> None:
+    def test_identity_save_load_noop(self, tmp_path: Path) -> None:
         """IdentityWorldModel.save/load are no-ops that don't raise."""
         model = IdentityWorldModel()
-        model.save("/tmp/test_identity_model")
-        model.load("/tmp/test_identity_model")
+        model.save(str(tmp_path / "test_identity_model"))
+        model.load(str(tmp_path / "test_identity_model"))
 
 
 # ============================================================
@@ -120,11 +120,11 @@ class TestProcessRewardModel:
         model = ConstantRewardModel()
         assert model.train_step({"obs": np.zeros(4)}) == {}
 
-    def test_constant_save_load_noop(self) -> None:
+    def test_constant_save_load_noop(self, tmp_path: Path) -> None:
         """ConstantRewardModel.save/load are no-ops."""
         model = ConstantRewardModel()
-        model.save("/tmp/test_constant_model")
-        model.load("/tmp/test_constant_model")
+        model.save(str(tmp_path / "test_constant_model"))
+        model.load(str(tmp_path / "test_constant_model"))
 
 
 # ============================================================

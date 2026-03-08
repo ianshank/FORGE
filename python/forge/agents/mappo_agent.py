@@ -96,6 +96,16 @@ class MAPPOAgent(BaseAgent):
             device,
         )
 
+    @property
+    def obs_dim(self) -> int:
+        """Observation dimensionality."""
+        return self._obs_dim
+
+    @property
+    def device(self) -> str:
+        """Compute device."""
+        return self._device
+
     def act(self, observation: np.ndarray) -> tuple[int, dict[str, Any]]:
         """Select an action using the actor-critic policy.
 

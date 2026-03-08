@@ -106,8 +106,8 @@ class Trainer:
 class PPOTrainerConfig:
     """Configuration for PPO training loop.
 
-    All values loaded from ForgeConfig.training — no hardcoded defaults
-    in the training loop itself beyond fallback constants.
+    Values can be loaded from ForgeConfig via from_forge_config();
+    any fields not provided there fall back to the defaults defined here.
     """
 
     rollout_length: int = DEFAULT_ROLLOUT_LENGTH
@@ -165,7 +165,7 @@ class PPOTrainer:
             dones, old_log_probs, values, advantages, returns.
         """
         cfg = self.config
-        obs_dim = self.agent._obs_dim
+        obs_dim = self.agent.obs_dim
         T = cfg.rollout_length
 
         # Pre-allocate arrays
@@ -217,7 +217,7 @@ class PPOTrainer:
 
         with torch.no_grad():
             obs_tensor = torch.as_tensor(
-                obs, dtype=torch.float32, device=torch.device(self.agent._device)
+                obs, dtype=torch.float32, device=torch.device(self.agent.device)
             ).unsqueeze(0)
             next_value = float(self.agent.network.get_value(obs_tensor).item())
 
