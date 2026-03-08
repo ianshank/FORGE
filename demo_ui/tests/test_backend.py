@@ -14,7 +14,10 @@ import textwrap
 from typing import TYPE_CHECKING
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+
+httpx = pytest.importorskip("httpx", reason="httpx is required for backend tests")
+ASGITransport = httpx.ASGITransport
+AsyncClient = httpx.AsyncClient
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
