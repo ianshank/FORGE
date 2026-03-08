@@ -101,7 +101,7 @@ class TestActionSpaceSize:
     """action_space should be a Discrete space matching native config."""
 
     def test_action_space_size(self, env: object) -> None:
-        assert env.action_space.n == 8
+        assert env.action_space.n == _NATIVE_ACT_SPACE["n"]
 
 
 class TestRenderReturnsNoneWithoutRenderMode:

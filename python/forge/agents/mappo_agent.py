@@ -5,8 +5,10 @@ and GAE advantage estimation. All hyperparameters flow through config.
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -303,9 +305,6 @@ class MAPPOAgent(BaseAgent):
 
     def save(self, path: str) -> None:
         """Save agent state and network weights."""
-        import json  # noqa: PLC0415
-        from pathlib import Path  # noqa: PLC0415
-
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
 
@@ -329,9 +328,6 @@ class MAPPOAgent(BaseAgent):
 
     def load(self, path: str) -> None:
         """Load agent state and network weights."""
-        import json  # noqa: PLC0415
-        from pathlib import Path  # noqa: PLC0415
-
         # Load network weights
         weights_path = str(Path(path).with_suffix(".pt"))
         self.network.load(weights_path)

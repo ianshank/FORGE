@@ -205,6 +205,9 @@ def benchmark_fps(env: Any, n_steps: int = 10000) -> float:
 def seed_everything(seed: int) -> None:
     """Set random seeds across multiple libraries for reproducibility.
 
+    Delegates to :func:`forge.utils.seed.set_all_seeds` when available,
+    falling back to an inline implementation otherwise.
+
     Seeds the following (when available):
 
     * ``random`` (Python stdlib)
@@ -214,10 +217,14 @@ def seed_everything(seed: int) -> None:
     Args:
         seed: The integer seed value.
     """
-    random.seed(seed)
+    try:
+        from forge.utils.seed import set_all_seeds  # noqa: PLC0415
 
-    if HAS_NUMPY:
-        np.random.seed(seed)
+        set_all_seeds(seed)
+    except ImportError:
+        random.seed(seed)
+        if HAS_NUMPY:
+            np.random.seed(seed)
 
     # Optional: seed PyTorch if installed
     try:
