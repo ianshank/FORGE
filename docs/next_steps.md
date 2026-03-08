@@ -29,19 +29,22 @@ Extend `.github/workflows/` to include:
 - Smoke-test the server with `httpx` (headless)
 - Cache `pip` installs for faster runs
 
-### 3. Docker Container for Demo UI
+### 3. ✅ Docker Container for Demo UI — COMPLETED
 
-Package the entire demo UI into a single Docker image for zero-setup deployment:
+The full three-service Docker Compose stack is now deployed:
 
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /forge
-COPY demo_ui/ demo_ui/
-COPY examples/ examples/
-COPY demo_results.md .
-RUN pip install -r demo_ui/backend/requirements.txt
-CMD ["python", "-m", "uvicorn", "demo_ui.backend.main:app", "--host", "0.0.0.0", "--port", "8765"]
-```
+- `docker/Dockerfile.dashboard` — React SPA served via nginx:alpine
+- `docker/Dockerfile` — Rust simulation server + forge_env native extension
+- `docker/Dockerfile.demo` — FastAPI demo UI
+- `docker/docker-compose.yml` — Orchestration with health-gated `depends_on`, bridge network, restart policies
+- `docker/nginx.conf` — SPA routing + reverse proxy for `/api/` and `/ws`
+- `.dockerignore` — Optimized build contexts
+
+**New Docker next steps:**
+
+- Publish images to Docker Hub (`ianshank/forge-simulation`, `forge-dashboard`, `forge-demo`)
+- Add multi-arch builds (`linux/amd64` + `linux/arm64`) via `docker buildx`
+- Tag images on GitHub release with semantic versions
 
 ---
 

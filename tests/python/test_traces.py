@@ -32,7 +32,7 @@ class TestTraceLogger:
     def test_writes_jsonl(self, tmp_path: object) -> None:
         """TraceLogger should write valid JSONL lines."""
         # tmp_path is a pathlib.Path provided by pytest
-        import pathlib  # noqa: PLC0415
+        import pathlib
         path = pathlib.Path(str(tmp_path))
         output = str(path / "traces.jsonl")
         logger = TraceLogger(output, compress=False)
@@ -50,7 +50,7 @@ class TestTraceLogger:
 
     def test_context_manager(self, tmp_path: object) -> None:
         """TraceLogger should work as a context manager."""
-        import pathlib  # noqa: PLC0415
+        import pathlib
         path = pathlib.Path(str(tmp_path))
         output = str(path / "traces_cm.jsonl")
         with TraceLogger(output, compress=False) as tl:
@@ -65,7 +65,7 @@ class TestTraceLogger:
 
     def test_compressed_output(self, tmp_path: object) -> None:
         """TraceLogger should support gzip compression."""
-        import pathlib  # noqa: PLC0415
+        import pathlib
         path = pathlib.Path(str(tmp_path))
         output = str(path / "traces.jsonl.gz")
         with TraceLogger(output, compress=True) as tl:

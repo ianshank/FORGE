@@ -136,6 +136,74 @@ Shows the major containers (deployable units) within FORGE.
 
 ---
 
+### 2.1 Docker Deployment Architecture
+
+The production deployment packages FORGE as three Docker containers orchestrated via Compose.
+
+```
+  User Browser                Developer / RL Researcher
+       │                              │
+       │ http://localhost:3000        │ http://localhost:8765
+       ▼                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                       forge-net (bridge)                          │
+│                                                                   │
+│  ┌───────────────────────┐   ┌──────────────────────────────┐    │
+│  │  dashboard            │   │  demo                        │    │
+│  │  nginx:1.27-alpine    │   │  python:3.11-slim            │    │
+│  │                       │   │                              │    │
+│  │  :80 ──► host:3000    │   │  :8765 ──► host:8765        │    │
+│  │                       │   │                              │    │
+│  │  Serves React SPA     │   │  FastAPI/uvicorn             │    │
+│  │  /api/ ──────────────┐│   │  SSE demo streams            │    │
+│  │  /ws   ──────────────┤│   │                              │    │
+│  └──────────────────────┼┘   └─────────────┬────────────────┘    │
+│                         │                  │                      │
+│                         │ proxy to         │ forge_env calls      │
+│                         ▼                  ▼                      │
+│              ┌───────────────────────────────────┐               │
+│              │  simulation                        │               │
+│              │  rust:1.85-bookworm (build)        │               │
+│              │  python:3.11-slim  (runtime)       │               │
+│              │                                    │               │
+│              │  :8080 ──► host:8080              │               │
+│              │                                    │               │
+│              │  forge-server (Axum HTTP/WS)       │               │
+│              │  forge_env.so (PyO3 native ext.)   │               │
+│              │                                    │               │
+│              │  GET /health   → {"status":"ok"}   │               │
+│              │  GET /api/config, /api/metrics     │               │
+│              │  WS  /ws       → live state        │               │
+│              └───────────────────────────────────┘               │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Startup sequence** (health-gated):
+
+1. `simulation` starts → waits for `/health` to return 200 (up to 3×15s retries)
+2. `dashboard` and `demo` start only after `simulation` is **healthy**
+
+**Ports** (all bound to `127.0.0.1`):
+
+| Container | Internal | Host | Protocol |
+|-----------|----------|------|----------|
+| simulation | 8080 | 8080 | HTTP/WS |
+| dashboard | 80 | 3000 | HTTP |
+| demo | 8765 | 8765 | HTTP/SSE |
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `docker/Dockerfile` | `rust:1.85` build → `python:3.11-slim` runtime; maturin native ext |
+| `docker/Dockerfile.dashboard` | `node:20` build → `nginx:1.27-alpine` serve |
+| `docker/Dockerfile.demo` | `python:3.11-slim`; FastAPI/uvicorn |
+| `docker/docker-compose.yml` | Three-service orchestration with health gates |
+| `docker/nginx.conf` | SPA routing + `/api/` and `/ws` reverse proxy |
+| `.dockerignore` | Excludes `target/`, `node_modules/`, `.git/` |
+
+---
+
 ## Level 3: Component Diagram
 
 ### 3.1 forge-core — Simulation Engine

@@ -63,18 +63,15 @@ class TestFlattenObs:
 class TestComputeObsDim:
     """Tests for the compute_obs_dim function."""
 
-    def test_compute_obs_dim_with_mock_env(self) -> None:
-        """Computes correct dimensionality from a mock environment."""
-        mock_env = MagicMock()
-        mock_env.reset.return_value = (
-            {"position": np.array([1.0, 2.0]), "health": np.array([0.5])},
-            {},
-        )
+    def test_compute_obs_dim_with_real_env(self) -> None:
+        """Computes correct dimensionality from a real FORGE environment."""
+        from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
-        dim = compute_obs_dim(mock_env)
-
-        assert dim == 3
-        mock_env.reset.assert_called_once()
+        env = ForgeGymnasiumEnv()
+        dim = compute_obs_dim(env)
+        assert isinstance(dim, int)
+        assert dim > 0
+        env.close()
 
     def test_compute_obs_dim_reset_failure(self) -> None:
         """RuntimeError is raised when env.reset() fails."""

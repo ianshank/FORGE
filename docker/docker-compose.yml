@@ -12,22 +12,44 @@ services:
       - FORGE_SIMULATION_GRID_SIZE=64
       - FORGE_HARDWARE_NUM_WORKERS=4
       - RUST_LOG=info
+    healthcheck:
+      test: [ "CMD", "curl", "-sf", "http://localhost:8080/health" ]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    networks:
+      - forge-net
+    restart: unless-stopped
 
   dashboard:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
-    command: ["python3", "-m", "http.server", "3000", "--directory", "/app/dashboard/dist"]
+      dockerfile: docker/Dockerfile.dashboard
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3000:80"
     depends_on:
-      - simulation
+      simulation:
+        condition: service_healthy
+    networks:
+      - forge-net
+    restart: unless-stopped
 
   demo:
     build:
       context: ..
       dockerfile: docker/Dockerfile.demo
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8765:8765"
     volumes:
       - ../forge.toml:/app/forge.toml:ro
+    depends_on:
+      simulation:
+        condition: service_healthy
+    networks:
+      - forge-net
+    restart: unless-stopped
+
+networks:
+  forge-net:
+    driver: bridge

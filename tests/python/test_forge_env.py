@@ -16,22 +16,9 @@ Run with::
 
 from __future__ import annotations
 
-import importlib.util
 from typing import Any
 
 import pytest
-
-# ---------------------------------------------------------------------------
-# Check native module availability
-# ---------------------------------------------------------------------------
-
-_native_available = importlib.util.find_spec("forge_env.forge_env") is not None
-
-skip_native = pytest.mark.skipif(
-    not _native_available,
-    reason="Native forge_env module not built (run: maturin develop)",
-)
-
 
 # ---------------------------------------------------------------------------
 # Import tests
@@ -40,28 +27,28 @@ skip_native = pytest.mark.skipif(
 
 def test_import_forge_env() -> None:
     """The forge_env package itself should always be importable."""
-    import forge_env  # noqa: PLC0415
+    import forge_env
 
     assert hasattr(forge_env, "__version__")
 
 
 def test_import_gymnasium_env() -> None:
     """The gymnasium wrapper module should be importable."""
-    from forge_env import gymnasium_env  # noqa: PLC0415
+    from forge_env import gymnasium_env
 
     assert hasattr(gymnasium_env, "ForgeGymnasiumEnv")
 
 
 def test_import_pettingzoo_env() -> None:
     """The PettingZoo wrapper module should be importable."""
-    from forge_env import pettingzoo_env  # noqa: PLC0415
+    from forge_env import pettingzoo_env
 
     assert hasattr(pettingzoo_env, "ForgeParallelEnv")
 
 
 def test_import_wrappers() -> None:
     """All wrapper classes should be importable."""
-    from forge_env.wrappers import (  # noqa: PLC0415
+    from forge_env.wrappers import (
         FlattenObservationWrapper,
         NormalizeRewardWrapper,
         RecordEpisodeStatistics,
@@ -76,7 +63,7 @@ def test_import_wrappers() -> None:
 
 def test_import_utils() -> None:
     """Utility functions should be importable."""
-    from forge_env.utils import benchmark_fps, check_env, make_env, seed_everything  # noqa: PLC0415
+    from forge_env.utils import benchmark_fps, check_env, make_env, seed_everything
 
     assert callable(make_env)
     assert callable(check_env)
@@ -89,20 +76,18 @@ def test_import_utils() -> None:
 # ---------------------------------------------------------------------------
 
 
-@skip_native
 def test_env_creation() -> None:
     """Creating a ForgeGymnasiumEnv with default config should not raise."""
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     env = ForgeGymnasiumEnv()
     assert env is not None
     env.close()
 
 
-@skip_native
 def test_reset_returns_tuple() -> None:
     """reset() must return a (obs, info) 2-tuple."""
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     env = ForgeGymnasiumEnv()
     result = env.reset(seed=42)
@@ -114,10 +99,9 @@ def test_reset_returns_tuple() -> None:
     env.close()
 
 
-@skip_native
 def test_step_returns_tuple() -> None:
     """step() must return a (obs, reward, term, trunc, info) 5-tuple."""
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     env = ForgeGymnasiumEnv()
     env.reset(seed=42)
@@ -133,10 +117,9 @@ def test_step_returns_tuple() -> None:
     env.close()
 
 
-@skip_native
 def test_observation_keys() -> None:
     """Observation dict should contain the expected keys."""
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     env = ForgeGymnasiumEnv()
     obs, _info = env.reset(seed=42)
@@ -149,12 +132,11 @@ def test_observation_keys() -> None:
     env.close()
 
 
-@skip_native
 def test_deterministic_seed() -> None:
     """Same seed should produce the same initial observation."""
-    import numpy as np  # noqa: PLC0415
+    import numpy as np
 
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     env1 = ForgeGymnasiumEnv()
     obs1, _ = env1.reset(seed=123)
@@ -169,13 +151,12 @@ def test_deterministic_seed() -> None:
     assert obs1["position"] == obs2["position"]
 
 
-@skip_native
 def test_wrapper_flatten() -> None:
     """FlattenObservationWrapper should produce a 1-D array."""
-    import numpy as np  # noqa: PLC0415
+    import numpy as np
 
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
-    from forge_env.wrappers import FlattenObservationWrapper  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
+    from forge_env.wrappers import FlattenObservationWrapper
 
     env = FlattenObservationWrapper(ForgeGymnasiumEnv())
     obs, _info = env.reset(seed=42)
@@ -185,11 +166,10 @@ def test_wrapper_flatten() -> None:
     env.close()
 
 
-@skip_native
 def test_wrapper_time_limit() -> None:
     """TimeLimit wrapper should truncate at max_steps."""
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
-    from forge_env.wrappers import TimeLimit  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
+    from forge_env.wrappers import TimeLimit
 
     env = TimeLimit(ForgeGymnasiumEnv(), max_steps=10)
     env.reset(seed=42)
@@ -204,10 +184,9 @@ def test_wrapper_time_limit() -> None:
     env.close()
 
 
-@skip_native
 def test_multi_agent_env() -> None:
     """ForgeParallelEnv with 2 agents should return per-agent dicts."""
-    from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: PLC0415
+    from forge_env.pettingzoo_env import ForgeParallelEnv
 
     env = ForgeParallelEnv(n_agents=2)
     observations, _infos = env.reset(seed=42)
@@ -223,11 +202,10 @@ def test_multi_agent_env() -> None:
     env.close()
 
 
-@skip_native
 def test_benchmark_fps() -> None:
     """benchmark_fps should return a positive float."""
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
-    from forge_env.utils import benchmark_fps  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
+    from forge_env.utils import benchmark_fps
 
     env = ForgeGymnasiumEnv()
     fps = benchmark_fps(env, n_steps=100)
@@ -236,11 +214,10 @@ def test_benchmark_fps() -> None:
     env.close()
 
 
-@skip_native
 def test_check_env() -> None:
     """check_env should pass for a valid environment."""
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
-    from forge_env.utils import check_env  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
+    from forge_env.utils import check_env
 
     env = ForgeGymnasiumEnv()
     result = check_env(env)
@@ -284,7 +261,7 @@ class _DummyEnv:
 
 def test_time_limit_wrapper_pure() -> None:
     """TimeLimit truncates after max_steps (no native module needed)."""
-    from forge_env.wrappers import TimeLimit  # noqa: PLC0415
+    from forge_env.wrappers import TimeLimit
 
     env = TimeLimit(_DummyEnv(), max_steps=5)
     env.reset()
@@ -300,7 +277,7 @@ def test_time_limit_wrapper_pure() -> None:
 
 def test_normalize_reward_wrapper_pure() -> None:
     """NormalizeRewardWrapper should produce values in [-10, 10]."""
-    from forge_env.wrappers import NormalizeRewardWrapper  # noqa: PLC0415
+    from forge_env.wrappers import NormalizeRewardWrapper
 
     env = NormalizeRewardWrapper(_DummyEnv())
     env.reset()
@@ -312,7 +289,7 @@ def test_normalize_reward_wrapper_pure() -> None:
 
 def test_record_episode_statistics_pure() -> None:
     """RecordEpisodeStatistics should inject episode info on termination."""
-    from forge_env.wrappers import RecordEpisodeStatistics, TimeLimit  # noqa: PLC0415
+    from forge_env.wrappers import RecordEpisodeStatistics, TimeLimit
 
     env = RecordEpisodeStatistics(TimeLimit(_DummyEnv(), max_steps=5))
     env.reset()
@@ -333,7 +310,7 @@ def test_record_episode_statistics_pure() -> None:
 def test_flatten_observation_wrapper_pure() -> None:
     """FlattenObservationWrapper should produce 1-D float32 arrays."""
     np = pytest.importorskip("numpy")
-    from forge_env.wrappers import FlattenObservationWrapper  # noqa: PLC0415
+    from forge_env.wrappers import FlattenObservationWrapper
 
     env = FlattenObservationWrapper(_DummyEnv())
     obs, _info = env.reset()
@@ -347,14 +324,14 @@ def test_flatten_observation_wrapper_pure() -> None:
 
 def test_seed_everything() -> None:
     """seed_everything should be callable and not raise."""
-    from forge_env.utils import seed_everything  # noqa: PLC0415
+    from forge_env.utils import seed_everything
 
     seed_everything(42)
 
 
 def test_time_limit_resets_counter() -> None:
     """TimeLimit should reset its _current_step counter on reset()."""
-    from forge_env.wrappers import TimeLimit  # noqa: PLC0415
+    from forge_env.wrappers import TimeLimit
 
     env = TimeLimit(_DummyEnv(), max_steps=10)
     env.reset()
@@ -371,7 +348,7 @@ def test_time_limit_resets_counter() -> None:
 
 def test_normalize_reward_updates_stats() -> None:
     """NormalizeRewardWrapper.count, reward_mean, and reward_var should update after steps."""
-    from forge_env.wrappers import NormalizeRewardWrapper  # noqa: PLC0415
+    from forge_env.wrappers import NormalizeRewardWrapper
 
     env = NormalizeRewardWrapper(_DummyEnv())
     env.reset()
@@ -393,7 +370,7 @@ def test_normalize_reward_updates_stats() -> None:
 
 def test_normalize_reward_clips_extreme() -> None:
     """Normalised reward must stay in [-10, 10] even with extreme inputs."""
-    from forge_env.wrappers import NormalizeRewardWrapper  # noqa: PLC0415
+    from forge_env.wrappers import NormalizeRewardWrapper
 
     class _ExtremeRewardEnv(_DummyEnv):
         """Dummy env that returns extreme reward values."""
@@ -417,7 +394,7 @@ def test_normalize_reward_clips_extreme() -> None:
 
 def test_record_episode_statistics_resets_on_new_episode() -> None:
     """RecordEpisodeStatistics should reset counters when reset() is called."""
-    from forge_env.wrappers import RecordEpisodeStatistics, TimeLimit  # noqa: PLC0415
+    from forge_env.wrappers import RecordEpisodeStatistics, TimeLimit
 
     env = RecordEpisodeStatistics(TimeLimit(_DummyEnv(), max_steps=3))
 
@@ -439,7 +416,7 @@ def test_record_episode_statistics_resets_on_new_episode() -> None:
 def test_flatten_observation_step() -> None:
     """FlattenObservationWrapper should flatten observations from step() too."""
     np = pytest.importorskip("numpy")
-    from forge_env.wrappers import FlattenObservationWrapper  # noqa: PLC0415
+    from forge_env.wrappers import FlattenObservationWrapper
 
     env = FlattenObservationWrapper(_DummyEnv())
     env.reset()
@@ -454,7 +431,7 @@ def test_flatten_observation_step() -> None:
 
 def test_base_wrapper_delegates_attributes() -> None:
     """_BaseWrapper.__getattr__ should forward attribute access to the inner env."""
-    from forge_env.wrappers import TimeLimit  # noqa: PLC0415
+    from forge_env.wrappers import TimeLimit
 
     inner = _DummyEnv()
     inner.custom_attr = "hello"  # type: ignore[attr-defined]
@@ -468,7 +445,7 @@ def test_base_wrapper_delegates_attributes() -> None:
 
 def test_time_limit_does_not_affect_terminated() -> None:
     """TimeLimit must not override terminated=True coming from the inner env."""
-    from forge_env.wrappers import TimeLimit  # noqa: PLC0415
+    from forge_env.wrappers import TimeLimit
 
     class _TerminatingEnv(_DummyEnv):
         """Dummy env that terminates on the very first step."""
@@ -492,7 +469,7 @@ def test_time_limit_does_not_affect_terminated() -> None:
 def test_seed_everything_with_numpy() -> None:
     """seed_everything should set the numpy random seed correctly."""
     np = pytest.importorskip("numpy")
-    from forge_env.utils import seed_everything  # noqa: PLC0415
+    from forge_env.utils import seed_everything
 
     seed_everything(12345)
     a = np.random.rand(5)
@@ -505,9 +482,9 @@ def test_seed_everything_with_numpy() -> None:
 
 def test_make_env_raises_without_native() -> None:
     """make_env should raise ImportError when the native module is not available."""
-    from unittest import mock  # noqa: PLC0415
+    from unittest import mock
 
-    import forge_env.utils as utils_mod  # noqa: PLC0415
+    import forge_env.utils as utils_mod
 
     with mock.patch.object(utils_mod, "_NativeEnv", None), pytest.raises(
         ImportError, match="native module not found"
@@ -517,7 +494,7 @@ def test_make_env_raises_without_native() -> None:
 
 def test_check_env_validates_reset_type() -> None:
     """check_env should raise AssertionError when reset() returns the wrong type."""
-    from forge_env.utils import check_env  # noqa: PLC0415
+    from forge_env.utils import check_env
 
     class _BadEnv:
         """Env whose reset() returns a plain dict instead of a tuple."""

@@ -93,8 +93,8 @@ class ActorCriticNetwork:
         learning_rate: float = 3e-4,
         device: str = "cpu",
     ) -> None:
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         if hidden_sizes is None:
             hidden_sizes = [256, 256]
@@ -170,8 +170,8 @@ class ActorCriticNetwork:
             entropy: Policy entropy, shape (batch,).
             value: State value estimate, shape (batch, 1).
         """
-        import torch  # noqa: PLC0415
-        from torch.distributions import Categorical  # noqa: PLC0415
+        import torch
+        from torch.distributions import Categorical
 
         action_logits, value = self.forward(obs)
         dist = Categorical(logits=action_logits)
@@ -197,9 +197,9 @@ class ActorCriticNetwork:
 
     def save(self, path: str) -> None:
         """Save model weights to disk."""
-        from pathlib import Path  # noqa: PLC0415
+        from pathlib import Path
 
-        import torch  # noqa: PLC0415
+        import torch
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -221,7 +221,7 @@ class ActorCriticNetwork:
         Validates that the loaded checkpoint dimensions match the current
         network configuration to prevent silent shape mismatches.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         checkpoint = torch.load(path, map_location=self.device, weights_only=True)
         # Validate dimensions for backwards compatibility

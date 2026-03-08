@@ -54,7 +54,7 @@ def server() -> Generator[subprocess.Popen[bytes], None, None]:
         stderr=subprocess.PIPE,
     )
     # Wait for the server to be ready
-    import httpx  # noqa: PLC0415
+    import httpx
 
     for _ in range(30):
         try:

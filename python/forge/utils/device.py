@@ -13,7 +13,7 @@ def get_device() -> str:
         One of "cuda", "mps", or "cpu".
     """
     try:
-        import torch  # noqa: PLC0415
+        import torch
 
         if torch.cuda.is_available():
             logger.info("CUDA device detected")

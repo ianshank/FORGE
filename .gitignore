@@ -62,3 +62,14 @@ coverage.xml
 
 # Claude agent configuration (not for repo)
 .claude/
+
+# Dashboard production build
+dashboard/dist/
+
+# Docker build staging
+docker/dist/
+
+# Coverage reports
+htmlcov/
+.coverage
+coverage.xml

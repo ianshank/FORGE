@@ -114,7 +114,7 @@ class CheckpointManager:
             oldest = checkpoints.pop(0)
             oldest_path = Path(str(oldest["path"]))
             if oldest_path.exists():
-                import shutil  # noqa: PLC0415
+                import shutil
 
                 shutil.rmtree(oldest_path)
                 logger.info("Removed old checkpoint: %s", oldest_path)
