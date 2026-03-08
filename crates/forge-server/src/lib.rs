@@ -1,3 +1,5 @@
+#![deny(missing_docs)]
+#![deny(clippy::all)]
 //! WebSocket and REST server for FORGE simulation visualization.
 //!
 //! This crate provides an Axum-based HTTP+WebSocket server that broadcasts

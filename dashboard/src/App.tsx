@@ -12,7 +12,7 @@ import type {
 
 /** Root application component — FORGE Dashboard. */
 export function App() {
-  const { state, connectionStatus, traces } = useSimulationState();
+  const { state, connectionStatus } = useSimulationState();
   const [selectedAgent, setSelectedAgent] = useState<AgentState | null>(null);
   const [metricsHistory] = useState<TrainingMetrics[]>([]);
 
@@ -54,7 +54,7 @@ export function App() {
 
         {/* Right: Decision Traces */}
         <div className="w-80 flex-shrink-0">
-          <DecisionTracePanel traces={traces} />
+          <DecisionTracePanel traces={[]} />
         </div>
       </div>
 

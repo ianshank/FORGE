@@ -71,9 +71,12 @@ pub async fn metrics_handler(State(state): State<AppState>) -> Json<crate::metri
 
 /// Request body for the scenario remix endpoint.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RemixRequest {
     /// Optional seed override. If absent, a random seed is generated.
     pub seed: Option<u64>,
+    /// Optional grid size override. Applied to both width and height.
+    pub grid_size: Option<u16>,
 }
 
 /// Response from the scenario remix endpoint.
@@ -96,13 +99,21 @@ pub async fn remix_handler(
     State(state): State<AppState>,
     body: Option<Json<RemixRequest>>,
 ) -> Json<RemixResponse> {
-    let seed = body.and_then(|b| b.seed).unwrap_or_else(rand::random);
+    let (seed, grid_size) = match body {
+        Some(Json(req)) => (req.seed, req.grid_size),
+        None => (None, None),
+    };
+    let seed = seed.unwrap_or_else(rand::random);
 
-    tracing::info!(seed, "Remixing scenario");
+    tracing::info!(seed, ?grid_size, "Remixing scenario");
 
-    // Create a new world with the given seed
+    // Create a new world with the given seed (and optional grid size)
     let mut config = forge_types::config::ForgeConfig::default();
     config.world.seed = seed;
+    if let Some(gs) = grid_size {
+        config.world.width = gs;
+        config.world.height = gs;
+    }
 
     let grid_width = config.world.width;
     let grid_height = config.world.height;

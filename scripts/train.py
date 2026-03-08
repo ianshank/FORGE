@@ -31,6 +31,7 @@ _DEFAULT_EVAL_EPISODES = 5
 _DEFAULT_SEED = 42
 _DEFAULT_CHECKPOINT_DIR = "checkpoints"
 _DEFAULT_LOG_LEVEL = "INFO"
+_DEFAULT_MAX_EPISODE_STEPS = 1000
 _AGENT_CHOICES = ("random", "mcts", "mappo")
 
 
@@ -201,7 +202,7 @@ def _train_basic(
         done = False
         steps = 0
 
-        while not done:
+        while not done and steps < _DEFAULT_MAX_EPISODE_STEPS:
             action, _trace = agent.act(flat_obs)
             obs, reward, terminated, truncated, _info = env.step(action)
             flat_obs = flatten_obs(obs)

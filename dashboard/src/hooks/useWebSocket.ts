@@ -4,6 +4,9 @@ import { createLogger } from "../utils/logger";
 
 const log = createLogger("useWebSocket");
 
+/** Default WebSocket reconnect interval in milliseconds. */
+const WS_RECONNECT_DEFAULT_MS = 2000;
+
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
 interface UseWebSocketOptions {
@@ -19,7 +22,7 @@ export function useWebSocket({
   reconnectInterval,
 }: UseWebSocketOptions) {
   const config = getConfig();
-  const reconnectMs = reconnectInterval ?? config.metricsPollingInterval;
+  const reconnectMs = reconnectInterval ?? WS_RECONNECT_DEFAULT_MS;
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

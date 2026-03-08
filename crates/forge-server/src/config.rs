@@ -12,6 +12,8 @@ const DEFAULT_BROADCAST_CAPACITY: usize = 64;
 const DEFAULT_TICK_INTERVAL_MS: u64 = 100;
 /// Default tracing filter for the server.
 const DEFAULT_LOG_FILTER: &str = "forge_server=info,forge_core=info";
+/// Default allowed CORS origins.
+const DEFAULT_ALLOWED_ORIGINS: &str = "http://localhost:5173";
 
 /// Configuration for the FORGE server binary.
 ///
@@ -27,6 +29,8 @@ pub struct ServerConfig {
     pub tick_interval_ms: u64,
     /// Tracing env filter string.
     pub log_filter: String,
+    /// Allowed CORS origins (comma-separated).
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for ServerConfig {
@@ -36,6 +40,10 @@ impl Default for ServerConfig {
             broadcast_capacity: DEFAULT_BROADCAST_CAPACITY,
             tick_interval_ms: DEFAULT_TICK_INTERVAL_MS,
             log_filter: DEFAULT_LOG_FILTER.to_string(),
+            allowed_origins: DEFAULT_ALLOWED_ORIGINS
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect(),
         }
     }
 }
@@ -93,6 +101,10 @@ impl ServerConfig {
 
         if let Ok(val) = std::env::var("FORGE_SERVER_LOG_FILTER") {
             config.log_filter = val;
+        }
+
+        if let Ok(val) = std::env::var("FORGE_SERVER_ALLOWED_ORIGINS") {
+            config.allowed_origins = val.split(',').map(|s| s.trim().to_string()).collect();
         }
 
         tracing::debug!(?config, "Server config loaded from environment");

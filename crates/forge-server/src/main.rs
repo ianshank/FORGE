@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use axum::routing::{get, post};
 use axum::Router;
 use tokio::sync::broadcast;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -26,16 +26,16 @@ use forge_server::ws_handler::{ws_upgrade_handler, AppState, SubscriptionManager
 
 #[tokio::main]
 async fn main() {
-    let config = ServerConfig::from_env();
-
-    // Initialize tracing
+    // Initialize tracing first so ServerConfig::from_env() logs are captured.
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new(&config.log_filter)),
+                .unwrap_or_else(|_| EnvFilter::new("forge_server=info,forge_core=info")),
         )
         .with_target(true)
         .init();
+
+    let config = ServerConfig::from_env();
 
     info!(?config, "FORGE server starting");
 
@@ -78,11 +78,16 @@ async fn main() {
         simulation_loop(world, sim_state, sim_tx, tick_interval_ms, sim_metrics).await;
     });
 
-    // CORS layer for dashboard dev server
+    // CORS layer — restrict to configured origins
+    let origins: Vec<_> = config
+        .allowed_origins
+        .iter()
+        .filter_map(|o| o.parse::<axum::http::HeaderValue>().ok())
+        .collect();
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(origins)
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any);
 
     // Build router
     let app = Router::new()

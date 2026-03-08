@@ -18,14 +18,16 @@ from typing import Any
 import numpy as np
 import pytest
 
-# Ensure python/ is importable.
+# Ensure python/ and scripts/ are importable.
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 
 from forge.agents.base_agent import AgentConfig
 from forge.agents.mcts_agent import MCTSAgent, MCTSConfig, MCTSNode
 from forge.agents.random_agent import RandomAgent
 from forge.training.trainer import Trainer, TrainerConfig
 from forge.utils.observation import compute_obs_dim, flatten_obs
+from train import _DEFAULT_EPISODES, _DEFAULT_SEED, parse_args
 
 # ============================================================
 # Shared observation utility tests
@@ -236,9 +238,6 @@ class TestParseArgs:
 
     def test_defaults(self) -> None:
         """Default arguments should match constants."""
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
-        from train import _DEFAULT_EPISODES, _DEFAULT_SEED, parse_args  # noqa: PLC0415
-
         args = parse_args([])
         assert args.agent == "random"
         assert args.episodes == _DEFAULT_EPISODES
@@ -247,9 +246,6 @@ class TestParseArgs:
 
     def test_custom_args(self) -> None:
         """Custom arguments are parsed correctly."""
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
-        from train import parse_args  # noqa: PLC0415
-
         args = parse_args([
             "--agent", "mappo",
             "--num-updates", "5",
@@ -263,9 +259,6 @@ class TestParseArgs:
 
     def test_invalid_agent_raises(self) -> None:
         """Invalid agent type raises SystemExit."""
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
-        from train import parse_args  # noqa: PLC0415
-
         with pytest.raises(SystemExit):
             parse_args(["--agent", "nonexistent"])
 
@@ -324,6 +317,14 @@ class TestRandomAgentTraining:
         assert episodes_completed == 5
 
 
+_torch_available = True
+try:
+    import torch as _torch  # noqa: F401
+except ImportError:
+    _torch_available = False
+
+
+@pytest.mark.skipif(not _torch_available, reason="torch not installed")
 class TestMAPPOTraining:
     """Test MAPPO agent with PPOTrainer."""
 

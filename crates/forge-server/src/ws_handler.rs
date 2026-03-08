@@ -172,7 +172,7 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
     let mut rx = state.tx.subscribe();
 
     // Forward broadcast messages to this client
-    let send_task = tokio::spawn(async move {
+    let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
             match serialize_ws_message(&msg) {
                 Ok(json) => {
@@ -188,7 +188,7 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
     });
 
     // Consume incoming messages (keepalive / close detection)
-    let recv_task = tokio::spawn(async move {
+    let mut recv_task = tokio::spawn(async move {
         while let Some(result) = ws_rx.next().await {
             match result {
                 Ok(Message::Close(_)) => break,
@@ -198,10 +198,10 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
         }
     });
 
-    // Wait for either task to complete (client disconnect)
+    // Wait for either task to complete, then abort the other.
     tokio::select! {
-        _ = send_task => {},
-        _ = recv_task => {},
+        _ = &mut send_task => { recv_task.abort(); },
+        _ = &mut recv_task => { send_task.abort(); },
     }
 
     // Unregister client and record disconnection

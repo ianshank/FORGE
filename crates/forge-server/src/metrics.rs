@@ -26,7 +26,6 @@ pub struct MetricsCollector {
     simulation_ticks: u64,
     steps_per_second: f64,
     ws_connections: u32,
-    uptime_seconds: u64,
 }
 
 impl MetricsCollector {
@@ -38,7 +37,6 @@ impl MetricsCollector {
             simulation_ticks: 0,
             steps_per_second: 0.0,
             ws_connections: 0,
-            uptime_seconds: 0,
         }
     }
 
@@ -69,12 +67,6 @@ impl MetricsCollector {
         );
     }
 
-    /// Updates the uptime field.
-    #[instrument(skip(self))]
-    pub fn update_uptime(&mut self, seconds: u64) {
-        self.uptime_seconds = seconds;
-    }
-
     /// Returns a snapshot of the current server metrics.
     #[instrument(skip(self))]
     pub fn snapshot(&self) -> ServerMetrics {
@@ -83,7 +75,7 @@ impl MetricsCollector {
             simulation_ticks: self.simulation_ticks,
             steps_per_second: self.steps_per_second,
             ws_connections: self.ws_connections,
-            uptime_seconds: self.uptime_seconds,
+            uptime_seconds: 0,
         }
     }
 }
@@ -127,13 +119,6 @@ mod tests {
         collector.record_ws_disconnect();
         collector.record_ws_disconnect();
         assert_eq!(collector.snapshot().ws_connections, 0);
-    }
-
-    #[test]
-    fn test_uptime_update() {
-        let mut collector = MetricsCollector::new();
-        collector.update_uptime(120);
-        assert_eq!(collector.snapshot().uptime_seconds, 120);
     }
 
     #[test]
