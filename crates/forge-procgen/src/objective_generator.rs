@@ -140,11 +140,24 @@ fn random_primitive(
         2 => ObjectivePrimitive::EliminateTarget {
             target_id: rng.gen_range(0..10),
         },
-        3 => ObjectivePrimitive::CollectResource {
-            resource_type: config.resource_types[rng.gen_range(0..config.resource_types.len())]
-                .clone(),
-            count: rng.gen_range(config.collect_count_range.0..config.collect_count_range.1),
-        },
+        3 => {
+            if config.resource_types.is_empty() {
+                // Fall back to Survive when no resource types are configured.
+                ObjectivePrimitive::Survive {
+                    duration_ticks: rng.gen_range(
+                        config.survive_duration_range.0..config.survive_duration_range.1,
+                    ),
+                }
+            } else {
+                ObjectivePrimitive::CollectResource {
+                    resource_type: config.resource_types
+                        [rng.gen_range(0..config.resource_types.len())]
+                    .clone(),
+                    count: rng
+                        .gen_range(config.collect_count_range.0..config.collect_count_range.1),
+                }
+            }
+        }
         4 => ObjectivePrimitive::Survive {
             duration_ticks: rng
                 .gen_range(config.survive_duration_range.0..config.survive_duration_range.1),

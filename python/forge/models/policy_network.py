@@ -220,7 +220,7 @@ class ActorCriticNetwork:
         """
         import torch  # noqa: PLC0415
 
-        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=True)
         # Validate dimensions for backwards compatibility
         saved_obs = checkpoint.get("obs_dim")
         saved_act = checkpoint.get("action_dim")

@@ -282,13 +282,8 @@ class MAPPOAgent(BaseAgent):
         last_gae = 0.0
 
         for t in reversed(range(T)):
-            if t == T - 1:
-                next_val = next_value
-                next_non_terminal = 1.0 - float(dones[t])
-            else:
-                next_val = values[t + 1]
-                next_non_terminal = 1.0 - float(dones[t])
-
+            next_non_terminal = 1.0 - float(dones[t])
+            next_val = next_value if t == T - 1 else values[t + 1]
             delta = rewards[t] + cfg.gamma * next_val * next_non_terminal - values[t]
             last_gae = delta + cfg.gamma * cfg.gae_lambda * next_non_terminal * last_gae
             advantages[t] = last_gae
