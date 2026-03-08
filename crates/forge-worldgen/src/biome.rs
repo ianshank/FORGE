@@ -5,8 +5,9 @@
 //! configurable thresholds derived from [`WorldConfig`].
 
 use forge_types::config::WorldConfig;
+use forge_types::constants;
 use forge_types::grid::TerrainType;
-use tracing::instrument;
+use tracing::{instrument, trace};
 
 /// Configurable thresholds that drive biome classification.
 ///
@@ -37,12 +38,32 @@ impl BiomeThresholds {
         let scale = config.biome_scale as f64;
 
         // Sensible defaults that respond to biome_scale.
-        // biome_scale of 0.1 (default) gives water=0.35, mountain=0.72
-        let water_level = (0.35 - scale * 0.3).clamp(0.10, 0.50);
-        let mountain_level = (0.72 + scale * 0.3).clamp(0.60, 0.90);
-        let sand_level = water_level + 0.05;
-        let forest_moisture = 0.45;
-        let desert_moisture = 0.25;
+        // biome_scale of 0.1 (default) gives water≈0.32, mountain≈0.75
+        let water_level = (constants::BIOME_WATER_LEVEL_BASE
+            - scale * constants::BIOME_WATER_LEVEL_SCALE_MULTIPLIER)
+            .clamp(
+                constants::BIOME_WATER_LEVEL_MIN,
+                constants::BIOME_WATER_LEVEL_MAX,
+            );
+        let mountain_level = (constants::BIOME_MOUNTAIN_LEVEL_BASE
+            + scale * constants::BIOME_MOUNTAIN_LEVEL_SCALE_MULTIPLIER)
+            .clamp(
+                constants::BIOME_MOUNTAIN_LEVEL_MIN,
+                constants::BIOME_MOUNTAIN_LEVEL_MAX,
+            );
+        let sand_level = water_level + constants::BIOME_SAND_LEVEL_OFFSET;
+        let forest_moisture = constants::BIOME_FOREST_MOISTURE_THRESHOLD;
+        let desert_moisture = constants::BIOME_DESERT_MOISTURE_THRESHOLD;
+
+        trace!(
+            biome_scale = scale,
+            water_level,
+            mountain_level,
+            sand_level,
+            forest_moisture,
+            desert_moisture,
+            "initialized biome thresholds"
+        );
 
         Self {
             water_level,
@@ -65,7 +86,7 @@ impl BiomeClassifier {
     /// Creates a new classifier from a [`WorldConfig`].
     pub fn new(config: &WorldConfig) -> Self {
         let thresholds = BiomeThresholds::from_config(config);
-        tracing::trace!(?thresholds, "created BiomeClassifier");
+        trace!(?thresholds, "created BiomeClassifier");
         Self { thresholds }
     }
 

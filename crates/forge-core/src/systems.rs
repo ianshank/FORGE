@@ -128,59 +128,71 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
 
 /// Computes per-agent boolean indicating whether each agent is adjacent to
 /// or standing on a tile containing a CraftingStation object.
+///
+/// Allocates a Vec with pre-sized capacity to reduce reallocation overhead.
+/// Uses a HashMap for O(1) object lookups instead of O(n) linear search.
 #[instrument(skip_all)]
 fn compute_near_station(
     agents: &[forge_types::entity::Agent],
     grid: &forge_types::grid::Grid,
     objects: &[forge_types::entity::Object],
 ) -> Vec<bool> {
-    agents
-        .iter()
-        .map(|agent| {
-            if !agent.alive {
-                return false;
-            }
+    let mut result = Vec::with_capacity(agents.len());
 
-            // Check current tile and all 4 adjacent tiles
-            let positions_to_check = std::iter::once(agent.position).chain(
-                Direction::all()
-                    .into_iter()
-                    .filter_map(|dir| agent.position.offset(dir, grid.width, grid.height)),
-            );
+    // Pre-compute object map for O(1) lookups instead of O(n) linear search
+    let object_map: std::collections::HashMap<_, _> = objects.iter().map(|o| (o.id, o)).collect();
 
-            for pos in positions_to_check {
-                if let Some(tile) = grid.get(pos.x, pos.y) {
-                    if let Some(obj_id) = tile.object_id {
-                        if let Some(obj) = objects.iter().find(|o| o.id == obj_id) {
-                            if obj.object_type == ObjectType::CraftingStation {
-                                return true;
-                            }
+    for agent in agents {
+        if !agent.alive {
+            result.push(false);
+            continue;
+        }
+
+        // Check current tile and all 4 adjacent tiles
+        let positions_to_check = std::iter::once(agent.position).chain(
+            Direction::all()
+                .into_iter()
+                .filter_map(|dir| agent.position.offset(dir, grid.width, grid.height)),
+        );
+
+        let mut found_station = false;
+        for pos in positions_to_check {
+            if let Some(tile) = grid.get(pos.x, pos.y) {
+                if let Some(obj_id) = tile.object_id {
+                    if let Some(obj) = object_map.get(&obj_id) {
+                        if obj.object_type == ObjectType::CraftingStation {
+                            found_station = true;
+                            break;
                         }
                     }
                 }
             }
+        }
 
-            false
-        })
-        .collect()
+        result.push(found_station);
+    }
+
+    result
 }
 
 /// Validates actions and replaces invalid ones with Noop.
+///
+/// Always returns exactly one action per agent. If fewer actions are provided than agents,
+/// missing actions default to Noop. This prevents out-of-bounds panics in physics systems
+/// that expect an action for each agent.
+///
+/// Allocates a Vec with pre-sized capacity to reduce reallocation overhead.
 #[instrument(skip_all)]
 fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
-    actions
-        .iter()
-        .enumerate()
-        .map(|(i, action)| {
-            if i >= state.agents.len() {
-                return Action::Noop;
-            }
+    let mut result = Vec::with_capacity(state.agents.len());
 
-            let agent = &state.agents[i];
-            if !agent.alive {
-                return Action::Noop;
-            }
+    for (i, agent) in state.agents.iter().enumerate() {
+        // Get action for this agent, default to Noop if not provided
+        let action = actions.get(i).unwrap_or(&Action::Noop);
 
+        let validated = if !agent.alive {
+            Action::Noop
+        } else {
             match action {
                 Action::Move(dir) => {
                     // Basic validation: direction is valid (always true for enum)
@@ -226,8 +238,12 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
                 }
                 _ => action.clone(),
             }
-        })
-        .collect()
+        };
+
+        result.push(validated);
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -256,8 +272,22 @@ mod tests {
 
         let actions = vec![Action::Noop, Action::Noop, Action::Noop]; // 3 actions for 1 agent
         let validated = validate_actions(&actions, &state);
+        // Should always return exactly one action per agent, ignoring excess actions
+        assert_eq!(validated.len(), 1);
+        assert_eq!(validated[0], Action::Noop);
+    }
+
+    #[test]
+    fn test_validate_actions_insufficient_actions() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 3;
+        let state = WorldState::new(config).unwrap();
+
+        let actions = vec![Action::Noop]; // Only 1 action for 3 agents
+        let validated = validate_actions(&actions, &state);
+        // Should return one action per agent, missing ones default to Noop
         assert_eq!(validated.len(), 3);
-        // Extra actions are noop
+        assert_eq!(validated[0], Action::Noop);
         assert_eq!(validated[1], Action::Noop);
         assert_eq!(validated[2], Action::Noop);
     }
@@ -443,7 +473,9 @@ mod tests {
 
         let actions: Vec<Action> = vec![];
         let validated = validate_actions(&actions, &state);
-        assert!(validated.is_empty());
+        // Should return one action per agent (defaulting to Noop if no actions provided)
+        assert_eq!(validated.len(), 1);
+        assert_eq!(validated[0], Action::Noop);
     }
 
     #[test]

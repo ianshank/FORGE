@@ -5,6 +5,7 @@
 //! to \[0, 1\], and feeding the results through a [`BiomeClassifier`].
 
 use forge_types::config::WorldConfig;
+use forge_types::constants;
 use forge_types::grid::Grid;
 use tracing::instrument;
 
@@ -45,10 +46,13 @@ impl TerrainGenerator {
         let classifier = BiomeClassifier::new(config);
         let biome_scale = config.biome_scale as f64;
 
-        // Derive octave count and persistence from biome_scale.
-        // A scale of 0.1 (default) yields 4 octaves, 0.5 persistence.
-        let octaves = ((biome_scale * 40.0).clamp(2.0, 8.0)) as u32;
-        let persistence = 0.5_f64;
+        // Derive octave count from biome_scale; persistence is a fixed constant.
+        // A scale of 0.1 (default) yields 4 octaves.
+        let octaves = ((biome_scale * constants::TERRAIN_NOISE_OCTAVES_MULTIPLIER).clamp(
+            constants::TERRAIN_NOISE_OCTAVES_MIN as f64,
+            constants::TERRAIN_NOISE_OCTAVES_MAX as f64,
+        )) as u32;
+        let persistence = constants::TERRAIN_NOISE_PERSISTENCE;
 
         tracing::trace!(
             seed,
