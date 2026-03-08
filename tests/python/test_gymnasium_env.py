@@ -9,46 +9,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Mock observation data matching the wrapper's expected structure.
-# ---------------------------------------------------------------------------
-_MOCK_OBS = {
-    "grid_view": [[[0] * 7] * 11] * 11,
-    "inventory": [[0, 0]] * 10,
-    "health": 0.8,
-    "stamina": 0.9,
-    "position": [5, 5],
-    "messages": [],
-    "day_phase": 0,
-}
-
-_NATIVE_OBS_SPACE = {
-    "grid_view_height": 11,
-    "grid_view_width": 11,
-    "grid_view_channels": 7,
-    "inventory_capacity": 10,
-    "messages": {"shape": (0,)},
-}
-
-_NATIVE_ACT_SPACE = {"n": 8}
-
-
-def _make_mock_native_env() -> MagicMock:
-    """Create a fresh mock native ForgeEnv instance."""
-    env = MagicMock()
-    env.reset.return_value = (_MOCK_OBS, {"tick": 0})
-    env.step.return_value = (_MOCK_OBS, 1.0, False, False, {"tick": 1})
-    env.render.return_value = "ascii_frame"
-    env.observation_space = _NATIVE_OBS_SPACE
-    env.action_space = _NATIVE_ACT_SPACE
-    return env
+from conftest import NATIVE_ACT_SPACE, make_mock_native_env
 
 
 @pytest.fixture()
 def env():
     """Create a ForgeGymnasiumEnv with mocked native backend."""
     gymnasium = pytest.importorskip("gymnasium")  # noqa: F841
-    mock_native = _make_mock_native_env()
+    mock_native = make_mock_native_env(include_messages_in_obs_space=True)
     mock_native_cls = MagicMock(return_value=mock_native)
 
     with patch("forge_env.gymnasium_env._NativeEnv", mock_native_cls):
@@ -101,7 +69,7 @@ class TestActionSpaceSize:
     """action_space should be a Discrete space matching native config."""
 
     def test_action_space_size(self, env: object) -> None:
-        assert env.action_space.n == _NATIVE_ACT_SPACE["n"]
+        assert env.action_space.n == NATIVE_ACT_SPACE["n"]
 
 
 class TestRenderReturnsNoneWithoutRenderMode:

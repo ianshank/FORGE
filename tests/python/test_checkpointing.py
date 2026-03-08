@@ -52,7 +52,7 @@ class TestLoadLatest:
 
         result = manager.load_latest(mock_agent)
 
-        assert result is not None
+        assert isinstance(result, dict)
         assert result["episode"] == 5
         mock_agent.load.assert_called_once()
         load_path = mock_agent.load.call_args[0][0]

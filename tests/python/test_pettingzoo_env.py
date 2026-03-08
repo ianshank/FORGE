@@ -8,41 +8,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-_MOCK_OBS = {
-    "grid_view": [[[0] * 7] * 11] * 11,
-    "inventory": [[0, 0]] * 10,
-    "health": 0.8,
-    "stamina": 0.9,
-    "position": [5, 5],
-    "messages": [],
-    "day_phase": 0,
-}
-
-_NATIVE_OBS_SPACE = {
-    "grid_view_height": 11,
-    "grid_view_width": 11,
-    "grid_view_channels": 7,
-    "inventory_capacity": 10,
-}
-
-_NATIVE_ACT_SPACE = {"n": 8}
-
-
-def _make_mock_native_env() -> MagicMock:
-    """Create a fresh mock native ForgeEnv instance."""
-    env = MagicMock()
-    env.reset.return_value = (_MOCK_OBS, {"tick": 0})
-    env.step.return_value = (_MOCK_OBS, 1.0, False, False, {"tick": 1})
-    env.render.return_value = "ascii_frame"
-    env.observation_space = _NATIVE_OBS_SPACE
-    env.action_space = _NATIVE_ACT_SPACE
-    return env
+from conftest import make_mock_native_env
 
 
 @pytest.fixture()
 def parallel_env() -> object:
     """Create a ForgeParallelEnv with 3 agents using mocked native backend."""
-    mock_native = _make_mock_native_env()
+    mock_native = make_mock_native_env()
     mock_native_cls = MagicMock(return_value=mock_native)
 
     with patch("forge_env.pettingzoo_env._NativeEnv", mock_native_cls):
@@ -101,7 +73,6 @@ class TestObservationSpacePerAgent:
     def test_observation_space_per_agent(self, parallel_env: object) -> None:
         for agent_name in parallel_env.possible_agents:
             space = parallel_env.observation_space(agent_name)
-            assert space is not None
             assert isinstance(space, dict)
 
 
@@ -111,7 +82,6 @@ class TestActionSpacePerAgent:
     def test_action_space_per_agent(self, parallel_env: object) -> None:
         for agent_name in parallel_env.possible_agents:
             space = parallel_env.action_space(agent_name)
-            assert space is not None
             assert isinstance(space, dict)
             assert space.get("n") == 8
 

@@ -10,6 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from conftest import make_mock_native_env
+
 # ---------------------------------------------------------------------------
 # Auto-skip if JAX is not installed.
 # ---------------------------------------------------------------------------
@@ -20,34 +22,8 @@ np = pytest.importorskip("numpy")
 # ---------------------------------------------------------------------------
 # Mock the native forge_env module before importing the wrapper.
 # ---------------------------------------------------------------------------
-_MOCK_OBS = {
-    "grid_view": [[[0] * 7] * 11] * 11,
-    "inventory": [[0, 0]] * 10,
-    "health": 0.8,
-    "stamina": 0.9,
-    "position": [5, 5],
-    "messages": [],
-    "day_phase": 0,
-}
-
-
-def _make_mock_native_env():
-    """Create a fresh mock native env instance."""
-    inst = MagicMock()
-    inst.reset.return_value = (_MOCK_OBS, {"tick": 0})
-    inst.step.return_value = (_MOCK_OBS, 1.0, False, False, {"tick": 1})
-    inst.observation_space = {
-        "grid_view_height": 11,
-        "grid_view_width": 11,
-        "grid_view_channels": 7,
-        "inventory_capacity": 10,
-    }
-    inst.action_space = {"n": 8}
-    return inst
-
-
 _mock_forge_env_module = MagicMock()
-_mock_forge_env_module.ForgeEnv.side_effect = lambda **kwargs: _make_mock_native_env()
+_mock_forge_env_module.ForgeEnv.side_effect = lambda **kwargs: make_mock_native_env()
 
 sys.modules.setdefault("forge_env", MagicMock())
 sys.modules["forge_env.forge_env"] = _mock_forge_env_module
@@ -58,7 +34,7 @@ from forge_env.jax_env import ForgeJaxEnv  # noqa: E402
 @pytest.fixture()
 def jax_env():
     """Create a ForgeJaxEnv with 4 parallel envs."""
-    _mock_forge_env_module.ForgeEnv.side_effect = lambda **kwargs: _make_mock_native_env()
+    _mock_forge_env_module.ForgeEnv.side_effect = lambda **kwargs: make_mock_native_env()
     return ForgeJaxEnv(n_envs=4, config=None, seed=0)
 
 

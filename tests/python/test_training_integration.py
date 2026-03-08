@@ -167,7 +167,7 @@ class TestMCTSInternals:
         root.visit_count = 1  # Must be visited to expand
         expanded = agent._expand(root)
         assert len(root.children) == 4  # action_space_size
-        assert expanded is not None
+        assert expanded in root.children.values()
 
     def test_expand_root_unvisited(self) -> None:
         """_expand on unvisited root still expands (parent is None)."""
