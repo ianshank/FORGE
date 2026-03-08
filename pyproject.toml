@@ -4,6 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "forge-env"
+dynamic = ["version"]
 requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Rust",
@@ -59,6 +60,8 @@ show_error_codes = true
 [[tool.mypy.overrides]]
 module = [
     "forge_env.forge_env",
+    "tomllib",
+    "tomli",
     "jax",
     "jax.*",
     "numpy",

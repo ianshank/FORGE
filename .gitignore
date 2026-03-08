@@ -1,3 +1,8 @@
+# Node
+node_modules/
+*.tsbuildinfo
+
+
 # Rust
 /target/
 **/*.rs.bk
@@ -39,6 +44,10 @@ target/criterion/
 
 # WASM build artifacts
 pkg/
+
+# Vite/TS build artifacts in dashboard
+dashboard/vite.config.d.ts
+dashboard/vite.config.js
 
 # Pytest / demo-ui
 .pytest_cache/

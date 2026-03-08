@@ -1,21 +1,45 @@
 import { useCallback, useState } from "react";
 import type { SimulationState } from "../types/simulation";
-import { useWebSocket } from "./useWebSocket";
+import { createLogger } from "../utils/logger";
+import { parseServerMessage } from "../utils/messageParser";
+import { useWebSocket, type ConnectionStatus } from "./useWebSocket";
 import { getConfig } from "../config/environment";
 
+const log = createLogger("useSimulationState");
+
+interface SimulationHookResult {
+  /** Current simulation state (latest from WebSocket). */
+  state: SimulationState | null;
+  /** WebSocket connection status. */
+  connectionStatus: ConnectionStatus;
+}
+
 /** Hook for subscribing to simulation state updates via WebSocket. */
-export function useSimulationState() {
+export function useSimulationState(): SimulationHookResult {
   const config = getConfig();
   const [state, setState] = useState<SimulationState | null>(null);
 
   const onMessage = useCallback((data: unknown) => {
-    const msg = data as { type?: string; payload?: SimulationState };
-    if (msg.type === "StateUpdate" && msg.payload) {
-      setState(msg.payload);
+    const msg = parseServerMessage(data);
+    if (!msg) {
+      log.debug("Skipping unparseable message");
+      return;
+    }
+
+    switch (msg.type) {
+      case "StateUpdate":
+        setState(msg.payload);
+        break;
+      case "Error":
+        log.error("Server error:", msg.payload);
+        break;
     }
   }, []);
 
   const ws = useWebSocket({ url: config.wsUrl, onMessage });
 
-  return { state, connectionStatus: ws.status };
+  return {
+    state,
+    connectionStatus: ws.status,
+  };
 }

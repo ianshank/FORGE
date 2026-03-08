@@ -7,7 +7,6 @@ import { AgentInspector } from "./components/AgentInspector";
 import { useSimulationState } from "./hooks/useSimulationState";
 import type {
   AgentState,
-  DecisionTraceEntry,
   TrainingMetrics,
 } from "./types/simulation";
 
@@ -15,9 +14,6 @@ import type {
 export function App() {
   const { state, connectionStatus } = useSimulationState();
   const [selectedAgent, setSelectedAgent] = useState<AgentState | null>(null);
-
-  // Placeholder data — populated from WebSocket in production
-  const [traces] = useState<DecisionTraceEntry[]>([]);
   const [metricsHistory] = useState<TrainingMetrics[]>([]);
 
   return (
@@ -37,7 +33,7 @@ export function App() {
           />
           <span className="text-gray-400">
             {connectionStatus === "connected"
-              ? `Tick ${state?.tick ?? 0}`
+              ? `Tick ${state?.tick ?? 0} | ${state?.agents.length ?? 0} agents`
               : connectionStatus}
           </span>
         </div>
@@ -58,7 +54,7 @@ export function App() {
 
         {/* Right: Decision Traces */}
         <div className="w-80 flex-shrink-0">
-          <DecisionTracePanel traces={traces} />
+          <DecisionTracePanel traces={[]} />
         </div>
       </div>
 
