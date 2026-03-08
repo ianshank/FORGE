@@ -59,7 +59,11 @@ show_error_codes = true
 
 [[tool.mypy.overrides]]
 module = [
-    "forge_env.forge_env",
+    # forge_env is a native Rust extension (PyO3/maturin) with no type stubs.
+    # All submodules must be listed here so mypy/Pylance ignores missing stubs
+    # when the extension isn't built locally.
+    "forge_env",
+    "forge_env.*",
     "tomllib",
     "tomli",
     "jax",
