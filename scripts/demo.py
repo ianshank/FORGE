@@ -112,11 +112,13 @@ def _start_ui(
 ) -> subprocess.Popen[bytes]:
     """Start the chosen UI server (demo-ui or dashboard)."""
     if mode == "dashboard":
-        return _start_process(
+        dashboard_dir = Path(__file__).parent.parent / "dashboard"
+        proc = subprocess.Popen(
             ["npm", "run", "dev", "--", "--port", str(port)],
-            "dashboard",
-            logger,
+            cwd=str(dashboard_dir),
         )
+        atexit.register(_cleanup, proc, "dashboard", logger)
+        return proc
     return _start_process(
         [sys.executable, "-m", "uvicorn", "demo_ui.backend.main:app",
          "--host", host, "--port", str(port)],
