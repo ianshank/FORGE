@@ -135,7 +135,7 @@ class ForgeConfig:
         try:
             import tomllib  # noqa: PLC0415  # Python 3.11+
         except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore  # noqa: PLC0415
+            import tomli as tomllib  # noqa: PLC0415
 
         resolved = cls._resolve_path(path)
         if resolved is not None:

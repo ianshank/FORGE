@@ -29,6 +29,18 @@ class MetricsTracker:
             return 0.0
         return sum(values) / len(values)
 
+    def latest(self, name: str) -> float:
+        """Return the most recent value of a metric, or 0.0 if empty."""
+        values = self._data.get(name)
+        if not values:
+            return 0.0
+        return values[-1]
+
+    def count(self, name: str) -> int:
+        """Return the number of recorded values for a metric."""
+        values = self._data.get(name)
+        return len(values) if values else 0
+
     def all_metrics(self) -> dict[str, float]:
         """Return the mean of all tracked metrics."""
         return {name: self.mean(name) for name in self._data}

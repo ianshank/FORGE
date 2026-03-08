@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_CHECKPOINTS = 5
+CHECKPOINT_SCHEMA_VERSION = 1
 
 
 class CheckpointManager:
@@ -46,8 +47,9 @@ class CheckpointManager:
         # Save agent state
         agent.save(str(checkpoint_path / "agent.json"))
 
-        # Save metadata
+        # Save metadata with schema version for backwards compatibility
         metadata = {
+            "schema_version": CHECKPOINT_SCHEMA_VERSION,
             "episode": episode,
             "timestamp": timestamp,
             "metrics": metrics,
@@ -82,13 +84,28 @@ class CheckpointManager:
         for entry in sorted(self.checkpoint_dir.iterdir()):
             meta_path = entry / "metadata.json"
             if meta_path.exists():
-                with meta_path.open() as f:
-                    metadata = json.load(f)
+                try:
+                    with meta_path.open() as f:
+                        metadata = json.load(f)
+                except (json.JSONDecodeError, OSError) as exc:
+                    logger.warning("Skipping corrupt checkpoint %s: %s", entry, exc)
+                    continue
+                metadata = self._migrate_metadata(metadata)
                 metadata["path"] = str(entry)
                 checkpoints.append(metadata)
 
         checkpoints.sort(key=lambda c: int(str(c.get("episode", 0))))
         return checkpoints
+
+    @staticmethod
+    def _migrate_metadata(metadata: dict[str, object]) -> dict[str, object]:
+        """Migrate checkpoint metadata from older schema versions."""
+        version = metadata.get("schema_version", 0)
+        if isinstance(version, int) and version < 1:
+            metadata.setdefault("schema_version", CHECKPOINT_SCHEMA_VERSION)
+            metadata.setdefault("step_count", 0)
+            logger.debug("Migrated checkpoint metadata from v%s to v%d", version, CHECKPOINT_SCHEMA_VERSION)
+        return metadata
 
     def _rotate_checkpoints(self) -> None:
         """Remove old checkpoints if we exceed max_checkpoints."""

@@ -6,7 +6,6 @@ import tempfile
 import numpy as np
 import pytest
 import torch
-
 from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig
 from forge.models.policy_network import ActorCriticNetwork
 from forge.training.trainer import PPOTrainer, PPOTrainerConfig
@@ -53,7 +52,7 @@ class TestActorCriticNetwork:
         )
         obs = torch.randn(BATCH_SIZE, OBS_DIM)
         fixed_actions = torch.randint(0, ACTION_DIM, (BATCH_SIZE,))
-        action, log_prob, entropy, value = net.get_action_and_value(
+        action, log_prob, _entropy, _value = net.get_action_and_value(
             obs, action=fixed_actions
         )
         assert torch.equal(action, fixed_actions)
@@ -184,7 +183,7 @@ class TestMAPPOAgent:
         rewards = np.array([1.0, 1.0, 1.0], dtype=np.float32)
         values = np.array([0.5, 0.5, 0.5], dtype=np.float32)
         dones = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        advantages, returns = agent.compute_gae(rewards, values, dones, next_value=0.0)
+        advantages, _returns = agent.compute_gae(rewards, values, dones, next_value=0.0)
         # At terminal step, advantage = reward - value (no bootstrap)
         assert advantages[2] == pytest.approx(0.5, abs=1e-5)
 
@@ -193,7 +192,7 @@ class TestMAPPOAgent:
         agent = self._make_agent()
         agent._step_count = 100
         obs = np.random.randn(OBS_DIM).astype(np.float32)
-        action1, _ = agent.act(obs)
+        _action1, _ = agent.act(obs)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = f"{tmpdir}/agent"

@@ -193,11 +193,20 @@ impl CurriculumController {
     }
 
     /// Returns a reference to the current curriculum parameters.
+    ///
+    /// These parameters reflect the difficulty settings for the active tier
+    /// and are updated automatically when the tier changes via [`Self::adjust`].
+    #[instrument(skip(self))]
     pub fn current_params(&self) -> &CurriculumParams {
         &self.params
     }
 
     /// Returns the current difficulty tier.
+    ///
+    /// The tier is bounded by `min_tier` and `max_tier` as configured at
+    /// construction time. Tier 1 is the easiest and higher tiers increase
+    /// environment complexity.
+    #[instrument(skip(self))]
     pub fn current_tier(&self) -> u8 {
         self.current_tier
     }

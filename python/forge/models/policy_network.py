@@ -91,7 +91,7 @@ class ActorCriticNetwork:
         device: str = "cpu",
     ) -> None:
         import torch  # noqa: PLC0415
-        import torch.nn as nn  # noqa: PLC0415
+        from torch import nn  # noqa: PLC0415
 
         if hidden_sizes is None:
             hidden_sizes = [256, 256]
@@ -174,10 +174,7 @@ class ActorCriticNetwork:
         dist = Categorical(logits=action_logits)
 
         if action is None:
-            if deterministic:
-                action = torch.argmax(action_logits, dim=-1)
-            else:
-                action = dist.sample()
+            action = torch.argmax(action_logits, dim=-1) if deterministic else dist.sample()
 
         log_prob = dist.log_prob(action)
         entropy = dist.entropy()
@@ -197,8 +194,9 @@ class ActorCriticNetwork:
 
     def save(self, path: str) -> None:
         """Save model weights to disk."""
-        import torch  # noqa: PLC0415
         from pathlib import Path  # noqa: PLC0415
+
+        import torch  # noqa: PLC0415
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -215,10 +213,29 @@ class ActorCriticNetwork:
         logger.info("ActorCriticNetwork saved to %s", path)
 
     def load(self, path: str) -> None:
-        """Load model weights from disk."""
+        """Load model weights from disk.
+
+        Validates that the loaded checkpoint dimensions match the current
+        network configuration to prevent silent shape mismatches.
+        """
         import torch  # noqa: PLC0415
 
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        # Validate dimensions for backwards compatibility
+        saved_obs = checkpoint.get("obs_dim")
+        saved_act = checkpoint.get("action_dim")
+        if saved_obs is not None and saved_obs != self.obs_dim:
+            msg = (
+                f"Checkpoint obs_dim={saved_obs} does not match "
+                f"network obs_dim={self.obs_dim}"
+            )
+            raise ValueError(msg)
+        if saved_act is not None and saved_act != self.action_dim:
+            msg = (
+                f"Checkpoint action_dim={saved_act} does not match "
+                f"network action_dim={self.action_dim}"
+            )
+            raise ValueError(msg)
         self.encoder.load_state_dict(checkpoint["encoder"])
         self.actor_head.load_state_dict(checkpoint["actor_head"])
         self.critic_head.load_state_dict(checkpoint["critic_head"])
@@ -237,7 +254,7 @@ class ActorCriticNetwork:
         self.actor_head.eval()
         self.critic_head.eval()
 
-    def parameters(self) -> list:
+    def parameters(self) -> list[torch.nn.Parameter]:
         """Return all trainable parameters."""
         return (
             list(self.encoder.parameters())

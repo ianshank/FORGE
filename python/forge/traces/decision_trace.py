@@ -27,8 +27,31 @@ class DecisionTrace:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DecisionTrace:
-        """Create a DecisionTrace from a dictionary."""
+        """Create a DecisionTrace from a dictionary.
+
+        Handles backwards compatibility by migrating older schema versions
+        and ignoring unknown fields from newer versions.
+        """
+        version = data.get("schema_version", 1)
+        data = cls._migrate(data, version)
+        unknown = set(data.keys()) - set(cls.__dataclass_fields__.keys())
+        if unknown:
+            logger.debug("Ignoring unknown trace fields: %s", unknown)
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    @staticmethod
+    def _migrate(data: dict[str, Any], from_version: int) -> dict[str, Any]:
+        """Migrate trace data from older schema versions.
+
+        Ensures backwards compatibility when loading traces saved with
+        earlier schema versions.
+        """
+        if from_version < 1:
+            data.setdefault("schema_version", DEFAULT_SCHEMA_VERSION)
+            data.setdefault("intent_label", "")
+            data.setdefault("expected_outcome", "")
+        # Future: if from_version < 2: migrate v1 -> v2
+        return data
 
     def to_dict(self) -> dict[str, Any]:
         """Convert this trace to a dictionary."""

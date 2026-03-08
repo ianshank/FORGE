@@ -129,6 +129,7 @@ impl ForgeWasmEnv {
     /// Characters: `A` = agent, `O` = object, `R` = resource, `.` = ground,
     /// `~` = water, `#` = wall, `L` = lava, `I` = ice, `S` = sand,
     /// `T` = forest, `M` = mountain.
+    #[instrument(skip_all)]
     pub fn render_ascii(&self) -> String {
         self.world.to_debug_grid()
     }
@@ -138,6 +139,7 @@ impl ForgeWasmEnv {
     /// This includes tick count, grid dimensions, agent positions and stats,
     /// object and resource data, day phase, and termination flags. Intended
     /// for save/load, replay recording, or detailed inspection.
+    #[instrument(skip_all)]
     pub fn get_state_json(&self) -> String {
         let state = SerializableState {
             tick: self.world.tick,
@@ -164,6 +166,7 @@ impl ForgeWasmEnv {
     ///
     /// The response includes the flattened shape, value bounds, grid view
     /// dimensions, inventory size, and communication buffer size.
+    #[instrument(skip_all)]
     pub fn observation_space_json(&self) -> String {
         let vr = self.config.agents.default_vision_radius;
         let view_side = 2 * vr as usize + 1;
@@ -191,6 +194,7 @@ impl ForgeWasmEnv {
     ///
     /// The response includes the total number of discrete actions and a list
     /// of human-readable action names indexed by action ID.
+    #[instrument(skip_all)]
     pub fn action_space_json(&self) -> String {
         let space = ActionSpace::new(self.config.agents.comm_vocab_size);
         serde_json::to_string(&space).expect("failed to serialize action space")
