@@ -32,21 +32,39 @@ export function useWebSocket({
     if (reconnectCount.current >= MAX_RECONNECT_ATTEMPTS) return;
 
     setStatus("connecting");
-    const ws = new WebSocket(url);
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch (err) {
+      console.error(`Failed to create WebSocket with URL '${url}':`, err);
+      setStatus("disconnected");
+      reconnectCount.current += 1;
+      if (reconnectCount.current < MAX_RECONNECT_ATTEMPTS) {
+        reconnectTimer.current = setTimeout(connect, reconnectInterval);
+      }
+      return;
+    }
     wsRef.current = ws;
 
     ws.onopen = () => {
       setStatus("connected");
       reconnectCount.current = 0;
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      console.warn(
+        `WebSocket disconnected: code=${event.code}, reason='${event.reason}'`,
+      );
       setStatus("disconnected");
       reconnectCount.current += 1;
       if (reconnectCount.current < MAX_RECONNECT_ATTEMPTS) {
         reconnectTimer.current = setTimeout(connect, reconnectInterval);
       }
     };
-    ws.onerror = () => ws.close();
+    ws.onerror = (event) => {
+      console.error("WebSocket error:", event);
+      ws.close();
+    };
     ws.onmessage = (event) => {
       try {
         const data: unknown = JSON.parse(event.data as string);
