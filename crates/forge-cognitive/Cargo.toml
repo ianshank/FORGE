@@ -1,0 +1,23 @@
+[package]
+name = "forge-cognitive"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "LLM-backed cognitive agent for the FORGE platform"
+
+[dependencies]
+forge-types = { workspace = true }
+forge-memory = { path = "../forge-memory" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

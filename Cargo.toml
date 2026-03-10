@@ -10,6 +10,10 @@ members = [
     "crates/forge-wasm",
     "crates/forge-procgen",
     "crates/forge-server",
+    "crates/forge-memory",
+    "crates/forge-social",
+    "crates/forge-cognitive",
+    "crates/forge-integration",
 ]
 resolver = "2"
 
@@ -49,6 +53,10 @@ forge-core = { path = "crates/forge-core" }
 forge-worldgen = { path = "crates/forge-worldgen" }
 forge-task = { path = "crates/forge-task" }
 forge-agent = { path = "crates/forge-agent" }
+forge-memory = { path = "crates/forge-memory" }
+forge-social = { path = "crates/forge-social" }
+forge-cognitive = { path = "crates/forge-cognitive" }
+forge-integration-layer = { path = "crates/forge-integration" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

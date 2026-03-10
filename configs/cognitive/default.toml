@@ -1,0 +1,8 @@
+[cognitive]
+enabled = false
+provider = "mock"
+model = ""
+temperature = 0.7
+max_tokens = 1024
+reasoning_steps = 5
+api_base_url = ""
