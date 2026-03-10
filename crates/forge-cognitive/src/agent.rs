@@ -117,19 +117,35 @@ impl CognitiveAgent {
 ///
 /// Looks for patterns like "action: 3" or "Action ID: 3" or just a number.
 fn parse_action_id(text: &str) -> Option<u32> {
-    // Try to find "action" followed by a number
-    let lower = text.to_lowercase();
-    if let Some(pos) = lower.find("action") {
-        let after = &text[pos..];
-        for word in after.split_whitespace().skip(1) {
-            let cleaned = word.trim_matches(|c: char| !c.is_ascii_digit());
-            if let Ok(id) = cleaned.parse::<u32>() {
-                return Some(id);
+    // Try to find an "action" token (case-insensitive) followed by a number.
+    //
+    // We avoid using indices from a lowercased copy of the string to slice
+    // the original, since `to_lowercase` can change string length for
+    // non-ASCII text. Instead, we scan tokens directly.
+    let mut tokens = text.split_whitespace().peekable();
+
+    while let Some(token) = tokens.next() {
+        // Normalize alphabetic part of the token for comparison.
+        let lower = token.to_lowercase();
+        let alpha_core = lower.trim_matches(|c: char| !c.is_ascii_alphabetic());
+
+        if alpha_core == "action" {
+            // Look ahead up to two tokens for a number (handles "Action: 3"
+            // and "action id: 0").
+            for _ in 0..2 {
+                if let Some(next_tok) = tokens.next() {
+                    let cleaned = next_tok.trim_matches(|c: char| !c.is_ascii_digit());
+                    if let Ok(id) = cleaned.parse::<u32>() {
+                        return Some(id);
+                    }
+                } else {
+                    break;
+                }
             }
         }
     }
 
-    // Fallback: find the last number in the text
+    // Fallback: find the last number in the text.
     text.split_whitespace().rev().find_map(|w| {
         w.trim_matches(|c: char| !c.is_ascii_digit())
             .parse::<u32>()
