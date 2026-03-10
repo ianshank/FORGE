@@ -201,3 +201,90 @@ mod tests {
         assert_eq!(action, 0);
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use crate::provider::MockProvider;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Any text containing "action N" should parse to Some(N).
+        #[test]
+        fn parse_action_id_finds_explicit_action(id in 0_u32..1000) {
+            let text = format!("I think the best move is action {id}.");
+            let parsed = parse_action_id(&text);
+            prop_assert_eq!(parsed, Some(id));
+        }
+
+        /// Fallback: any text ending with a bare number should parse to that number.
+        #[test]
+        fn parse_action_id_fallback_last_number(id in 0_u32..1000) {
+            let text = format!("reasoning complete {id}");
+            let parsed = parse_action_id(&text);
+            prop_assert_eq!(parsed, Some(id));
+        }
+
+        /// Text with no digits returns None.
+        #[test]
+        fn parse_action_id_no_digits(text in "[a-zA-Z ]{0,100}") {
+            let has_digit = text.chars().any(|c| c.is_ascii_digit());
+            if !has_digit {
+                prop_assert_eq!(parse_action_id(&text), None);
+            }
+        }
+
+        /// Agent trace always has at least one step (Observe) and uses config confidence.
+        #[test]
+        fn agent_trace_invariants(
+            confidence in 0.0_f32..=1.0,
+            action_id in 0_u32..10,
+            tick in 0_u64..10_000,
+        ) {
+            let response_text = format!("action: {action_id}");
+            let provider = MockProvider::new(response_text);
+            let config = CognitiveConfig {
+                default_confidence: confidence,
+                ..CognitiveConfig::default()
+            };
+            let mut agent = CognitiveAgent::new(Box::new(provider), config);
+
+            let prompt = CognitivePrompt::builder()
+                .observation("test observation".into())
+                .build();
+
+            let (parsed_action, trace) = agent.select_action_with_prompt(prompt, tick);
+
+            // Trace always has at least Observe + Think steps
+            prop_assert!(trace.steps.len() >= 2);
+            // First step is always Observe
+            prop_assert_eq!(trace.steps[0].step_type.clone(), ReasoningType::Observe);
+            // Confidence matches config
+            prop_assert_eq!(trace.confidence, confidence);
+            // Action count incremented
+            prop_assert_eq!(agent.action_count(), 1);
+            // Parsed action matches
+            prop_assert_eq!(parsed_action, action_id);
+        }
+
+        /// CognitiveConfig serde roundtrip preserves all fields.
+        #[test]
+        fn config_serde_roundtrip(
+            temperature in 0.0_f32..=2.0,
+            max_tokens in 1_u32..4096,
+            confidence in 0.0_f32..=1.0,
+        ) {
+            let config = CognitiveConfig {
+                temperature,
+                max_tokens,
+                default_confidence: confidence,
+                ..CognitiveConfig::default()
+            };
+            let json = serde_json::to_string(&config).unwrap();
+            let deser: CognitiveConfig = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(deser.temperature, config.temperature);
+            prop_assert_eq!(deser.max_tokens, config.max_tokens);
+            prop_assert_eq!(deser.default_confidence, config.default_confidence);
+        }
+    }
+}

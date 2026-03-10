@@ -200,3 +200,76 @@ mod tests {
         assert!(orch.agent_memory_mut(0).is_some());
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn valid_config() -> IntegrationConfig {
+        IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 5,
+            ..IntegrationConfig::default()
+        }
+    }
+
+    proptest! {
+        /// Tick always advances monotonically.
+        #[test]
+        fn tick_monotonically_advances(num_ticks in 1_u64..100) {
+            let mut orch = IntegrationOrchestrator::new(2, valid_config());
+            let mut prev = orch.current_tick();
+            for _ in 0..num_ticks {
+                orch.tick();
+                let now = orch.current_tick();
+                prop_assert!(now > prev, "tick must increase: prev={prev}, now={now}");
+                prev = now;
+            }
+            prop_assert_eq!(orch.current_tick(), num_ticks);
+        }
+
+        /// Blended rewards preserve length of input.
+        #[test]
+        fn blend_rewards_preserves_length(n in 2_usize..8) {
+            let orch = IntegrationOrchestrator::new(n, valid_config());
+            let task_rewards: Vec<f32> = (0..n).map(|i| i as f32 * 0.1).collect();
+            let blended = orch.blend_rewards(&task_rewards);
+            prop_assert_eq!(blended.len(), n);
+        }
+
+        /// IntegrationConfig serde roundtrip preserves key fields.
+        #[test]
+        fn config_serde_roundtrip(
+            weight in 0.0_f32..=1.0,
+            interval in 1_u64..1000,
+            meta_lr in 0.0_f32..=0.1,
+        ) {
+            let config = IntegrationConfig {
+                social_reward_weight: weight,
+                memory_write_interval: interval,
+                meta_lr,
+                ..IntegrationConfig::default()
+            };
+            let json = serde_json::to_string(&config).unwrap();
+            let deser: IntegrationConfig = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(deser.social_reward_weight, config.social_reward_weight);
+            prop_assert_eq!(deser.memory_write_interval, config.memory_write_interval);
+            prop_assert_eq!(deser.meta_lr, config.meta_lr);
+        }
+
+        /// Cooperation always increases trust from initial value.
+        #[test]
+        fn cooperation_increases_trust(n in 2_usize..6, reps in 1_usize..10) {
+            let mut orch = IntegrationOrchestrator::new(n, valid_config());
+            let initial = orch.trust.trust(0, 1);
+            for _ in 0..reps {
+                orch.record_cooperation(0, 1);
+            }
+            prop_assert!(
+                orch.trust.trust(0, 1) >= initial,
+                "trust should not decrease after cooperation"
+            );
+        }
+    }
+}

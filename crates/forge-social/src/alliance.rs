@@ -79,8 +79,12 @@ impl AllianceSystem {
                 let both_unallied = self.alliance_of(i).is_none() && self.alliance_of(j).is_none();
 
                 if mutual_trust >= threshold && both_unallied {
-                    self.form_alliance(vec![i, j], current_tick);
-                    trace!(agent_a = i, agent_b = j, "alliance formed");
+                    let i_count = self.alliance_count(i);
+                    let j_count = self.alliance_count(j);
+                    if i_count < config.max_alliances && j_count < config.max_alliances {
+                        self.form_alliance(vec![i, j], current_tick);
+                        trace!(agent_a = i, agent_b = j, "alliance formed");
+                    }
                 }
             }
         }
@@ -102,6 +106,15 @@ impl AllianceSystem {
 
         for id in to_remove {
             self.dissolve_alliance(id);
+        }
+    }
+
+    /// Returns the number of alliances the given agent belongs to.
+    fn alliance_count(&self, agent: usize) -> u32 {
+        if agent < self.membership.len() && self.membership[agent].is_some() {
+            1
+        } else {
+            0
         }
     }
 
@@ -254,6 +267,23 @@ mod proptests {
                     );
                 }
             }
+        }
+
+        /// max_alliances=0 prevents any alliance from forming.
+        #[test]
+        fn max_alliances_zero_prevents_formation(
+            n in 2_usize..6,
+            initial_trust in 0.8_f32..=1.0
+        ) {
+            let mut sys = AllianceSystem::new(n);
+            let trust = TrustMatrix::new(n, initial_trust);
+            let config = SocialConfig {
+                alliance_threshold: 0.5,
+                max_alliances: 0,
+                ..SocialConfig::default()
+            };
+            sys.update(&trust, &config, 0);
+            prop_assert_eq!(sys.num_alliances(), 0, "no alliances should form when max_alliances=0");
         }
     }
 }
