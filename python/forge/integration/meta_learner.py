@@ -19,6 +19,7 @@ DEFAULT_MIN_LR: float = 1e-5
 DEFAULT_MAX_LR: float = 1e-2
 DEFAULT_SLOW_ADAPTATION_THRESHOLD: float = 0.01
 DEFAULT_FAST_ADAPTATION_THRESHOLD: float = 0.1
+DEFAULT_INITIAL_LR: float = 3e-4
 
 
 @dataclass
@@ -31,6 +32,7 @@ class MetaLearnerConfig:
     max_lr: float = DEFAULT_MAX_LR
     slow_adaptation_threshold: float = DEFAULT_SLOW_ADAPTATION_THRESHOLD
     fast_adaptation_threshold: float = DEFAULT_FAST_ADAPTATION_THRESHOLD
+    initial_lr: float = DEFAULT_INITIAL_LR
 
 
 class MetaLearner:
@@ -43,7 +45,7 @@ class MetaLearner:
 
     def __init__(self, config: MetaLearnerConfig | None = None) -> None:
         self.config = config or MetaLearnerConfig()
-        self.current_lr: float = 3e-4
+        self.current_lr: float = self.config.initial_lr
         self._domain_histories: dict[str, list[float]] = {}
         self._adaptation_scores: list[float] = []
         logger.info("MetaLearner initialized with meta_lr=%.4f", self.config.meta_lr)

@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from forge.utils import dataclass_from_dict
+
 logger = logging.getLogger(__name__)
 
 
@@ -190,15 +192,11 @@ class MemoryStore:
             if key not in known_top_keys:
                 logger.warning("Unknown field '%s' in memory store file %s", key, path)
 
-        semantic_fields = set(SemanticFact.__dataclass_fields__)
         self._semantic = [
-            SemanticFact(**{k: v for k, v in f.items() if k in semantic_fields})
-            for f in data.get("semantic", [])
+            dataclass_from_dict(SemanticFact, f) for f in data.get("semantic", [])
         ]
-        episodic_fields = set(Episode.__dataclass_fields__)
         self._episodic = [
-            Episode(**{k: v for k, v in e.items() if k in episodic_fields})
-            for e in data.get("episodic", [])
+            dataclass_from_dict(Episode, e) for e in data.get("episodic", [])
         ]
         self._preferences = {}
         for p in data.get("preferences", []):

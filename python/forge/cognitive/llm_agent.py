@@ -21,6 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_OBS_PREVIEW_DIM: int = 10
+DEFAULT_TEMPERATURE: float = 0.7
+DEFAULT_MAX_TOKENS: int = 1024
+DEFAULT_REASONING_STEPS: int = 5
+DEFAULT_SYSTEM_PROMPT: str = (
+    "You are an intelligent agent in a grid-based simulation. "
+    "Reason step by step, then select an action."
+)
 _PARSE_KEYWORD: str = "action"
 _PARSE_STRIP_CHARS: str = ":,. "
 
@@ -31,10 +38,11 @@ class LLMAgentConfig(AgentConfig):
 
     provider_name: str = "mock"
     model: str = ""
-    temperature: float = 0.7
-    max_tokens: int = 1024
-    reasoning_steps: int = 5
+    temperature: float = DEFAULT_TEMPERATURE
+    max_tokens: int = DEFAULT_MAX_TOKENS
+    reasoning_steps: int = DEFAULT_REASONING_STEPS
     obs_preview_dim: int = DEFAULT_OBS_PREVIEW_DIM
+    system_prompt: str = DEFAULT_SYSTEM_PROMPT
 
 
 class LLMAgent(BaseAgent):
@@ -89,7 +97,7 @@ class LLMAgent(BaseAgent):
         """Build a text prompt from a numerical observation."""
         preview_dim = self.llm_config.obs_preview_dim
         obs_summary = f"Observation vector (dim={observation.shape}): {observation[:preview_dim]}..."
-        return f"You are an agent in a grid simulation.\n{obs_summary}\nSelect an action ID (integer)."
+        return f"{self.llm_config.system_prompt}\n{obs_summary}\nSelect an action ID (integer)."
 
     def _parse_action(self, text: str) -> int:
         """Parse an action ID from the provider's response."""

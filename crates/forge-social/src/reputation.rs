@@ -133,6 +133,7 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
+    use crate::test_util::lcg_next;
     use proptest::prelude::*;
 
     proptest! {
@@ -145,7 +146,7 @@ mod proptests {
             let mut rt = ReputationTracker::new(n);
             let mut rng_val = seed;
             for _ in 0..num_ops {
-                rng_val = rng_val.wrapping_mul(6364136223846793005).wrapping_add(1);
+                rng_val = lcg_next(rng_val);
                 let agent = (rng_val as usize) % n;
                 if rng_val % 2 == 0 {
                     rt.record_cooperation(agent);

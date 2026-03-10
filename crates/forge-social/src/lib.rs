@@ -25,3 +25,19 @@ pub mod prelude;
 pub mod reputation;
 pub mod social_reward;
 pub mod trust;
+
+/// Test utilities shared across proptest modules.
+#[cfg(test)]
+pub(crate) mod test_util {
+    /// PCG-style LCG step for deterministic pseudo-random values in proptests.
+    ///
+    /// Using a simple LCG avoids pulling in a full RNG crate in test code while
+    /// giving proptest control over the seed via its built-in `any::<u64>()`.
+    pub(crate) const LCG_MULTIPLIER: u64 = 6_364_136_223_846_793_005;
+
+    /// Advance a PCG-style LCG state by one step.
+    #[inline]
+    pub(crate) fn lcg_next(state: u64) -> u64 {
+        state.wrapping_mul(LCG_MULTIPLIER).wrapping_add(1)
+    }
+}
