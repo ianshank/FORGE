@@ -110,13 +110,18 @@ impl IntegrationOrchestrator {
     /// Computes blended rewards (task + social).
     #[instrument(skip_all)]
     pub fn blend_rewards(&self, task_rewards: &[f32]) -> Vec<f32> {
+        let w = self.config.social_reward_weight;
+
+        // If social integration is disabled or its weight is zero, return task rewards unchanged.
+        if !self.config.social.enabled || w == 0.0 {
+            return task_rewards.to_vec();
+        }
+
         let social_computer = forge_social::social_reward::SocialRewardComputer::new(
             forge_social::social_reward::SocialRewardConfig::default(),
         );
         let social_rewards =
             social_computer.compute(&self.trust, &self.reputation, &self.config.social);
-
-        let w = self.config.social_reward_weight;
         task_rewards
             .iter()
             .zip(social_rewards.iter())
