@@ -78,6 +78,7 @@ impl InMemoryStore {
     }
 
     /// Queries the store and returns matching entries.
+    #[instrument(skip_all)]
     pub fn query(&self, query: &MemoryQuery, top_k: usize) -> Vec<MemoryEntry> {
         match query {
             MemoryQuery::SemanticByKey(prefix) => self
@@ -139,6 +140,7 @@ impl InMemoryStore {
     ///
     /// Returns [`MemoryError::Serialize`] if serialization fails,
     /// or [`MemoryError::Io`] if the file cannot be written.
+    #[instrument(skip(self))]
     pub fn save_to_file(&self, path: &Path) -> Result<(), MemoryError> {
         let data = bincode::serialize(self).map_err(|e| MemoryError::Serialize(e.to_string()))?;
         std::fs::write(path, data)?;
@@ -151,6 +153,7 @@ impl InMemoryStore {
     ///
     /// Returns [`MemoryError::Io`] if the file cannot be read,
     /// or [`MemoryError::Deserialize`] if deserialization fails.
+    #[instrument]
     pub fn load_from_file(path: &Path) -> Result<Self, MemoryError> {
         let data = std::fs::read(path)?;
         let store =

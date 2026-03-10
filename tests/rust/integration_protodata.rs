@@ -209,8 +209,8 @@ fn test_cognitive_agent_reasoning_trace() {
 
     let (_action_id, trace) = agent.select_action_with_prompt(prompt, 0);
 
-    // Trace should record the decision
-    assert!(!trace.steps.is_empty() || trace.selected_action <= u32::MAX);
+    // Trace should record the decision — either steps were generated or an action was selected
+    assert!(!trace.steps.is_empty() || trace.selected_action < 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +339,7 @@ fn test_end_to_end_training_scenario() {
 
     // Agent 0 should have episodic memories
     let mem0 = orch.agent_memory(0).unwrap();
-    assert!(mem0.episodic.len() > 0);
+    assert!(!mem0.episodic.is_empty());
 
     // Blended rewards should work
     let task_rewards: Vec<f32> = vec![1.0, 0.5, -0.2];

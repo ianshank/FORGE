@@ -116,6 +116,7 @@ impl ProviderRegistry {
     }
 
     /// Registers a provider under the given name.
+    #[instrument(skip(self, provider))]
     pub fn register(&mut self, name: String, provider: Box<dyn CognitiveProvider>) {
         self.providers.insert(name, provider);
     }
