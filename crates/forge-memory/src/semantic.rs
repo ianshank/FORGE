@@ -111,6 +111,18 @@ impl SemanticMemory {
             .collect()
     }
 
+    /// Returns facts whose key starts with the given prefix, up to `limit`.
+    ///
+    /// Unlike chaining `query_by_strength` + filter, this avoids allocating
+    /// an intermediate `Vec` for the full fact set.
+    pub fn query_by_prefix(&self, prefix: &str, limit: usize) -> Vec<&SemanticFact> {
+        self.facts
+            .iter()
+            .filter(|f| f.key.starts_with(prefix))
+            .take(limit)
+            .collect()
+    }
+
     /// Applies decay to all facts and prunes those below the threshold.
     #[instrument(skip_all)]
     pub fn tick_decay(&mut self, rate: f32, min_strength: f32) {

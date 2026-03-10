@@ -109,6 +109,7 @@ fn test_orchestrator_memory_access_and_writes() {
 fn test_orchestrator_memory_decay_on_tick() {
     let mut config = test_integration_config();
     config.memory_write_interval = 1; // Decay every tick
+    config.memory.enabled = true;
     config.memory.decay_rate = 0.5;
     config.memory.min_strength = 0.3;
 

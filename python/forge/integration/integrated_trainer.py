@@ -5,6 +5,7 @@ augmentation, and cross-layer evaluation.
 """
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MEMORY_WRITE_INTERVAL = 10
 DEFAULT_SOCIAL_REWARD_WEIGHT = 0.3
+DEFAULT_DOMAIN_REWARD_WINDOW = 200
 
 
 @dataclass
@@ -30,6 +32,7 @@ class IntegrationTrainerConfig:
     meta_lr: float = 0.001
     max_episodes: int = 1000
     log_interval: int = 10
+    domain_reward_window: int = DEFAULT_DOMAIN_REWARD_WINDOW
     curriculum_domains: list[str] = field(
         default_factory=lambda: ["navigation", "crafting", "social", "combat"]
     )
@@ -93,10 +96,13 @@ class IntegratedTrainer:
             obs, reward, terminated, truncated, info = step_fn(action)
             done = terminated or truncated
 
-            # Augment reward with social signal
-            social_rewards = self.trust.compute_social_rewards()
+            # Augment reward with social signal (skip computation when weight is zero)
             w = self.config.social_reward_weight
-            blended_reward = reward * (1 - w) + float(social_rewards.mean()) * w
+            if w > 0.0:
+                social_rewards = self.trust.compute_social_rewards()
+                blended_reward = reward * (1 - w) + float(social_rewards.mean()) * w
+            else:
+                blended_reward = reward
 
             total_reward += blended_reward
             steps += 1
@@ -118,11 +124,14 @@ class IntegratedTrainer:
                 tags=[domain],
             )
             for mem in self.memories:
-                mem.store_episode(episode)
+                mem.store_episode(copy.copy(episode))
 
-        # Track per-domain rewards
+        # Track per-domain rewards (capped sliding window to bound memory)
         if domain in self._domain_rewards:
-            self._domain_rewards[domain].append(total_reward)
+            window = self._domain_rewards[domain]
+            window.append(total_reward)
+            if len(window) > self.config.domain_reward_window:
+                self._domain_rewards[domain] = window[-self.config.domain_reward_window :]
 
         metrics = {
             "total_reward": total_reward,

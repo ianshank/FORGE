@@ -83,10 +83,8 @@ impl InMemoryStore {
         match query {
             MemoryQuery::SemanticByKey(prefix) => self
                 .semantic
-                .query_by_strength(0.0)
+                .query_by_prefix(prefix, top_k)
                 .into_iter()
-                .filter(|f| f.key.starts_with(prefix.as_str()))
-                .take(top_k)
                 .map(|f| MemoryEntry::Semantic(f.clone()))
                 .collect(),
             MemoryQuery::EpisodicByAgent(agent_id) => self

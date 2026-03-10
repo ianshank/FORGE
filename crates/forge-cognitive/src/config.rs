@@ -11,7 +11,8 @@ const DEFAULT_MAX_TOKENS: u32 = 1024;
 /// Default confidence assigned when the provider doesn't return one.
 const DEFAULT_CONFIDENCE: f32 = 0.8;
 /// Default system prompt for the cognitive agent.
-const DEFAULT_SYSTEM_PROMPT: &str = "You are an intelligent agent in a grid-based simulation. \
+pub(crate) const DEFAULT_SYSTEM_PROMPT: &str =
+    "You are an intelligent agent in a grid-based simulation. \
      Reason step by step, then select an action.";
 
 /// Configuration for the cognitive agent system.

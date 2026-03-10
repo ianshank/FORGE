@@ -7,6 +7,7 @@ use tracing::{info, instrument};
 
 use forge_memory::store::InMemoryStore;
 use forge_social::reputation::ReputationTracker;
+use forge_social::social_reward::{SocialRewardComputer, SocialRewardConfig};
 use forge_social::trust::TrustMatrix;
 
 use crate::config::IntegrationConfig;
@@ -29,6 +30,8 @@ pub struct IntegrationOrchestrator {
     pub trust: TrustMatrix,
     /// Shared reputation tracker.
     pub reputation: ReputationTracker,
+    /// Cached social reward computer (avoids re-creation per tick).
+    social_computer: SocialRewardComputer,
     /// Current tick (synchronized with simulation).
     tick: u64,
 }
@@ -50,6 +53,8 @@ impl IntegrationOrchestrator {
         let trust = TrustMatrix::new(num_agents, social_config.trust_initial);
         let reputation = ReputationTracker::new(num_agents);
 
+        let social_computer = SocialRewardComputer::new(SocialRewardConfig::default());
+
         info!(
             num_agents,
             memory_enabled = memory_config.enabled,
@@ -62,6 +67,7 @@ impl IntegrationOrchestrator {
             agent_states,
             trust,
             reputation,
+            social_computer,
             tick: 0,
         }
     }
@@ -117,11 +123,9 @@ impl IntegrationOrchestrator {
             return task_rewards.to_vec();
         }
 
-        let social_computer = forge_social::social_reward::SocialRewardComputer::new(
-            forge_social::social_reward::SocialRewardConfig::default(),
-        );
         let social_rewards =
-            social_computer.compute(&self.trust, &self.reputation, &self.config.social);
+            self.social_computer
+                .compute(&self.trust, &self.reputation, &self.config.social);
         task_rewards
             .iter()
             .zip(social_rewards.iter())

@@ -5,7 +5,7 @@
 
 use tracing::instrument;
 
-use crate::config::CognitiveConfig;
+use crate::config::DEFAULT_SYSTEM_PROMPT;
 use forge_memory::store::MemoryEntry;
 
 /// A structured prompt for the cognitive provider.
@@ -78,11 +78,10 @@ pub struct CognitivePromptBuilder {
 }
 
 impl CognitivePromptBuilder {
-    /// Creates a new builder with defaults from [`CognitiveConfig`].
+    /// Creates a new builder with defaults.
     fn new() -> Self {
-        let default_config = CognitiveConfig::default();
         Self {
-            system: default_config.system_prompt,
+            system: DEFAULT_SYSTEM_PROMPT.to_string(),
             observation: String::new(),
             memory_context: Vec::new(),
             social_context: String::new(),
