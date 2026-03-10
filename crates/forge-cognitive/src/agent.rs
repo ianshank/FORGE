@@ -90,7 +90,7 @@ impl CognitiveAgent {
         ));
 
         trace.selected_action = action_id;
-        trace.confidence = 0.8; // TODO: extract from provider response
+        trace.confidence = self.config.default_confidence;
         self.last_trace = trace.clone();
         self.action_count += 1;
 

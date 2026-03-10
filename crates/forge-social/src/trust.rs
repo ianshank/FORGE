@@ -145,4 +145,77 @@ mod tests {
         let tm = TrustMatrix::new(2, 0.5);
         assert_eq!(tm.trust(5, 0), 0.0);
     }
+
+    #[test]
+    fn test_self_interaction_is_noop() {
+        let mut tm = TrustMatrix::new(3, 0.5);
+        let config = test_config();
+        tm.record_cooperation(1, 1, &config);
+        assert_eq!(tm.trust(1, 1), 0.5); // unchanged
+        assert_eq!(tm.interactions(1, 1), 0);
+    }
+
+    #[test]
+    fn test_trust_vector() {
+        let tm = TrustMatrix::new(3, 0.5);
+        let vec = tm.trust_vector(0);
+        assert_eq!(vec.len(), 3);
+        assert_eq!(vec[1], 0.5);
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn trust_always_in_0_1(
+            n in 2_usize..10,
+            initial in 0.0_f32..=1.0,
+            num_ops in 0_usize..50,
+            seed in any::<u64>()
+        ) {
+            let config = SocialConfig {
+                trust_update_rate: 0.1,
+                ..SocialConfig::default()
+            };
+            let mut tm = TrustMatrix::new(n, initial);
+            let mut rng_val = seed;
+            for _ in 0..num_ops {
+                rng_val = rng_val.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let a = (rng_val as usize) % n;
+                let b = ((rng_val >> 16) as usize) % n;
+                if rng_val % 2 == 0 {
+                    tm.record_cooperation(a, b, &config);
+                } else {
+                    tm.record_hostility(a, b, &config);
+                }
+            }
+            for i in 0..n {
+                for j in 0..n {
+                    let t = tm.trust(i, j);
+                    prop_assert!(t >= 0.0, "trust({i},{j}) = {t} < 0");
+                    prop_assert!(t <= 1.0, "trust({i},{j}) = {t} > 1");
+                }
+            }
+        }
+
+        #[test]
+        fn interaction_count_symmetric(
+            n in 2_usize..10,
+            a in 0_usize..10,
+            b in 0_usize..10
+        ) {
+            let a = a % n;
+            let b = b % n;
+            let config = SocialConfig::default();
+            let mut tm = TrustMatrix::new(n, 0.5);
+            tm.record_cooperation(a, b, &config);
+            if a != b {
+                prop_assert_eq!(tm.interactions(a, b), tm.interactions(b, a));
+            }
+        }
+    }
 }

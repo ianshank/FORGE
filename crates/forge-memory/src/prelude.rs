@@ -2,6 +2,7 @@
 
 pub use crate::config::MemoryConfig;
 pub use crate::episodic::{Episode, EpisodeOutcome, EpisodicMemory};
+pub use crate::error::MemoryError;
 pub use crate::preference::{Preference, PreferenceMemory};
 pub use crate::semantic::{SemanticFact, SemanticMemory};
 pub use crate::store::{InMemoryStore, MemoryEntry, MemoryQuery};

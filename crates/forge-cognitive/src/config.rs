@@ -8,6 +8,11 @@ const DEFAULT_REASONING_STEPS: u32 = 5;
 const DEFAULT_TEMPERATURE: f32 = 0.7;
 /// Default maximum tokens per LLM completion.
 const DEFAULT_MAX_TOKENS: u32 = 1024;
+/// Default confidence assigned when the provider doesn't return one.
+const DEFAULT_CONFIDENCE: f32 = 0.8;
+/// Default system prompt for the cognitive agent.
+const DEFAULT_SYSTEM_PROMPT: &str = "You are an intelligent agent in a grid-based simulation. \
+     Reason step by step, then select an action.";
 
 /// Configuration for the cognitive agent system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +32,10 @@ pub struct CognitiveConfig {
     pub reasoning_steps: u32,
     /// Base URL for the API endpoint (empty = use provider default).
     pub api_base_url: String,
+    /// Default confidence when the provider doesn't return one.
+    pub default_confidence: f32,
+    /// System prompt template for the cognitive agent.
+    pub system_prompt: String,
 }
 
 impl Default for CognitiveConfig {
@@ -39,6 +48,8 @@ impl Default for CognitiveConfig {
             max_tokens: DEFAULT_MAX_TOKENS,
             reasoning_steps: DEFAULT_REASONING_STEPS,
             api_base_url: String::new(),
+            default_confidence: DEFAULT_CONFIDENCE,
+            system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
         }
     }
 }
@@ -53,6 +64,8 @@ mod tests {
         assert!(!config.enabled);
         assert_eq!(config.provider, "mock");
         assert_eq!(config.reasoning_steps, DEFAULT_REASONING_STEPS);
+        assert_eq!(config.default_confidence, DEFAULT_CONFIDENCE);
+        assert!(!config.system_prompt.is_empty());
     }
 
     #[test]
@@ -62,5 +75,6 @@ mod tests {
         let deser: CognitiveConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.provider, config.provider);
         assert_eq!(deser.temperature, config.temperature);
+        assert_eq!(deser.default_confidence, config.default_confidence);
     }
 }

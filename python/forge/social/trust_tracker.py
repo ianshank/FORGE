@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -81,6 +81,11 @@ class TrustTracker:
         return rewards
 
     def _update_reputation(self, agent: int) -> None:
+        """Recompute reputation score for an agent based on cooperation ratio.
+
+        Reputation is (cooperations - hostilities) / total_interactions,
+        yielding a value in [-1.0, 1.0].
+        """
         coop = float(self._coop_counts[agent])
         hostile = float(self._hostile_counts[agent])
         total = coop + hostile

@@ -12,6 +12,8 @@ const DEFAULT_COOPERATION_REWARD_WEIGHT: f32 = 0.3;
 const DEFAULT_BETRAYAL_PENALTY: f32 = -0.5;
 /// Default alliance formation threshold.
 const DEFAULT_ALLIANCE_THRESHOLD: f32 = 0.7;
+/// Default maximum number of alliances per agent.
+const DEFAULT_MAX_ALLIANCES: u32 = 3;
 
 /// Configuration for the social interaction system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +44,7 @@ impl Default for SocialConfig {
             cooperation_reward_weight: DEFAULT_COOPERATION_REWARD_WEIGHT,
             betrayal_penalty: DEFAULT_BETRAYAL_PENALTY,
             alliance_threshold: DEFAULT_ALLIANCE_THRESHOLD,
-            max_alliances: 3,
+            max_alliances: DEFAULT_MAX_ALLIANCES,
         }
     }
 }

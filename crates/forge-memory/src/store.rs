@@ -1,7 +1,6 @@
 //! Memory store trait and in-memory implementation.
 //!
-//! The [`MemoryStore`] trait defines the interface for all memory backends.
-//! [`InMemoryStore`] provides a complete in-memory implementation with
+//! The [`InMemoryStore`] provides a complete in-memory implementation with
 //! optional persistence to disk via bincode serialization.
 
 use std::path::Path;
@@ -11,6 +10,7 @@ use tracing::instrument;
 
 use crate::config::MemoryConfig;
 use crate::episodic::{Episode, EpisodicMemory};
+use crate::error::MemoryError;
 use crate::preference::PreferenceMemory;
 use crate::semantic::{SemanticFact, SemanticMemory};
 
@@ -134,15 +134,28 @@ impl InMemoryStore {
     }
 
     /// Saves the store to disk as bincode.
-    pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
-        let data = bincode::serialize(self).map_err(|e| format!("serialization error: {e}"))?;
-        std::fs::write(path, data).map_err(|e| format!("write error: {e}"))
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MemoryError::Serialize`] if serialization fails,
+    /// or [`MemoryError::Io`] if the file cannot be written.
+    pub fn save_to_file(&self, path: &Path) -> Result<(), MemoryError> {
+        let data = bincode::serialize(self).map_err(|e| MemoryError::Serialize(e.to_string()))?;
+        std::fs::write(path, data)?;
+        Ok(())
     }
 
     /// Loads the store from a bincode file.
-    pub fn load_from_file(path: &Path) -> Result<Self, String> {
-        let data = std::fs::read(path).map_err(|e| format!("read error: {e}"))?;
-        bincode::deserialize(&data).map_err(|e| format!("deserialization error: {e}"))
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MemoryError::Io`] if the file cannot be read,
+    /// or [`MemoryError::Deserialize`] if deserialization fails.
+    pub fn load_from_file(path: &Path) -> Result<Self, MemoryError> {
+        let data = std::fs::read(path)?;
+        let store =
+            bincode::deserialize(&data).map_err(|e| MemoryError::Deserialize(e.to_string()))?;
+        Ok(store)
     }
 
     /// Returns total memory entries across all subsystems.
@@ -207,7 +220,7 @@ mod tests {
     fn test_preference_query() {
         let mut store = InMemoryStore::new(0, &test_config());
         let pref = store.preferences.get_or_create("combat");
-        pref.update_action(5, 1.0, 0.5);
+        pref.update_action(5, 1.0, 0.5, 0.05);
 
         let results = store.query(&MemoryQuery::PreferenceByContext("combat".into()), 10);
         assert_eq!(results.len(), 1);
@@ -215,18 +228,26 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
+        let dir = std::env::temp_dir().join("forge_memory_test_store");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test_store.bin");
+
         let mut store = InMemoryStore::new(7, &test_config());
         store
             .semantic
             .store(SemanticFact::new("key".into(), "val".into(), 0.9, 1));
-
-        let dir = std::env::temp_dir().join("forge_memory_test");
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("test_store.bin");
         store.save_to_file(&path).unwrap();
+
         let loaded = InMemoryStore::load_from_file(&path).unwrap();
         assert_eq!(loaded.agent_id, 7);
         assert_eq!(loaded.total_entries(), 1);
+
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_nonexistent_file() {
+        let result = InMemoryStore::load_from_file(Path::new("/tmp/nonexistent_forge_test.bin"));
+        assert!(result.is_err());
     }
 }

@@ -45,10 +45,10 @@ impl SemanticFact {
         trace!(key = %self.key, strength = self.strength, "semantic fact decayed");
     }
 
-    /// Reinforces the memory, increasing its strength.
+    /// Reinforces the memory, increasing its strength by the given increment.
     #[instrument(skip_all)]
-    pub fn reinforce(&mut self) {
-        self.strength = (self.strength + 0.1).min(1.0);
+    pub fn reinforce(&mut self, increment: f32) {
+        self.strength = (self.strength + increment).min(1.0);
         self.reinforcement_count += 1;
         trace!(key = %self.key, strength = self.strength, "semantic fact reinforced");
     }
@@ -182,8 +182,86 @@ mod tests {
     fn test_reinforce() {
         let mut fact = SemanticFact::new("k".into(), "v".into(), 1.0, 1);
         fact.strength = 0.5;
-        fact.reinforce();
+        fact.reinforce(0.1);
         assert_eq!(fact.strength, 0.6);
         assert_eq!(fact.reinforcement_count, 1);
+    }
+
+    #[test]
+    fn test_reinforce_capped_at_one() {
+        let mut fact = SemanticFact::new("k".into(), "v".into(), 1.0, 1);
+        fact.strength = 0.95;
+        fact.reinforce(0.2);
+        assert_eq!(fact.strength, 1.0);
+    }
+
+    #[test]
+    fn test_decay_capped_at_zero() {
+        let mut fact = SemanticFact::new("k".into(), "v".into(), 1.0, 1);
+        fact.strength = 0.02;
+        fact.decay(0.1);
+        assert_eq!(fact.strength, 0.0);
+    }
+
+    #[test]
+    fn test_query_by_strength() {
+        let mut mem = SemanticMemory::new(100);
+        let mut f1 = SemanticFact::new("a".into(), "1".into(), 1.0, 1);
+        f1.strength = 0.3;
+        mem.store(f1);
+        let mut f2 = SemanticFact::new("b".into(), "2".into(), 1.0, 2);
+        f2.strength = 0.7;
+        mem.store(f2);
+        assert_eq!(mem.query_by_strength(0.5).len(), 1);
+        assert_eq!(mem.query_by_strength(0.0).len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn capacity_never_exceeded(
+            cap in 1_usize..50,
+            num_inserts in 0_usize..200
+        ) {
+            let mut mem = SemanticMemory::new(cap);
+            for i in 0..num_inserts {
+                mem.store(SemanticFact::new(
+                    format!("key_{i}"),
+                    format!("val_{i}"),
+                    1.0,
+                    i as u64,
+                ));
+            }
+            prop_assert!(mem.len() <= cap);
+        }
+
+        #[test]
+        fn decay_monotonically_decreases_strength(
+            initial in 0.0_f32..=1.0,
+            rate in 0.0_f32..=0.5
+        ) {
+            let mut fact = SemanticFact::new("k".into(), "v".into(), 1.0, 0);
+            fact.strength = initial;
+            fact.decay(rate);
+            prop_assert!(fact.strength <= initial);
+            prop_assert!(fact.strength >= 0.0);
+        }
+
+        #[test]
+        fn reinforce_bounded_to_one(
+            initial in 0.0_f32..=1.0,
+            increment in 0.0_f32..=1.0
+        ) {
+            let mut fact = SemanticFact::new("k".into(), "v".into(), 1.0, 0);
+            fact.strength = initial;
+            fact.reinforce(increment);
+            prop_assert!(fact.strength >= initial);
+            prop_assert!(fact.strength <= 1.0);
+        }
     }
 }

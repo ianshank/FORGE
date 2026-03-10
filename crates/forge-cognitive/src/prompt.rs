@@ -5,6 +5,7 @@
 
 use tracing::instrument;
 
+use crate::config::CognitiveConfig;
 use forge_memory::store::MemoryEntry;
 
 /// A structured prompt for the cognitive provider.
@@ -77,18 +78,23 @@ pub struct CognitivePromptBuilder {
 }
 
 impl CognitivePromptBuilder {
-    /// Creates a new builder with defaults.
+    /// Creates a new builder with defaults from [`CognitiveConfig`].
     fn new() -> Self {
+        let default_config = CognitiveConfig::default();
         Self {
-            system: "You are an intelligent agent in a grid-based simulation. \
-                     Reason step by step, then select an action."
-                .to_string(),
+            system: default_config.system_prompt,
             observation: String::new(),
             memory_context: Vec::new(),
             social_context: String::new(),
             task_description: String::new(),
             available_actions: Vec::new(),
         }
+    }
+
+    /// Overrides the system prompt from a config.
+    pub fn system_prompt(mut self, prompt: String) -> Self {
+        self.system = prompt;
+        self
     }
 
     /// Sets the observation text.

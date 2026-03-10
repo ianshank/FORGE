@@ -6,21 +6,31 @@ coefficient, etc.) based on how quickly the agent adapts to new domains.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_META_LR: float = 0.001
+DEFAULT_ADAPTATION_WINDOW: int = 50
+DEFAULT_MIN_LR: float = 1e-5
+DEFAULT_MAX_LR: float = 1e-2
+DEFAULT_SLOW_ADAPTATION_THRESHOLD: float = 0.01
+DEFAULT_FAST_ADAPTATION_THRESHOLD: float = 0.1
+
+
 @dataclass
 class MetaLearnerConfig:
     """Configuration for the meta-learner."""
 
-    meta_lr: float = 0.001
-    adaptation_window: int = 50
-    min_lr: float = 1e-5
-    max_lr: float = 1e-2
+    meta_lr: float = DEFAULT_META_LR
+    adaptation_window: int = DEFAULT_ADAPTATION_WINDOW
+    min_lr: float = DEFAULT_MIN_LR
+    max_lr: float = DEFAULT_MAX_LR
+    slow_adaptation_threshold: float = DEFAULT_SLOW_ADAPTATION_THRESHOLD
+    fast_adaptation_threshold: float = DEFAULT_FAST_ADAPTATION_THRESHOLD
 
 
 class MetaLearner:
@@ -53,7 +63,7 @@ class MetaLearner:
         window = self.config.adaptation_window
         scores = []
 
-        for domain, rewards in self._domain_histories.items():
+        for rewards in self._domain_histories.values():
             if len(rewards) < window * 2:
                 continue
             early = np.mean(rewards[-window * 2 : -window])
@@ -68,12 +78,12 @@ class MetaLearner:
         self._adaptation_scores.append(mean_improvement)
 
         # If adaptation is slow (low improvement), increase LR
-        if mean_improvement < 0.01:
+        if mean_improvement < self.config.slow_adaptation_threshold:
             self.current_lr = min(
                 self.config.max_lr,
                 self.current_lr * (1 + self.config.meta_lr),
             )
-        elif mean_improvement > 0.1:
+        elif mean_improvement > self.config.fast_adaptation_threshold:
             self.current_lr = max(
                 self.config.min_lr,
                 self.current_lr * (1 - self.config.meta_lr),

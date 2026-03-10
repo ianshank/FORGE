@@ -43,6 +43,7 @@ impl AllianceSystem {
     }
 
     /// Returns the alliance ID for the given agent, if any.
+    #[instrument(skip_all)]
     pub fn alliance_of(&self, agent: usize) -> Option<u32> {
         self.membership.get(agent).copied().flatten()
     }
@@ -57,6 +58,7 @@ impl AllianceSystem {
     }
 
     /// Returns `true` if two agents are in the same alliance.
+    #[instrument(skip_all)]
     pub fn are_allied(&self, a: usize, b: usize) -> bool {
         match (self.alliance_of(a), self.alliance_of(b)) {
             (Some(aa), Some(ab)) => aa == ab,
@@ -191,5 +193,67 @@ mod tests {
         // At least some agents should be allied
         let has_alliance = (0..3).any(|i| sys.alliance_of(i).is_some());
         assert!(has_alliance);
+    }
+
+    #[test]
+    fn test_alliance_members_returns_correct_set() {
+        let mut sys = AllianceSystem::new(4);
+        let trust = TrustMatrix::new(4, 0.9);
+        let config = test_config();
+        sys.update(&trust, &config, 0);
+        if let Some(aid) = sys.alliance_of(0) {
+            let members = sys.alliance_members(aid);
+            assert!(members.contains(&0));
+        }
+    }
+
+    #[test]
+    fn test_nonexistent_alliance_returns_empty() {
+        let sys = AllianceSystem::new(4);
+        assert!(sys.alliance_members(999).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn membership_consistent_with_alliances(
+            n in 2_usize..8,
+            initial_trust in 0.0_f32..=1.0
+        ) {
+            let mut sys = AllianceSystem::new(n);
+            let trust = TrustMatrix::new(n, initial_trust);
+            let config = SocialConfig {
+                alliance_threshold: 0.7,
+                ..SocialConfig::default()
+            };
+            sys.update(&trust, &config, 0);
+
+            // Every agent in an alliance should appear in that alliance's member list
+            for i in 0..n {
+                if let Some(aid) = sys.alliance_of(i) {
+                    let members = sys.alliance_members(aid);
+                    prop_assert!(
+                        members.contains(&i),
+                        "agent {i} claims alliance {aid} but is not in member list"
+                    );
+                }
+            }
+
+            // are_allied should be symmetric
+            for i in 0..n {
+                for j in 0..n {
+                    prop_assert_eq!(
+                        sys.are_allied(i, j),
+                        sys.are_allied(j, i),
+                        "are_allied not symmetric for ({}, {})", i, j
+                    );
+                }
+            }
+        }
     }
 }

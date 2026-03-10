@@ -25,6 +25,7 @@
 
 pub mod config;
 pub mod episodic;
+pub mod error;
 pub mod preference;
 pub mod prelude;
 pub mod semantic;

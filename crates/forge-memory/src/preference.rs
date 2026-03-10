@@ -31,8 +31,17 @@ impl Preference {
     }
 
     /// Updates the weight for a specific action using exponential moving average.
+    ///
+    /// The `strength_increment` parameter controls how much the memory
+    /// is reinforced on each update (typically from config).
     #[instrument(skip_all)]
-    pub fn update_action(&mut self, action_id: u32, reward: f32, learning_rate: f32) {
+    pub fn update_action(
+        &mut self,
+        action_id: u32,
+        reward: f32,
+        learning_rate: f32,
+        strength_increment: f32,
+    ) {
         if let Some(entry) = self
             .action_weights
             .iter_mut()
@@ -43,7 +52,7 @@ impl Preference {
             self.action_weights.push((action_id, reward));
         }
         self.update_count += 1;
-        self.strength = (self.strength + 0.05).min(1.0);
+        self.strength = (self.strength + strength_increment).min(1.0);
         trace!(
             context = %self.context_key,
             action_id,
@@ -147,8 +156,8 @@ mod tests {
     #[test]
     fn test_preference_update() {
         let mut pref = Preference::new("combat".into());
-        pref.update_action(1, 1.0, 0.5);
-        pref.update_action(2, 0.5, 0.5);
+        pref.update_action(1, 1.0, 0.5, 0.05);
+        pref.update_action(2, 0.5, 0.5, 0.05);
         assert_eq!(pref.preferred_action(), Some(1));
         assert_eq!(pref.update_count, 2);
     }
@@ -157,7 +166,7 @@ mod tests {
     fn test_preference_memory() {
         let mut mem = PreferenceMemory::new(100);
         let pref = mem.get_or_create("combat.low_health");
-        pref.update_action(3, 1.0, 0.5);
+        pref.update_action(3, 1.0, 0.5, 0.05);
         assert_eq!(mem.len(), 1);
         assert_eq!(
             mem.get("combat.low_health").unwrap().preferred_action(),
@@ -176,5 +185,65 @@ mod tests {
         mem.get_or_create("c"); // should evict "a"
         assert_eq!(mem.len(), 2);
         assert!(mem.get("a").is_none());
+    }
+
+    #[test]
+    fn test_strength_increment_bounded() {
+        let mut pref = Preference::new("ctx".into());
+        pref.strength = 0.98;
+        pref.update_action(1, 1.0, 0.5, 0.05);
+        assert!(pref.strength <= 1.0);
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn capacity_never_exceeded(
+            cap in 1_usize..30,
+            num_inserts in 0_usize..100
+        ) {
+            let mut mem = PreferenceMemory::new(cap);
+            for i in 0..num_inserts {
+                mem.get_or_create(&format!("ctx_{i}"));
+            }
+            prop_assert!(mem.len() <= cap);
+        }
+
+        #[test]
+        fn ema_stays_bounded(
+            initial in -10.0_f32..10.0,
+            reward in -10.0_f32..10.0,
+            lr in 0.0_f32..=1.0,
+            increment in 0.0_f32..=0.5
+        ) {
+            let mut pref = Preference::new("test".into());
+            pref.action_weights.push((0, initial));
+            pref.update_action(0, reward, lr, increment);
+            // EMA is a convex combination when lr in [0,1]:
+            // new = old * (1-lr) + reward * lr
+            let weight = pref.action_weights[0].1;
+            let expected_min = initial.min(reward);
+            let expected_max = initial.max(reward);
+            // Allow small floating-point tolerance
+            prop_assert!(weight >= expected_min - 0.01);
+            prop_assert!(weight <= expected_max + 0.01);
+        }
+
+        #[test]
+        fn strength_always_in_0_1(
+            initial in 0.0_f32..=1.0,
+            increment in 0.0_f32..=1.0
+        ) {
+            let mut pref = Preference::new("test".into());
+            pref.strength = initial;
+            pref.update_action(0, 1.0, 0.5, increment);
+            prop_assert!(pref.strength >= 0.0);
+            prop_assert!(pref.strength <= 1.0);
+        }
     }
 }

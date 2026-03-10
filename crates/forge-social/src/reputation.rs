@@ -118,4 +118,46 @@ mod tests {
         let rt = ReputationTracker::new(2);
         assert_eq!(rt.reputation(99), 0.0);
     }
+
+    #[test]
+    fn test_all_scores() {
+        let mut rt = ReputationTracker::new(3);
+        rt.record_cooperation(0);
+        let scores = rt.all_scores();
+        assert_eq!(scores.len(), 3);
+        assert_eq!(scores[0], 1.0);
+        assert_eq!(scores[1], 0.0);
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn reputation_always_in_neg1_to_1(
+            n in 2_usize..10,
+            num_ops in 0_usize..100,
+            seed in any::<u64>()
+        ) {
+            let mut rt = ReputationTracker::new(n);
+            let mut rng_val = seed;
+            for _ in 0..num_ops {
+                rng_val = rng_val.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let agent = (rng_val as usize) % n;
+                if rng_val % 2 == 0 {
+                    rt.record_cooperation(agent);
+                } else {
+                    rt.record_hostility(agent);
+                }
+            }
+            for i in 0..n {
+                let r = rt.reputation(i);
+                prop_assert!(r >= -1.0, "reputation({i}) = {r} < -1.0");
+                prop_assert!(r <= 1.0, "reputation({i}) = {r} > 1.0");
+            }
+        }
+    }
 }

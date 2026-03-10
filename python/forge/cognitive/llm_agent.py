@@ -5,10 +5,10 @@ Uses a CognitiveProvider to select actions through structured reasoning.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
+import numpy as np  # noqa: TC002 (used at runtime in _build_prompt)
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.cognitive.providers import (
@@ -20,6 +20,9 @@ from forge.cognitive.providers import (
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_OBS_PREVIEW_DIM: int = 10
+
+
 @dataclass
 class LLMAgentConfig(AgentConfig):
     """Configuration for the LLM agent."""
@@ -29,6 +32,7 @@ class LLMAgentConfig(AgentConfig):
     temperature: float = 0.7
     max_tokens: int = 1024
     reasoning_steps: int = 5
+    obs_preview_dim: int = DEFAULT_OBS_PREVIEW_DIM
 
 
 class LLMAgent(BaseAgent):
@@ -75,9 +79,14 @@ class LLMAgent(BaseAgent):
         """No-op learning for LLM agents (learning happens via memory/fine-tuning)."""
         return {}
 
+    def provider_name(self) -> str:
+        """Return the name of the cognitive provider."""
+        return self.provider.name()
+
     def _build_prompt(self, observation: np.ndarray) -> str:
         """Build a text prompt from a numerical observation."""
-        obs_summary = f"Observation vector (dim={observation.shape}): {observation[:10]}..."
+        preview_dim = self.llm_config.obs_preview_dim
+        obs_summary = f"Observation vector (dim={observation.shape}): {observation[:preview_dim]}..."
         return f"You are an agent in a grid simulation.\n{obs_summary}\nSelect an action ID (integer)."
 
     def _parse_action(self, text: str) -> int:
@@ -86,14 +95,11 @@ class LLMAgent(BaseAgent):
         if "action" in lower:
             for word in lower.split("action")[-1].split():
                 cleaned = word.strip(":, ")
-                try:
+                if cleaned.lstrip("-").isdigit():
                     return int(cleaned)
-                except ValueError:
-                    continue
         # Fallback: find last number
         for word in reversed(text.split()):
-            try:
-                return int(word.strip(":,. "))
-            except ValueError:
-                continue
+            stripped = word.strip(":,. ")
+            if stripped.lstrip("-").isdigit():
+                return int(stripped)
         return 0

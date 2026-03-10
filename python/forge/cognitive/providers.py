@@ -77,21 +77,27 @@ class AnthropicProvider(CognitiveProvider):
 
     def __init__(self, api_key: str | None = None) -> None:
         self._api_key = api_key
+        self._client: Any = None
         logger.info("AnthropicProvider initialized")
 
     def name(self) -> str:
         """Return provider name."""
         return "anthropic"
 
+    def _get_client(self) -> Any:
+        """Return a cached Anthropic client instance (lazy initialization)."""
+        if self._client is None:
+            try:
+                import anthropic  # noqa: PLC0415
+            except ImportError as exc:
+                msg = "anthropic package required for AnthropicProvider"
+                raise ImportError(msg) from exc
+            self._client = anthropic.Anthropic(api_key=self._api_key)
+        return self._client
+
     def complete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         """Generate a completion using the Anthropic API."""
-        try:
-            import anthropic  # noqa: PLC0415
-        except ImportError as exc:
-            msg = "anthropic package required for AnthropicProvider"
-            raise ImportError(msg) from exc
-
-        client = anthropic.Anthropic(api_key=self._api_key)
+        client = self._get_client()
         response = client.messages.create(
             model=config.model or "claude-sonnet-4-20250514",
             max_tokens=config.max_tokens,
@@ -114,27 +120,33 @@ class OpenAIProvider(CognitiveProvider):
     def __init__(self, api_key: str | None = None, base_url: str | None = None) -> None:
         self._api_key = api_key
         self._base_url = base_url
+        self._client: Any = None
         logger.info("OpenAIProvider initialized")
 
     def name(self) -> str:
         """Return provider name."""
         return "openai"
 
+    def _get_client(self) -> Any:
+        """Return a cached OpenAI client instance (lazy initialization)."""
+        if self._client is None:
+            try:
+                import openai  # noqa: PLC0415
+            except ImportError as exc:
+                msg = "openai package required for OpenAIProvider"
+                raise ImportError(msg) from exc
+
+            kwargs: dict[str, Any] = {}
+            if self._api_key:
+                kwargs["api_key"] = self._api_key
+            if self._base_url:
+                kwargs["base_url"] = self._base_url
+            self._client = openai.OpenAI(**kwargs)
+        return self._client
+
     def complete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         """Generate a completion using the OpenAI API."""
-        try:
-            import openai  # noqa: PLC0415
-        except ImportError as exc:
-            msg = "openai package required for OpenAIProvider"
-            raise ImportError(msg) from exc
-
-        kwargs: dict[str, Any] = {}
-        if self._api_key:
-            kwargs["api_key"] = self._api_key
-        if self._base_url:
-            kwargs["base_url"] = self._base_url
-
-        client = openai.OpenAI(**kwargs)
+        client = self._get_client()
         response = client.chat.completions.create(
             model=config.model or "gpt-4",
             max_tokens=config.max_tokens,

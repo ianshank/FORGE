@@ -105,6 +105,7 @@ impl EpisodicMemory {
     }
 
     /// Queries episodes involving a specific agent.
+    #[instrument(skip_all)]
     pub fn query_by_agent(&self, agent_id: u32) -> Vec<&Episode> {
         self.episodes
             .iter()
@@ -113,6 +114,7 @@ impl EpisodicMemory {
     }
 
     /// Queries episodes with a specific tag.
+    #[instrument(skip_all)]
     pub fn query_by_tag(&self, tag: &str) -> Vec<&Episode> {
         self.episodes
             .iter()
@@ -121,6 +123,7 @@ impl EpisodicMemory {
     }
 
     /// Queries episodes near a location (Manhattan distance).
+    #[instrument(skip_all)]
     pub fn query_by_location(&self, x: u16, y: u16, radius: u16) -> Vec<&Episode> {
         self.episodes
             .iter()
@@ -215,5 +218,63 @@ mod tests {
         mem.store(make_episode(20, vec![1], "c"));
         let recent = mem.recent(2);
         assert_eq!(recent.len(), 2);
+    }
+
+    #[test]
+    fn test_decay_prunes_weak() {
+        let mut mem = EpisodicMemory::new(100);
+        let mut ep = make_episode(0, vec![1], "a");
+        ep.strength = 0.05;
+        mem.store(ep);
+        mem.tick_decay(0.01, 0.05);
+        assert!(mem.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn capacity_never_exceeded(
+            cap in 1_usize..50,
+            num_inserts in 0_usize..200
+        ) {
+            let mut mem = EpisodicMemory::new(cap);
+            for i in 0..num_inserts {
+                mem.store(Episode::new(
+                    (i as u64, i as u64 + 10),
+                    vec![0],
+                    (0, 0),
+                    EpisodeOutcome::Neutral,
+                    0.0,
+                ));
+            }
+            prop_assert!(mem.len() <= cap);
+        }
+
+        #[test]
+        fn query_by_agent_returns_subset(
+            num_episodes in 1_usize..50,
+            query_agent in 0_u32..10
+        ) {
+            let mut mem = EpisodicMemory::new(100);
+            for i in 0..num_episodes {
+                let agents = vec![(i as u32) % 10];
+                mem.store(Episode::new(
+                    (i as u64, i as u64 + 10),
+                    agents,
+                    (0, 0),
+                    EpisodeOutcome::Neutral,
+                    0.0,
+                ));
+            }
+            let results = mem.query_by_agent(query_agent);
+            for ep in results {
+                prop_assert!(ep.agent_ids.contains(&query_agent));
+            }
+        }
     }
 }

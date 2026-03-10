@@ -156,14 +156,22 @@ class MemoryStore:
             "agent_id": self.agent_id,
             "semantic": [
                 {"key": f.key, "value": f.value, "confidence": f.confidence,
-                 "source_tick": f.source_tick, "strength": f.strength}
+                 "source_tick": f.source_tick, "strength": f.strength,
+                 "reinforcement_count": f.reinforcement_count}
                 for f in self._semantic
             ],
             "episodic": [
                 {"tick_start": e.tick_start, "tick_end": e.tick_end,
-                 "agent_ids": e.agent_ids, "outcome": e.outcome,
+                 "agent_ids": e.agent_ids, "location": list(e.location),
+                 "event_summaries": e.event_summaries, "outcome": e.outcome,
                  "reward": e.reward, "tags": e.tags, "strength": e.strength}
                 for e in self._episodic
+            ],
+            "preferences": [
+                {"context_key": p.context_key,
+                 "action_weights": {str(k): v for k, v in p.action_weights.items()},
+                 "update_count": p.update_count, "strength": p.strength}
+                for p in self._preferences.values()
             ],
         }
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -176,12 +184,30 @@ class MemoryStore:
         with Path(path).open() as f:
             data = json.load(f)
         self.agent_id = data["agent_id"]
+
+        known_top_keys = {"agent_id", "semantic", "episodic", "preferences"}
+        for key in data:
+            if key not in known_top_keys:
+                logger.warning("Unknown field '%s' in memory store file %s", key, path)
+
+        semantic_fields = set(SemanticFact.__dataclass_fields__)
         self._semantic = [
-            SemanticFact(**{k: v for k, v in f.items() if k != "reinforcement_count"})
+            SemanticFact(**{k: v for k, v in f.items() if k in semantic_fields})
             for f in data.get("semantic", [])
         ]
+        episodic_fields = set(Episode.__dataclass_fields__)
         self._episodic = [
-            Episode(**{k: v for k, v in e.items() if k in Episode.__dataclass_fields__})
+            Episode(**{k: v for k, v in e.items() if k in episodic_fields})
             for e in data.get("episodic", [])
         ]
+        self._preferences = {}
+        for p in data.get("preferences", []):
+            pref = Preference(
+                context_key=p["context_key"],
+                action_weights={int(k): v for k, v in p.get("action_weights", {}).items()},
+                update_count=p.get("update_count", 0),
+                strength=p.get("strength", 1.0),
+            )
+            self._preferences[pref.context_key] = pref
+
         logger.info("MemoryStore loaded from %s", path)

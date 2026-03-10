@@ -17,6 +17,10 @@ const DEFAULT_DECAY_RATE: f32 = 0.001;
 const DEFAULT_RETRIEVAL_TOP_K: usize = 10;
 /// Default minimum strength threshold for retrieval.
 const DEFAULT_MIN_STRENGTH: f32 = 0.01;
+/// Default reinforcement strength increment per access (semantic facts).
+const DEFAULT_REINFORCEMENT_INCREMENT: f32 = 0.1;
+/// Default preference reinforcement strength increment per update.
+const DEFAULT_PREFERENCE_REINFORCEMENT_INCREMENT: f32 = 0.05;
 
 /// Configuration for the persistent agent memory system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +40,10 @@ pub struct MemoryConfig {
     pub retrieval_top_k: usize,
     /// Minimum strength threshold; memories below this are pruned.
     pub min_strength: f32,
+    /// Strength increment when a semantic fact is reinforced.
+    pub reinforcement_increment: f32,
+    /// Strength increment when a preference is updated.
+    pub preference_reinforcement_increment: f32,
     /// File path for persistent storage. `None` = in-memory only.
     pub persistence_path: Option<String>,
 }
@@ -50,6 +58,8 @@ impl Default for MemoryConfig {
             decay_rate: DEFAULT_DECAY_RATE,
             retrieval_top_k: DEFAULT_RETRIEVAL_TOP_K,
             min_strength: DEFAULT_MIN_STRENGTH,
+            reinforcement_increment: DEFAULT_REINFORCEMENT_INCREMENT,
+            preference_reinforcement_increment: DEFAULT_PREFERENCE_REINFORCEMENT_INCREMENT,
             persistence_path: None,
         }
     }
