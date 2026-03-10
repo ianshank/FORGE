@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_OBS_PREVIEW_DIM: int = 10
+_PARSE_KEYWORD: str = "action"
+_PARSE_STRIP_CHARS: str = ":,. "
 
 
 @dataclass
@@ -92,14 +94,14 @@ class LLMAgent(BaseAgent):
     def _parse_action(self, text: str) -> int:
         """Parse an action ID from the provider's response."""
         lower = text.lower()
-        if "action" in lower:
-            for word in lower.split("action")[-1].split():
-                cleaned = word.strip(":, ")
+        if _PARSE_KEYWORD in lower:
+            for word in lower.split(_PARSE_KEYWORD)[-1].split():
+                cleaned = word.strip(_PARSE_STRIP_CHARS)
                 if cleaned.lstrip("-").isdigit():
                     return int(cleaned)
         # Fallback: find last number
         for word in reversed(text.split()):
-            stripped = word.strip(":,. ")
+            stripped = word.strip(_PARSE_STRIP_CHARS)
             if stripped.lstrip("-").isdigit():
                 return int(stripped)
         return 0

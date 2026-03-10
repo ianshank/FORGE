@@ -1,6 +1,7 @@
 """FORGE cognitive module: LLM-backed agent with provider-agnostic architecture."""
 from __future__ import annotations
 
+from forge.cognitive.llm_agent import LLMAgent, LLMAgentConfig
 from forge.cognitive.providers import (
     AnthropicProvider,
     CognitiveProvider,
@@ -16,6 +17,8 @@ __all__ = [
     "CognitiveProvider",
     "CompletionConfig",
     "CompletionResponse",
+    "LLMAgent",
+    "LLMAgentConfig",
     "MockProvider",
     "OpenAIProvider",
     "create_provider",
