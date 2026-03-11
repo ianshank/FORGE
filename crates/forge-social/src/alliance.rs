@@ -34,6 +34,7 @@ pub struct AllianceSystem {
 
 impl AllianceSystem {
     /// Creates a new alliance system for `n` agents.
+    #[instrument(skip_all)]
     pub fn new(num_agents: usize) -> Self {
         Self {
             alliances: Vec::new(),
@@ -49,6 +50,7 @@ impl AllianceSystem {
     }
 
     /// Returns the members of the given alliance.
+    #[instrument(skip_all)]
     pub fn alliance_members(&self, alliance_id: u32) -> Vec<usize> {
         self.alliances
             .iter()
@@ -147,6 +149,7 @@ impl AllianceSystem {
     }
 
     /// Returns the number of active alliances.
+    #[instrument(skip_all)]
     pub fn num_alliances(&self) -> usize {
         self.alliances.len()
     }

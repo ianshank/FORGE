@@ -63,6 +63,7 @@ pub struct MockProvider {
 
 impl MockProvider {
     /// Creates a new mock provider with a default response.
+    #[instrument(skip_all)]
     pub fn new(default_response: String) -> Self {
         Self {
             responses: HashMap::new(),
@@ -71,6 +72,7 @@ impl MockProvider {
     }
 
     /// Adds a response for prompts starting with the given prefix.
+    #[instrument(skip_all)]
     pub fn add_response(&mut self, prefix: String, response: String) {
         self.responses.insert(prefix, response);
     }
@@ -111,6 +113,7 @@ pub struct ProviderRegistry {
 
 impl ProviderRegistry {
     /// Creates a new empty registry.
+    #[instrument(skip_all)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -122,11 +125,13 @@ impl ProviderRegistry {
     }
 
     /// Gets a provider by name.
+    #[instrument(skip_all)]
     pub fn get(&self, name: &str) -> Option<&dyn CognitiveProvider> {
         self.providers.get(name).map(|p| p.as_ref())
     }
 
     /// Returns the names of all registered providers.
+    #[instrument(skip_all)]
     pub fn available(&self) -> Vec<&str> {
         self.providers.keys().map(|s| s.as_str()).collect()
     }

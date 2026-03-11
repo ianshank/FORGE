@@ -5,6 +5,7 @@
 //! and post-hoc analysis of agent behavior.
 
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 /// Type of reasoning step.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -36,6 +37,7 @@ pub struct ReasoningStep {
 
 impl ReasoningStep {
     /// Creates a new reasoning step.
+    #[instrument(skip_all)]
     pub fn new(step_type: ReasoningType, content: String, tick: u64) -> Self {
         Self {
             step_type,
@@ -58,6 +60,7 @@ pub struct ReasoningTrace {
 
 impl ReasoningTrace {
     /// Creates a new empty trace.
+    #[instrument(skip_all)]
     pub fn new() -> Self {
         Self {
             steps: Vec::new(),
@@ -67,6 +70,7 @@ impl ReasoningTrace {
     }
 
     /// Adds a step to the trace.
+    #[instrument(skip_all)]
     pub fn add_step(&mut self, step: ReasoningStep) {
         self.steps.push(step);
     }

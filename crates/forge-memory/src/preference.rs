@@ -21,6 +21,7 @@ pub struct Preference {
 
 impl Preference {
     /// Creates a new preference with default strength.
+    #[instrument(skip_all)]
     pub fn new(context_key: String) -> Self {
         Self {
             context_key,
@@ -62,6 +63,7 @@ impl Preference {
     }
 
     /// Returns the preferred action (highest weight).
+    #[instrument(skip_all)]
     pub fn preferred_action(&self) -> Option<u32> {
         self.action_weights
             .iter()
@@ -70,6 +72,7 @@ impl Preference {
     }
 
     /// Applies decay to this preference's strength.
+    #[instrument(skip_all)]
     pub fn decay(&mut self, rate: f32) {
         self.strength = (self.strength - rate).max(0.0);
     }
@@ -86,6 +89,7 @@ pub struct PreferenceMemory {
 
 impl PreferenceMemory {
     /// Creates a new preference memory with the given capacity.
+    #[instrument(skip_all)]
     pub fn new(capacity: usize) -> Self {
         Self {
             preferences: Vec::new(),
@@ -123,6 +127,7 @@ impl PreferenceMemory {
     }
 
     /// Retrieves a preference by context key.
+    #[instrument(skip_all)]
     pub fn get(&self, context_key: &str) -> Option<&Preference> {
         self.preferences
             .iter()

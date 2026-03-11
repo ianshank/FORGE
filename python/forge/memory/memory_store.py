@@ -43,6 +43,9 @@ class Episode:
     strength: float = 1.0
 
 
+DEFAULT_PREFERENCE_LR: float = 0.1
+
+
 @dataclass
 class Preference:
     """A learned action preference for a context."""
@@ -52,7 +55,7 @@ class Preference:
     update_count: int = 0
     strength: float = 1.0
 
-    def update(self, action_id: int, reward: float, lr: float = 0.1) -> None:
+    def update(self, action_id: int, reward: float, lr: float = DEFAULT_PREFERENCE_LR) -> None:
         """Update the weight for an action using exponential moving average."""
         if action_id in self.action_weights:
             old = self.action_weights[action_id]
@@ -68,15 +71,22 @@ class Preference:
         return max(self.action_weights, key=self.action_weights.get)  # type: ignore[arg-type]
 
 
+DEFAULT_SEMANTIC_CAPACITY: int = 10_000
+DEFAULT_EPISODIC_CAPACITY: int = 5_000
+DEFAULT_PREFERENCE_CAPACITY: int = 1_000
+DEFAULT_DECAY_RATE: float = 0.001
+DEFAULT_MIN_STRENGTH: float = 0.01
+
+
 @dataclass
 class MemoryStoreConfig:
     """Configuration for the memory store."""
 
-    semantic_capacity: int = 10_000
-    episodic_capacity: int = 5_000
-    preference_capacity: int = 1_000
-    decay_rate: float = 0.001
-    min_strength: float = 0.01
+    semantic_capacity: int = DEFAULT_SEMANTIC_CAPACITY
+    episodic_capacity: int = DEFAULT_EPISODIC_CAPACITY
+    preference_capacity: int = DEFAULT_PREFERENCE_CAPACITY
+    decay_rate: float = DEFAULT_DECAY_RATE
+    min_strength: float = DEFAULT_MIN_STRENGTH
 
 
 class MemoryStore:

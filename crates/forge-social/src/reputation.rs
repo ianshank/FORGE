@@ -19,6 +19,7 @@ pub struct ReputationTracker {
 
 impl ReputationTracker {
     /// Creates a new reputation tracker for `n` agents at neutral reputation.
+    #[instrument(skip_all)]
     pub fn new(num_agents: usize) -> Self {
         Self {
             scores: vec![0.0; num_agents],
@@ -28,11 +29,13 @@ impl ReputationTracker {
     }
 
     /// Returns the reputation of the given agent.
+    #[instrument(skip_all)]
     pub fn reputation(&self, agent: usize) -> f32 {
         self.scores.get(agent).copied().unwrap_or(0.0)
     }
 
     /// Returns all reputation scores.
+    #[instrument(skip_all)]
     pub fn all_scores(&self) -> &[f32] {
         &self.scores
     }
@@ -72,6 +75,7 @@ impl ReputationTracker {
     }
 
     /// Returns the number of agents tracked.
+    #[instrument(skip_all)]
     pub fn num_agents(&self) -> usize {
         self.scores.len()
     }

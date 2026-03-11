@@ -65,6 +65,7 @@ pub struct SemanticMemory {
 
 impl SemanticMemory {
     /// Creates a new semantic memory with the given capacity.
+    #[instrument(skip_all)]
     pub fn new(capacity: usize) -> Self {
         Self {
             facts: Vec::new(),
@@ -104,6 +105,7 @@ impl SemanticMemory {
     }
 
     /// Returns all facts with strength above the given threshold.
+    #[instrument(skip_all)]
     pub fn query_by_strength(&self, min_strength: f32) -> Vec<&SemanticFact> {
         self.facts
             .iter()
@@ -115,6 +117,7 @@ impl SemanticMemory {
     ///
     /// Unlike chaining `query_by_strength` + filter, this avoids allocating
     /// an intermediate `Vec` for the full fact set.
+    #[instrument(skip_all)]
     pub fn query_by_prefix(&self, prefix: &str, limit: usize) -> Vec<&SemanticFact> {
         self.facts
             .iter()

@@ -40,6 +40,7 @@ pub struct SocialRewardComputer {
 
 impl SocialRewardComputer {
     /// Creates a new social reward computer.
+    #[instrument(skip_all)]
     pub fn new(config: SocialRewardConfig) -> Self {
         Self { config }
     }

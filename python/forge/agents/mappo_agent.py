@@ -14,6 +14,16 @@ from typing import Any
 import numpy as np
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
+from forge.config import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_CLIP_RATIO,
+    DEFAULT_ENTROPY_COEFF,
+    DEFAULT_EPOCHS,
+    DEFAULT_GAE_LAMBDA,
+    DEFAULT_GAMMA,
+    DEFAULT_MAX_GRAD_NORM,
+    DEFAULT_VALUE_COEFF,
+)
 from forge.models.policy_network import ActorCriticNetwork
 from forge.utils.device import get_device
 
@@ -29,14 +39,14 @@ class MAPPOConfig(AgentConfig):
 
     obs_dim: int = DEFAULT_OBS_DIM
     action_dim: int = DEFAULT_ACTION_DIM
-    clip_ratio: float = 0.2
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
-    epochs: int = 4
-    batch_size: int = 256
-    entropy_coeff: float = 0.01
-    value_coeff: float = 0.5
-    max_grad_norm: float = 0.5
+    clip_ratio: float = DEFAULT_CLIP_RATIO
+    gamma: float = DEFAULT_GAMMA
+    gae_lambda: float = DEFAULT_GAE_LAMBDA
+    epochs: int = DEFAULT_EPOCHS
+    batch_size: int = DEFAULT_BATCH_SIZE
+    entropy_coeff: float = DEFAULT_ENTROPY_COEFF
+    value_coeff: float = DEFAULT_VALUE_COEFF
+    max_grad_norm: float = DEFAULT_MAX_GRAD_NORM
     device: str = "auto"
 
     @classmethod

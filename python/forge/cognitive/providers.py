@@ -11,14 +11,19 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_TEMPERATURE: float = 0.7
+DEFAULT_MAX_TOKENS: int = 1024
+DEFAULT_ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
+DEFAULT_OPENAI_MODEL: str = "gpt-4"
+
 
 @dataclass
 class CompletionConfig:
     """Configuration for a completion request."""
 
     model: str = ""
-    temperature: float = 0.7
-    max_tokens: int = 1024
+    temperature: float = DEFAULT_TEMPERATURE
+    max_tokens: int = DEFAULT_MAX_TOKENS
 
 
 @dataclass
@@ -99,7 +104,7 @@ class AnthropicProvider(CognitiveProvider):
         """Generate a completion using the Anthropic API."""
         client = self._get_client()
         response = client.messages.create(
-            model=config.model or "claude-sonnet-4-20250514",
+            model=config.model or DEFAULT_ANTHROPIC_MODEL,
             max_tokens=config.max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -148,7 +153,7 @@ class OpenAIProvider(CognitiveProvider):
         """Generate a completion using the OpenAI API."""
         client = self._get_client()
         response = client.chat.completions.create(
-            model=config.model or "gpt-4",
+            model=config.model or DEFAULT_OPENAI_MODEL,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
             messages=[{"role": "user", "content": prompt}],

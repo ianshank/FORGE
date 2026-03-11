@@ -64,6 +64,7 @@ impl Episode {
     }
 
     /// Applies decay to this episode's strength.
+    #[instrument(skip_all)]
     pub fn decay(&mut self, rate: f32) {
         self.strength = (self.strength - rate).max(0.0);
     }
@@ -80,6 +81,7 @@ pub struct EpisodicMemory {
 
 impl EpisodicMemory {
     /// Creates a new episodic memory with the given capacity.
+    #[instrument(skip_all)]
     pub fn new(capacity: usize) -> Self {
         Self {
             episodes: Vec::new(),
@@ -136,6 +138,7 @@ impl EpisodicMemory {
     }
 
     /// Returns the most recent episodes, up to `n`.
+    #[instrument(skip_all)]
     pub fn recent(&self, n: usize) -> Vec<&Episode> {
         self.episodes.iter().rev().take(n).collect()
     }

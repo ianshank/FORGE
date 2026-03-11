@@ -12,6 +12,8 @@ import numpy as np  # noqa: TC002 (used at runtime in _build_prompt)
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.cognitive.providers import (
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_TEMPERATURE,
     CognitiveProvider,
     CompletionConfig,
     MockProvider,
@@ -21,8 +23,6 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_OBS_PREVIEW_DIM: int = 10
-DEFAULT_TEMPERATURE: float = 0.7
-DEFAULT_MAX_TOKENS: int = 1024
 DEFAULT_REASONING_STEPS: int = 5
 DEFAULT_SYSTEM_PROMPT: str = (
     "You are an intelligent agent in a grid-based simulation. "

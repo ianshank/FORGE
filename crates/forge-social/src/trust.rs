@@ -32,6 +32,7 @@ impl TrustMatrix {
     }
 
     /// Returns the trust that agent `from` has toward agent `to`.
+    #[instrument(skip_all)]
     pub fn trust(&self, from: usize, to: usize) -> f32 {
         if from < self.num_agents && to < self.num_agents {
             self.scores[from][to]
@@ -41,6 +42,7 @@ impl TrustMatrix {
     }
 
     /// Returns the trust scores that a given agent has toward all others.
+    #[instrument(skip_all)]
     pub fn trust_vector(&self, agent: usize) -> &[f32] {
         if agent < self.num_agents {
             &self.scores[agent]
@@ -78,6 +80,7 @@ impl TrustMatrix {
     }
 
     /// Returns the number of interactions between two agents.
+    #[instrument(skip_all)]
     pub fn interactions(&self, agent_a: usize, agent_b: usize) -> u32 {
         if agent_a < self.num_agents && agent_b < self.num_agents {
             self.interaction_count[agent_a][agent_b]
@@ -87,6 +90,7 @@ impl TrustMatrix {
     }
 
     /// Returns the number of agents in the matrix.
+    #[instrument(skip_all)]
     pub fn num_agents(&self) -> usize {
         self.num_agents
     }
