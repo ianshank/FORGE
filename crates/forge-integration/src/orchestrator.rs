@@ -78,8 +78,13 @@ impl IntegrationOrchestrator {
         self.tick += 1;
 
         let memory_config = &self.config.memory;
-        // Apply memory decay at configured intervals when memory is enabled
-        if memory_config.enabled && self.tick % self.config.memory_write_interval == 0 {
+        let memory_write_interval = self.config.memory_write_interval;
+        // Apply memory decay at configured intervals when memory is enabled.
+        // Treat a zero interval as "no periodic decay" to avoid modulo-by-zero panics.
+        if memory_config.enabled
+            && memory_write_interval > 0
+            && self.tick % memory_write_interval == 0
+        {
             for state in &mut self.agent_states {
                 state.memory.tick_decay(memory_config);
             }
