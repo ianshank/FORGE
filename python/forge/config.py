@@ -86,23 +86,35 @@ class SimulationConfig:
     schema_version: int = 1
 
 
+DEFAULT_LEARNING_RATE: float = 3e-4
+DEFAULT_GAMMA: float = 0.99
+DEFAULT_GAE_LAMBDA: float = 0.95
+DEFAULT_CLIP_RATIO: float = 0.2
+DEFAULT_EPOCHS: int = 4
+DEFAULT_BATCH_SIZE: int = 256
+DEFAULT_ROLLOUT_LENGTH: int = 2048
+DEFAULT_ENTROPY_COEFF: float = 0.01
+DEFAULT_VALUE_COEFF: float = 0.5
+DEFAULT_MAX_GRAD_NORM: float = 0.5
+
+
 @dataclass
 class TrainingConfig:
     """Training hyper-parameters."""
 
-    learning_rate: float = 3e-4
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
-    clip_ratio: float = 0.2
-    epochs: int = 4
-    batch_size: int = 256
-    rollout_length: int = 2048
+    learning_rate: float = DEFAULT_LEARNING_RATE
+    gamma: float = DEFAULT_GAMMA
+    gae_lambda: float = DEFAULT_GAE_LAMBDA
+    clip_ratio: float = DEFAULT_CLIP_RATIO
+    epochs: int = DEFAULT_EPOCHS
+    batch_size: int = DEFAULT_BATCH_SIZE
+    rollout_length: int = DEFAULT_ROLLOUT_LENGTH
     target_success_rate: float = 0.5
     curriculum_window_size: int = 100
     checkpoint_interval: int = 100
-    entropy_coeff: float = 0.01
-    value_coeff: float = 0.5
-    max_grad_norm: float = 0.5
+    entropy_coeff: float = DEFAULT_ENTROPY_COEFF
+    value_coeff: float = DEFAULT_VALUE_COEFF
+    max_grad_norm: float = DEFAULT_MAX_GRAD_NORM
 
 
 @dataclass

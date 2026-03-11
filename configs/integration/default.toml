@@ -1,0 +1,7 @@
+[integration]
+enabled = false
+memory_write_interval = 10
+social_reward_weight = 0.3
+meta_learning_enabled = false
+meta_lr = 0.001
+curriculum_domains = ["navigation", "crafting", "social", "combat"]

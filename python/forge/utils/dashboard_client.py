@@ -68,7 +68,12 @@ class DashboardClient:
 
     def _post(self, path: str, payload: Any) -> bool:
         """Send a POST request and return whether it succeeded."""
-        import httpx  # noqa: PLC0415
+        try:
+            import httpx  # noqa: PLC0415
+
+            _http_errors: tuple[type[Exception], ...] = (httpx.HTTPError, OSError)
+        except ImportError:
+            _http_errors = (OSError,)
 
         url = f"{self.base_url}{path}"
         logger.debug("Dashboard POST %s payload_size=%d", path, len(str(payload)))
@@ -78,7 +83,7 @@ class DashboardClient:
             if resp.status_code == self._SUCCESS_STATUS:
                 return True
             logger.warning("Dashboard POST %s returned %d", path, resp.status_code)
-        except (httpx.HTTPError, OSError):
+        except _http_errors:
             logger.debug("Dashboard POST %s failed (server may be offline)", path, exc_info=True)
         return False
 
