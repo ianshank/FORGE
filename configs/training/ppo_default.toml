@@ -1,0 +1,46 @@
+# Default PPO training configuration for FORGE environments.
+# All values are explicit — no magic numbers anywhere in the codebase.
+# Override individual fields by passing a custom TOML or via environment
+# variables: FORGE_TRAINING_<FIELD> (e.g. FORGE_TRAINING_LEARNING_RATE).
+
+[hyperparams]
+# Optimiser
+learning_rate   = 3e-4
+
+# Rollout collection
+n_steps         = 2048   # Steps per env per rollout before a gradient update
+n_envs          = 1      # Number of parallel envs (used by make_forge_vec_env)
+
+# PPO update
+batch_size      = 64
+n_epochs        = 10
+clip_range      = 0.2    # PPO clipping epsilon
+ent_coef        = 0.01   # Entropy bonus coefficient
+vf_coef         = 0.5    # Value-function loss coefficient
+max_grad_norm   = 0.5    # Gradient clipping
+
+# Discount / GAE
+gamma           = 0.99
+gae_lambda      = 0.95
+
+# Total budget
+total_timesteps = 1_000_000
+
+[feature_extractor]
+# Configures ForgeGridCnnExtractor / ForgeObsExtractor.
+# cnn_channels and cnn_kernel_sizes must have the same length.
+cnn_channels     = [32, 64]
+cnn_kernel_sizes = [3, 3]
+cnn_strides      = [1, 1]
+features_dim     = 256   # Final embedding dimension (after CNN + MLP merge)
+mlp_hidden_sizes = [128] # Hidden layers for the scalar-branch MLP
+
+[logging]
+log_freq = 1000  # Log metrics every N timesteps
+
+[curriculum]
+# Mirrors CurriculumConfig on the Rust side.
+enabled             = false
+target_success_rate = 0.7
+window_size         = 100
+adjustment_rate     = 1     # Tier increment per successful window

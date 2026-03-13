@@ -3,11 +3,14 @@ source = forge,forge_env
 
 [report]
 # Exclude modules requiring torch/jax (not available in CI without GPU)
+# and CleanRL training-loop scripts (full E2E requires native Rust extension).
 omit =
     python/forge/agents/mappo_agent.py
     python/forge/models/policy_network.py
     python/forge/training/trainer.py
     python/forge_env/jax_env.py
+    examples/train_ppo_cleanrl.py
+    examples/train_sac_cleanrl.py
 
 # Lines to exclude from coverage counting
 exclude_lines =
@@ -17,4 +20,4 @@ exclude_lines =
     pass
     \.\.\.
 
-fail_under = 80
+fail_under = 85

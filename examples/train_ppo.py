@@ -11,6 +11,9 @@ Usage:
 
     # Without SB3 (random baseline):
     python train_ppo.py --seed 42
+
+    # With metrics callback and TensorBoard logging:
+    python train_ppo.py --timesteps 100000 --logger tensorboard --log-dir runs/ppo
 """
 
 import argparse
@@ -54,17 +57,26 @@ except ImportError:
         "will not be available.\n"
     )
 
+# --- FORGE SB3 callbacks (optional) ----------------------------------------
+try:
+    from forge_env.sb3_callbacks import ForgeMetricsCallback
 
-def make_env(seed=0):
+    _HAS_CALLBACKS = True
+except ImportError:
+    _HAS_CALLBACKS = False
+
+
+def make_env(seed: int = 0, max_steps: int = 500):
     """Create a FORGE Gymnasium environment with standard wrappers.
 
     The environment is wrapped with:
-    - TimeLimit: caps each episode at 500 steps.
+    - TimeLimit: caps each episode at ``max_steps`` steps.
     - FlattenObservationWrapper: flattens nested observations into a 1-D array.
     - RecordEpisodeStatistics: tracks episode return and length.
 
     Args:
         seed: Random seed for reproducibility.
+        max_steps: Maximum steps per episode before truncation.
 
     Returns:
         A wrapped ForgeGymnasiumEnv instance, or None if imports failed.
@@ -83,10 +95,11 @@ def make_env(seed=0):
         },
     }
 
-    env = ForgeGymnasiumEnv(config=config, seed=seed)
+    env = ForgeGymnasiumEnv(config=config)
+    env.reset(seed=seed)
 
     if TimeLimit is not None:
-        env = TimeLimit(env, max_steps=500)
+        env = TimeLimit(env, max_steps=max_steps)
     if FlattenObservationWrapper is not None:
         env = FlattenObservationWrapper(env)
     if RecordEpisodeStatistics is not None:
@@ -95,16 +108,38 @@ def make_env(seed=0):
     return env
 
 
-def train_with_sb3(timesteps, seed):
+def train_with_sb3(timesteps: int, seed: int, logger_backend: str = "none", log_dir: str = "runs/ppo") -> None:
     """Train a PPO agent using Stable Baselines3.
 
     Args:
         timesteps: Total number of training timesteps.
         seed: Random seed for reproducibility.
+        logger_backend: Experiment logger (``"none"``, ``"tensorboard"``,
+            ``"wandb"``, or ``"mlflow"``).
+        log_dir: Directory for TensorBoard / MLflow logs.
     """
     env = make_env(seed=seed)
     if env is None:
         return
+
+    # Build optional ForgeMetricsCallback
+    callbacks = []
+    if _HAS_CALLBACKS:
+        forge_logger = None
+        if logger_backend != "none":
+            try:
+                from forge.training.loggers import make_logger  # noqa: PLC0415
+                logger_kwargs: dict[str, Any]
+                if logger_backend == "tensorboard":
+                    logger_kwargs = {"log_dir": log_dir}
+                elif logger_backend == "wandb":
+                    logger_kwargs = {"project": "forge-ppo"}
+                else:  # mlflow
+                    logger_kwargs = {"experiment_name": "forge-ppo"}
+                forge_logger = make_logger(logger_backend, **logger_kwargs)
+            except ImportError as exc:
+                print(f"Logger '{logger_backend}' unavailable: {exc}")
+        callbacks.append(ForgeMetricsCallback(forge_logger=forge_logger, log_freq=1000))
 
     print(f"Training PPO for {timesteps} timesteps (seed={seed})...")
     model = PPO(
@@ -118,7 +153,7 @@ def train_with_sb3(timesteps, seed):
         learning_rate=3e-4,
     )
 
-    model.learn(total_timesteps=timesteps)
+    model.learn(total_timesteps=timesteps, callback=callbacks or None)
 
     # Evaluate the trained agent for a few episodes
     print("\n--- Evaluation ---")
@@ -210,9 +245,26 @@ if __name__ == "__main__":
         default=42,
         help="Random seed for reproducibility (default: 42).",
     )
+    parser.add_argument(
+        "--logger",
+        choices=["none", "tensorboard", "wandb", "mlflow"],
+        default="none",
+        help="Experiment tracking backend (default: none).",
+    )
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default="runs/ppo",
+        help="Directory for TensorBoard/MLflow logs (default: runs/ppo).",
+    )
     args = parser.parse_args()
 
     if SB3_AVAILABLE:
-        train_with_sb3(timesteps=args.timesteps, seed=args.seed)
+        train_with_sb3(
+            timesteps=args.timesteps,
+            seed=args.seed,
+            logger_backend=args.logger,
+            log_dir=args.log_dir,
+        )
     else:
         run_random_baseline(seed=args.seed)

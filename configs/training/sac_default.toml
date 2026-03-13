@@ -1,0 +1,41 @@
+# Default SAC training configuration for FORGE environments.
+# All values are explicit — no magic numbers anywhere in the codebase.
+# Override individual fields by passing a custom TOML or via environment
+# variables: FORGE_TRAINING_<FIELD> (e.g. FORGE_TRAINING_LEARNING_RATE).
+
+[hyperparams]
+# Optimiser (separate actor / critic LRs supported)
+learning_rate       = 3e-4
+tau                 = 0.005  # Soft target update coefficient
+gamma               = 0.99
+
+# Replay buffer
+buffer_size         = 1_000_000
+batch_size          = 256
+learning_starts     = 1000   # Steps before first gradient update
+
+# SAC-specific
+ent_coef            = "auto" # "auto" = learned temperature, or a float
+target_entropy      = "auto" # "auto" = -action_dim
+train_freq          = 1      # Update every N steps
+gradient_steps      = 1      # Gradient steps per environment step
+
+# Total budget
+total_timesteps     = 1_000_000
+
+[feature_extractor]
+# Configures ForgeGridCnnExtractor / ForgeObsExtractor.
+cnn_channels     = [32, 64]
+cnn_kernel_sizes = [3, 3]
+cnn_strides      = [1, 1]
+features_dim     = 256
+mlp_hidden_sizes = [128]
+
+[logging]
+log_freq = 1000  # Log metrics every N timesteps
+
+[curriculum]
+enabled             = false
+target_success_rate = 0.7
+window_size         = 100
+adjustment_rate     = 1
