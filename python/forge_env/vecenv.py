@@ -45,17 +45,6 @@ __all__ = [
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_OBS_KEY_ORDER: list[str] = [
-    "day_phase",
-    "grid_view",
-    "health",
-    "inventory",
-    "messages",
-    "position",
-    "stamina",
-]
-
-
 def _stack_obs(obs_list: list[dict[str, Any]]) -> dict[str, Any]:
     """Stack a list of per-env observation dicts into batched arrays.
 
