@@ -437,8 +437,8 @@ def train(args: argparse.Namespace) -> None:
                 # Temperature update
                 if auto_ent and log_alpha is not None and alpha_optim is not None:
                     with torch.no_grad():
-                        _, log_pi, _ = actor(obs_b)
-                        log_pi_a = (probs_b * log_pi).sum(dim=-1)
+                        new_probs, log_pi, _ = actor(obs_b)
+                        log_pi_a = (new_probs * log_pi).sum(dim=-1)
                     alpha_loss = (-log_alpha.exp() * (log_pi_a + target_entropy)).mean()
                     alpha_optim.zero_grad()
                     alpha_loss.backward()
