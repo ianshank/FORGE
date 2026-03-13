@@ -371,6 +371,33 @@ class ForgeAsyncVecEnv:
             truncated_list.append(trunc)
             infos.append(info)
 
+        # Auto-reset environments that have terminated or been truncated,
+        # and store the terminal observation in the corresponding info
+        # dict, matching ForgeSyncVecEnv semantics.
+        for i, (term, trunc) in enumerate(zip(terminated_list, truncated_list)):
+            if term or trunc:
+                # Preserve the terminal observation before resetting.
+                info = dict(infos[i]) if infos[i] is not None else {}
+                info["terminal_observation"] = obs_list[i]
+                infos[i] = info
+
+                # Reset the finished environment in the worker process.
+                pipe = self._parent_pipes[i]
+                pipe.send((_CMD_RESET, (None, None)))
+                reset_result = pipe.recv()
+                if isinstance(reset_result, Exception):  # pragma: no cover
+                    raise reset_result
+                reset_obs, reset_info = reset_result
+
+                # Replace observation with the reset observation. If the
+                # reset returned additional info, merge it while preserving
+                # the terminal_observation we already stored.
+                obs_list[i] = reset_obs
+                if isinstance(reset_info, dict) and reset_info:
+                    merged_info = dict(reset_info)
+                    merged_info.update(infos[i])
+                    infos[i] = merged_info
+
         return (
             _stack_obs(obs_list),
             np.array(rewards, dtype=np.float32),
