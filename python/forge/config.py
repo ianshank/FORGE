@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field, fields
+from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -268,12 +268,18 @@ def _build_section(cls: type, data: dict[str, Any]) -> Any:
     # Collect fields that default to a tuple so we can coerce TOML lists.
     _tuple_fields: set[str] = set()
     for f in fields(cls):
-        default = f.default if f.default is not f.default_factory else None  # type: ignore[misc]
-        if default is None:
+        # Prefer an explicit default; fall back to default_factory if present.
+        default: Any
+        if f.default is not MISSING:
+            default = f.default
+        elif getattr(f, "default_factory", MISSING) is not MISSING:  # type: ignore[attr-defined]
             try:
                 default = f.default_factory()  # type: ignore[misc]
             except TypeError:
-                pass
+                # Non-callable or requires arguments; treat as no usable default.
+                continue
+        else:
+            continue
         if isinstance(default, tuple):
             _tuple_fields.add(f.name)
 
