@@ -97,10 +97,28 @@ DEFAULT_ENTROPY_COEFF: float = 0.01
 DEFAULT_VALUE_COEFF: float = 0.5
 DEFAULT_MAX_GRAD_NORM: float = 0.5
 
+# Feature-extractor defaults (ForgeGridCnnExtractor / ForgeObsExtractor).
+DEFAULT_CNN_CHANNELS: tuple[int, ...] = (32, 64)
+DEFAULT_CNN_KERNEL_SIZES: tuple[int, ...] = (3, 3)
+DEFAULT_CNN_STRIDES: tuple[int, ...] = (1, 1)
+DEFAULT_FEATURES_DIM: int = 256
+DEFAULT_MLP_HIDDEN_SIZES: tuple[int, ...] = (128,)
+
+# Logging / curriculum defaults.
+DEFAULT_LOG_FREQ: int = 1000
+DEFAULT_CURRICULUM_TARGET_SUCCESS_RATE: float = 0.7
+DEFAULT_CURRICULUM_WINDOW_SIZE: int = 100
+DEFAULT_CURRICULUM_ADJUSTMENT_RATE: int = 1
+
 
 @dataclass
 class TrainingConfig:
-    """Training hyper-parameters."""
+    """Training hyper-parameters.
+
+    All fields have sensible defaults so that existing code that constructs
+    ``TrainingConfig()`` without arguments continues to work unchanged.
+    New fields added here are backwards-compatible additions only.
+    """
 
     learning_rate: float = DEFAULT_LEARNING_RATE
     gamma: float = DEFAULT_GAMMA
@@ -109,12 +127,26 @@ class TrainingConfig:
     epochs: int = DEFAULT_EPOCHS
     batch_size: int = DEFAULT_BATCH_SIZE
     rollout_length: int = DEFAULT_ROLLOUT_LENGTH
-    target_success_rate: float = 0.5
-    curriculum_window_size: int = 100
+    target_success_rate: float = DEFAULT_CURRICULUM_TARGET_SUCCESS_RATE
+    curriculum_window_size: int = DEFAULT_CURRICULUM_WINDOW_SIZE
     checkpoint_interval: int = 100
     entropy_coeff: float = DEFAULT_ENTROPY_COEFF
     value_coeff: float = DEFAULT_VALUE_COEFF
     max_grad_norm: float = DEFAULT_MAX_GRAD_NORM
+
+    # --- Feature-extractor configuration (SB3 / CleanRL) -------------------
+    cnn_channels: tuple[int, ...] = DEFAULT_CNN_CHANNELS
+    cnn_kernel_sizes: tuple[int, ...] = DEFAULT_CNN_KERNEL_SIZES
+    cnn_strides: tuple[int, ...] = DEFAULT_CNN_STRIDES
+    features_dim: int = DEFAULT_FEATURES_DIM
+    mlp_hidden_sizes: tuple[int, ...] = DEFAULT_MLP_HIDDEN_SIZES
+
+    # --- Logging configuration ----------------------------------------------
+    log_freq: int = DEFAULT_LOG_FREQ
+
+    # --- Curriculum (mirrors CurriculumConfig on the Rust side) -------------
+    curriculum_enabled: bool = False
+    curriculum_adjustment_rate: int = DEFAULT_CURRICULUM_ADJUSTMENT_RATE
 
 
 @dataclass
@@ -228,7 +260,30 @@ class ForgeConfig:
 
 
 def _build_section(cls: type, data: dict[str, Any]) -> Any:
-    """Instantiate a dataclass from *data*, ignoring unknown keys."""
+    """Instantiate a dataclass from *data*, ignoring unknown keys.
+
+    Lists loaded from TOML are converted to tuples for fields whose default
+    value is a tuple, preserving the declared type contract.
+    """
+    # Collect fields that default to a tuple so we can coerce TOML lists.
+    _tuple_fields: set[str] = set()
+    for f in fields(cls):
+        default = f.default if f.default is not f.default_factory else None  # type: ignore[misc]
+        if default is None:
+            try:
+                default = f.default_factory()  # type: ignore[misc]
+            except TypeError:
+                pass
+        if isinstance(default, tuple):
+            _tuple_fields.add(f.name)
+
     known = {f.name for f in fields(cls)}
-    filtered = {k: v for k, v in data.items() if k in known}
+    filtered: dict[str, Any] = {}
+    for k, v in data.items():
+        if k not in known:
+            continue
+        if k in _tuple_fields and isinstance(v, list):
+            filtered[k] = tuple(v)
+        else:
+            filtered[k] = v
     return cls(**filtered)
