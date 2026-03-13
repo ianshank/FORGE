@@ -293,6 +293,7 @@ class _Actor(nn.Module):
 
 def _flatten_obs(raw: Any, n_envs: int = 1) -> np.ndarray:
     """Flatten a (possibly dict) observation to a 1-D float32 array."""
+    _ = n_envs  # kept for API compatibility; currently unused
     if isinstance(raw, dict):
         parts = [np.asarray(raw[k], dtype=np.float32).ravel() for k in sorted(raw.keys())]
         return np.concatenate(parts)
