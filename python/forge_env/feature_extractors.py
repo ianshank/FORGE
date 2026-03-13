@@ -344,4 +344,12 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             mlp_feat = self._mlp(scalar_cat)
             parts.append(mlp_feat)
 
-        return torch.cat(parts, dim=-1) if len(parts) > 1 else parts[0]
+        if not parts:
+            # Observation space has neither a grid nor any scalar fields.
+            # Return a zero tensor of the declared features_dim so callers
+            # always receive a consistently-shaped output.
+            some_tensor = next(iter(observations.values()))
+            return torch.zeros(
+                some_tensor.shape[0], self._features_dim, device=some_tensor.device
+            )
+        return torch.cat(parts, dim=-1)

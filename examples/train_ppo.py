@@ -129,12 +129,14 @@ def train_with_sb3(timesteps: int, seed: int, logger_backend: str = "none", log_
         if logger_backend != "none":
             try:
                 from forge.training.loggers import make_logger  # noqa: PLC0415
-                forge_logger = make_logger(
-                    logger_backend,
-                    **({"log_dir": log_dir} if logger_backend == "tensorboard"
-                       else {"project": "forge-ppo"} if logger_backend == "wandb"
-                       else {"experiment_name": "forge-ppo"}),
-                )
+                logger_kwargs: dict[str, Any]
+                if logger_backend == "tensorboard":
+                    logger_kwargs = {"log_dir": log_dir}
+                elif logger_backend == "wandb":
+                    logger_kwargs = {"project": "forge-ppo"}
+                else:  # mlflow
+                    logger_kwargs = {"experiment_name": "forge-ppo"}
+                forge_logger = make_logger(logger_backend, **logger_kwargs)
             except ImportError as exc:
                 print(f"Logger '{logger_backend}' unavailable: {exc}")
         callbacks.append(ForgeMetricsCallback(forge_logger=forge_logger, log_freq=1000))

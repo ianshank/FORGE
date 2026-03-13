@@ -358,13 +358,14 @@ def train(args: argparse.Namespace) -> None:
     if args.logger != "none":
         try:
             from forge.training.loggers import make_logger  # noqa: PLC0415
-            forge_logger = make_logger(
-                args.logger,
-                **({"project": args.wandb_project} if args.logger == "wandb"
-                   else {"experiment_name": "forge-sac", "run_name": f"sac-{args.seed}"}
-                   if args.logger == "mlflow"
-                   else {"log_dir": args.log_dir}),
-            )
+            logger_kwargs: dict[str, Any]
+            if args.logger == "wandb":
+                logger_kwargs = {"project": args.wandb_project}
+            elif args.logger == "mlflow":
+                logger_kwargs = {"experiment_name": "forge-sac", "run_name": f"sac-{args.seed}"}
+            else:  # tensorboard
+                logger_kwargs = {"log_dir": args.log_dir}
+            forge_logger = make_logger(args.logger, **logger_kwargs)
         except ImportError as exc:
             logger.warning("Could not initialise logger '%s': %s", args.logger, exc)
 
