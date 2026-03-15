@@ -1,4 +1,5 @@
 """Tests for MAPPO agent, ActorCriticNetwork, and PPOTrainer."""
+
 from __future__ import annotations
 
 import tempfile
@@ -24,9 +25,7 @@ class TestActorCriticNetwork:
 
     def test_forward_shapes(self) -> None:
         """Forward pass should produce correct output shapes."""
-        net = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         obs = torch.randn(BATCH_SIZE, OBS_DIM)
         logits, value = net.forward(obs)
         assert logits.shape == (BATCH_SIZE, ACTION_DIM)
@@ -34,9 +33,7 @@ class TestActorCriticNetwork:
 
     def test_get_action_and_value(self) -> None:
         """get_action_and_value should return valid actions and quantities."""
-        net = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         obs = torch.randn(BATCH_SIZE, OBS_DIM)
         action, log_prob, entropy, value = net.get_action_and_value(obs)
         assert action.shape == (BATCH_SIZE,)
@@ -49,22 +46,16 @@ class TestActorCriticNetwork:
 
     def test_get_action_with_given_action(self) -> None:
         """When action is provided, log_prob should be computed for that action."""
-        net = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         obs = torch.randn(BATCH_SIZE, OBS_DIM)
         fixed_actions = torch.randint(0, ACTION_DIM, (BATCH_SIZE,))
-        action, log_prob, _entropy, _value = net.get_action_and_value(
-            obs, action=fixed_actions
-        )
+        action, log_prob, _entropy, _value = net.get_action_and_value(obs, action=fixed_actions)
         assert torch.equal(action, fixed_actions)
         assert log_prob.shape == (BATCH_SIZE,)
 
     def test_deterministic_action(self) -> None:
         """Deterministic mode should always return the same action for same input."""
-        net = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         obs = torch.randn(1, OBS_DIM)
         actions = []
         for _ in range(10):
@@ -74,18 +65,14 @@ class TestActorCriticNetwork:
 
     def test_get_value(self) -> None:
         """get_value should return scalar values."""
-        net = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         obs = torch.randn(BATCH_SIZE, OBS_DIM)
         value = net.get_value(obs)
         assert value.shape == (BATCH_SIZE, 1)
 
     def test_save_load_roundtrip(self) -> None:
         """Save and load should preserve network weights."""
-        net1 = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net1 = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         obs = torch.randn(1, OBS_DIM)
         logits1, val1 = net1.forward(obs)
 
@@ -107,9 +94,7 @@ class TestActorCriticNetwork:
 
     def test_train_eval_mode(self) -> None:
         """train_mode and eval_mode should toggle dropout/batchnorm behavior."""
-        net = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         net.train_mode()
         assert net.encoder.training
         net.eval_mode()
@@ -264,9 +249,7 @@ class TestPPOTrainer:
             batch_size=16,
         )
         agent = MAPPOAgent(config)
-        trainer_config = PPOTrainerConfig(
-            rollout_length=32, max_episode_steps=10, log_interval=1
-        )
+        trainer_config = PPOTrainerConfig(rollout_length=32, max_episode_steps=10, log_interval=1)
         trainer = PPOTrainer(agent, trainer_config)
 
         reset_fn, step_fn = self._make_env()
@@ -289,9 +272,7 @@ class TestPPOTrainer:
             batch_size=16,
         )
         agent = MAPPOAgent(config)
-        trainer_config = PPOTrainerConfig(
-            rollout_length=32, max_episode_steps=10, log_interval=100
-        )
+        trainer_config = PPOTrainerConfig(rollout_length=32, max_episode_steps=10, log_interval=100)
         trainer = PPOTrainer(agent, trainer_config)
 
         reset_fn, step_fn = self._make_env()

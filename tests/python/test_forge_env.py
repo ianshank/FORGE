@@ -141,11 +141,17 @@ def test_observation_keys() -> None:
     env = ForgeGymnasiumEnv()
     obs, _info = env.reset(seed=42)
     expected_keys = {
-        "grid_view", "inventory", "health", "stamina", "position", "messages", "day_phase",
+        "grid_view",
+        "inventory",
+        "health",
+        "stamina",
+        "position",
+        "messages",
+        "day_phase",
     }
-    assert expected_keys.issubset(
-        set(obs.keys())
-    ), f"Missing keys: {expected_keys - set(obs.keys())}"
+    assert expected_keys.issubset(set(obs.keys())), (
+        f"Missing keys: {expected_keys - set(obs.keys())}"
+    )
     env.close()
 
 
@@ -267,7 +273,8 @@ class _DummyEnv:
         return obs, info
 
     def step(
-        self, action: int,
+        self,
+        action: int,
     ) -> tuple[dict[str, list[float]], float, bool, bool, dict[str, int]]:
         """Step the dummy environment."""
         self._step_count += 1
@@ -399,7 +406,8 @@ def test_normalize_reward_clips_extreme() -> None:
         """Dummy env that returns extreme reward values."""
 
         def step(
-            self, action: int,
+            self,
+            action: int,
         ) -> tuple[dict[str, list[float]], float, bool, bool, dict[str, int]]:
             self._step_count += 1
             obs: dict[str, list[float]] = {"x": [1.0, 2.0], "y": [3.0]}
@@ -474,7 +482,8 @@ def test_time_limit_does_not_affect_terminated() -> None:
         """Dummy env that terminates on the very first step."""
 
         def step(
-            self, action: int,
+            self,
+            action: int,
         ) -> tuple[dict[str, list[float]], float, bool, bool, dict[str, int]]:
             self._step_count += 1
             obs: dict[str, list[float]] = {"x": [1.0, 2.0], "y": [3.0]}
@@ -509,8 +518,9 @@ def test_make_env_raises_without_native() -> None:
 
     import forge_env.utils as utils_mod  # noqa: PLC0415
 
-    with mock.patch.object(utils_mod, "_NativeEnv", None), pytest.raises(
-        ImportError, match="native module not found"
+    with (
+        mock.patch.object(utils_mod, "_NativeEnv", None),
+        pytest.raises(ImportError, match="native module not found"),
     ):
         utils_mod.make_env()
 

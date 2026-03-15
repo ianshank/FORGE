@@ -1,12 +1,11 @@
 """Tests for forge.training.loggers — ForgeLogger hierarchy and factory."""
+
 from __future__ import annotations
 
 import sys
-from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 from forge.training.loggers import (
     CompositeLogger,
     ForgeLogger,
@@ -15,7 +14,6 @@ from forge.training.loggers import (
     WandbLogger,
     make_logger,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -59,7 +57,7 @@ class TestForgeLoggerContract:
 
     def test_cannot_instantiate_abstract(self) -> None:
         with pytest.raises(TypeError):
-            ForgeLogger()  # type: ignore[abstract]
+            ForgeLogger()
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +76,8 @@ class TestWandbLogger:
         with patch.dict(sys.modules, {"wandb": mock_wandb}):
             # Re-patch inside the import
             import forge.training.loggers as loggers_mod  # noqa: PLC0415
-            loggers_mod_wandb = loggers_mod.WandbLogger.__module__
+
+            _loggers_mod_wandb = loggers_mod.WandbLogger.__module__
 
             logger = WandbLogger.__new__(WandbLogger)
             logger._wandb = mock_wandb
@@ -97,9 +96,8 @@ class TestWandbLogger:
         logger._run.finish.assert_called_once()
 
     def test_missing_wandb_raises(self) -> None:
-        with patch.dict(sys.modules, {"wandb": None}):
-            with pytest.raises(ImportError, match="wandb"):
-                WandbLogger(project="test")
+        with patch.dict(sys.modules, {"wandb": None}), pytest.raises(ImportError, match="wandb"):
+            WandbLogger(project="test")
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +126,8 @@ class TestMLflowLogger:
         mock_mlflow.end_run.assert_called_once()
 
     def test_missing_mlflow_raises(self) -> None:
-        with patch.dict(sys.modules, {"mlflow": None}):
-            with pytest.raises(ImportError, match="mlflow"):
-                MLflowLogger(experiment_name="test")
+        with patch.dict(sys.modules, {"mlflow": None}), pytest.raises(ImportError, match="mlflow"):
+            MLflowLogger(experiment_name="test")
 
 
 # ---------------------------------------------------------------------------
@@ -169,9 +166,11 @@ class TestTensorBoardLogger:
         mock_writer.close.assert_called_once()
 
     def test_missing_torch_raises(self) -> None:
-        with patch.dict(sys.modules, {"torch": None, "torch.utils.tensorboard": None}):
-            with pytest.raises(ImportError, match="PyTorch"):
-                TensorBoardLogger(log_dir="/tmp/test")
+        with (
+            patch.dict(sys.modules, {"torch": None, "torch.utils.tensorboard": None}),
+            pytest.raises(ImportError, match="PyTorch"),
+        ):
+            TensorBoardLogger(log_dir="/tmp/test")
 
 
 # ---------------------------------------------------------------------------

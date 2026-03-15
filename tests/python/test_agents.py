@@ -1,4 +1,5 @@
 """Tests for FORGE agent framework."""
+
 from __future__ import annotations
 
 import random
@@ -22,7 +23,7 @@ class TestBaseAgent:
     def test_cannot_instantiate(self) -> None:
         """BaseAgent is abstract and cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            BaseAgent(AgentConfig())  # type: ignore[abstract]
+            BaseAgent(AgentConfig())
 
 
 class TestRandomAgent:

@@ -1,10 +1,12 @@
 """Tests for forge_env.vecenv — ForgeSyncVecEnv, ForgeAsyncVecEnv, make_forge_vec_env."""
+
 from __future__ import annotations
 
-import sys
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import numpy as np
 import pytest
@@ -67,7 +69,6 @@ from forge_env.vecenv import (  # noqa: E402
     _stack_obs,
     make_forge_vec_env,
 )
-
 
 # ---------------------------------------------------------------------------
 # _stack_obs
@@ -179,7 +180,7 @@ class TestForgeSyncVecEnv:
         vec = ForgeSyncVecEnv([env_fn])
         vec.reset()
         actions = np.array([0])
-        obs, _, terminated, _, infos = vec.step(actions)
+        _obs, _, terminated, _, infos = vec.step(actions)
         # Env should have been reset after termination
         assert "terminal_observation" in infos[0]
         assert terminated[0]
@@ -303,4 +304,4 @@ def test_numpy_unavailable_raises_import_error(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr(vecenv_mod, "HAS_NUMPY", False)
     with pytest.raises(ImportError, match="numpy"):
-        ForgeSyncVecEnv([lambda: _make_gym_env_mock()])
+        ForgeSyncVecEnv([_make_gym_env_mock])

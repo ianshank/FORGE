@@ -124,4 +124,89 @@ mod tests {
         let deser: ReasoningTrace = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.steps.len(), 1);
     }
+
+    #[test]
+    fn test_reasoning_type_all_variants() {
+        let types = vec![
+            ReasoningType::Observe,
+            ReasoningType::Remember,
+            ReasoningType::Think,
+            ReasoningType::Plan,
+            ReasoningType::Act,
+            ReasoningType::Reflect,
+        ];
+        for t in &types {
+            let step = ReasoningStep::new(t.clone(), "test".into(), 0);
+            let json = serde_json::to_string(&step).unwrap();
+            let deser: ReasoningStep = serde_json::from_str(&json).unwrap();
+            assert_eq!(deser.step_type, *t);
+        }
+    }
+
+    #[test]
+    fn test_reasoning_step_preserves_tick() {
+        let step = ReasoningStep::new(ReasoningType::Observe, "obs".into(), 999);
+        assert_eq!(step.tick, 999);
+        assert_eq!(step.content, "obs");
+    }
+
+    #[test]
+    fn test_trace_default() {
+        let trace = ReasoningTrace::default();
+        assert!(trace.steps.is_empty());
+        assert_eq!(trace.selected_action, 0);
+        assert_eq!(trace.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_trace_clone() {
+        let mut trace = ReasoningTrace::new();
+        trace.add_step(ReasoningStep::new(
+            ReasoningType::Think,
+            "thinking...".into(),
+            10,
+        ));
+        trace.selected_action = 5;
+        trace.confidence = 0.9;
+
+        let cloned = trace.clone();
+        assert_eq!(cloned.steps.len(), 1);
+        assert_eq!(cloned.selected_action, 5);
+        assert_eq!(cloned.confidence, 0.9);
+    }
+
+    #[test]
+    fn test_full_trace_serialization_roundtrip() {
+        let mut trace = ReasoningTrace::new();
+        trace.add_step(ReasoningStep::new(
+            ReasoningType::Observe,
+            "I see a forest".into(),
+            1,
+        ));
+        trace.add_step(ReasoningStep::new(
+            ReasoningType::Remember,
+            "Wood is useful".into(),
+            1,
+        ));
+        trace.add_step(ReasoningStep::new(
+            ReasoningType::Think,
+            "I should gather wood".into(),
+            1,
+        ));
+        trace.add_step(ReasoningStep::new(
+            ReasoningType::Act,
+            "Moving toward wood".into(),
+            1,
+        ));
+        trace.selected_action = 2;
+        trace.confidence = 0.85;
+
+        let json = serde_json::to_string(&trace).unwrap();
+        let deser: ReasoningTrace = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.steps.len(), 4);
+        assert_eq!(deser.selected_action, 2);
+        assert_eq!(deser.confidence, 0.85);
+        assert_eq!(deser.steps[0].step_type, ReasoningType::Observe);
+        assert_eq!(deser.steps[3].step_type, ReasoningType::Act);
+    }
 }

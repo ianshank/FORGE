@@ -1,4 +1,5 @@
 """Tests for the meta-learner module."""
+
 from __future__ import annotations
 
 from forge.integration.meta_learner import MetaLearner, MetaLearnerConfig

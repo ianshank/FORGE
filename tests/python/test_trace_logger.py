@@ -1,4 +1,5 @@
 """Tests for JSONL trace logger."""
+
 from __future__ import annotations
 
 import gzip
@@ -19,7 +20,7 @@ def _make_trace(data: dict | None = None) -> MagicMock:
 class TestLogWritesJsonl:
     """Each trace should be written as a separate JSONL line."""
 
-    def test_log_writes_jsonl(self, tmp_path):
+    def test_log_writes_jsonl(self, tmp_path: Path) -> None:
         path = str(tmp_path / "traces.jsonl")
         logger = TraceLogger(path, compress=False)
 
@@ -39,7 +40,7 @@ class TestLogWritesJsonl:
 class TestFlushPersists:
     """Data should be visible on disk after calling flush."""
 
-    def test_flush_persists(self, tmp_path):
+    def test_flush_persists(self, tmp_path: Path) -> None:
         path = str(tmp_path / "traces.jsonl")
         logger = TraceLogger(path, compress=False)
 
@@ -55,7 +56,7 @@ class TestFlushPersists:
 class TestContextManager:
     """TraceLogger should work as a context manager."""
 
-    def test_context_manager(self, tmp_path):
+    def test_context_manager(self, tmp_path: Path) -> None:
         path = str(tmp_path / "traces.jsonl")
 
         with TraceLogger(path, compress=False) as tl:
@@ -70,7 +71,7 @@ class TestContextManager:
 class TestCloseIdempotent:
     """Calling close multiple times should not raise."""
 
-    def test_close_idempotent(self, tmp_path):
+    def test_close_idempotent(self, tmp_path: Path) -> None:
         path = str(tmp_path / "traces.jsonl")
         logger = TraceLogger(path, compress=False)
 
@@ -82,7 +83,7 @@ class TestCloseIdempotent:
 class TestCompressedOutput:
     """When compress=True, output should be gzip-compressed."""
 
-    def test_compressed_output(self, tmp_path):
+    def test_compressed_output(self, tmp_path: Path) -> None:
         path = str(tmp_path / "traces.jsonl.gz")
         logger = TraceLogger(path, compress=True)
 
@@ -102,7 +103,7 @@ class TestCompressedOutput:
 class TestMultipleTraces:
     """Multiple log calls should produce multiple JSONL lines."""
 
-    def test_multiple_traces(self, tmp_path):
+    def test_multiple_traces(self, tmp_path: Path) -> None:
         path = str(tmp_path / "traces.jsonl")
         logger = TraceLogger(path, compress=False)
 

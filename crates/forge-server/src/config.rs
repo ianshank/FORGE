@@ -142,4 +142,49 @@ mod tests {
         let config = ServerConfig::from_env();
         assert_eq!(config.bind_addr.port(), 8080);
     }
+
+    #[test]
+    fn test_default_allowed_origins() {
+        let config = ServerConfig::default();
+        assert_eq!(config.allowed_origins.len(), 1);
+        assert!(config.allowed_origins[0].contains("localhost"));
+    }
+
+    #[test]
+    fn test_default_log_filter() {
+        let config = ServerConfig::default();
+        assert!(config.log_filter.contains("forge_server"));
+        assert!(config.log_filter.contains("forge_core"));
+    }
+
+    #[test]
+    fn test_default_tick_interval() {
+        let config = ServerConfig::default();
+        assert_eq!(config.tick_interval_ms, DEFAULT_TICK_INTERVAL_MS);
+        assert!(config.tick_interval_ms > 0);
+    }
+
+    #[test]
+    fn test_default_broadcast_capacity() {
+        let config = ServerConfig::default();
+        assert_eq!(config.broadcast_capacity, DEFAULT_BROADCAST_CAPACITY);
+        assert!(config.broadcast_capacity > 0);
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config = ServerConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.bind_addr, cloned.bind_addr);
+        assert_eq!(config.tick_interval_ms, cloned.tick_interval_ms);
+        assert_eq!(config.broadcast_capacity, cloned.broadcast_capacity);
+    }
+
+    #[test]
+    fn test_config_debug() {
+        let config = ServerConfig::default();
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("ServerConfig"));
+        assert!(debug.contains("8080"));
+    }
 }

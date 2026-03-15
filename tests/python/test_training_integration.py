@@ -9,6 +9,7 @@ Also covers previously untested code paths:
 - train.py parse_args()
 - Shared observation flattening utility
 """
+
 from __future__ import annotations
 
 import sys
@@ -246,12 +247,18 @@ class TestParseArgs:
 
     def test_custom_args(self) -> None:
         """Custom arguments are parsed correctly."""
-        args = parse_args([
-            "--agent", "mappo",
-            "--num-updates", "5",
-            "--seed", "99",
-            "--log-level", "DEBUG",
-        ])
+        args = parse_args(
+            [
+                "--agent",
+                "mappo",
+                "--num-updates",
+                "5",
+                "--seed",
+                "99",
+                "--log-level",
+                "DEBUG",
+            ]
+        )
         assert args.agent == "mappo"
         assert args.num_updates == 5
         assert args.seed == 99

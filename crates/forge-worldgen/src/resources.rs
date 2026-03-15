@@ -12,10 +12,9 @@ use rand::Rng;
 use rand_pcg::Pcg64Mcg;
 use tracing::instrument;
 
-/// Default respawn rate for resources (ticks between respawn increments).
-const DEFAULT_RESPAWN_RATE: u32 = 100;
-/// Default maximum quantity per resource node.
-const DEFAULT_MAX_QUANTITY: u16 = 5;
+// Fallback constants — prefer config values via WorldConfig.
+const FALLBACK_RESPAWN_RATE: u32 = 100;
+const FALLBACK_MAX_QUANTITY: u16 = 5;
 
 /// Describes a resource-to-terrain mapping rule.
 #[derive(Debug, Clone)]
@@ -120,8 +119,17 @@ impl ResourcePlacer {
                     }
 
                     let id = nodes.len() as u32;
-                    let max_quantity = DEFAULT_MAX_QUANTITY;
+                    let max_quantity = if config.resource_max_quantity > 0 {
+                        config.resource_max_quantity
+                    } else {
+                        FALLBACK_MAX_QUANTITY
+                    };
                     let quantity = rng.gen_range(1..=max_quantity);
+                    let respawn_rate = if config.resource_respawn_rate > 0 {
+                        config.resource_respawn_rate
+                    } else {
+                        FALLBACK_RESPAWN_RATE
+                    };
 
                     nodes.push(ResourceNode {
                         id,
@@ -130,7 +138,7 @@ impl ResourcePlacer {
                         quantity,
                         max_quantity,
                         respawn_timer: 0,
-                        respawn_rate: DEFAULT_RESPAWN_RATE,
+                        respawn_rate,
                         requires_tool: rule.requires_tool,
                     });
 

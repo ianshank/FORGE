@@ -200,6 +200,81 @@ mod tests {
         // Actually parse_action_id returns None → unwrap_or(0)
         assert_eq!(action, 0);
     }
+
+    #[test]
+    fn test_agent_action_count_increments() {
+        let provider = MockProvider::new("action: 2".into());
+        let config = CognitiveConfig::default();
+        let mut agent = CognitiveAgent::new(Box::new(provider), config);
+
+        assert_eq!(agent.action_count(), 0);
+
+        for i in 1..=3 {
+            let prompt = CognitivePrompt::builder()
+                .observation("test".into())
+                .build();
+            agent.select_action_with_prompt(prompt, i as u64);
+            assert_eq!(agent.action_count(), i);
+        }
+    }
+
+    #[test]
+    fn test_agent_last_trace_updated() {
+        let provider = MockProvider::new("action: 5".into());
+        let config = CognitiveConfig::default();
+        let mut agent = CognitiveAgent::new(Box::new(provider), config);
+
+        let prompt = CognitivePrompt::builder()
+            .observation("I see enemies".into())
+            .build();
+        let (action, _) = agent.select_action_with_prompt(prompt, 42);
+
+        assert_eq!(action, 5);
+        let last = agent.last_trace();
+        assert_eq!(last.selected_action, 5);
+        assert!(!last.steps.is_empty());
+    }
+
+    #[test]
+    fn test_agent_provider_name() {
+        let provider = MockProvider::new("action: 0".into());
+        let config = CognitiveConfig::default();
+        let agent = CognitiveAgent::new(Box::new(provider), config);
+        assert_eq!(agent.provider_name(), "mock");
+    }
+
+    #[test]
+    fn test_agent_with_memory_context() {
+        let provider = MockProvider::new("I remember the forest. action: 3".into());
+        let config = CognitiveConfig::default();
+        let mut agent = CognitiveAgent::new(Box::new(provider), config);
+
+        let mut prompt = CognitivePrompt::builder()
+            .observation("forest ahead".into())
+            .build();
+        prompt.memory_context = vec!["wood is useful".into(), "built shelter before".into()];
+
+        let (action, trace) = agent.select_action_with_prompt(prompt, 10);
+        assert_eq!(action, 3);
+        // Should have Observe, Remember, and Think steps
+        assert!(trace.steps.len() >= 3);
+        assert_eq!(trace.steps[0].step_type, ReasoningType::Observe);
+        assert_eq!(trace.steps[1].step_type, ReasoningType::Remember);
+        assert_eq!(trace.steps[2].step_type, ReasoningType::Think);
+    }
+
+    #[test]
+    fn test_parse_action_id_edge_cases() {
+        // Empty string
+        assert_eq!(parse_action_id(""), None);
+        // Just whitespace
+        assert_eq!(parse_action_id("   "), None);
+        // Multiple numbers - action pattern takes priority
+        assert_eq!(parse_action_id("I have 3 options, action: 7"), Some(7));
+        // Case insensitive
+        assert_eq!(parse_action_id("ACTION: 2"), Some(2));
+        assert_eq!(parse_action_id("Action 4"), Some(4));
+    }
 }
 
 #[cfg(test)]

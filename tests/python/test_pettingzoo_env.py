@@ -2,6 +2,7 @@
 
 The native forge_env module is mocked so tests run without Rust extension.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

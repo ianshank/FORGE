@@ -64,6 +64,12 @@ pub struct WorldConfig {
     pub min_dimension: u16,
     /// Maximum world dimension (width or height).
     pub max_dimension: u16,
+    /// Resource respawn rate (ticks between respawn increments).
+    pub resource_respawn_rate: u32,
+    /// Maximum quantity per resource node.
+    pub resource_max_quantity: u16,
+    /// Object placement density scale (multiplied with base probability).
+    pub object_density_scale: f32,
 }
 
 impl Default for WorldConfig {
@@ -78,6 +84,9 @@ impl Default for WorldConfig {
             max_entities: constants::DEFAULT_MAX_ENTITIES,
             min_dimension: constants::MIN_WORLD_DIMENSION,
             max_dimension: constants::MAX_WORLD_DIMENSION,
+            resource_respawn_rate: constants::DEFAULT_RESOURCE_RESPAWN_TICKS,
+            resource_max_quantity: constants::DEFAULT_RESOURCE_MAX_QUANTITY,
+            object_density_scale: constants::DEFAULT_OBJECT_DENSITY_SCALE,
         }
     }
 }
@@ -463,6 +472,8 @@ num_agents = 4
 
     #[test]
     fn test_from_toml_file() {
+        // Lock needed because from_toml() calls apply_env_overrides()
+        let _lock = ENV_TEST_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join("forge_test_config");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("test_config.toml");

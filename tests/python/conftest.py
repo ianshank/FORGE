@@ -4,6 +4,7 @@ Centralises mock observation data and native-env factory so that
 ``test_gymnasium_env``, ``test_pettingzoo_env`` and ``test_jax_env``
 share a single source of truth.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -58,9 +59,7 @@ def make_mock_native_env(
     if include_render:
         env.render.return_value = "ascii_frame"
     env.observation_space = (
-        NATIVE_OBS_SPACE_WITH_MESSAGES
-        if include_messages_in_obs_space
-        else NATIVE_OBS_SPACE
+        NATIVE_OBS_SPACE_WITH_MESSAGES if include_messages_in_obs_space else NATIVE_OBS_SPACE
     )
     env.action_space = NATIVE_ACT_SPACE
     return env
