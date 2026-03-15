@@ -23,6 +23,38 @@ pub enum MoveResult {
     Impassable,
 }
 
+/// Pre-allocated scratch buffers for the physics system.
+///
+/// Stored in `WorldState` and reused across ticks to avoid per-tick heap
+/// allocations on the hot path. Call [`PhysicsScratch::ensure_capacity`]
+/// after changing the agent count.
+#[derive(Debug, Clone, Default)]
+pub struct PhysicsScratch {
+    /// Scratch buffer for move results.
+    pub results: Vec<MoveResult>,
+    /// Scratch buffer for desired positions.
+    pub desired_positions: Vec<Option<Position>>,
+    /// Scratch buffer for occupied target tracking.
+    pub occupied_targets: Vec<(usize, Position)>,
+}
+
+impl PhysicsScratch {
+    /// Ensures all buffers have at least `agent_count` capacity.
+    pub fn ensure_capacity(&mut self, agent_count: usize) {
+        if self.results.capacity() < agent_count {
+            self.results.reserve(agent_count - self.results.capacity());
+        }
+        if self.desired_positions.capacity() < agent_count {
+            self.desired_positions
+                .reserve(agent_count - self.desired_positions.capacity());
+        }
+        if self.occupied_targets.capacity() < agent_count {
+            self.occupied_targets
+                .reserve(agent_count - self.occupied_targets.capacity());
+        }
+    }
+}
+
 /// Processes movement actions for all agents.
 ///
 /// This is the core physics step. It validates moves, checks collisions,
@@ -37,35 +69,52 @@ pub fn process_movements(
     actions: &[Action],
     config: &PhysicsConfig,
 ) -> Vec<MoveResult> {
-    let mut results = Vec::with_capacity(agents.len());
+    let mut scratch = PhysicsScratch::default();
+    process_movements_with_scratch(agents, grid, actions, config, &mut scratch);
+    std::mem::take(&mut scratch.results)
+}
+
+/// Processes movement actions using pre-allocated scratch buffers.
+///
+/// Like [`process_movements`], but avoids heap allocation by reusing
+/// the provided [`PhysicsScratch`]. Prefer this on the hot path.
+#[instrument(skip_all)]
+pub fn process_movements_with_scratch(
+    agents: &mut [Agent],
+    grid: &mut Grid,
+    actions: &[Action],
+    config: &PhysicsConfig,
+    scratch: &mut PhysicsScratch,
+) {
+    scratch.results.clear();
+    scratch.desired_positions.clear();
+    scratch.occupied_targets.clear();
+    scratch.ensure_capacity(agents.len());
 
     // First pass: compute desired positions
-    let desired_positions: Vec<Option<Position>> = agents
-        .iter()
-        .zip(actions.iter())
-        .map(|(agent, action)| {
-            if !agent.alive {
-                return None;
-            }
+    for (agent, action) in agents.iter().zip(actions.iter()) {
+        let pos = if !agent.alive {
+            None
+        } else {
             match action {
                 Action::Move(dir) => agent.position.offset(*dir, grid.width, grid.height),
                 _ => None,
             }
-        })
-        .collect();
+        };
+        scratch.desired_positions.push(pos);
+    }
 
     // Second pass: detect conflicts (two agents wanting same tile)
-    let mut occupied_targets: Vec<(usize, Position)> = Vec::new();
-    for (i, pos) in desired_positions.iter().enumerate() {
+    for (i, pos) in scratch.desired_positions.iter().enumerate() {
         if let Some(p) = pos {
-            occupied_targets.push((i, *p));
+            scratch.occupied_targets.push((i, *p));
         }
     }
 
     // Third pass: apply movements
     for (i, agent) in agents.iter_mut().enumerate() {
         if !agent.alive {
-            results.push(MoveResult::Blocked);
+            scratch.results.push(MoveResult::Blocked);
             continue;
         }
 
@@ -73,7 +122,7 @@ pub fn process_movements(
         let direction = match action {
             Action::Move(dir) => *dir,
             _ => {
-                results.push(MoveResult::Blocked);
+                scratch.results.push(MoveResult::Blocked);
                 continue;
             }
         };
@@ -86,7 +135,7 @@ pub fn process_movements(
         let stamina_cost = config.stamina_cost_move;
         if agent.stamina < stamina_cost {
             trace!(agent_id = agent.id, "movement blocked: no stamina");
-            results.push(MoveResult::NoStamina);
+            scratch.results.push(MoveResult::NoStamina);
             continue;
         }
 
@@ -99,7 +148,7 @@ pub fn process_movements(
                     ?direction,
                     "movement blocked: boundary"
                 );
-                results.push(MoveResult::Blocked);
+                scratch.results.push(MoveResult::Blocked);
                 continue;
             }
         };
@@ -114,7 +163,7 @@ pub fn process_movements(
                 terrain = ?target_tile.terrain,
                 "movement blocked: impassable terrain"
             );
-            results.push(MoveResult::Impassable);
+            scratch.results.push(MoveResult::Impassable);
             continue;
         }
 
@@ -127,13 +176,14 @@ pub fn process_movements(
                         occupant_id = occupant,
                         "movement blocked: tile occupied"
                     );
-                    results.push(MoveResult::Blocked);
+                    scratch.results.push(MoveResult::Blocked);
                     continue;
                 }
             }
 
             // Check if another agent (with higher priority) is also moving here
-            let conflict = occupied_targets
+            let conflict = scratch
+                .occupied_targets
                 .iter()
                 .any(|(other_idx, other_pos)| *other_idx < i && *other_pos == target);
             if conflict {
@@ -141,7 +191,7 @@ pub fn process_movements(
                     agent_id = agent.id,
                     "movement blocked: conflict with higher priority agent"
                 );
-                results.push(MoveResult::Blocked);
+                scratch.results.push(MoveResult::Blocked);
                 continue;
             }
         }
@@ -184,10 +234,8 @@ pub fn process_movements(
             stamina_cost = total_cost,
             "agent moved"
         );
-        results.push(MoveResult::Moved(target));
+        scratch.results.push(MoveResult::Moved(target));
     }
-
-    results
 }
 
 /// Regenerates stamina for all agents.
@@ -874,5 +922,91 @@ mod tests {
 
         // No crash, push_from is out of bounds so nothing happens
         assert!(objects.is_empty());
+    }
+
+    // ---- Proptest: physics invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn arb_direction() -> impl Strategy<Value = Direction> {
+            prop_oneof![
+                Just(Direction::Up),
+                Just(Direction::Down),
+                Just(Direction::Left),
+                Just(Direction::Right),
+            ]
+        }
+
+        proptest! {
+            /// Movement is deterministic: same setup produces same result.
+            #[test]
+            fn movement_determinism(
+                x in 1u16..14,
+                y in 1u16..14,
+                dir in arb_direction(),
+            ) {
+                let run = || {
+                    let mut grid = make_test_grid(16, 16);
+                    let mut agents = [make_test_agent(0, x, y)];
+                    grid.get_mut(x, y).unwrap().agent_id = Some(0);
+                    let actions = vec![Action::Move(dir)];
+                    let results = process_movements(
+                        &mut agents, &mut grid, &actions, &default_physics(),
+                    );
+                    (results, agents[0].position, agents[0].stamina)
+                };
+                let (r1, p1, s1) = run();
+                let (r2, p2, s2) = run();
+                prop_assert_eq!(r1, r2);
+                prop_assert_eq!(p1, p2);
+                prop_assert_eq!(s1, s2);
+            }
+
+            /// After movement, agent is always within grid bounds.
+            #[test]
+            fn agent_stays_in_bounds(
+                x in 0u16..16,
+                y in 0u16..16,
+                dir in arb_direction(),
+            ) {
+                let mut grid = make_test_grid(16, 16);
+                let mut agents = [make_test_agent(0, x, y)];
+                grid.get_mut(x, y).unwrap().agent_id = Some(0);
+                let actions = vec![Action::Move(dir)];
+                process_movements(&mut agents, &mut grid, &actions, &default_physics());
+                prop_assert!(agents[0].position.x < 16);
+                prop_assert!(agents[0].position.y < 16);
+            }
+
+            /// Stamina never goes negative after movement.
+            #[test]
+            fn stamina_non_negative(
+                stamina in 0i32..1_000_000,
+                dir in arb_direction(),
+            ) {
+                let mut grid = make_test_grid(16, 16);
+                let mut agents = [make_test_agent(0, 8, 8)];
+                agents[0].stamina = stamina;
+                grid.get_mut(8, 8).unwrap().agent_id = Some(0);
+                let actions = vec![Action::Move(dir)];
+                process_movements(&mut agents, &mut grid, &actions, &default_physics());
+                prop_assert!(agents[0].stamina >= 0);
+            }
+
+            /// Stamina regen never exceeds max.
+            #[test]
+            fn stamina_regen_capped(
+                stamina in 0i32..1_000_000,
+                max in 100_000i32..2_000_000,
+            ) {
+                let config = default_physics();
+                let mut agents = [make_test_agent(0, 5, 5)];
+                agents[0].stamina = stamina;
+                regenerate_stamina(&mut agents, &config, max);
+                prop_assert!(agents[0].stamina <= max);
+            }
+        }
     }
 }

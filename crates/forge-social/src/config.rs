@@ -62,9 +62,11 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-        let config = SocialConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let deser: SocialConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deser.trust_initial, config.trust_initial);
+        forge_types::assert_config_serde_roundtrip!(SocialConfig);
+    }
+
+    #[test]
+    fn test_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(SocialConfig);
     }
 }

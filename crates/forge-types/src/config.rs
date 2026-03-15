@@ -790,4 +790,40 @@ num_agents = 4
             original.rendering.record_replays
         );
     }
+
+    // ---- Proptest: config invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// ForgeConfig survives JSON roundtrip with arbitrary valid seeds.
+            #[test]
+            fn config_json_roundtrip(seed in 0u64..u64::MAX) {
+                let mut config = ForgeConfig::default();
+                config.world.seed = seed;
+                let json = serde_json::to_string(&config).unwrap();
+                let deser: ForgeConfig = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.world.seed, seed);
+                prop_assert_eq!(deser.world.width, config.world.width);
+                prop_assert_eq!(deser.agents.num_agents, config.agents.num_agents);
+            }
+
+            /// Config with varying dimensions roundtrips correctly.
+            #[test]
+            fn config_dimensions_roundtrip(
+                w in 8u16..512,
+                h in 8u16..512,
+            ) {
+                let mut config = ForgeConfig::default();
+                config.world.width = w;
+                config.world.height = h;
+                let json = serde_json::to_string(&config).unwrap();
+                let deser: ForgeConfig = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.world.width, w);
+                prop_assert_eq!(deser.world.height, h);
+            }
+        }
+    }
 }

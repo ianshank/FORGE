@@ -297,4 +297,52 @@ mod tests {
         let v = noise.sample_2d(-5.5, -3.3);
         assert!(v.is_finite());
     }
+
+    // ---- Proptest: noise invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Perlin noise always returns values in [-1, 1].
+            #[test]
+            fn sample_2d_bounded(
+                seed in 0u64..10_000,
+                x in -500.0f64..500.0,
+                y in -500.0f64..500.0,
+            ) {
+                let noise = PerlinNoise::new(seed);
+                let v = noise.sample_2d(x, y);
+                prop_assert!(v.is_finite());
+                prop_assert!(v >= -1.0 && v <= 1.0,
+                    "sample_2d({}, {}) = {} out of [-1, 1]", x, y, v);
+            }
+
+            /// Same seed produces same noise value (determinism).
+            #[test]
+            fn noise_determinism(
+                seed in 0u64..10_000,
+                x in -100.0f64..100.0,
+                y in -100.0f64..100.0,
+            ) {
+                let n1 = PerlinNoise::new(seed);
+                let n2 = PerlinNoise::new(seed);
+                prop_assert_eq!(n1.sample_2d(x, y), n2.sample_2d(x, y));
+            }
+
+            /// Octave noise is finite for any octave count.
+            #[test]
+            fn octave_noise_finite(
+                seed in 0u64..10_000,
+                x in -100.0f64..100.0,
+                y in -100.0f64..100.0,
+                octaves in 1u32..8,
+            ) {
+                let noise = PerlinNoise::new(seed);
+                let v = noise.octave_noise_2d(x, y, octaves, 0.5);
+                prop_assert!(v.is_finite());
+            }
+        }
+    }
 }

@@ -21,6 +21,7 @@ use rand_pcg::Pcg64Mcg;
 use serde::Serialize;
 use tracing::{info, instrument, trace};
 
+use crate::physics::PhysicsScratch;
 use crate::rng::ForgeRng;
 use crate::systems;
 
@@ -54,6 +55,9 @@ pub struct WorldState {
     /// Rewards computed by the task evaluator for the most recent step.
     /// Consumed by `make_step_result()` and reset each tick.
     pub last_task_rewards: Option<Vec<f32>>,
+    /// Pre-allocated scratch buffers for the physics system, avoiding
+    /// per-tick heap allocations on the hot path.
+    pub physics_scratch: PhysicsScratch,
 }
 
 impl WorldState {
@@ -93,6 +97,9 @@ impl WorldState {
             agents.push(agent);
         }
 
+        let mut physics_scratch = PhysicsScratch::default();
+        physics_scratch.ensure_capacity(agents.len());
+
         let mut state = Self {
             tick: 0,
             grid,
@@ -107,6 +114,7 @@ impl WorldState {
             terminated: false,
             truncated: false,
             last_task_rewards: None,
+            physics_scratch,
         };
 
         // Place agents on the grid
@@ -417,6 +425,8 @@ impl WorldState {
         let deserialized: DeserializableWorldState = bincode::deserialize(bytes)
             .map_err(|e| forge_types::ForgeError::Serialization(format!("bincode: {e}")))?;
 
+        let mut physics_scratch = PhysicsScratch::default();
+        physics_scratch.ensure_capacity(deserialized.agents.len());
         Ok(WorldState {
             tick: deserialized.tick,
             grid: deserialized.grid,
@@ -431,6 +441,7 @@ impl WorldState {
             terminated: deserialized.terminated,
             truncated: deserialized.truncated,
             last_task_rewards: None,
+            physics_scratch,
         })
     }
 
@@ -460,6 +471,8 @@ impl WorldState {
         let deserialized: DeserializableWorldState = serde_json::from_str(json)
             .map_err(|e| forge_types::ForgeError::Serialization(format!("json: {e}")))?;
 
+        let mut physics_scratch = PhysicsScratch::default();
+        physics_scratch.ensure_capacity(deserialized.agents.len());
         Ok(WorldState {
             tick: deserialized.tick,
             grid: deserialized.grid,
@@ -474,6 +487,7 @@ impl WorldState {
             terminated: deserialized.terminated,
             truncated: deserialized.truncated,
             last_task_rewards: None,
+            physics_scratch,
         })
     }
 }
@@ -951,5 +965,78 @@ mod tests {
         let config = Arc::new(ForgeConfig::default());
         let result = WorldState::from_json("not valid json", config);
         assert!(result.is_err());
+    }
+
+    // ---- Proptest: world invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn make_world_with_seed(seed: u64) -> WorldState {
+            let mut config = ForgeConfig::default();
+            config.world.width = 16;
+            config.world.height = 16;
+            config.world.seed = seed;
+            config.agents.num_agents = 2;
+            config.task.max_episode_length = 100;
+            WorldState::new(config).unwrap()
+        }
+
+        proptest! {
+            /// Same seed + same actions = identical world state.
+            #[test]
+            fn step_determinism(seed in 0u64..10_000) {
+                let mut w1 = make_world_with_seed(seed);
+                let mut w2 = make_world_with_seed(seed);
+
+                let actions = vec![Action::Noop, Action::Move(Direction::Right)];
+
+                for _ in 0..5 {
+                    w1.step(&actions);
+                    w2.step(&actions);
+                }
+
+                prop_assert_eq!(w1.tick, w2.tick);
+                for (a, b) in w1.agents.iter().zip(w2.agents.iter()) {
+                    prop_assert_eq!(a.position, b.position);
+                    prop_assert_eq!(a.health, b.health);
+                    prop_assert_eq!(a.stamina, b.stamina);
+                    prop_assert_eq!(a.alive, b.alive);
+                }
+            }
+
+            /// After any number of steps, all agent positions are in bounds.
+            #[test]
+            fn agents_in_bounds_after_steps(
+                seed in 0u64..10_000,
+                steps in 1u32..20,
+            ) {
+                let mut world = make_world_with_seed(seed);
+                for _ in 0..steps {
+                    world.step(&[Action::Move(Direction::Right), Action::Move(Direction::Down)]);
+                }
+                for agent in &world.agents {
+                    prop_assert!(agent.position.x < world.grid.width);
+                    prop_assert!(agent.position.y < world.grid.height);
+                }
+            }
+
+            /// Serialization roundtrip preserves essential state.
+            #[test]
+            fn bytes_roundtrip(seed in 0u64..10_000) {
+                let mut world = make_world_with_seed(seed);
+                world.step(&[Action::Noop, Action::Noop]);
+
+                let bytes = world.to_bytes();
+                let restored = WorldState::from_bytes(&bytes, world.config.clone()).unwrap();
+
+                prop_assert_eq!(restored.tick, world.tick);
+                prop_assert_eq!(restored.agents.len(), world.agents.len());
+                for (a, b) in restored.agents.iter().zip(world.agents.iter()) {
+                    prop_assert_eq!(a.position, b.position);
+                }
+            }
+        }
     }
 }

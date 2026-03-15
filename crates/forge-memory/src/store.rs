@@ -251,4 +251,104 @@ mod tests {
         let result = InMemoryStore::load_from_file(Path::new("/tmp/nonexistent_forge_test.bin"));
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_tick_decay_reduces_entries() {
+        let mut config = test_config();
+        config.decay_rate = 0.1; // faster decay for test
+        config.min_strength = 0.01;
+        let mut store = InMemoryStore::new(0, &config);
+
+        // Add a fact with low strength
+        store
+            .semantic
+            .store(SemanticFact::new("weak".into(), "value".into(), 0.05, 1));
+        assert_eq!(store.total_entries(), 1);
+
+        // Decay enough times to drop below min_strength
+        for _ in 0..100 {
+            store.tick_decay(&config);
+        }
+        // After enough decay, the weak fact should be pruned
+        assert_eq!(store.total_entries(), 0);
+    }
+
+    #[test]
+    fn test_episodic_query_by_tag() {
+        let mut store = InMemoryStore::new(0, &test_config());
+        let mut ep = Episode::new((0, 5), vec![0], (3, 3), EpisodeOutcome::Success, 1.0);
+        ep.tags.push("combat".into());
+        store.episodic.store(ep);
+
+        let results = store.query(&MemoryQuery::EpisodicByTag("combat".into()), 10);
+        assert_eq!(results.len(), 1);
+
+        let results = store.query(&MemoryQuery::EpisodicByTag("explore".into()), 10);
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_episodic_query_by_location() {
+        let mut store = InMemoryStore::new(0, &test_config());
+        let ep = Episode::new((0, 5), vec![0], (10, 10), EpisodeOutcome::Success, 1.0);
+        store.episodic.store(ep);
+
+        // Nearby query should find it
+        let results = store.query(
+            &MemoryQuery::EpisodicByLocation {
+                x: 10,
+                y: 10,
+                radius: 5,
+            },
+            10,
+        );
+        assert_eq!(results.len(), 1);
+
+        // Far-away query should not
+        let results = store.query(
+            &MemoryQuery::EpisodicByLocation {
+                x: 100,
+                y: 100,
+                radius: 5,
+            },
+            10,
+        );
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_empty_query_returns_empty() {
+        let store = InMemoryStore::new(0, &test_config());
+        let results = store.query(&MemoryQuery::SemanticByKey("nonexistent".into()), 10);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_save_load_roundtrip_preserves_all_subsystems() {
+        let dir = std::env::temp_dir().join("forge_memory_test_full");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("full_store.bin");
+
+        let mut store = InMemoryStore::new(3, &test_config());
+        store
+            .semantic
+            .store(SemanticFact::new("role".into(), "scout".into(), 0.9, 1));
+        let ep = Episode::new((0, 5), vec![3], (7, 7), EpisodeOutcome::Failure, 0.5);
+        store.episodic.store(ep);
+        let pref = store.preferences.get_or_create("navigate");
+        pref.update_action(2, 1.0, 0.5, 0.05);
+
+        assert_eq!(store.total_entries(), 3);
+
+        store.save_to_file(&path).unwrap();
+        let loaded = InMemoryStore::load_from_file(&path).unwrap();
+
+        assert_eq!(loaded.agent_id, 3);
+        assert_eq!(loaded.total_entries(), 3);
+        assert_eq!(loaded.semantic.len(), 1);
+        assert_eq!(loaded.episodic.len(), 1);
+        assert_eq!(loaded.preferences.len(), 1);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

@@ -128,11 +128,12 @@ mod tests {
 
     #[test]
     fn test_config_serialization() {
-        let config = ServerConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let parsed: ServerConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.bind_addr, config.bind_addr);
-        assert_eq!(parsed.tick_interval_ms, config.tick_interval_ms);
+        forge_types::assert_config_serde_roundtrip!(ServerConfig);
+    }
+
+    #[test]
+    fn test_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(ServerConfig);
     }
 
     #[test]
