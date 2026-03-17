@@ -57,7 +57,7 @@ pub struct WorldState {
     pub last_task_rewards: Option<Vec<f32>>,
     /// Pre-allocated scratch buffers for the physics system, avoiding
     /// per-tick heap allocations on the hot path.
-    pub physics_scratch: PhysicsScratch,
+    pub(crate) physics_scratch: PhysicsScratch,
 }
 
 impl WorldState {

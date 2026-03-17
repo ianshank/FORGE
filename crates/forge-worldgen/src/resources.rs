@@ -6,15 +6,12 @@
 //! density and resource properties are controlled through [`WorldConfig`].
 
 use forge_types::config::WorldConfig;
+use forge_types::constants::{DEFAULT_RESOURCE_MAX_QUANTITY, DEFAULT_RESOURCE_RESPAWN_TICKS};
 use forge_types::grid::{Grid, Position, TerrainType};
 use forge_types::resource::{ItemType, ResourceNode};
 use rand::Rng;
 use rand_pcg::Pcg64Mcg;
 use tracing::instrument;
-
-// Fallback constants — prefer config values via WorldConfig.
-const FALLBACK_RESPAWN_RATE: u32 = 100;
-const FALLBACK_MAX_QUANTITY: u16 = 5;
 
 /// Describes a resource-to-terrain mapping rule.
 #[derive(Debug, Clone)]
@@ -122,13 +119,13 @@ impl ResourcePlacer {
                     let max_quantity = if config.resource_max_quantity > 0 {
                         config.resource_max_quantity
                     } else {
-                        FALLBACK_MAX_QUANTITY
+                        DEFAULT_RESOURCE_MAX_QUANTITY
                     };
                     let quantity = rng.gen_range(1..=max_quantity);
                     let respawn_rate = if config.resource_respawn_rate > 0 {
                         config.resource_respawn_rate
                     } else {
-                        FALLBACK_RESPAWN_RATE
+                        DEFAULT_RESOURCE_RESPAWN_TICKS
                     };
 
                     nodes.push(ResourceNode {

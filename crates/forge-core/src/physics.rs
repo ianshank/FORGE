@@ -29,18 +29,18 @@ pub enum MoveResult {
 /// allocations on the hot path. Call [`PhysicsScratch::ensure_capacity`]
 /// after changing the agent count.
 #[derive(Debug, Clone, Default)]
-pub struct PhysicsScratch {
+pub(crate) struct PhysicsScratch {
     /// Scratch buffer for move results.
-    pub results: Vec<MoveResult>,
+    pub(crate) results: Vec<MoveResult>,
     /// Scratch buffer for desired positions.
-    pub desired_positions: Vec<Option<Position>>,
+    pub(crate) desired_positions: Vec<Option<Position>>,
     /// Scratch buffer for occupied target tracking.
-    pub occupied_targets: Vec<(usize, Position)>,
+    pub(crate) occupied_targets: Vec<(usize, Position)>,
 }
 
 impl PhysicsScratch {
     /// Ensures all buffers have at least `agent_count` capacity.
-    pub fn ensure_capacity(&mut self, agent_count: usize) {
+    pub(crate) fn ensure_capacity(&mut self, agent_count: usize) {
         if self.results.capacity() < agent_count {
             self.results.reserve(agent_count - self.results.capacity());
         }
@@ -79,7 +79,7 @@ pub fn process_movements(
 /// Like [`process_movements`], but avoids heap allocation by reusing
 /// the provided [`PhysicsScratch`]. Prefer this on the hot path.
 #[instrument(skip_all)]
-pub fn process_movements_with_scratch(
+pub(crate) fn process_movements_with_scratch(
     agents: &mut [Agent],
     grid: &mut Grid,
     actions: &[Action],

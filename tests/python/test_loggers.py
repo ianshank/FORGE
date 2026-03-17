@@ -74,11 +74,6 @@ class TestWandbLogger:
         mock_wandb.init.return_value = mock_run
 
         with patch.dict(sys.modules, {"wandb": mock_wandb}):
-            # Re-patch inside the import
-            import forge.training.loggers as loggers_mod  # noqa: PLC0415
-
-            _loggers_mod_wandb = loggers_mod.WandbLogger.__module__
-
             logger = WandbLogger.__new__(WandbLogger)
             logger._wandb = mock_wandb
             logger._run = mock_run
