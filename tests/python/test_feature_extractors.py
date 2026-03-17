@@ -1,8 +1,6 @@
 """Tests for forge_env.feature_extractors — ForgeGridCnnExtractor, ForgeObsExtractor."""
-from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock, patch
+from __future__ import annotations
 
 import pytest
 
@@ -12,10 +10,9 @@ import pytest
 torch = pytest.importorskip("torch", reason="PyTorch required for feature extractor tests")
 pytest.importorskip("stable_baselines3", reason="SB3 required for feature extractor tests")
 
-import torch.nn as nn  # noqa: E402
-
 import gymnasium as gym  # noqa: E402
 import numpy as np  # noqa: E402
+from torch import nn  # noqa: E402
 
 from forge_env.feature_extractors import (  # noqa: E402
     ForgeGridCnnExtractor,
@@ -48,7 +45,9 @@ def _make_dict_space(
         spaces["health"] = gym.spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32)
         spaces["stamina"] = gym.spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32)
         spaces["position"] = gym.spaces.Box(low=0, high=65535, shape=(2,), dtype=np.uint16)
-        spaces["inventory"] = gym.spaces.Box(low=0, high=65535, shape=(_INV_CAPACITY, 2), dtype=np.uint16)
+        spaces["inventory"] = gym.spaces.Box(
+            low=0, high=65535, shape=(_INV_CAPACITY, 2), dtype=np.uint16
+        )
         spaces["day_phase"] = gym.spaces.Discrete(4)
     if include_messages:
         spaces["messages"] = gym.spaces.Box(low=0, high=65535, shape=(0,), dtype=np.uint16)
@@ -270,13 +269,19 @@ class TestForgeObsExtractor:
         space_with_msg = _make_dict_space(include_messages=True)
         space_without_msg = _make_dict_space(include_messages=False)
         extractor_with = ForgeObsExtractor(
-            space_with_msg, cnn_out_dim=32,
-            cnn_channels=(8,), cnn_kernel_sizes=(3,), cnn_strides=(1,),
+            space_with_msg,
+            cnn_out_dim=32,
+            cnn_channels=(8,),
+            cnn_kernel_sizes=(3,),
+            cnn_strides=(1,),
             mlp_hidden_sizes=(16,),
         )
         extractor_without = ForgeObsExtractor(
-            space_without_msg, cnn_out_dim=32,
-            cnn_channels=(8,), cnn_kernel_sizes=(3,), cnn_strides=(1,),
+            space_without_msg,
+            cnn_out_dim=32,
+            cnn_channels=(8,),
+            cnn_kernel_sizes=(3,),
+            cnn_strides=(1,),
             mlp_hidden_sizes=(16,),
         )
         assert extractor_with.features_dim == extractor_without.features_dim
@@ -284,13 +289,19 @@ class TestForgeObsExtractor:
     def test_dynamic_features_dim_no_hard_coding(self) -> None:
         """features_dim should change when mlp_hidden_sizes changes."""
         e1 = ForgeObsExtractor(
-            _make_dict_space(), cnn_out_dim=32,
-            cnn_channels=(8,), cnn_kernel_sizes=(3,), cnn_strides=(1,),
+            _make_dict_space(),
+            cnn_out_dim=32,
+            cnn_channels=(8,),
+            cnn_kernel_sizes=(3,),
+            cnn_strides=(1,),
             mlp_hidden_sizes=(16,),
         )
         e2 = ForgeObsExtractor(
-            _make_dict_space(), cnn_out_dim=32,
-            cnn_channels=(8,), cnn_kernel_sizes=(3,), cnn_strides=(1,),
+            _make_dict_space(),
+            cnn_out_dim=32,
+            cnn_channels=(8,),
+            cnn_kernel_sizes=(3,),
+            cnn_strides=(1,),
             mlp_hidden_sizes=(128,),
         )
         assert e1.features_dim != e2.features_dim

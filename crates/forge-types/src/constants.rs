@@ -87,6 +87,10 @@ pub const MAX_STACK_SIZE: u16 = 64;
 
 /// Default ticks between resource respawn increments.
 pub const DEFAULT_RESOURCE_RESPAWN_TICKS: u32 = 100;
+/// Default maximum quantity per resource node.
+pub const DEFAULT_RESOURCE_MAX_QUANTITY: u16 = 5;
+/// Default object placement density scale.
+pub const DEFAULT_OBJECT_DENSITY_SCALE: f32 = 1.0;
 
 /// Number of terrain types (for observation encoding).
 pub const NUM_TERRAIN_TYPES: usize = 8;

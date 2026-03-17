@@ -38,12 +38,13 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     // 1. Validate actions (replace invalid actions with Noop)
     let validated_actions = validate_actions(actions, state);
 
-    // 2. Physics: movement and collision
-    let _move_results = physics::process_movements(
+    // 2. Physics: movement and collision (uses pre-allocated scratch buffers)
+    physics::process_movements_with_scratch(
         &mut state.agents,
         &mut state.grid,
         &validated_actions,
         &state.config.physics,
+        &mut state.physics_scratch,
     );
 
     // 2b. Physics: push processing — extract minimal data to avoid cloning

@@ -162,9 +162,7 @@ def test_to_rust_config() -> None:
 
 
 def test_to_rust_config_custom() -> None:
-    cfg = ForgeConfig(
-        simulation=SimulationConfig(grid_size=128, seed=99, max_agents_per_team=8)
-    )
+    cfg = ForgeConfig(simulation=SimulationConfig(grid_size=128, seed=99, max_agents_per_team=8))
     rust = cfg.to_rust_config()
     assert rust["world"]["width"] == 128
     assert rust["world"]["seed"] == 99

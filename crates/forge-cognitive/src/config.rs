@@ -71,11 +71,11 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-        let config = CognitiveConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let deser: CognitiveConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deser.provider, config.provider);
-        assert_eq!(deser.temperature, config.temperature);
-        assert_eq!(deser.default_confidence, config.default_confidence);
+        forge_types::assert_config_serde_roundtrip!(CognitiveConfig);
+    }
+
+    #[test]
+    fn test_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(CognitiveConfig);
     }
 }

@@ -1,4 +1,5 @@
 """Tests for the memory store module."""
+
 from __future__ import annotations
 
 import tempfile
@@ -184,9 +185,7 @@ class TestMemoryStore:
             path = str(Path(tmpdir) / "test_store.json")
             store = MemoryStore(agent_id=7)
             store.store_fact(SemanticFact(key="k", value="v", confidence=0.9))
-            store.store_episode(
-                Episode(tick_start=0, tick_end=10, outcome="success", tags=["nav"])
-            )
+            store.store_episode(Episode(tick_start=0, tick_end=10, outcome="success", tags=["nav"]))
             pref = store.get_preference("combat")
             pref.update(5, 1.0)
             store.save(path)

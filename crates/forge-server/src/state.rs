@@ -245,4 +245,99 @@ mod tests {
         assert_eq!(agent.vision_radius, 0); // default
         assert!(agent.team_id.is_none());
     }
+
+    #[test]
+    fn test_shared_state_default() {
+        let state = SharedState::default();
+        let snapshot = state.read();
+        assert_eq!(snapshot.tick, 0);
+        assert!(snapshot.agents.is_empty());
+    }
+
+    #[test]
+    fn test_shared_state_multiple_updates() {
+        let state = SharedState::new();
+
+        for tick in 1..=5 {
+            let snapshot = SimulationSnapshot {
+                tick,
+                ..SimulationSnapshot::default()
+            };
+            state.update(snapshot);
+            assert_eq!(state.read().tick, tick);
+        }
+    }
+
+    #[test]
+    fn test_agent_snapshot_with_optional_fields() {
+        let agent = AgentSnapshot {
+            id: 5,
+            x: 10,
+            y: 20,
+            health: 50,
+            alive: true,
+            team_id: Some(2),
+            intent: Some("scout_north".to_string()),
+            vision_radius: 8,
+        };
+        let json = serde_json::to_string(&agent).unwrap();
+        assert!(json.contains("teamId"));
+        assert!(json.contains("intent"));
+        assert!(json.contains("scout_north"));
+    }
+
+    #[test]
+    fn test_agent_snapshot_roundtrip() {
+        let agent = AgentSnapshot {
+            id: 3,
+            x: 7,
+            y: 14,
+            health: 80,
+            alive: false,
+            team_id: Some(1),
+            intent: Some("flee".to_string()),
+            vision_radius: 6,
+        };
+        let json = serde_json::to_string(&agent).unwrap();
+        let deser: AgentSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.id, 3);
+        assert_eq!(deser.x, 7);
+        assert_eq!(deser.y, 14);
+        assert_eq!(deser.health, 80);
+        assert!(!deser.alive);
+        assert_eq!(deser.team_id, Some(1));
+        assert_eq!(deser.intent.as_deref(), Some("flee"));
+        assert_eq!(deser.vision_radius, 6);
+    }
+
+    #[test]
+    fn test_simulation_snapshot_with_events() {
+        let snapshot = SimulationSnapshot {
+            tick: 50,
+            agents: vec![],
+            grid_width: 32,
+            grid_height: 32,
+            events: vec!["combat".to_string(), "resource_gathered".to_string()],
+            schema_version: SCHEMA_VERSION,
+        };
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(json.contains("combat"));
+        assert!(json.contains("resource_gathered"));
+
+        let deser: SimulationSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.events.len(), 2);
+    }
+
+    #[test]
+    fn test_shared_state_clone() {
+        let state = SharedState::new();
+        let cloned = state.clone();
+        let snapshot = SimulationSnapshot {
+            tick: 99,
+            ..SimulationSnapshot::default()
+        };
+        state.update(snapshot);
+        // Cloned state shares the same Arc — both should see the update
+        assert_eq!(cloned.read().tick, 99);
+    }
 }

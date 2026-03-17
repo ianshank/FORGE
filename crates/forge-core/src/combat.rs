@@ -444,4 +444,62 @@ mod tests {
         // Agent 1 on ground should be fine
         assert_eq!(agents[1].health, initial_health_1);
     }
+
+    // ---- Proptest: combat invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Health never goes below zero (death check triggers at 0).
+            #[test]
+            fn health_non_negative_after_lava(
+                initial_health in 1i32..1_000_000,
+                ticks in 1u32..100,
+            ) {
+                let mut grid = make_test_grid(16, 16);
+                grid.get_mut(5, 5).unwrap().terrain = TerrainType::Lava;
+                grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+                let mut agents = vec![make_test_agent(0, 5, 5)];
+                agents[0].health = initial_health;
+
+                for _ in 0..ticks {
+                    if !agents[0].alive {
+                        break;
+                    }
+                    apply_environmental_damage(&mut agents, &grid);
+                }
+
+                prop_assert!(agents[0].health >= 0);
+            }
+
+            /// Combat is deterministic: same setup produces same result.
+            #[test]
+            fn combat_determinism(
+                attacker_x in 2u16..14,
+                attacker_y in 2u16..14,
+            ) {
+                let run = || {
+                    let mut grid = make_test_grid(16, 16);
+                    let target_y = attacker_y - 1; // Up direction
+                    let mut agents = vec![
+                        make_test_agent(0, attacker_x, attacker_y),
+                        make_test_agent(1, attacker_x, target_y),
+                    ];
+                    agents[0].inventory.add_item(ItemType::Sword, 1);
+                    grid.get_mut(attacker_x, attacker_y).unwrap().agent_id = Some(0);
+                    grid.get_mut(attacker_x, target_y).unwrap().agent_id = Some(1);
+
+                    let actions = vec![Action::Use(0), Action::Noop];
+                    process_combat(&mut agents, &grid, &actions);
+                    (agents[0].health, agents[1].health, agents[1].alive)
+                };
+                let r1 = run();
+                let r2 = run();
+                prop_assert_eq!(r1, r2);
+            }
+        }
+    }
 }

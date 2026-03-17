@@ -302,4 +302,106 @@ mod tests {
         assert!(snapshot.grid_width > 0);
         assert!(snapshot.grid_height > 0);
     }
+
+    #[test]
+    fn test_build_snapshot_agent_count_matches() {
+        let mut config = forge_types::config::ForgeConfig::default();
+        config.agents.num_agents = 4;
+        let world = forge_core::WorldState::new(config).unwrap();
+        let snapshot = build_snapshot_from_world(&world);
+        assert_eq!(snapshot.agents.len(), 4);
+        for agent in &snapshot.agents {
+            assert!(agent.alive);
+            assert!(agent.x < snapshot.grid_width);
+            assert!(agent.y < snapshot.grid_height);
+        }
+    }
+
+    #[test]
+    fn test_build_snapshot_grid_dimensions() {
+        let mut config = forge_types::config::ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 32;
+        let world = forge_core::WorldState::new(config).unwrap();
+        let snapshot = build_snapshot_from_world(&world);
+        assert_eq!(snapshot.grid_width, 16);
+        assert_eq!(snapshot.grid_height, 32);
+    }
+
+    #[test]
+    fn test_ack_response_serialization() {
+        let ack = AckResponse { accepted: true };
+        let json = serde_json::to_string(&ack).unwrap();
+        assert!(json.contains("\"accepted\":true"));
+
+        let ack_false = AckResponse { accepted: false };
+        let json = serde_json::to_string(&ack_false).unwrap();
+        assert!(json.contains("\"accepted\":false"));
+    }
+
+    #[test]
+    fn test_remix_request_deserialization() {
+        let json = r#"{"seed":42,"gridSize":16}"#;
+        let req: RemixRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.seed, Some(42));
+        assert_eq!(req.grid_size, Some(16));
+    }
+
+    #[test]
+    fn test_remix_request_optional_fields() {
+        let json = r#"{}"#;
+        let req: RemixRequest = serde_json::from_str(json).unwrap();
+        assert!(req.seed.is_none());
+        assert!(req.grid_size.is_none());
+    }
+
+    #[test]
+    fn test_remix_request_partial_fields() {
+        let json = r#"{"seed":99}"#;
+        let req: RemixRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.seed, Some(99));
+        assert!(req.grid_size.is_none());
+    }
+
+    #[test]
+    fn test_config_response_fields() {
+        let resp = ConfigResponse {
+            version: "1.2.3".to_string(),
+            schema_version: 5,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"version\":\"1.2.3\""));
+        assert!(json.contains("\"schemaVersion\":5"));
+    }
+
+    #[test]
+    fn test_health_response_fields() {
+        let resp = HealthResponse {
+            status: "degraded".to_string(),
+            uptime_seconds: 0,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"status\":\"degraded\""));
+        assert!(json.contains("\"uptimeSeconds\":0"));
+    }
+
+    #[test]
+    fn test_build_snapshot_events_empty() {
+        let config = forge_types::config::ForgeConfig::default();
+        let world = forge_core::WorldState::new(config).unwrap();
+        let snapshot = build_snapshot_from_world(&world);
+        assert!(snapshot.events.is_empty());
+    }
+
+    #[test]
+    fn test_build_snapshot_after_step() {
+        let config = forge_types::config::ForgeConfig::default();
+        let mut world = forge_core::WorldState::new(config).unwrap();
+        let actions: Vec<_> = (0..world.agents.len())
+            .map(|_| forge_types::Action::Noop)
+            .collect();
+        let _result = world.step(&actions);
+        let snapshot = build_snapshot_from_world(&world);
+        assert_eq!(snapshot.tick, 1);
+    }
 }

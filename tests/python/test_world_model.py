@@ -1,4 +1,5 @@
 """Tests for forge.models.world_model module."""
+
 from __future__ import annotations
 
 import logging
@@ -27,9 +28,7 @@ class TestIdentityWorldModel:
         # Verify it is a copy, not the same object
         assert result is not state
 
-    def test_identity_world_model_train_step(
-        self, model: IdentityWorldModel
-    ) -> None:
+    def test_identity_world_model_train_step(self, model: IdentityWorldModel) -> None:
         """train_step() returns an empty dict."""
         batch = {"states": np.array([1.0, 2.0])}
         result = model.train_step(batch)
@@ -44,9 +43,7 @@ class TestIdentityWorldModel:
         model.save(path)
         model.load(path)
 
-    def test_identity_world_model_predict_preserves_dtype(
-        self, model: IdentityWorldModel
-    ) -> None:
+    def test_identity_world_model_predict_preserves_dtype(self, model: IdentityWorldModel) -> None:
         """predict() preserves the dtype of the input state."""
         state = np.array([1, 2, 3], dtype=np.int32)
         result = model.predict(state, action=5)
@@ -60,4 +57,4 @@ class TestWorldModelABC:
     def test_world_model_is_abstract(self) -> None:
         """WorldModel cannot be instantiated directly."""
         with pytest.raises(TypeError, match="abstract method"):
-            WorldModel()  # type: ignore[abstract]
+            WorldModel()

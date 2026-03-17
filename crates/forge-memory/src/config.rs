@@ -81,10 +81,11 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-        let config = MemoryConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let deserialized: MemoryConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.semantic_capacity, config.semantic_capacity);
-        assert_eq!(deserialized.decay_rate, config.decay_rate);
+        forge_types::assert_config_serde_roundtrip!(MemoryConfig);
+    }
+
+    #[test]
+    fn test_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(MemoryConfig);
     }
 }

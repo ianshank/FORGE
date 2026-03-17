@@ -1,9 +1,9 @@
 """Tests for forge_env.sb3_callbacks — ForgeCurriculumCallback, ForgeMetricsCallback."""
+
 from __future__ import annotations
 
-from collections import deque
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -12,13 +12,12 @@ import pytest
 # ---------------------------------------------------------------------------
 pytest.importorskip("stable_baselines3", reason="SB3 required")
 
-from forge_env.sb3_callbacks import (  # noqa: E402
-    ForgeCurriculumCallback,
-    ForgeMetricsCallback,
+from forge_env.sb3_callbacks import (
     _EPISODE_KEY,
     _TASK_SUCCESS_KEY,
+    ForgeCurriculumCallback,
+    ForgeMetricsCallback,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

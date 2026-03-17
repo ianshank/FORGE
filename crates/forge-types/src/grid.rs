@@ -495,4 +495,89 @@ mod tests {
         assert_eq!(Direction::from_index(4), None);
         assert_eq!(Direction::from_index(255), None);
     }
+
+    // ---- Proptest: grid invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn arb_direction() -> impl Strategy<Value = Direction> {
+            prop_oneof![
+                Just(Direction::Up),
+                Just(Direction::Down),
+                Just(Direction::Left),
+                Just(Direction::Right),
+            ]
+        }
+
+        proptest! {
+            /// Manhattan distance is symmetric.
+            #[test]
+            fn manhattan_symmetric(
+                ax in 0u16..256,
+                ay in 0u16..256,
+                bx in 0u16..256,
+                by in 0u16..256,
+            ) {
+                let a = Position::new(ax, ay);
+                let b = Position::new(bx, by);
+                prop_assert_eq!(a.manhattan_distance(&b), b.manhattan_distance(&a));
+            }
+
+            /// Manhattan distance is non-negative and satisfies triangle inequality with origin.
+            #[test]
+            fn manhattan_triangle(
+                ax in 0u16..256,
+                ay in 0u16..256,
+                bx in 0u16..256,
+                by in 0u16..256,
+            ) {
+                let a = Position::new(ax, ay);
+                let b = Position::new(bx, by);
+                let origin = Position::new(0, 0);
+                let ab = a.manhattan_distance(&b);
+                let ao = a.manhattan_distance(&origin);
+                let ob = origin.manhattan_distance(&b);
+                prop_assert!(ab <= ao + ob);
+            }
+
+            /// Offset produces in-bounds result or None.
+            #[test]
+            fn offset_in_bounds(
+                x in 0u16..64,
+                y in 0u16..64,
+                dir in arb_direction(),
+            ) {
+                let pos = Position::new(x, y);
+                if let Some(new_pos) = pos.offset(dir, 64, 64) {
+                    prop_assert!(new_pos.x < 64);
+                    prop_assert!(new_pos.y < 64);
+                }
+            }
+
+            /// Grid get is in-bounds for valid coordinates.
+            #[test]
+            fn grid_get_valid(
+                w in 1u16..32,
+                h in 1u16..32,
+                x in 0u16..32,
+                y in 0u16..32,
+            ) {
+                let grid = Grid::new(w, h);
+                if x < w && y < h {
+                    prop_assert!(grid.get(x, y).is_some());
+                } else {
+                    prop_assert!(grid.get(x, y).is_none());
+                }
+            }
+
+            /// TerrainType from_u8 roundtrips for valid values.
+            #[test]
+            fn terrain_from_u8_valid(i in 0u8..8) {
+                let terrain = TerrainType::from_u8(i).unwrap();
+                prop_assert_eq!(terrain as u8, i);
+            }
+        }
+    }
 }

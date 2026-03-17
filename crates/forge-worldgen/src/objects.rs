@@ -85,7 +85,7 @@ impl ObjectPlacer {
     pub fn place_objects(grid: &Grid, config: &WorldConfig, rng: &mut Pcg64Mcg) -> Vec<Object> {
         // Reserve at most half the entity budget for objects.
         let max_objects = (config.max_entities / 2) as usize;
-        let density_factor = config.resource_density as f64;
+        let density_factor = config.resource_density as f64 * config.object_density_scale as f64;
         let mut objects: Vec<Object> = Vec::new();
 
         tracing::trace!(max_objects, density_factor, "placing objects");

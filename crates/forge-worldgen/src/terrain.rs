@@ -284,4 +284,46 @@ mod tests {
             );
         }
     }
+
+    // ---- Proptest: terrain generation invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Terrain generation is deterministic for any seed.
+            #[test]
+            fn terrain_determinism(seed in 0u64..10_000) {
+                let config = default_config();
+                let gen1 = TerrainGenerator::new(&config, seed);
+                let gen2 = TerrainGenerator::new(&config, seed);
+                let mut grid1 = Grid::new(config.width, config.height);
+                let mut grid2 = Grid::new(config.width, config.height);
+                gen1.generate(&mut grid1);
+                gen2.generate(&mut grid2);
+                for (t1, t2) in grid1.tiles.iter().zip(grid2.tiles.iter()) {
+                    prop_assert_eq!(t1.terrain, t2.terrain);
+                    prop_assert_eq!(t1.elevation, t2.elevation);
+                }
+            }
+
+            /// Elevation values are in [0, 255] and moisture in [0.0, 1.0].
+            #[test]
+            fn elevation_and_moisture_bounded(seed in 0u64..10_000) {
+                let config = default_config();
+                let gen = TerrainGenerator::new(&config, seed);
+                for y in 0..config.height.min(16) {
+                    for x in 0..config.width.min(16) {
+                        let elev = gen.elevation_at(x, y);
+                        prop_assert!(elev >= 0.0 && elev <= 1.0,
+                            "elevation at ({}, {}) = {} out of [0, 1]", x, y, elev);
+                        let moist = gen.moisture_at(x, y);
+                        prop_assert!(moist >= 0.0 && moist <= 1.0,
+                            "moisture at ({}, {}) = {} out of [0, 1]", x, y, moist);
+                    }
+                }
+            }
+        }
+    }
 }

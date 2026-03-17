@@ -3,6 +3,7 @@
 The native forge_core / forge_env module is mocked so that tests can run
 without the compiled Rust extension.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -59,8 +60,13 @@ class TestObservationSpaceStructure:
     def test_observation_space_structure(self, env: object) -> None:
         obs_space = env.observation_space
         expected_keys = {
-            "grid_view", "inventory", "health", "stamina",
-            "position", "messages", "day_phase",
+            "grid_view",
+            "inventory",
+            "health",
+            "stamina",
+            "position",
+            "messages",
+            "day_phase",
         }
         assert set(obs_space.spaces.keys()) == expected_keys
 

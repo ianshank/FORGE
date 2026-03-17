@@ -222,4 +222,109 @@ mod tests {
         assert!(json.contains("ucb1Score"));
         assert!(json.contains("searchDepth"));
     }
+
+    #[test]
+    fn test_decision_trace_entry_defaults() {
+        let json = "{}";
+        let entry: DecisionTraceEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.agent_id, 0);
+        assert_eq!(entry.tick, 0);
+        assert!(entry.intent_label.is_empty());
+        assert_eq!(entry.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_decision_trace_entry_roundtrip() {
+        let entry = DecisionTraceEntry {
+            agent_id: 3,
+            tick: 100,
+            intent_label: "explore".to_string(),
+            confidence: 0.75,
+            search_depth: 10,
+            ucb1_score: 3.14,
+            alternatives_considered: 7,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let deser: DecisionTraceEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.agent_id, 3);
+        assert_eq!(deser.tick, 100);
+        assert_eq!(deser.intent_label, "explore");
+        assert_eq!(deser.alternatives_considered, 7);
+    }
+
+    #[test]
+    fn test_server_metrics_default() {
+        let metrics = ServerMetrics::default();
+        assert_eq!(metrics.simulation_ticks, 0);
+        assert_eq!(metrics.steps_per_second, 0.0);
+        assert_eq!(metrics.ws_connections, 0);
+        assert_eq!(metrics.uptime_seconds, 0);
+    }
+
+    #[test]
+    fn test_server_metrics_roundtrip() {
+        let metrics = ServerMetrics {
+            simulation_ticks: 500,
+            steps_per_second: 25.0,
+            ws_connections: 3,
+            uptime_seconds: 120,
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        let deser: ServerMetrics = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.simulation_ticks, 500);
+        assert_eq!(deser.ws_connections, 3);
+    }
+
+    #[test]
+    fn test_metrics_collector_default() {
+        let mut collector = MetricsCollector::default();
+        let snapshot = collector.snapshot();
+        assert_eq!(snapshot.simulation_ticks, 0);
+    }
+
+    #[test]
+    fn test_metrics_collector_steps_per_second() {
+        let mut collector = MetricsCollector::new();
+        for _ in 0..10 {
+            collector.record_tick();
+        }
+        let snapshot = collector.snapshot();
+        assert_eq!(snapshot.simulation_ticks, 10);
+        // steps_per_second should be positive after recording ticks
+        assert!(snapshot.steps_per_second > 0.0);
+    }
+
+    #[test]
+    fn test_metrics_collector_snapshot_resets_rate() {
+        let mut collector = MetricsCollector::new();
+        collector.record_tick();
+        collector.record_tick();
+        let _first = collector.snapshot();
+
+        // After snapshot, ticks_since_last_snapshot is reset
+        let second = collector.snapshot();
+        assert_eq!(second.simulation_ticks, 2); // Total unchanged
+                                                // steps_per_second should be 0 or very low since no ticks recorded
+        assert!(second.steps_per_second < 1.0);
+    }
+
+    #[test]
+    fn test_training_metrics_roundtrip() {
+        let metrics = TrainingMetrics {
+            episode: 100,
+            total_steps: 50000,
+            mean_reward: 3.5,
+            win_rate: 0.65,
+            curriculum_difficulty: 0.8,
+            steps_per_second: 1000.0,
+            loss_policy: 0.05,
+            loss_value: 0.1,
+            entropy: 2.0,
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        let deser: TrainingMetrics = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.episode, 100);
+        assert_eq!(deser.win_rate, 0.65);
+        assert_eq!(deser.entropy, 2.0);
+    }
 }

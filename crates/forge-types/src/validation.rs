@@ -266,4 +266,53 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("max_stamina"));
     }
+
+    // ---- Proptest: validation invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Valid dimensions always pass validation.
+            #[test]
+            fn valid_dimensions_pass(
+                w in 8u16..256,
+                h in 8u16..256,
+            ) {
+                let mut config = ForgeConfig::default();
+                config.world.width = w;
+                config.world.height = h;
+                // Ensure vision radius fits
+                let min_side = w.min(h);
+                config.agents.default_vision_radius =
+                    ((min_side - 1) / 2).min(config.agents.default_vision_radius as u16) as u8;
+                prop_assert!(validate_config(&config).is_ok());
+            }
+
+            /// Zero or negative health always fails.
+            #[test]
+            fn invalid_health_fails(health in i32::MIN..=0) {
+                let mut config = ForgeConfig::default();
+                config.agents.max_health = health;
+                prop_assert!(validate_config(&config).is_err());
+            }
+
+            /// Zero or negative stamina always fails.
+            #[test]
+            fn invalid_stamina_fails(stamina in i32::MIN..=0) {
+                let mut config = ForgeConfig::default();
+                config.agents.max_stamina = stamina;
+                prop_assert!(validate_config(&config).is_err());
+            }
+
+            /// Resource density outside [0.0, 1.0] fails.
+            #[test]
+            fn invalid_resource_density(density in 1.01f32..100.0) {
+                let mut config = ForgeConfig::default();
+                config.world.resource_density = density;
+                prop_assert!(validate_config(&config).is_err());
+            }
+        }
+    }
 }

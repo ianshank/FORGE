@@ -1,4 +1,5 @@
 """Tests for CleanRL training scripts — train_ppo_cleanrl.py and train_sac_cleanrl.py."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -23,7 +24,7 @@ def _load_module(path: Path, name: str) -> Any:
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    spec.loader.exec_module(mod)
     return mod
 
 
@@ -71,7 +72,10 @@ def _make_mock_single_env() -> MagicMock:
     flat_obs = np.zeros(42, dtype=np.float32)
     env.reset.return_value = (flat_obs, {"tick": 0})
     env.step.return_value = (
-        flat_obs, 1.0, False, True,
+        flat_obs,
+        1.0,
+        False,
+        True,
         {"episode": {"r": 1.0, "l": 10}},
     )
     act_space = MagicMock()
@@ -103,12 +107,15 @@ class TestTrainPPOCleanRL:
         mock_forge_env.wrappers.TimeLimit = lambda e, max_steps: e
         mock_forge_env.utils.seed_everything = lambda s: None
 
-        with patch.dict(sys.modules, {
-            "forge_env": mock_forge_env,
-            "forge_env.vecenv": mock_forge_env.vecenv,
-            "forge_env.wrappers": mock_forge_env.wrappers,
-            "forge_env.utils": mock_forge_env.utils,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "forge_env": mock_forge_env,
+                "forge_env.vecenv": mock_forge_env.vecenv,
+                "forge_env.wrappers": mock_forge_env.wrappers,
+                "forge_env.utils": mock_forge_env.utils,
+            },
+        ):
             mod = _load_module(_PPO_SCRIPT, "train_ppo_cleanrl")
         assert hasattr(mod, "main")
         assert hasattr(mod, "train")
@@ -141,12 +148,15 @@ class TestTrainPPOCleanRL:
     def test_config_loaded_from_toml(self) -> None:
         """Gamma from TOML config flows into the parsed args."""
         mock_forge_env = MagicMock()
-        with patch.dict(sys.modules, {
-            "forge_env": mock_forge_env,
-            "forge_env.vecenv": mock_forge_env,
-            "forge_env.wrappers": mock_forge_env,
-            "forge_env.utils": mock_forge_env,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "forge_env": mock_forge_env,
+                "forge_env.vecenv": mock_forge_env,
+                "forge_env.wrappers": mock_forge_env,
+                "forge_env.utils": mock_forge_env,
+            },
+        ):
             mod = _load_module(_PPO_SCRIPT, "train_ppo_cleanrl_cfg")
 
         # Parse with default config
@@ -155,12 +165,15 @@ class TestTrainPPOCleanRL:
 
     def test_argparser_accepts_total_timesteps(self) -> None:
         mock_forge_env = MagicMock()
-        with patch.dict(sys.modules, {
-            "forge_env": mock_forge_env,
-            "forge_env.vecenv": mock_forge_env,
-            "forge_env.wrappers": mock_forge_env,
-            "forge_env.utils": mock_forge_env,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "forge_env": mock_forge_env,
+                "forge_env.vecenv": mock_forge_env,
+                "forge_env.wrappers": mock_forge_env,
+                "forge_env.utils": mock_forge_env,
+            },
+        ):
             mod = _load_module(_PPO_SCRIPT, "train_ppo_cleanrl_ts")
         args = mod._build_argparser({}).parse_args(["--total-timesteps", "1234"])
         assert args.total_timesteps == 1234
@@ -168,21 +181,25 @@ class TestTrainPPOCleanRL:
     def test_env_var_override_applied(self) -> None:
         """FORGE_TRAINING_ environment variable overrides should take effect."""
         mock_forge_env = MagicMock()
-        with patch.dict(sys.modules, {
-            "forge_env": mock_forge_env,
-            "forge_env.vecenv": mock_forge_env,
-            "forge_env.wrappers": mock_forge_env,
-            "forge_env.utils": mock_forge_env,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "forge_env": mock_forge_env,
+                "forge_env.vecenv": mock_forge_env,
+                "forge_env.wrappers": mock_forge_env,
+                "forge_env.utils": mock_forge_env,
+            },
+        ):
             mod = _load_module(_PPO_SCRIPT, "train_ppo_cleanrl_envvar")
 
         import os  # noqa: PLC0415
+
         with patch.dict(os.environ, {"FORGE_TRAINING_SEED": "99"}):
             args = mod._build_argparser({}).parse_args([])
             # Simulate the override logic from main()
             env_val = os.environ.get("FORGE_TRAINING_SEED")
             if env_val:
-                setattr(args, "seed", int(env_val))
+                args.seed = int(env_val)
         assert args.seed == 99
 
 
@@ -202,15 +219,20 @@ class TestTrainSACCleanRL:
         mock_forge_env.wrappers.FlattenObservationWrapper = lambda e: e
         mock_forge_env.wrappers.RecordEpisodeStatistics = lambda e: e
         mock_forge_env.wrappers.TimeLimit = lambda e, max_steps: e
-        mock_forge_env.gymnasium_env.ForgeGymnasiumEnv = MagicMock(return_value=_make_mock_single_env())
+        mock_forge_env.gymnasium_env.ForgeGymnasiumEnv = MagicMock(
+            return_value=_make_mock_single_env()
+        )
         mock_forge_env.utils.seed_everything = lambda s: None
 
-        with patch.dict(sys.modules, {
-            "forge_env": mock_forge_env,
-            "forge_env.gymnasium_env": mock_forge_env.gymnasium_env,
-            "forge_env.wrappers": mock_forge_env.wrappers,
-            "forge_env.utils": mock_forge_env.utils,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "forge_env": mock_forge_env,
+                "forge_env.gymnasium_env": mock_forge_env.gymnasium_env,
+                "forge_env.wrappers": mock_forge_env.wrappers,
+                "forge_env.utils": mock_forge_env.utils,
+            },
+        ):
             mod = _load_module(_SAC_SCRIPT, "train_sac_cleanrl")
         assert hasattr(mod, "main")
         assert hasattr(mod, "train")
@@ -272,24 +294,30 @@ class TestTrainSACCleanRL:
 
     def test_gamma_from_toml_config(self) -> None:
         mock_forge_env = MagicMock()
-        with patch.dict(sys.modules, {
-            "forge_env": mock_forge_env,
-            "forge_env.gymnasium_env": mock_forge_env,
-            "forge_env.wrappers": mock_forge_env,
-            "forge_env.utils": mock_forge_env,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "forge_env": mock_forge_env,
+                "forge_env.gymnasium_env": mock_forge_env,
+                "forge_env.wrappers": mock_forge_env,
+                "forge_env.utils": mock_forge_env,
+            },
+        ):
             mod = _load_module(_SAC_SCRIPT, "train_sac_cleanrl_gamma")
         args = mod._build_argparser({}).parse_args([])
         assert 0.0 < args.gamma <= 1.0
 
     def test_argparser_ent_coef_auto(self) -> None:
         mock_forge_env = MagicMock()
-        with patch.dict(sys.modules, {
-            "forge_env": mock_forge_env,
-            "forge_env.gymnasium_env": mock_forge_env,
-            "forge_env.wrappers": mock_forge_env,
-            "forge_env.utils": mock_forge_env,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "forge_env": mock_forge_env,
+                "forge_env.gymnasium_env": mock_forge_env,
+                "forge_env.wrappers": mock_forge_env,
+                "forge_env.utils": mock_forge_env,
+            },
+        ):
             mod = _load_module(_SAC_SCRIPT, "train_sac_cleanrl_ent")
         args = mod._build_argparser({}).parse_args([])
         assert args.ent_coef == "auto"
@@ -315,7 +343,7 @@ class TestTrainingConfigs:
         try:
             import tomllib  # noqa: PLC0415
         except ImportError:
-            import tomli as tomllib  # type: ignore[no-redef]  # noqa: PLC0415
+            import tomli as tomllib  # noqa: PLC0415
         content = (self._CONFIGS_DIR / "ppo_default.toml").read_text(encoding="utf-8")
         data = tomllib.loads(content)
         assert "hyperparams" in data
@@ -328,7 +356,7 @@ class TestTrainingConfigs:
         try:
             import tomllib  # noqa: PLC0415
         except ImportError:
-            import tomli as tomllib  # type: ignore[no-redef]  # noqa: PLC0415
+            import tomli as tomllib  # noqa: PLC0415
         content = (self._CONFIGS_DIR / "sac_default.toml").read_text(encoding="utf-8")
         data = tomllib.loads(content)
         assert "hyperparams" in data
@@ -341,13 +369,21 @@ class TestTrainingConfigs:
         try:
             import tomllib  # noqa: PLC0415
         except ImportError:
-            import tomli as tomllib  # type: ignore[no-redef]  # noqa: PLC0415
+            import tomli as tomllib  # noqa: PLC0415
         content = (self._CONFIGS_DIR / "ppo_default.toml").read_text(encoding="utf-8")
         data = tomllib.loads(content)
         required_keys = {
-            "learning_rate", "n_steps", "batch_size", "n_epochs",
-            "gamma", "gae_lambda", "clip_range", "ent_coef", "vf_coef",
-            "max_grad_norm", "total_timesteps",
+            "learning_rate",
+            "n_steps",
+            "batch_size",
+            "n_epochs",
+            "gamma",
+            "gae_lambda",
+            "clip_range",
+            "ent_coef",
+            "vf_coef",
+            "max_grad_norm",
+            "total_timesteps",
         }
         hp = data.get("hyperparams", {})
         missing = required_keys - set(hp.keys())

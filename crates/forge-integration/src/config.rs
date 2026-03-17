@@ -71,9 +71,11 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-        let config = IntegrationConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let deser: IntegrationConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deser.curriculum_domains, config.curriculum_domains);
+        forge_types::assert_config_serde_roundtrip!(IntegrationConfig);
+    }
+
+    #[test]
+    fn test_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(IntegrationConfig);
     }
 }

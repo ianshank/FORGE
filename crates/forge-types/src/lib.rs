@@ -18,6 +18,8 @@
 pub mod action;
 pub mod config;
 pub mod constants;
+#[macro_use]
+pub mod test_util;
 pub mod entity;
 pub mod error;
 pub mod grid;
