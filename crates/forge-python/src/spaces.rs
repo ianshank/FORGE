@@ -104,7 +104,7 @@ pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObj
 /// - "n": total number of actions
 pub fn action_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObject> {
     let dict = PyDict::new_bound(py);
-    let n = forge_types::Action::space_size(config.agents.comm_vocab_size);
+    let n = forge_types::Action::space_size(config.agents.comm_vocab_size, config.drone.enabled);
     dict.set_item("type", "Discrete")?;
     dict.set_item("n", n)?;
     Ok(dict.unbind().into())

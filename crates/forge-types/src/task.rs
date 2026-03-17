@@ -33,6 +33,14 @@ pub enum Predicate {
     TeamAlive(u8),
     /// Agent is on a specific terrain type.
     AgentOnTerrain(AgentId, u8),
+    /// Agent is at a specific altitude.
+    AgentAtAltitude(AgentId, u8),
+    /// Agent's normalized battery is above threshold (0.0-1.0).
+    BatteryAbove(AgentId, f32),
+    /// Agent is airborne (altitude > 0).
+    AgentAirborne(AgentId),
+    /// Agent has landed (altitude == 0).
+    AgentLanded(AgentId),
 }
 
 /// Composition operators for building complex tasks from predicates.
@@ -273,6 +281,21 @@ mod tests {
                 }
             }
             _ => panic!("expected Without variant"),
+        }
+    }
+
+    #[test]
+    fn test_drone_predicate_serde_roundtrip() {
+        let preds = vec![
+            Predicate::AgentAtAltitude(0, 5),
+            Predicate::BatteryAbove(0, 0.5),
+            Predicate::AgentAirborne(0),
+            Predicate::AgentLanded(0),
+        ];
+        for pred in &preds {
+            let json = serde_json::to_string(pred).unwrap();
+            let deserialized: Predicate = serde_json::from_str(&json).unwrap();
+            assert_eq!(format!("{:?}", pred), format!("{:?}", deserialized));
         }
     }
 }

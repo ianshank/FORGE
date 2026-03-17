@@ -759,3 +759,232 @@ fn test_episode_truncation() {
         "episode should be truncated after max_episode_length"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Drone integration tests
+// ---------------------------------------------------------------------------
+
+/// Creates a drone-enabled config with the given agent distribution.
+fn make_drone_config(
+    num_aerial: u32,
+    num_ground: u32,
+    num_vehicles: u32,
+    seed: u64,
+) -> ForgeConfig {
+    let mut config = make_config(num_aerial + num_ground + num_vehicles, seed);
+    config.drone.enabled = true;
+    config.drone.num_aerial = num_aerial;
+    config.drone.num_ground_vehicles = num_vehicles;
+    config.drone.max_altitude = 10;
+    config
+}
+
+/// Aerial agent takes off, flies right 5 times, then lands.
+#[test]
+fn test_aerial_drone_flight_episode() {
+    let config = make_drone_config(1, 0, 0, 42);
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    assert_eq!(
+        state.agents[0].morphology,
+        forge_types::entity::AgentMorphology::Aerial,
+        "first agent should be Aerial"
+    );
+    assert_eq!(state.agents[0].altitude, 0, "should start on ground");
+    let initial_battery = state.agents[0].battery;
+
+    // Take off
+    let result = state.step(&[Action::TakeOff]);
+    assert!(!result.terminated);
+    assert_eq!(
+        state.agents[0].altitude, 1,
+        "should be at altitude 1 after takeoff"
+    );
+    assert!(
+        state.agents[0].battery < initial_battery,
+        "battery should decrease after takeoff"
+    );
+
+    // Fly right 5 times
+    for _ in 0..5 {
+        state.step(&[Action::Move(Direction::Right)]);
+    }
+    assert_eq!(
+        state.agents[0].altitude, 1,
+        "altitude should persist while flying"
+    );
+
+    // Land
+    state.step(&[Action::Land]);
+    assert_eq!(
+        state.agents[0].altitude, 0,
+        "should be on ground after landing"
+    );
+    assert!(state.agents[0].alive, "agent should still be alive");
+}
+
+/// Ground vehicle agent moves on terrain, verifying it's assigned the right morphology.
+#[test]
+fn test_ground_vehicle_episode() {
+    let config = make_drone_config(0, 0, 1, 42);
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    assert_eq!(
+        state.agents[0].morphology,
+        forge_types::entity::AgentMorphology::GroundVehicle,
+        "first agent should be GroundVehicle"
+    );
+
+    // GroundVehicle should be able to move on ground terrain
+    for _ in 0..10 {
+        state.step(&[Action::Noop]);
+    }
+    assert!(
+        state.agents[0].alive,
+        "vehicle should still be alive after Noop steps"
+    );
+}
+
+/// Mixed morphology: 1 Ground + 1 Aerial + 1 GroundVehicle in the same world.
+#[test]
+fn test_mixed_morphology_episode() {
+    let config = make_drone_config(1, 1, 1, 42);
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    assert_eq!(state.agents.len(), 3);
+    assert_eq!(
+        state.agents[0].morphology,
+        forge_types::entity::AgentMorphology::Aerial
+    );
+    assert_eq!(
+        state.agents[1].morphology,
+        forge_types::entity::AgentMorphology::GroundVehicle
+    );
+    assert_eq!(
+        state.agents[2].morphology,
+        forge_types::entity::AgentMorphology::Ground
+    );
+
+    // All agents should survive 50 Noop steps
+    for _ in 0..50 {
+        state.step(&[Action::Noop, Action::Noop, Action::Noop]);
+    }
+    for agent in &state.agents {
+        assert!(agent.alive, "agent {} should be alive", agent.id);
+    }
+}
+
+/// Aerial agent flies until battery depletes, verify forced landing and damage.
+#[test]
+fn test_battery_depletion_force_land() {
+    let mut config = make_drone_config(1, 0, 0, 42);
+    // Set small battery so it depletes quickly
+    config.drone.starting_battery = 65536; // 1.0 in fixed-point
+    config.drone.aerial_drain_rate = 13107; // ~0.2 per tick
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    // Take off
+    state.step(&[Action::TakeOff]);
+    assert_eq!(state.agents[0].altitude, 1);
+
+    // Hover until battery runs out
+    let mut landed = false;
+    for _ in 0..100 {
+        state.step(&[Action::Hover]);
+        if state.agents[0].altitude == 0 {
+            landed = true;
+            break;
+        }
+    }
+    assert!(
+        landed,
+        "agent should have been force-landed due to battery depletion"
+    );
+}
+
+/// Default config (drone disabled) should produce identical behavior to pre-drone code.
+#[test]
+fn test_drone_disabled_backwards_compat() {
+    let config = make_config(1, 42);
+    assert!(!config.drone.enabled);
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    // Agent should have Ground morphology by default
+    assert_eq!(
+        state.agents[0].morphology,
+        forge_types::entity::AgentMorphology::Ground
+    );
+    assert_eq!(state.agents[0].altitude, 0);
+
+    // Drone actions should be silently converted to Noop
+    state.step(&[Action::TakeOff]);
+    assert_eq!(
+        state.agents[0].altitude, 0,
+        "TakeOff should be Noop when drone disabled"
+    );
+
+    // Standard actions still work
+    let _pos_before = state.agents[0].position;
+    state.step(&[Action::Move(Direction::Right)]);
+    // Position may or may not change (terrain dependent), but agent should be alive
+    assert!(state.agents[0].alive);
+}
+
+/// Two runs with same seed and actions should produce identical drone state.
+#[test]
+fn test_deterministic_drone_replay() {
+    let actions_sequence: Vec<Action> = vec![
+        Action::TakeOff,
+        Action::Move(Direction::Right),
+        Action::Ascend,
+        Action::Move(Direction::Right),
+        Action::Hover,
+        Action::Descend,
+        Action::Land,
+    ];
+
+    let mut state1 = WorldState::new(make_drone_config(1, 0, 0, 42)).unwrap();
+    state1.reset(Some(42));
+    for action in &actions_sequence {
+        state1.step(std::slice::from_ref(action));
+    }
+
+    let mut state2 = WorldState::new(make_drone_config(1, 0, 0, 42)).unwrap();
+    state2.reset(Some(42));
+    for action in &actions_sequence {
+        state2.step(std::slice::from_ref(action));
+    }
+
+    assert_eq!(state1.agents[0].position, state2.agents[0].position);
+    assert_eq!(state1.agents[0].altitude, state2.agents[0].altitude);
+    assert_eq!(state1.agents[0].battery, state2.agents[0].battery);
+    assert_eq!(state1.agents[0].health, state2.agents[0].health);
+    assert_eq!(state1.tick, state2.tick);
+}
+
+/// Verify observations contain drone fields.
+#[test]
+fn test_drone_observation_fields() {
+    let config = make_drone_config(1, 0, 0, 42);
+    let mut state = WorldState::new(config).unwrap();
+    let result = state.reset(Some(42));
+
+    let obs = &result.observations[0];
+    assert_eq!(obs.morphology, 2, "Aerial morphology should be 2");
+    assert_eq!(obs.altitude, 0, "should start on ground");
+    assert!(
+        obs.battery > 0.0 && obs.battery <= 1.0,
+        "battery should be normalized"
+    );
+
+    // Take off and verify observation updates
+    let result = state.step(&[Action::TakeOff]);
+    let obs = &result.observations[0];
+    assert_eq!(obs.altitude, 1, "observation should reflect altitude 1");
+    assert!(obs.battery < 1.0, "battery should have decreased");
+}

@@ -315,7 +315,7 @@ mod tests {
                 let noise = PerlinNoise::new(seed);
                 let v = noise.sample_2d(x, y);
                 prop_assert!(v.is_finite());
-                prop_assert!(v >= -1.0 && v <= 1.0,
+                prop_assert!((-1.0..=1.0).contains(&v),
                     "sample_2d({}, {}) = {} out of [-1, 1]", x, y, v);
             }
 

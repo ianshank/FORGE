@@ -33,7 +33,7 @@ pub mod validation;
 // Re-export commonly used types at crate root
 pub use action::Action;
 pub use config::ForgeConfig;
-pub use entity::{Agent, AgentId, Object, ObjectId};
+pub use entity::{Agent, AgentId, AgentMorphology, Object, ObjectId};
 pub use error::{ForgeError, ForgeResult};
 pub use grid::{Direction, Grid, Position, TerrainType, Tile};
 pub use intent::{AgentIntent, IntentDeclaration, IntentLabel};

@@ -103,6 +103,35 @@ pub fn validate_config(config: &ForgeConfig) -> ForgeResult<()> {
         }));
     }
 
+    // Drone configuration validation
+    if config.drone.enabled {
+        if config.drone.max_altitude == 0 {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.max_altitude".to_string(),
+                value: "0".to_string(),
+                min: "1".to_string(),
+                max: "255".to_string(),
+            }));
+        }
+        let total_special = config.drone.num_aerial + config.drone.num_ground_vehicles;
+        if total_special > config.agents.num_agents {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.num_aerial + drone.num_ground_vehicles".to_string(),
+                value: total_special.to_string(),
+                min: "0".to_string(),
+                max: config.agents.num_agents.to_string(),
+            }));
+        }
+        if config.drone.max_battery <= 0 {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.max_battery".to_string(),
+                value: config.drone.max_battery.to_string(),
+                min: "1".to_string(),
+                max: i32::MAX.to_string(),
+            }));
+        }
+    }
+
     Ok(())
 }
 
@@ -265,6 +294,39 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("max_stamina"));
+    }
+
+    #[test]
+    fn test_drone_config_disabled_passes_validation() {
+        let config = ForgeConfig::default();
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_drone_config_valid_passes() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        config.agents.num_agents = 2;
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_drone_config_too_many_special_agents() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 5;
+        config.drone.num_ground_vehicles = 5;
+        config.agents.num_agents = 3;
+        assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn test_drone_config_zero_max_altitude() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.max_altitude = 0;
+        assert!(validate_config(&config).is_err());
     }
 
     // ---- Proptest: validation invariants ----

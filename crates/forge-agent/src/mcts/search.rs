@@ -53,7 +53,7 @@ impl<F: ForwardModel, P: PolicyValue> MctsSearch<F, P> {
 
         // Select best action based on visit counts
         let action_id = tree.best_action().unwrap_or(0);
-        Action::from_discrete(action_id, self.comm_vocab_size).unwrap_or(Action::Noop)
+        Action::from_discrete(action_id, self.comm_vocab_size, false).unwrap_or(Action::Noop)
     }
 
     /// Runs a single MCTS simulation: select, expand, evaluate, backpropagate.
@@ -67,7 +67,7 @@ impl<F: ForwardModel, P: PolicyValue> MctsSearch<F, P> {
                 Some(child_id) => {
                     // Simulate the action to get the next state
                     let action_id = tree.node(child_id).action.unwrap_or(0);
-                    let action = Action::from_discrete(action_id, self.comm_vocab_size)
+                    let action = Action::from_discrete(action_id, self.comm_vocab_size, false)
                         .unwrap_or(Action::Noop);
 
                     let num_agents = self.model.num_agents(&state);
@@ -188,7 +188,7 @@ mod tests {
 
         let action = search.search(&state, 0);
         let discrete = action.to_discrete();
-        assert!(discrete < Action::space_size(0));
+        assert!(discrete < Action::space_size(0, false));
     }
 
     #[test]
@@ -200,7 +200,7 @@ mod tests {
         // tree structure being non-deterministic with uniform policy)
         let search = make_search();
         let a1 = search.search(&state, 0);
-        assert!(a1.to_discrete() < Action::space_size(0));
+        assert!(a1.to_discrete() < Action::space_size(0, false));
     }
 
     #[test]
@@ -217,7 +217,7 @@ mod tests {
         let state = make_test_state();
 
         let action = agent.select_action(&state, 0);
-        assert!(action.to_discrete() < Action::space_size(0));
+        assert!(action.to_discrete() < Action::space_size(0, false));
     }
 
     #[test]
@@ -235,7 +235,7 @@ mod tests {
 
         // Even with 1 simulation, should return a valid action
         let action = search.search(&state, 0);
-        assert!(action.to_discrete() < Action::space_size(0));
+        assert!(action.to_discrete() < Action::space_size(0, false));
     }
 
     #[test]

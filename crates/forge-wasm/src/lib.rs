@@ -111,7 +111,7 @@ impl ForgeWasmEnv {
     #[instrument(skip_all)]
     pub fn step(&mut self, action: u32) -> String {
         let comm_vocab = self.config.agents.comm_vocab_size;
-        let decoded = Action::from_discrete(action, comm_vocab).unwrap_or(Action::Noop);
+        let decoded = Action::from_discrete(action, comm_vocab, false).unwrap_or(Action::Noop);
         let result = self.world.step(&[decoded]);
         let response = StepResponse {
             observations: result.observations,
@@ -177,6 +177,7 @@ impl ForgeWasmEnv {
             self.config.agents.default_carry_capacity,
             self.config.agents.comm_buffer_size,
             self.config.task.max_predicates,
+            false,
         );
 
         let space = ObservationSpace {

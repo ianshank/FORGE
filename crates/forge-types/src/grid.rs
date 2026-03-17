@@ -40,10 +40,11 @@ impl Position {
 }
 
 /// Cardinal directions for movement and facing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Direction {
     /// Upward (decreasing y).
+    #[default]
     Up = 0,
     /// Downward (increasing y).
     Down = 1,

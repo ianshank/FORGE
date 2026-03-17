@@ -168,6 +168,51 @@ pub const VISION_MODIFIER_NIGHT: f32 = 0.5;
 /// Number of features per tile in grid observation encoding.
 pub const OBS_FEATURES_PER_TILE: usize = 7;
 
+// ---------- Drone defaults ----------
+
+/// Whether drone mechanics are enabled by default.
+pub const DEFAULT_DRONE_ENABLED: bool = false;
+/// Default maximum altitude for aerial agents.
+pub const DEFAULT_MAX_ALTITUDE: u8 = 10;
+/// Default battery drain per tick while airborne (fixed-point ~0.15).
+pub const DEFAULT_AERIAL_DRAIN_RATE: i32 = 9830;
+/// Default battery cost to ascend one level (fixed-point ~0.2).
+pub const DEFAULT_ASCEND_COST: i32 = 13107;
+/// Default battery cost to descend one level (fixed-point ~0.05).
+pub const DEFAULT_DESCEND_COST: i32 = 3277;
+/// Default hover cost per tick (fixed-point ~0.1).
+pub const DEFAULT_HOVER_COST: i32 = 6554;
+/// Default scan action battery cost (fixed-point ~0.08).
+pub const DEFAULT_SCAN_COST: i32 = 5243;
+/// Default scan range in tiles.
+pub const DEFAULT_SCAN_RANGE: u8 = 12;
+/// Default starting battery for aerial agents (fixed-point 10.0).
+pub const DEFAULT_STARTING_BATTERY: i32 = 655360;
+/// Default maximum battery (fixed-point 10.0).
+pub const DEFAULT_MAX_BATTERY: i32 = 655360;
+/// Default battery recharge rate per tick when landed (fixed-point ~0.03).
+pub const DEFAULT_RECHARGE_RATE: i32 = 1966;
+/// Default vision bonus per altitude level for aerial agents.
+pub const DEFAULT_ALTITUDE_VISION_BONUS: u8 = 2;
+/// Default ground vehicle turn radius.
+pub const DEFAULT_VEHICLE_TURN_RADIUS: u8 = 1;
+/// Number of discrete drone action slots in the action space.
+pub const DRONE_ACTION_COUNT: u32 = 19;
+/// Default ground vehicle terrain costs [Ground, Water, Wall, Lava, Ice, Sand, Forest, Mountain].
+/// Fixed-point values. i32::MAX = impassable.
+pub const DEFAULT_VEHICLE_TERRAIN_COSTS: [i32; 8] = [
+    32768,    // Ground: 0.5x (faster)
+    i32::MAX, // Water: impassable
+    i32::MAX, // Wall: impassable
+    i32::MAX, // Lava: impassable
+    49152,    // Ice: 0.75x
+    45875,    // Sand: 0.7x
+    i32::MAX, // Forest: impassable
+    i32::MAX, // Mountain: impassable
+];
+/// Number of terrain types used for vehicle terrain cost array sizing.
+pub const NUM_VEHICLE_TERRAIN_TYPES: usize = 8;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +254,30 @@ mod tests {
     #[test]
     fn test_obs_features_per_tile() {
         assert_eq!(OBS_FEATURES_PER_TILE, 7);
+    }
+
+    #[test]
+    fn test_drone_constants_starting_battery_equals_max() {
+        assert_eq!(DEFAULT_STARTING_BATTERY, DEFAULT_MAX_BATTERY);
+    }
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn test_drone_ascend_cost_within_battery() {
+        assert!(DEFAULT_ASCEND_COST < DEFAULT_STARTING_BATTERY);
+    }
+
+    #[test]
+    fn test_vehicle_terrain_costs_length() {
+        assert_eq!(
+            DEFAULT_VEHICLE_TERRAIN_COSTS.len(),
+            NUM_VEHICLE_TERRAIN_TYPES
+        );
+    }
+
+    #[test]
+    fn test_drone_action_count() {
+        // 5 basic (Ascend, Descend, Hover, TakeOff, Land) + 4 Scan + 10 DropPayload
+        assert_eq!(DRONE_ACTION_COUNT, 19);
     }
 }

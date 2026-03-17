@@ -9,6 +9,11 @@ use serde::{Deserialize, Serialize};
 use crate::entity::CommToken;
 use crate::grid::TerrainType;
 
+/// Default battery observation value for serde (fully charged).
+fn default_battery_obs() -> f32 {
+    1.0
+}
+
 /// A single tile as observed by an agent.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct TileObservation {
@@ -73,6 +78,18 @@ pub struct Observation {
     pub day_phase: u8,
     /// Per-task-predicate completion progress (0.0-1.0 each).
     pub task_progress: Vec<f32>,
+    /// Agent's current altitude (0 = ground level).
+    #[serde(default)]
+    pub altitude: u8,
+    /// Agent's battery level, normalized 0.0-1.0. Defaults to 1.0 when drone disabled.
+    #[serde(default = "default_battery_obs")]
+    pub battery: f32,
+    /// Agent's morphology type (0=Ground, 1=GroundVehicle, 2=Aerial).
+    #[serde(default)]
+    pub morphology: u8,
+    /// Agent's current heading direction (0=Up, 1=Down, 2=Left, 3=Right).
+    #[serde(default)]
+    pub heading: u8,
 }
 
 impl Observation {
@@ -83,6 +100,7 @@ impl Observation {
         carry_capacity: u8,
         comm_buffer_size: u8,
         num_predicates: u16,
+        drone_enabled: bool,
     ) -> usize {
         let view_side = 2 * vision_radius as usize + 1;
         let grid_elements = view_side * view_side * 7; // 7 features per tile
@@ -98,6 +116,7 @@ impl Observation {
             + comm_elements
             + day_elements
             + task_elements
+            + if drone_enabled { 4 } else { 0 }
     }
 }
 
@@ -160,7 +179,7 @@ pub struct ActionSpace {
 impl ActionSpace {
     /// Creates an action space with the given communication vocabulary size.
     pub fn new(comm_vocab_size: u16) -> Self {
-        let n = crate::action::Action::space_size(comm_vocab_size);
+        let n = crate::action::Action::space_size(comm_vocab_size, false);
         let mut names = vec![
             "Noop".to_string(),
             "Move Up".to_string(),
@@ -199,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_observation_flat_size() {
-        let size = Observation::flat_size(5, 10, 8, 4);
+        let size = Observation::flat_size(5, 10, 8, 4, false);
         let view_side = 11; // 2*5+1
         let expected = view_side * view_side * 7 + 10 * 2 + 4 + 8 + 1 + 4;
         assert_eq!(size, expected);
@@ -237,6 +256,10 @@ mod tests {
             messages: vec![],
             day_phase: 1,
             task_progress: vec![0.5],
+            altitude: 0,
+            battery: 1.0,
+            morphology: 0,
+            heading: 0,
         };
 
         let step = StepResult {
@@ -265,6 +288,29 @@ mod tests {
         assert!(info.tasks_completed.is_empty());
         assert_eq!(info.total_resources, 0);
         assert_eq!(info.day_phase, 0);
+    }
+
+    #[test]
+    fn test_observation_drone_fields_default() {
+        let obs = Observation {
+            grid_view: vec![],
+            view_width: 0,
+            view_height: 0,
+            inventory: InventoryObservation { slots: vec![] },
+            health: 1.0,
+            stamina: 1.0,
+            position: (0, 0),
+            messages: vec![],
+            day_phase: 0,
+            task_progress: vec![],
+            altitude: 0,
+            battery: 1.0,
+            morphology: 0,
+            heading: 0,
+        };
+        assert_eq!(obs.altitude, 0);
+        assert_eq!(obs.battery, 1.0);
+        assert_eq!(obs.morphology, 0);
     }
 
     #[test]

@@ -39,7 +39,7 @@ impl DefaultForwardModel {
     #[instrument(skip_all)]
     pub fn new(comm_vocab_size: u16) -> Self {
         Self {
-            action_space: Action::space_size(comm_vocab_size),
+            action_space: Action::space_size(comm_vocab_size, false),
         }
     }
 }

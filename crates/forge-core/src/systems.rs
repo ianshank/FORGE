@@ -39,11 +39,17 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     let validated_actions = validate_actions(actions, state);
 
     // 2. Physics: movement and collision (uses pre-allocated scratch buffers)
+    let drone_config_ref = if state.config.drone.enabled {
+        Some(&state.config.drone)
+    } else {
+        None
+    };
     physics::process_movements_with_scratch(
         &mut state.agents,
         &mut state.grid,
         &validated_actions,
         &state.config.physics,
+        drone_config_ref,
         &mut state.physics_scratch,
     );
 
@@ -89,6 +95,23 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     // 6. Combat system
     combat::process_combat(&mut state.agents, &state.grid, &validated_actions);
     combat::apply_environmental_damage(&mut state.agents, &state.grid);
+
+    // 6b. Drone systems (altitude, battery, payload) — only when enabled
+    if state.config.drone.enabled {
+        crate::drone::process_altitude_changes(
+            &mut state.agents,
+            &validated_actions,
+            &state.config.drone,
+        );
+        crate::drone::process_battery_drain(&mut state.agents, &state.config.drone);
+        crate::drone::process_battery_recharge(&mut state.agents, &state.config.drone);
+        crate::drone::process_payload_drops(
+            &mut state.agents,
+            &mut state.grid,
+            &validated_actions,
+            &state.config.drone,
+        );
+    }
 
     // 7. Communication system
     communication::process_communication(
@@ -235,6 +258,51 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
                             "use slot out of range, falling back to Noop"
                         );
                         Action::Noop
+                    }
+                }
+                // Drone altitude actions: only valid for Aerial morphology when drone enabled
+                Action::Ascend
+                | Action::Descend
+                | Action::Hover
+                | Action::TakeOff
+                | Action::Land => {
+                    if !state.config.drone.enabled
+                        || agent.morphology != forge_types::entity::AgentMorphology::Aerial
+                    {
+                        trace!(
+                            agent_id = agent.id,
+                            ?action,
+                            "drone action on non-aerial agent or drone disabled, falling back to Noop"
+                        );
+                        Action::Noop
+                    } else {
+                        action.clone()
+                    }
+                }
+                // Scan: any morphology can scan when drone enabled
+                Action::Scan(_) => {
+                    if !state.config.drone.enabled {
+                        Action::Noop
+                    } else {
+                        action.clone()
+                    }
+                }
+                // DropPayload: only valid for airborne Aerial agents
+                Action::DropPayload(slot) => {
+                    if !state.config.drone.enabled
+                        || agent.morphology != forge_types::entity::AgentMorphology::Aerial
+                    {
+                        Action::Noop
+                    } else if (*slot as usize) >= agent.inventory.capacity() {
+                        warn!(
+                            agent_id = agent.id,
+                            slot,
+                            capacity = agent.inventory.capacity(),
+                            "drop payload slot out of range, falling back to Noop"
+                        );
+                        Action::Noop
+                    } else {
+                        Action::DropPayload(*slot)
                     }
                 }
                 _ => action.clone(),
