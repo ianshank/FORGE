@@ -58,12 +58,19 @@ impl Action {
     ///   26-34: Craft(recipe 0-8)
     ///   35-38: Push (Up, Down, Left, Right)
     ///   39: Interact
-    ///   40+: Communication tokens
+    ///   40..40+comm_vocab_size: Communication tokens
+    ///   40+comm_vocab_size..: Drone actions (when `drone_actions_enabled`)
+    ///
+    /// Returns `None` if `action_id` is out of range for the given configuration.
     pub fn from_discrete(
         action_id: u32,
         comm_vocab_size: u16,
         drone_actions_enabled: bool,
     ) -> Option<Action> {
+        // Early bounds check
+        if action_id >= Self::space_size(comm_vocab_size, drone_actions_enabled) {
+            return None;
+        }
         match action_id {
             0 => Some(Action::Noop),
             1 => Some(Action::Move(Direction::Up)),
@@ -102,7 +109,17 @@ impl Action {
         }
     }
 
-    /// Converts an Action to its discrete integer representation.
+    /// Converts an Action to its discrete integer representation (base actions only).
+    ///
+    /// **Important**: This method only produces correct, non-colliding IDs for base
+    /// actions (Noop, Move, PickUp, Drop, Use, Craft, Push, Interact, Communicate).
+    /// For drone actions (Ascend, Descend, Hover, TakeOff, Land, Scan, DropPayload),
+    /// use [`to_discrete_full`] which accounts for the communication vocabulary offset.
+    ///
+    /// # Panics
+    ///
+    /// Does not panic, but drone actions will produce IDs that collide with
+    /// Communicate tokens. Always prefer [`to_discrete_full`] in production code.
     pub fn to_discrete(&self) -> u32 {
         match self {
             Action::Noop => 0,
@@ -120,36 +137,51 @@ impl Action {
             Action::Push(Direction::Right) => 38,
             Action::Interact => 39,
             Action::Communicate(token) => 40 + *token as u32,
-            Action::Ascend => 40,
-            Action::Descend => 41,
-            Action::Hover => 42,
-            Action::TakeOff => 43,
-            Action::Land => 44,
-            Action::Scan(Direction::Up) => 45,
-            Action::Scan(Direction::Down) => 46,
-            Action::Scan(Direction::Left) => 47,
-            Action::Scan(Direction::Right) => 48,
-            Action::DropPayload(slot) => 49 + *slot as u32,
+            // Drone actions: use placeholder offsets. For correct encoding,
+            // callers must use to_discrete_full(comm_vocab_size) instead.
+            Action::Ascend
+            | Action::Descend
+            | Action::Hover
+            | Action::TakeOff
+            | Action::Land
+            | Action::Scan(_)
+            | Action::DropPayload(_) => self.to_discrete_full(0),
         }
     }
 
     /// Converts an Action to its discrete integer representation, accounting for drone actions.
     ///
     /// Drone actions are encoded after communication tokens at offset `40 + comm_vocab_size`.
+    /// This is the canonical encoding method that produces non-colliding IDs for all actions
+    /// including drone actions. Use this instead of [`to_discrete`] when drone actions are possible.
     pub fn to_discrete_full(&self, comm_vocab_size: u16) -> u32 {
-        let base = self.to_discrete();
+        let drone_base = 40 + comm_vocab_size as u32;
         match self {
-            Action::Ascend => 40 + comm_vocab_size as u32,
-            Action::Descend => 40 + comm_vocab_size as u32 + 1,
-            Action::Hover => 40 + comm_vocab_size as u32 + 2,
-            Action::TakeOff => 40 + comm_vocab_size as u32 + 3,
-            Action::Land => 40 + comm_vocab_size as u32 + 4,
-            Action::Scan(Direction::Up) => 40 + comm_vocab_size as u32 + 5,
-            Action::Scan(Direction::Down) => 40 + comm_vocab_size as u32 + 6,
-            Action::Scan(Direction::Left) => 40 + comm_vocab_size as u32 + 7,
-            Action::Scan(Direction::Right) => 40 + comm_vocab_size as u32 + 8,
-            Action::DropPayload(slot) => 40 + comm_vocab_size as u32 + 9 + *slot as u32,
-            _ => base,
+            Action::Noop => 0,
+            Action::Move(Direction::Up) => 1,
+            Action::Move(Direction::Down) => 2,
+            Action::Move(Direction::Left) => 3,
+            Action::Move(Direction::Right) => 4,
+            Action::PickUp => 5,
+            Action::Drop(slot) => 6 + *slot as u32,
+            Action::Use(slot) => 16 + *slot as u32,
+            Action::Craft(recipe) => 26 + *recipe as u32,
+            Action::Push(Direction::Up) => 35,
+            Action::Push(Direction::Down) => 36,
+            Action::Push(Direction::Left) => 37,
+            Action::Push(Direction::Right) => 38,
+            Action::Interact => 39,
+            Action::Communicate(token) => 40 + *token as u32,
+            Action::Ascend => drone_base,
+            Action::Descend => drone_base + 1,
+            Action::Hover => drone_base + 2,
+            Action::TakeOff => drone_base + 3,
+            Action::Land => drone_base + 4,
+            Action::Scan(Direction::Up) => drone_base + 5,
+            Action::Scan(Direction::Down) => drone_base + 6,
+            Action::Scan(Direction::Left) => drone_base + 7,
+            Action::Scan(Direction::Right) => drone_base + 8,
+            Action::DropPayload(slot) => drone_base + 9 + *slot as u32,
         }
     }
 
@@ -280,5 +312,101 @@ mod tests {
         let vocab_size = 16;
         let drone_base = 40 + vocab_size as u32;
         assert!(Action::from_discrete(drone_base, vocab_size, false).is_none());
+    }
+
+    #[test]
+    fn test_from_discrete_bounds_check() {
+        // Beyond space_size should return None
+        let max_id = Action::space_size(16, true);
+        assert!(Action::from_discrete(max_id, 16, true).is_none());
+        assert!(Action::from_discrete(max_id + 1, 16, true).is_none());
+
+        // Last valid action should succeed
+        assert!(Action::from_discrete(max_id - 1, 16, true).is_some());
+    }
+
+    #[test]
+    fn test_to_discrete_full_no_collision_with_comm_tokens() {
+        let vocab_size = 16u16;
+        // Verify drone actions don't collide with communication tokens
+        let comm_ids: Vec<u32> = (0..vocab_size)
+            .map(|t| Action::Communicate(t).to_discrete_full(vocab_size))
+            .collect();
+        let drone_actions = [
+            Action::Ascend,
+            Action::Descend,
+            Action::Hover,
+            Action::TakeOff,
+            Action::Land,
+            Action::Scan(Direction::Up),
+            Action::Scan(Direction::Down),
+            Action::Scan(Direction::Left),
+            Action::Scan(Direction::Right),
+            Action::DropPayload(0),
+        ];
+        for da in &drone_actions {
+            let id = da.to_discrete_full(vocab_size);
+            assert!(
+                !comm_ids.contains(&id),
+                "drone action {:?} (id={}) collides with communication token",
+                da,
+                id
+            );
+        }
+    }
+
+    #[test]
+    fn test_space_size_zero_vocab() {
+        assert_eq!(Action::space_size(0, false), 40);
+        assert_eq!(Action::space_size(0, true), 40 + 19);
+    }
+
+    #[test]
+    fn test_full_roundtrip_all_actions_with_drones() {
+        let vocab_size = 8u16;
+        let total = Action::space_size(vocab_size, true);
+        for id in 0..total {
+            let action = Action::from_discrete(id, vocab_size, true);
+            assert!(action.is_some(), "id {} should decode to an action", id);
+            let action = action.unwrap();
+            let roundtrip_id = action.to_discrete_full(vocab_size);
+            assert_eq!(
+                roundtrip_id, id,
+                "roundtrip failed for action {:?} (expected id={}, got id={})",
+                action, id, roundtrip_id
+            );
+        }
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn from_discrete_roundtrip(
+                vocab_size in 0u16..64,
+                action_id in 0u32..200,
+            ) {
+                let space = Action::space_size(vocab_size, true);
+                if action_id < space {
+                    let action = Action::from_discrete(action_id, vocab_size, true).unwrap();
+                    let recovered_id = action.to_discrete_full(vocab_size);
+                    prop_assert_eq!(recovered_id, action_id, "roundtrip failed");
+                } else {
+                    prop_assert!(Action::from_discrete(action_id, vocab_size, true).is_none());
+                }
+            }
+
+            #[test]
+            fn space_size_monotonic_in_vocab(
+                vocab_size in 0u16..1024,
+            ) {
+                let without = Action::space_size(vocab_size, false);
+                let with = Action::space_size(vocab_size, true);
+                prop_assert!(with > without, "drone actions should increase space size");
+                prop_assert_eq!(with - without, crate::constants::DRONE_ACTION_COUNT);
+            }
+        }
     }
 }

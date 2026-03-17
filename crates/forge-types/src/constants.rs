@@ -212,6 +212,8 @@ pub const DEFAULT_VEHICLE_TERRAIN_COSTS: [i32; 8] = [
 ];
 /// Number of terrain types used for vehicle terrain cost array sizing.
 pub const NUM_VEHICLE_TERRAIN_TYPES: usize = 8;
+/// Default fall damage per altitude level during emergency landing (fixed-point 1.0).
+pub const DEFAULT_FALL_DAMAGE_PER_LEVEL: i32 = FIXED_POINT_ONE;
 
 #[cfg(test)]
 mod tests {
@@ -279,5 +281,37 @@ mod tests {
     fn test_drone_action_count() {
         // 5 basic (Ascend, Descend, Hover, TakeOff, Land) + 4 Scan + 10 DropPayload
         assert_eq!(DRONE_ACTION_COUNT, 19);
+    }
+
+    #[test]
+    fn test_fall_damage_default_matches_fixed_point_one() {
+        assert_eq!(DEFAULT_FALL_DAMAGE_PER_LEVEL, FIXED_POINT_ONE);
+    }
+
+    #[test]
+    fn test_drone_costs_are_positive() {
+        assert!(DEFAULT_AERIAL_DRAIN_RATE > 0);
+        assert!(DEFAULT_ASCEND_COST > 0);
+        assert!(DEFAULT_DESCEND_COST > 0);
+        assert!(DEFAULT_HOVER_COST > 0);
+        assert!(DEFAULT_SCAN_COST > 0);
+        assert!(DEFAULT_RECHARGE_RATE > 0);
+    }
+
+    #[test]
+    fn test_vehicle_terrain_costs_has_impassable() {
+        // Water, Wall, Lava, Forest, Mountain should be impassable
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[1], i32::MAX); // Water
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[2], i32::MAX); // Wall
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[3], i32::MAX); // Lava
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[6], i32::MAX); // Forest
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[7], i32::MAX); // Mountain
+    }
+
+    #[test]
+    fn test_vehicle_terrain_costs_ground_is_faster() {
+        // Ground cost < FIXED_POINT_ONE means faster than walking
+        assert!(DEFAULT_VEHICLE_TERRAIN_COSTS[0] < FIXED_POINT_ONE);
+        assert!(DEFAULT_VEHICLE_TERRAIN_COSTS[0] > 0);
     }
 }

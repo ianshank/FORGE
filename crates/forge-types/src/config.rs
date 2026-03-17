@@ -315,6 +315,8 @@ pub struct DroneConfig {
     pub altitude_vision_bonus: u8,
     /// Turn radius for ground vehicles (0 = free, 1+ = restricted).
     pub vehicle_turn_radius: u8,
+    /// Fall damage per altitude level during emergency landing (fixed-point).
+    pub fall_damage_per_level: i32,
     /// Number of aerial agents to spawn.
     pub num_aerial: u32,
     /// Number of ground vehicle agents to spawn.
@@ -338,6 +340,7 @@ impl Default for DroneConfig {
             vehicle_terrain_costs: constants::DEFAULT_VEHICLE_TERRAIN_COSTS,
             altitude_vision_bonus: constants::DEFAULT_ALTITUDE_VISION_BONUS,
             vehicle_turn_radius: constants::DEFAULT_VEHICLE_TURN_RADIUS,
+            fall_damage_per_level: constants::DEFAULT_FALL_DAMAGE_PER_LEVEL,
             num_aerial: 0,
             num_ground_vehicles: 0,
         }

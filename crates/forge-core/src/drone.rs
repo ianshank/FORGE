@@ -9,6 +9,16 @@ use forge_types::grid::Grid;
 use forge_types::Action;
 use tracing::{debug, instrument, trace, warn};
 
+/// Deducts battery from an agent, clamping to zero.
+///
+/// Returns the actual amount deducted (may be less than `cost` if battery was low).
+#[inline]
+fn deduct_battery(agent: &mut Agent, cost: i32) -> i32 {
+    let actual = cost.min(agent.battery);
+    agent.battery -= actual;
+    actual
+}
+
 /// Processes altitude-changing actions (TakeOff, Land, Ascend, Descend, Hover) for all agents.
 ///
 /// Only affects agents with `morphology == Aerial`. Invalid actions are silently ignored
@@ -27,12 +37,19 @@ pub fn process_altitude_changes(agents: &mut [Agent], actions: &[Action], config
                 if agent.altitude == 0 && agent.battery >= config.ascend_cost {
                     let old = agent.altitude;
                     agent.altitude = 1;
-                    agent.battery -= config.ascend_cost;
+                    deduct_battery(agent, config.ascend_cost);
                     trace!(
                         agent_id = agent.id,
                         old_altitude = old,
                         new_altitude = 1,
                         "takeoff"
+                    );
+                } else if agent.altitude == 0 {
+                    debug!(
+                        agent_id = agent.id,
+                        battery = agent.battery,
+                        required = config.ascend_cost,
+                        "takeoff blocked: insufficient battery"
                     );
                 }
             }
@@ -46,20 +63,27 @@ pub fn process_altitude_changes(agents: &mut [Agent], actions: &[Action], config
             Action::Ascend => {
                 if agent.altitude < config.max_altitude && agent.battery >= config.ascend_cost {
                     agent.altitude += 1;
-                    agent.battery -= config.ascend_cost;
+                    deduct_battery(agent, config.ascend_cost);
                     trace!(agent_id = agent.id, altitude = agent.altitude, "ascended");
+                } else if agent.battery < config.ascend_cost {
+                    debug!(
+                        agent_id = agent.id,
+                        battery = agent.battery,
+                        required = config.ascend_cost,
+                        "ascend blocked: insufficient battery"
+                    );
                 }
             }
             Action::Descend => {
                 if agent.altitude > 0 {
                     agent.altitude -= 1;
-                    agent.battery -= config.descend_cost.min(agent.battery);
+                    deduct_battery(agent, config.descend_cost);
                     trace!(agent_id = agent.id, altitude = agent.altitude, "descended");
                 }
             }
             Action::Hover => {
                 if agent.altitude > 0 {
-                    agent.battery -= config.hover_cost.min(agent.battery);
+                    deduct_battery(agent, config.hover_cost);
                     trace!(agent_id = agent.id, altitude = agent.altitude, "hovering");
                 }
             }
@@ -71,11 +95,9 @@ pub fn process_altitude_changes(agents: &mut [Agent], actions: &[Action], config
 /// Drains battery for all airborne aerial agents each tick.
 ///
 /// If an agent's battery reaches zero while airborne, forces an emergency landing
-/// and applies fall damage proportional to altitude (1.0 damage per altitude level).
+/// and applies fall damage proportional to altitude using `config.fall_damage_per_level`.
 #[instrument(skip_all)]
 pub fn process_battery_drain(agents: &mut [Agent], config: &DroneConfig) {
-    let fall_damage_per_level = forge_types::constants::FIXED_POINT_ONE;
-
     for agent in agents.iter_mut() {
         if !agent.alive || agent.morphology != AgentMorphology::Aerial || agent.altitude == 0 {
             continue;
@@ -87,7 +109,7 @@ pub fn process_battery_drain(agents: &mut [Agent], config: &DroneConfig) {
         // Force landing if battery depleted
         if agent.battery == 0 {
             let fall_altitude = agent.altitude;
-            let damage = fall_altitude as i32 * fall_damage_per_level;
+            let damage = fall_altitude as i32 * config.fall_damage_per_level;
             agent.altitude = 0;
             agent.health -= damage;
             if agent.health <= 0 {
@@ -115,27 +137,35 @@ pub fn process_battery_recharge(agents: &mut [Agent], config: &DroneConfig) {
             continue;
         }
 
+        let old_battery = agent.battery;
         agent.battery = (agent.battery + config.recharge_rate).min(config.max_battery);
-        trace!(
-            agent_id = agent.id,
-            battery = agent.battery,
-            "battery recharging"
-        );
+        if agent.battery == config.max_battery && old_battery < config.max_battery {
+            debug!(
+                agent_id = agent.id,
+                battery = agent.battery,
+                "battery fully recharged"
+            );
+        } else {
+            trace!(
+                agent_id = agent.id,
+                battery = agent.battery,
+                "battery recharging"
+            );
+        }
     }
 }
 
 /// Processes DropPayload actions for aerial agents.
 ///
-/// Removes the item from the agent's inventory slot and creates a resource
-/// node on the ground tile below. Only works when the agent is airborne.
+/// Removes the item from the agent's inventory slot. Only works when the agent
+/// is airborne. Ground item placement is deferred to worldgen integration (Phase 3).
 #[instrument(skip_all)]
 pub fn process_payload_drops(
     agents: &mut [Agent],
     grid: &mut Grid,
     actions: &[Action],
-    config: &DroneConfig,
+    _config: &DroneConfig,
 ) {
-    let _ = config; // reserved for future payload-specific config
     for (i, agent) in agents.iter_mut().enumerate() {
         if !agent.alive || agent.morphology != AgentMorphology::Aerial || agent.altitude == 0 {
             continue;
@@ -144,22 +174,33 @@ pub fn process_payload_drops(
         let action = actions.get(i).unwrap_or(&Action::Noop);
         if let Action::DropPayload(slot) = action {
             let slot_idx = *slot as usize;
-            if slot_idx < agent.inventory.capacity() {
-                if let Some(_stack) = agent.inventory.get_slot(slot_idx) {
-                    debug!(
-                        agent_id = agent.id,
-                        slot = slot_idx,
-                        position = ?(agent.position.x, agent.position.y),
-                        altitude = agent.altitude,
-                        "payload dropped"
-                    );
-                    // Remove item from inventory — it falls to the ground tile
-                    // The item becomes available for pickup by ground agents
-                    agent.inventory.slots[slot_idx] = None;
-                    // Note: full resource node creation deferred to worldgen integration (Phase 3)
-                    // For now, the item is simply removed from inventory
-                    let _ = grid; // will be used when ground item placement is implemented
-                }
+            if slot_idx >= agent.inventory.capacity() {
+                warn!(
+                    agent_id = agent.id,
+                    slot = slot_idx,
+                    capacity = agent.inventory.capacity(),
+                    "payload drop: slot out of range"
+                );
+                continue;
+            }
+            if agent.inventory.get_slot(slot_idx).is_some() {
+                debug!(
+                    agent_id = agent.id,
+                    slot = slot_idx,
+                    position = ?(agent.position.x, agent.position.y),
+                    altitude = agent.altitude,
+                    "payload dropped"
+                );
+                // Remove item from inventory — it falls to the ground tile
+                agent.inventory.slots[slot_idx] = None;
+                // Note: full resource node creation deferred to worldgen integration (Phase 3)
+                let _ = grid; // will be used when ground item placement is implemented
+            } else {
+                trace!(
+                    agent_id = agent.id,
+                    slot = slot_idx,
+                    "payload drop: slot empty, no-op"
+                );
             }
         }
     }
@@ -497,5 +538,227 @@ mod tests {
         process_altitude_changes(&mut agents, &actions, &config);
 
         assert_eq!(agents[0].altitude, 3); // unchanged
+    }
+
+    // ---- Multiple agent tests ----
+
+    #[test]
+    fn test_battery_drain_multiple_agents() {
+        let config = make_drone_config();
+        let mut agents = vec![
+            make_aerial_agent(0, 5, 5),
+            make_aerial_agent(1, 8, 8),
+            make_ground_agent(2, 3, 3),
+        ];
+        agents[0].altitude = 2;
+        agents[1].altitude = 5;
+        let bat0 = agents[0].battery;
+        let bat1 = agents[1].battery;
+        let bat2 = agents[2].battery;
+
+        process_battery_drain(&mut agents, &config);
+
+        assert_eq!(agents[0].battery, bat0 - config.aerial_drain_rate);
+        assert_eq!(agents[1].battery, bat1 - config.aerial_drain_rate);
+        assert_eq!(agents[2].battery, bat2, "ground agent battery unchanged");
+    }
+
+    #[test]
+    fn test_altitude_changes_multiple_agents() {
+        let config = make_drone_config();
+        let mut agents = vec![make_aerial_agent(0, 5, 5), make_aerial_agent(1, 8, 8)];
+        let actions = vec![Action::TakeOff, Action::Ascend];
+        agents[1].altitude = 2;
+
+        process_altitude_changes(&mut agents, &actions, &config);
+
+        assert_eq!(agents[0].altitude, 1, "agent 0 should take off");
+        assert_eq!(agents[1].altitude, 3, "agent 1 should ascend from 2 to 3");
+    }
+
+    // ---- Payload drop edge cases ----
+
+    #[test]
+    fn test_payload_drop_empty_slot_noop() {
+        let config = make_drone_config();
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let mut agents = vec![make_aerial_agent(0, 5, 5)];
+        agents[0].altitude = 3;
+        // Slot 0 is empty
+        let actions = vec![Action::DropPayload(0)];
+
+        process_payload_drops(&mut agents, &mut grid, &actions, &config);
+
+        assert!(agents[0].inventory.get_slot(0).is_none());
+    }
+
+    #[test]
+    fn test_payload_drop_out_of_range_slot() {
+        let config = make_drone_config();
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let mut agents = vec![make_aerial_agent(0, 5, 5)];
+        agents[0].altitude = 3;
+        agents[0].inventory.add_item(ItemType::Wood, 5);
+        let actions = vec![Action::DropPayload(99)]; // out of range
+
+        process_payload_drops(&mut agents, &mut grid, &actions, &config);
+
+        // Item in slot 0 should be unchanged
+        assert!(agents[0].inventory.get_slot(0).is_some());
+    }
+
+    #[test]
+    fn test_payload_drop_different_slots() {
+        let config = make_drone_config();
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let mut agents = vec![make_aerial_agent(0, 5, 5)];
+        agents[0].altitude = 3;
+        agents[0].inventory.add_item(ItemType::Wood, 5);
+        agents[0].inventory.add_item(ItemType::Stone, 3);
+
+        // Drop from slot 1
+        let actions = vec![Action::DropPayload(1)];
+        process_payload_drops(&mut agents, &mut grid, &actions, &config);
+
+        assert!(
+            agents[0].inventory.get_slot(0).is_some(),
+            "slot 0 untouched"
+        );
+        assert!(agents[0].inventory.get_slot(1).is_none(), "slot 1 dropped");
+    }
+
+    // ---- Configurable fall damage test ----
+
+    #[test]
+    fn test_custom_fall_damage_per_level() {
+        let mut config = make_drone_config();
+        // Double the fall damage
+        config.fall_damage_per_level = forge_types::constants::FIXED_POINT_ONE * 2;
+        let mut agents = vec![make_aerial_agent(0, 5, 5)];
+        agents[0].altitude = 3;
+        agents[0].battery = 1;
+
+        process_battery_drain(&mut agents, &config);
+
+        // 3 * 2*FIXED_POINT_ONE = 6 * 65536 = 393216 damage
+        let expected_damage = 3 * config.fall_damage_per_level;
+        let expected_health = forge_types::constants::DEFAULT_STARTING_HEALTH - expected_damage;
+        assert_eq!(agents[0].health, expected_health);
+    }
+
+    // ---- deduct_battery helper test ----
+
+    #[test]
+    fn test_deduct_battery_clamps_to_zero() {
+        let agent_config = AgentConfig::default();
+        let mut agent = Agent::new(0, Position::new(5, 5), &agent_config);
+        agent.battery = 100;
+
+        let actual = deduct_battery(&mut agent, 200);
+        assert_eq!(actual, 100, "should only deduct what's available");
+        assert_eq!(agent.battery, 0, "battery should be 0");
+    }
+
+    #[test]
+    fn test_deduct_battery_exact() {
+        let agent_config = AgentConfig::default();
+        let mut agent = Agent::new(0, Position::new(5, 5), &agent_config);
+        agent.battery = 500;
+
+        let actual = deduct_battery(&mut agent, 300);
+        assert_eq!(actual, 300);
+        assert_eq!(agent.battery, 200);
+    }
+
+    // ---- Property-based tests ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn battery_stays_non_negative_after_drain(
+                initial_battery in 0..1_000_000i32,
+                drain_rate in 0..200_000i32,
+            ) {
+                let mut config = make_drone_config();
+                config.aerial_drain_rate = drain_rate;
+                let mut agents = vec![make_aerial_agent(0, 5, 5)];
+                agents[0].battery = initial_battery;
+                agents[0].altitude = 1;
+
+                process_battery_drain(&mut agents, &config);
+
+                prop_assert!(agents[0].battery >= 0, "battery must never go negative");
+            }
+
+            #[test]
+            fn altitude_stays_in_range_after_changes(
+                initial_alt in 0u8..10,
+                action_idx in 0usize..5,
+            ) {
+                let config = make_drone_config();
+                let mut agents = vec![make_aerial_agent(0, 5, 5)];
+                agents[0].altitude = initial_alt;
+
+                let action = match action_idx {
+                    0 => Action::TakeOff,
+                    1 => Action::Land,
+                    2 => Action::Ascend,
+                    3 => Action::Descend,
+                    _ => Action::Hover,
+                };
+                let actions = vec![action];
+
+                process_altitude_changes(&mut agents, &actions, &config);
+
+                prop_assert!(
+                    agents[0].altitude <= config.max_altitude,
+                    "altitude {} exceeds max {}",
+                    agents[0].altitude,
+                    config.max_altitude
+                );
+            }
+
+            #[test]
+            fn recharge_never_exceeds_max(
+                initial_battery in 0..700_000i32,
+                recharge_rate in 0..100_000i32,
+            ) {
+                let mut config = make_drone_config();
+                config.recharge_rate = recharge_rate;
+                let mut agents = vec![make_aerial_agent(0, 5, 5)];
+                agents[0].altitude = 0; // must be landed to recharge
+                agents[0].battery = initial_battery;
+
+                process_battery_recharge(&mut agents, &config);
+
+                prop_assert!(
+                    agents[0].battery <= config.max_battery,
+                    "battery {} exceeds max {}",
+                    agents[0].battery,
+                    config.max_battery
+                );
+            }
+
+            #[test]
+            fn fall_damage_scales_with_altitude(alt in 1u8..10) {
+                let config = make_drone_config();
+                let mut agents = vec![make_aerial_agent(0, 5, 5)];
+                agents[0].altitude = alt;
+                agents[0].battery = 1; // will deplete
+
+                let initial_health = agents[0].health;
+                process_battery_drain(&mut agents, &config);
+
+                let expected_damage = alt as i32 * config.fall_damage_per_level;
+                prop_assert_eq!(
+                    agents[0].health,
+                    initial_health - expected_damage,
+                    "fall damage should scale linearly"
+                );
+            }
+        }
     }
 }

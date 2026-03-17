@@ -326,4 +326,64 @@ mod tests {
         // Third slot: empty (sentinel 255, count 0).
         assert_eq!(inv_obs.slots[2], (255, 0));
     }
+
+    #[test]
+    fn test_observation_flat_size_with_drones() {
+        let size_no_drone = Observation::flat_size(5, 10, 8, 4, false);
+        let size_drone = Observation::flat_size(5, 10, 8, 4, true);
+        assert_eq!(
+            size_drone - size_no_drone,
+            4,
+            "drone adds 4 extra features (altitude, battery, morphology, heading)"
+        );
+    }
+
+    #[test]
+    fn test_observation_serde_with_drone_defaults() {
+        // Deserialize an observation without drone fields (backwards compat)
+        let json = r#"{
+            "grid_view": [],
+            "view_width": 0,
+            "view_height": 0,
+            "inventory": {"slots": []},
+            "health": 1.0,
+            "stamina": 1.0,
+            "position": [0, 0],
+            "messages": [],
+            "day_phase": 0,
+            "task_progress": []
+        }"#;
+        let obs: Observation = serde_json::from_str(json).unwrap();
+        assert_eq!(obs.altitude, 0, "altitude default should be 0");
+        assert_eq!(obs.battery, 1.0, "battery default should be 1.0");
+        assert_eq!(obs.morphology, 0, "morphology default should be 0 (Ground)");
+        assert_eq!(obs.heading, 0, "heading default should be 0 (Up)");
+    }
+
+    #[test]
+    fn test_action_space_names_match_count() {
+        let space = ActionSpace::new(0);
+        assert_eq!(
+            space.action_names.len() as u32,
+            space.n,
+            "action names count must match space size"
+        );
+
+        let space16 = ActionSpace::new(16);
+        assert_eq!(space16.action_names.len() as u32, space16.n);
+    }
+
+    #[test]
+    fn test_observation_space_construction() {
+        let obs_space = ObservationSpace {
+            flat_shape: vec![100],
+            low: 0.0,
+            high: 1.0,
+            grid_shape: (11, 11, 7),
+            inventory_size: 10,
+            comm_buffer_size: 8,
+        };
+        assert_eq!(obs_space.flat_shape[0], 100);
+        assert_eq!(obs_space.grid_shape.2, 7);
+    }
 }

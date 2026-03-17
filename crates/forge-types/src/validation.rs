@@ -130,6 +130,14 @@ pub fn validate_config(config: &ForgeConfig) -> ForgeResult<()> {
                 max: i32::MAX.to_string(),
             }));
         }
+        if config.drone.fall_damage_per_level < 0 {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.fall_damage_per_level".to_string(),
+                value: config.drone.fall_damage_per_level.to_string(),
+                min: "0".to_string(),
+                max: i32::MAX.to_string(),
+            }));
+        }
     }
 
     Ok(())
@@ -329,6 +337,47 @@ mod tests {
         assert!(validate_config(&config).is_err());
     }
 
+    #[test]
+    fn test_drone_config_negative_fall_damage() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.fall_damage_per_level = -1;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("fall_damage_per_level"));
+    }
+
+    #[test]
+    fn test_drone_config_zero_fall_damage_valid() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        config.drone.fall_damage_per_level = 0;
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_drone_config_negative_max_battery() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.max_battery = -100;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("max_battery"));
+    }
+
+    #[test]
+    fn test_drone_config_exact_agent_count() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 2;
+        config.drone.num_ground_vehicles = 1;
+        config.agents.num_agents = 3; // exactly matches
+        assert!(validate_config(&config).is_ok());
+    }
+
     // ---- Proptest: validation invariants ----
 
     mod proptests {
@@ -336,19 +385,25 @@ mod tests {
         use proptest::prelude::*;
 
         proptest! {
-            /// Valid dimensions always pass validation.
+            #[test]
+            fn default_config_always_valid(seed in 0u64..10000) {
+                let mut config = ForgeConfig::default();
+                config.world.seed = seed;
+                prop_assert!(validate_config(&config).is_ok());
+            }
+
             #[test]
             fn valid_dimensions_pass(
-                w in 8u16..256,
-                h in 8u16..256,
+                width in 8u16..=256,
+                height in 8u16..=256,
             ) {
                 let mut config = ForgeConfig::default();
-                config.world.width = w;
-                config.world.height = h;
-                // Ensure vision radius fits
-                let min_side = w.min(h);
+                config.world.width = width;
+                config.world.height = height;
+                // Adjust vision radius to fit
+                let min_side = width.min(height);
                 config.agents.default_vision_radius =
-                    ((min_side - 1) / 2).min(config.agents.default_vision_radius as u16) as u8;
+                    ((min_side - 1) / 2).min(5) as u8;
                 prop_assert!(validate_config(&config).is_ok());
             }
 

@@ -1011,6 +1011,204 @@ mod tests {
         assert_eq!(grid.get(6, 5).unwrap().object_id, Some(0));
     }
 
+    // ---- Aerial movement tests ----
+
+    fn make_aerial_agent(id: u32, x: u16, y: u16) -> Agent {
+        let config = AgentConfig::default();
+        let mut agent = Agent::new(id, Position::new(x, y), &config);
+        agent.morphology = AgentMorphology::Aerial;
+        agent.altitude = 3;
+        agent.battery = 655360;
+        agent.stamina = 655360;
+        agent
+    }
+
+    fn default_drone_config() -> forge_types::config::DroneConfig {
+        forge_types::config::DroneConfig {
+            enabled: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_airborne_ignores_wall_terrain() {
+        let mut grid = make_test_grid(16, 16);
+        grid.get_mut(5, 4).unwrap().terrain = TerrainType::Wall;
+        let mut agents = [make_aerial_agent(0, 5, 5)];
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Up)];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        // Airborne agents should ignore wall terrain
+        assert_eq!(results[0], MoveResult::Moved(Position::new(5, 4)));
+    }
+
+    #[test]
+    fn test_airborne_uses_battery_not_stamina() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_aerial_agent(0, 5, 5)];
+        let initial_stamina = agents[0].stamina;
+        let initial_battery = agents[0].battery;
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Right)];
+        process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(
+            agents[0].stamina, initial_stamina,
+            "stamina should be unchanged"
+        );
+        assert!(
+            agents[0].battery < initial_battery,
+            "battery should decrease"
+        );
+    }
+
+    #[test]
+    fn test_airborne_no_battery_blocks_movement() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_aerial_agent(0, 5, 5)];
+        agents[0].battery = 0;
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Right)];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(results[0], MoveResult::NoStamina);
+    }
+
+    #[test]
+    fn test_aerial_collision_same_altitude() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_aerial_agent(0, 5, 5), make_aerial_agent(1, 5, 4)];
+        // Both at altitude 3
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Up), Action::Noop];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(
+            results[0],
+            MoveResult::Blocked,
+            "should collide at same altitude"
+        );
+    }
+
+    #[test]
+    fn test_aerial_no_collision_different_altitude() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_aerial_agent(0, 5, 5), make_aerial_agent(1, 5, 4)];
+        agents[0].altitude = 3;
+        agents[1].altitude = 5; // different altitude
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Up), Action::Noop];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(
+            results[0],
+            MoveResult::Moved(Position::new(5, 4)),
+            "should pass through agent at different altitude"
+        );
+    }
+
+    #[test]
+    fn test_ground_vehicle_blocked_by_forest() {
+        let mut grid = make_test_grid(16, 16);
+        grid.get_mut(5, 4).unwrap().terrain = TerrainType::Forest;
+        let mut agents = [make_test_agent(0, 5, 5)];
+        agents[0].morphology = AgentMorphology::GroundVehicle;
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Up)];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(results[0], MoveResult::Impassable);
+    }
+
+    #[test]
+    fn test_ground_vehicle_faster_on_ground_terrain() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_test_agent(0, 5, 5)];
+        agents[0].morphology = AgentMorphology::GroundVehicle;
+        agents[0].stamina = 655360;
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let initial_stamina = agents[0].stamina;
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Right)];
+        process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        let vehicle_cost = initial_stamina - agents[0].stamina;
+
+        // Now test ground agent same movement
+        let mut grid2 = make_test_grid(16, 16);
+        let mut agents2 = [make_test_agent(0, 5, 5)];
+        agents2[0].stamina = 655360;
+        grid2.get_mut(5, 5).unwrap().agent_id = Some(0);
+        let actions2 = vec![Action::Move(Direction::Right)];
+        process_movements(
+            &mut agents2,
+            &mut grid2,
+            &actions2,
+            &default_physics(),
+            None,
+        );
+        let ground_cost = initial_stamina - agents2[0].stamina;
+
+        // Vehicle should be faster (lower cost) on ground terrain
+        assert!(
+            vehicle_cost < ground_cost,
+            "vehicle cost {} should be less than ground cost {}",
+            vehicle_cost,
+            ground_cost
+        );
+    }
+
     #[test]
     fn test_push_agent_at_boundary_no_adjacent_tile() {
         let mut grid = make_test_grid(16, 16);

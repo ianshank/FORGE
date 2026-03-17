@@ -212,7 +212,16 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
 
     for (i, agent) in state.agents.iter().enumerate() {
         // Get action for this agent, default to Noop if not provided
-        let action = actions.get(i).unwrap_or(&Action::Noop);
+        let action = if let Some(a) = actions.get(i) {
+            a
+        } else {
+            debug!(
+                agent_id = agent.id,
+                agent_idx = i,
+                "no action provided, defaulting to Noop"
+            );
+            &Action::Noop
+        };
 
         let validated = if !agent.alive {
             Action::Noop
@@ -656,5 +665,120 @@ mod tests {
         let actions = vec![Action::PickUp];
         let validated = validate_actions(&actions, &state);
         assert_eq!(validated[0], Action::PickUp);
+    }
+
+    // ---- Drone action validation tests ----
+
+    #[test]
+    fn test_validate_drone_actions_disabled() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        // drone.enabled is false by default
+        let state = WorldState::new(config).unwrap();
+
+        // Drone actions should become Noop when drone is disabled
+        for action in [
+            Action::Ascend,
+            Action::Descend,
+            Action::Hover,
+            Action::TakeOff,
+            Action::Land,
+        ] {
+            let validated = validate_actions(&[action.clone()], &state);
+            assert_eq!(
+                validated[0],
+                Action::Noop,
+                "{:?} should be Noop when drone disabled",
+                action
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_scan_disabled() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        let state = WorldState::new(config).unwrap();
+
+        let validated = validate_actions(&[Action::Scan(forge_types::Direction::Up)], &state);
+        assert_eq!(validated[0], Action::Noop);
+    }
+
+    #[test]
+    fn test_validate_drone_actions_non_aerial() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        config.drone.enabled = true;
+        // Agent is Ground morphology by default, drone actions should become Noop
+        let state = WorldState::new(config).unwrap();
+
+        let validated = validate_actions(&[Action::TakeOff], &state);
+        assert_eq!(validated[0], Action::Noop, "ground agent can't take off");
+    }
+
+    #[test]
+    fn test_validate_drone_actions_aerial_valid() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        let state = WorldState::new(config).unwrap();
+
+        // Aerial agent should keep drone actions
+        assert_eq!(
+            state.agents[0].morphology,
+            forge_types::entity::AgentMorphology::Aerial
+        );
+        let validated = validate_actions(&[Action::TakeOff], &state);
+        assert_eq!(validated[0], Action::TakeOff);
+    }
+
+    #[test]
+    fn test_validate_drop_payload_out_of_range() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        let state = WorldState::new(config).unwrap();
+
+        let validated = validate_actions(&[Action::DropPayload(99)], &state);
+        assert_eq!(validated[0], Action::Noop, "slot 99 out of range");
+    }
+
+    #[test]
+    fn test_validate_drop_payload_valid() {
+        let mut config = ForgeConfig::default();
+        config.agents.num_agents = 1;
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        let state = WorldState::new(config).unwrap();
+
+        let validated = validate_actions(&[Action::DropPayload(0)], &state);
+        assert_eq!(validated[0], Action::DropPayload(0));
+    }
+
+    #[test]
+    fn test_compute_near_station_multiple_stations() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let agent = make_agent_at(0, 5, 5);
+        let station1 = make_station_object(0, 6, 5);
+        let station2 = make_station_object(1, 5, 4);
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+        grid.get_mut(5, 4).unwrap().object_id = Some(1);
+
+        let result = compute_near_station(&[agent], &grid, &[station1, station2]);
+        assert!(result[0], "agent should see at least one station");
+    }
+
+    #[test]
+    fn test_compute_near_station_multiple_agents() {
+        let mut grid = forge_types::grid::Grid::new(16, 16);
+        let agents = [make_agent_at(0, 5, 5), make_agent_at(1, 10, 10)];
+        let station = make_station_object(0, 6, 5);
+        grid.get_mut(6, 5).unwrap().object_id = Some(0);
+
+        let result = compute_near_station(&agents, &grid, &[station]);
+        assert!(result[0], "agent 0 near station");
+        assert!(!result[1], "agent 1 not near station");
     }
 }
