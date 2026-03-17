@@ -103,6 +103,13 @@ pub const DEFAULT_LAVA_DAMAGE: i32 = 65536; // 1.0
 /// Number of cardinal directions.
 pub const NUM_DIRECTIONS: usize = 4;
 
+/// Number of inventory drop action slots in the action encoding.
+pub const ACTION_DROP_SLOTS: usize = 10;
+/// Number of inventory use action slots in the action encoding.
+pub const ACTION_USE_SLOTS: usize = 10;
+/// Number of craft recipe action slots in the action encoding.
+pub const ACTION_CRAFT_SLOTS: usize = 9;
+
 /// Number of fractional bits in fixed-point representation (16 bits).
 pub const FIXED_POINT_SHIFT: u32 = 16;
 /// 1.0 in fixed-point representation.
@@ -167,6 +174,10 @@ pub const VISION_MODIFIER_NIGHT: f32 = 0.5;
 
 /// Number of features per tile in grid observation encoding.
 pub const OBS_FEATURES_PER_TILE: usize = 7;
+
+/// Number of additional observation fields when drone mechanics are enabled
+/// (altitude, battery, morphology, heading).
+pub const OBS_DRONE_FIELDS_COUNT: usize = 4;
 
 // ---------- Drone defaults ----------
 

@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::constants;
 use crate::entity::CommToken;
 use crate::grid::TerrainType;
 
@@ -103,7 +104,7 @@ impl Observation {
         drone_enabled: bool,
     ) -> usize {
         let view_side = 2 * vision_radius as usize + 1;
-        let grid_elements = view_side * view_side * 7; // 7 features per tile
+        let grid_elements = view_side * view_side * constants::OBS_FEATURES_PER_TILE;
         let inventory_elements = carry_capacity as usize * 2; // (type, count) per slot
         let scalar_elements = 4; // health, stamina, position.x, position.y
         let comm_elements = comm_buffer_size as usize;
@@ -116,7 +117,11 @@ impl Observation {
             + comm_elements
             + day_elements
             + task_elements
-            + if drone_enabled { 4 } else { 0 }
+            + if drone_enabled {
+                constants::OBS_DRONE_FIELDS_COUNT
+            } else {
+                0
+            }
     }
 }
 
@@ -188,13 +193,13 @@ impl ActionSpace {
             "Move Right".to_string(),
             "Pick Up".to_string(),
         ];
-        for i in 0..10 {
+        for i in 0..constants::ACTION_DROP_SLOTS {
             names.push(format!("Drop Slot {}", i));
         }
-        for i in 0..10 {
+        for i in 0..constants::ACTION_USE_SLOTS {
             names.push(format!("Use Slot {}", i));
         }
-        for i in 0..9 {
+        for i in 0..constants::ACTION_CRAFT_SLOTS {
             names.push(format!("Craft Recipe {}", i));
         }
         names.push("Push Up".to_string());

@@ -45,6 +45,7 @@ impl DefaultForwardModel {
 }
 
 impl ForwardModel for DefaultForwardModel {
+    #[instrument(skip_all)]
     fn simulate(&self, state: &WorldState, actions: &[Action]) -> (WorldState, StepResult) {
         let mut next_state = state.clone();
         let result = next_state.step(actions);

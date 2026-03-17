@@ -6,9 +6,30 @@
 
 use forge_types::config::{DroneConfig, PhysicsConfig};
 use forge_types::entity::{Agent, AgentMorphology};
-use forge_types::grid::{Grid, Position};
+use forge_types::grid::{Grid, Position, TerrainType};
 use forge_types::Action;
 use tracing::{instrument, trace, warn};
+
+/// Looks up the vehicle-specific terrain cost for a given terrain type.
+///
+/// Returns the fixed-point movement cost multiplier from `DroneConfig::vehicle_terrain_costs`,
+/// or falls back to the terrain's default movement cost if the drone config is absent or
+/// the terrain index is out of range.
+///
+/// `i32::MAX` indicates impassable terrain.
+#[inline]
+fn vehicle_terrain_cost(terrain: TerrainType, drone_config: Option<&DroneConfig>) -> i32 {
+    if let Some(dc) = drone_config {
+        let idx = terrain as usize;
+        if idx < dc.vehicle_terrain_costs.len() {
+            dc.vehicle_terrain_costs[idx]
+        } else {
+            terrain.movement_cost()
+        }
+    } else {
+        terrain.movement_cost()
+    }
+}
 
 /// Result of processing a single agent's movement action.
 #[derive(Debug, Clone, PartialEq)]
@@ -142,11 +163,6 @@ pub(crate) fn process_movements_with_scratch(
             }
         };
 
-        // Check stamina
-        if !config.collision_enabled {
-            // Simplified mode without collision
-        }
-
         let is_airborne = agent.morphology == AgentMorphology::Aerial && agent.altitude > 0;
 
         // Energy check: airborne Aerial agents use battery, others use stamina
@@ -225,13 +241,7 @@ pub(crate) fn process_movements_with_scratch(
             // Terrain walkability check (with vehicle-specific terrain costs)
             let terrain_passable = match agent.morphology {
                 AgentMorphology::GroundVehicle => {
-                    if let Some(dc) = drone_config {
-                        let terrain_idx = target_tile.terrain as usize;
-                        terrain_idx < dc.vehicle_terrain_costs.len()
-                            && dc.vehicle_terrain_costs[terrain_idx] != i32::MAX
-                    } else {
-                        target_tile.terrain.is_walkable()
-                    }
+                    vehicle_terrain_cost(target_tile.terrain, drone_config) != i32::MAX
                 }
                 _ => target_tile.terrain.is_walkable(),
             };
@@ -279,16 +289,7 @@ pub(crate) fn process_movements_with_scratch(
             // Apply terrain movement cost
             let terrain_cost = match agent.morphology {
                 AgentMorphology::GroundVehicle => {
-                    if let Some(dc) = drone_config {
-                        let idx = target_tile.terrain as usize;
-                        if idx < dc.vehicle_terrain_costs.len() {
-                            dc.vehicle_terrain_costs[idx]
-                        } else {
-                            target_tile.terrain.movement_cost()
-                        }
-                    } else {
-                        target_tile.terrain.movement_cost()
-                    }
+                    vehicle_terrain_cost(target_tile.terrain, drone_config)
                 }
                 _ => target_tile.terrain.movement_cost(),
             };

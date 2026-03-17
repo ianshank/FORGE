@@ -99,7 +99,7 @@ impl Agent {
             alive: true,
             morphology: AgentMorphology::default(),
             altitude: 0,
-            battery: config.starting_stamina,
+            battery: crate::constants::DEFAULT_STARTING_BATTERY,
             heading: crate::grid::Direction::Up,
         }
     }
