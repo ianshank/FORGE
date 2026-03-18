@@ -4,11 +4,32 @@
 //! trajectories. Uses the grid directly for position tracking.
 //! All arithmetic is integer-based for determinism.
 
-use forge_types::config::PhysicsConfig;
-use forge_types::entity::Agent;
-use forge_types::grid::{Grid, Position};
+use forge_types::config::{DroneConfig, PhysicsConfig};
+use forge_types::entity::{Agent, AgentMorphology};
+use forge_types::grid::{Grid, Position, TerrainType};
 use forge_types::Action;
 use tracing::{instrument, trace, warn};
+
+/// Looks up the vehicle-specific terrain cost for a given terrain type.
+///
+/// Returns the fixed-point movement cost multiplier from `DroneConfig::vehicle_terrain_costs`,
+/// or falls back to the terrain's default movement cost if the drone config is absent or
+/// the terrain index is out of range.
+///
+/// `i32::MAX` indicates impassable terrain.
+#[inline]
+fn vehicle_terrain_cost(terrain: TerrainType, drone_config: Option<&DroneConfig>) -> i32 {
+    if let Some(dc) = drone_config {
+        let idx = terrain as usize;
+        if idx < dc.vehicle_terrain_costs.len() {
+            dc.vehicle_terrain_costs[idx]
+        } else {
+            terrain.movement_cost()
+        }
+    } else {
+        terrain.movement_cost()
+    }
+}
 
 /// Result of processing a single agent's movement action.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,15 +83,22 @@ impl PhysicsScratch {
 ///
 /// Movement is processed in agent order (agent 0 first). Ties in movement
 /// to the same tile are resolved by agent priority (lower ID wins).
+///
+/// When drone mechanics are enabled, morphology-aware rules apply:
+/// - **Aerial (airborne)**: ignores ground terrain, drains battery instead of stamina,
+///   only collides with agents at the same altitude.
+/// - **GroundVehicle**: uses vehicle-specific terrain costs, blocked by Forest/Mountain/Water.
+/// - **Ground**: unchanged default behavior.
 #[instrument(skip_all)]
 pub fn process_movements(
     agents: &mut [Agent],
     grid: &mut Grid,
     actions: &[Action],
     config: &PhysicsConfig,
+    drone_config: Option<&DroneConfig>,
 ) -> Vec<MoveResult> {
     let mut scratch = PhysicsScratch::default();
-    process_movements_with_scratch(agents, grid, actions, config, &mut scratch);
+    process_movements_with_scratch(agents, grid, actions, config, drone_config, &mut scratch);
     std::mem::take(&mut scratch.results)
 }
 
@@ -84,6 +112,7 @@ pub(crate) fn process_movements_with_scratch(
     grid: &mut Grid,
     actions: &[Action],
     config: &PhysicsConfig,
+    drone_config: Option<&DroneConfig>,
     scratch: &mut PhysicsScratch,
 ) {
     scratch.results.clear();
@@ -103,6 +132,13 @@ pub(crate) fn process_movements_with_scratch(
         };
         scratch.desired_positions.push(pos);
     }
+
+    // Snapshot agent positions and altitudes for aerial collision detection
+    // Uses stack-allocated SmallVec to avoid heap allocation for small agent counts
+    let agents_snapshot: smallvec::SmallVec<[(Position, u8, bool); 16]> = agents
+        .iter()
+        .map(|a| (a.position, a.altitude, a.alive))
+        .collect();
 
     // Second pass: detect conflicts (two agents wanting same tile)
     for (i, pos) in scratch.desired_positions.iter().enumerate() {
@@ -127,13 +163,17 @@ pub(crate) fn process_movements_with_scratch(
             }
         };
 
-        // Check stamina
-        if !config.collision_enabled {
-            // Simplified mode without collision
-        }
+        let is_airborne = agent.morphology == AgentMorphology::Aerial && agent.altitude > 0;
 
-        let stamina_cost = config.stamina_cost_move;
-        if agent.stamina < stamina_cost {
+        // Energy check: airborne Aerial agents use battery, others use stamina
+        let base_cost = config.stamina_cost_move;
+        if is_airborne {
+            if agent.battery < base_cost {
+                trace!(agent_id = agent.id, "movement blocked: no battery");
+                scratch.results.push(MoveResult::NoStamina);
+                continue;
+            }
+        } else if agent.stamina < base_cost {
             trace!(agent_id = agent.id, "movement blocked: no stamina");
             scratch.results.push(MoveResult::NoStamina);
             continue;
@@ -153,35 +193,32 @@ pub(crate) fn process_movements_with_scratch(
             }
         };
 
-        // Check terrain walkability
-        // INVARIANT: position is guaranteed to be in-bounds; we validated it via offset()
-        // which checks grid bounds before returning Some(pos).
+        // Terrain and collision checks depend on morphology and altitude
         let target_tile = grid.get(target.x, target.y).unwrap();
-        if !target_tile.terrain.is_walkable() {
-            trace!(
-                agent_id = agent.id,
-                terrain = ?target_tile.terrain,
-                "movement blocked: impassable terrain"
-            );
-            scratch.results.push(MoveResult::Impassable);
-            continue;
-        }
 
-        // Check collision with other agents
-        if config.collision_enabled {
-            if let Some(occupant) = target_tile.agent_id {
-                if occupant != agent.id {
+        if is_airborne {
+            // Airborne Aerial: ignore ground terrain, only collide with agents at same altitude
+            if config.collision_enabled {
+                // Check for aerial collision at same altitude (scan agents, not grid)
+                let aerial_conflict =
+                    agents_snapshot
+                        .iter()
+                        .enumerate()
+                        .any(|(j, (pos, alt, alive))| {
+                            j != i && *alive && *pos == target && *alt == agent.altitude
+                        });
+                if aerial_conflict {
                     trace!(
                         agent_id = agent.id,
-                        occupant_id = occupant,
-                        "movement blocked: tile occupied"
+                        altitude = agent.altitude,
+                        "movement blocked: aerial collision at same altitude"
                     );
                     scratch.results.push(MoveResult::Blocked);
                     continue;
                 }
             }
 
-            // Check if another agent (with higher priority) is also moving here
+            // Check if another airborne agent (with higher priority) is also moving here at same altitude
             let conflict = scratch
                 .occupied_targets
                 .iter()
@@ -189,30 +226,93 @@ pub(crate) fn process_movements_with_scratch(
             if conflict {
                 trace!(
                     agent_id = agent.id,
-                    "movement blocked: conflict with higher priority agent"
+                    altitude = agent.altitude,
+                    "movement blocked: aerial conflict with higher priority agent"
                 );
                 scratch.results.push(MoveResult::Blocked);
                 continue;
             }
+
+            // Deduct battery for airborne movement
+            agent.battery = (agent.battery - base_cost).max(0);
+        } else {
+            // Ground-level movement (Ground, GroundVehicle, or grounded Aerial)
+
+            // Terrain walkability check (with vehicle-specific terrain costs)
+            let terrain_passable = match agent.morphology {
+                AgentMorphology::GroundVehicle => {
+                    vehicle_terrain_cost(target_tile.terrain, drone_config) != i32::MAX
+                }
+                _ => target_tile.terrain.is_walkable(),
+            };
+
+            if !terrain_passable {
+                trace!(
+                    agent_id = agent.id,
+                    terrain = ?target_tile.terrain,
+                    morphology = ?agent.morphology,
+                    "movement blocked: impassable terrain"
+                );
+                scratch.results.push(MoveResult::Impassable);
+                continue;
+            }
+
+            // Ground-level collision check (existing logic)
+            if config.collision_enabled {
+                if let Some(occupant) = target_tile.agent_id {
+                    if occupant != agent.id {
+                        trace!(
+                            agent_id = agent.id,
+                            occupant_id = occupant,
+                            "movement blocked: tile occupied"
+                        );
+                        scratch.results.push(MoveResult::Blocked);
+                        continue;
+                    }
+                }
+
+                // Check if another agent (with higher priority) is also moving here
+                let conflict = scratch
+                    .occupied_targets
+                    .iter()
+                    .any(|(other_idx, other_pos)| *other_idx < i && *other_pos == target);
+                if conflict {
+                    trace!(
+                        agent_id = agent.id,
+                        "movement blocked: conflict with higher priority agent"
+                    );
+                    scratch.results.push(MoveResult::Blocked);
+                    continue;
+                }
+            }
+
+            // Apply terrain movement cost
+            let terrain_cost = match agent.morphology {
+                AgentMorphology::GroundVehicle => {
+                    vehicle_terrain_cost(target_tile.terrain, drone_config)
+                }
+                _ => target_tile.terrain.movement_cost(),
+            };
+
+            let total_cost = if terrain_cost == i32::MAX {
+                base_cost
+            } else {
+                ((base_cost as i64 * terrain_cost as i64) >> 16) as i32
+            };
+
+            // Deduct stamina
+            agent.stamina = (agent.stamina - total_cost).max(0);
         }
 
-        // Apply terrain movement cost
-        let terrain_cost = target_tile.terrain.movement_cost();
-        let total_cost = if terrain_cost == i32::MAX {
-            stamina_cost
-        } else {
-            // Multiply base cost by terrain multiplier (both fixed-point)
-            // Fixed-point multiply: (a * b) >> 16
-            ((stamina_cost as i64 * terrain_cost as i64) >> 16) as i32
-        };
+        // Update heading for all morphologies
+        agent.heading = direction;
 
-        // Deduct stamina
-        agent.stamina = (agent.stamina - total_cost).max(0);
-
-        // Clear old position on grid
-        if let Some(tile) = grid.get_mut(agent.position.x, agent.position.y) {
-            if tile.agent_id == Some(agent.id) {
-                tile.agent_id = None;
+        // Clear old position on grid (only for ground-level agents)
+        if !is_airborne {
+            if let Some(tile) = grid.get_mut(agent.position.x, agent.position.y) {
+                if tile.agent_id == Some(agent.id) {
+                    tile.agent_id = None;
+                }
             }
         }
 
@@ -220,9 +320,11 @@ pub(crate) fn process_movements_with_scratch(
         let old_pos = agent.position;
         agent.position = target;
 
-        // Set new position on grid
-        if let Some(tile) = grid.get_mut(target.x, target.y) {
-            tile.agent_id = Some(agent.id);
+        // Set new position on grid (only for ground-level agents)
+        if !is_airborne {
+            if let Some(tile) = grid.get_mut(target.x, target.y) {
+                tile.agent_id = Some(agent.id);
+            }
         }
 
         trace!(
@@ -231,7 +333,8 @@ pub(crate) fn process_movements_with_scratch(
             old_y = old_pos.y,
             new_x = target.x,
             new_y = target.y,
-            stamina_cost = total_cost,
+            morphology = ?agent.morphology,
+            altitude = agent.altitude,
             "agent moved"
         );
         scratch.results.push(MoveResult::Moved(target));
@@ -391,7 +494,7 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert_eq!(results[0], MoveResult::Moved(Position::new(5, 4)));
         assert_eq!(agents[0].position, Position::new(5, 4));
@@ -412,7 +515,8 @@ mod tests {
             grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
             let actions = vec![Action::Move(dir)];
-            let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+            let results =
+                process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
             assert_eq!(
                 results[0],
@@ -431,7 +535,7 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert_eq!(results[0], MoveResult::Impassable);
         assert_eq!(agents[0].position, Position::new(5, 5)); // didn't move
@@ -444,7 +548,7 @@ mod tests {
         grid.get_mut(0, 0).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert_eq!(results[0], MoveResult::Blocked);
         assert_eq!(agents[0].position, Position::new(0, 0));
@@ -458,7 +562,7 @@ mod tests {
         grid.get_mut(5, 4).unwrap().agent_id = Some(1);
 
         let actions = vec![Action::Move(Direction::Up), Action::Noop];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert_eq!(results[0], MoveResult::Blocked);
         assert_eq!(agents[0].position, Position::new(5, 5));
@@ -472,7 +576,7 @@ mod tests {
 
         let initial_stamina = agents[0].stamina;
         let actions = vec![Action::Move(Direction::Up)];
-        process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert!(agents[0].stamina < initial_stamina);
     }
@@ -485,7 +589,7 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert_eq!(results[0], MoveResult::NoStamina);
     }
@@ -520,7 +624,7 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert_eq!(results[0], MoveResult::Blocked);
         assert_eq!(agents[0].position, Position::new(5, 5));
@@ -534,7 +638,7 @@ mod tests {
 
         let initial_stamina = agents[0].stamina;
         let actions = vec![Action::Noop];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert_eq!(results[0], MoveResult::Blocked);
         assert_eq!(agents[0].position, Position::new(5, 5));
@@ -551,7 +655,7 @@ mod tests {
 
         let initial_stamina = agents[0].stamina;
         let actions = vec![Action::Move(Direction::Up)];
-        process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         let stamina_used = initial_stamina - agents[0].stamina;
 
@@ -562,7 +666,13 @@ mod tests {
         grid2.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions2 = vec![Action::Move(Direction::Up)];
-        process_movements(&mut agents2, &mut grid2, &actions2, &default_physics());
+        process_movements(
+            &mut agents2,
+            &mut grid2,
+            &actions2,
+            &default_physics(),
+            None,
+        );
 
         let normal_stamina_used = initial_stamina - agents2[0].stamina;
 
@@ -578,7 +688,7 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert_eq!(results[0], MoveResult::Impassable);
     }
@@ -594,7 +704,7 @@ mod tests {
             Action::Move(Direction::Right),
             Action::Move(Direction::Left),
         ];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics());
+        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
 
         assert_eq!(results[0], MoveResult::Moved(Position::new(3, 2)));
         assert_eq!(results[1], MoveResult::Moved(Position::new(7, 8)));
@@ -902,6 +1012,204 @@ mod tests {
         assert_eq!(grid.get(6, 5).unwrap().object_id, Some(0));
     }
 
+    // ---- Aerial movement tests ----
+
+    fn make_aerial_agent(id: u32, x: u16, y: u16) -> Agent {
+        let config = AgentConfig::default();
+        let mut agent = Agent::new(id, Position::new(x, y), &config);
+        agent.morphology = AgentMorphology::Aerial;
+        agent.altitude = 3;
+        agent.battery = 655360;
+        agent.stamina = 655360;
+        agent
+    }
+
+    fn default_drone_config() -> forge_types::config::DroneConfig {
+        forge_types::config::DroneConfig {
+            enabled: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_airborne_ignores_wall_terrain() {
+        let mut grid = make_test_grid(16, 16);
+        grid.get_mut(5, 4).unwrap().terrain = TerrainType::Wall;
+        let mut agents = [make_aerial_agent(0, 5, 5)];
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Up)];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        // Airborne agents should ignore wall terrain
+        assert_eq!(results[0], MoveResult::Moved(Position::new(5, 4)));
+    }
+
+    #[test]
+    fn test_airborne_uses_battery_not_stamina() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_aerial_agent(0, 5, 5)];
+        let initial_stamina = agents[0].stamina;
+        let initial_battery = agents[0].battery;
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Right)];
+        process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(
+            agents[0].stamina, initial_stamina,
+            "stamina should be unchanged"
+        );
+        assert!(
+            agents[0].battery < initial_battery,
+            "battery should decrease"
+        );
+    }
+
+    #[test]
+    fn test_airborne_no_battery_blocks_movement() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_aerial_agent(0, 5, 5)];
+        agents[0].battery = 0;
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Right)];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(results[0], MoveResult::NoStamina);
+    }
+
+    #[test]
+    fn test_aerial_collision_same_altitude() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_aerial_agent(0, 5, 5), make_aerial_agent(1, 5, 4)];
+        // Both at altitude 3
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Up), Action::Noop];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(
+            results[0],
+            MoveResult::Blocked,
+            "should collide at same altitude"
+        );
+    }
+
+    #[test]
+    fn test_aerial_no_collision_different_altitude() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_aerial_agent(0, 5, 5), make_aerial_agent(1, 5, 4)];
+        agents[0].altitude = 3;
+        agents[1].altitude = 5; // different altitude
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Up), Action::Noop];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(
+            results[0],
+            MoveResult::Moved(Position::new(5, 4)),
+            "should pass through agent at different altitude"
+        );
+    }
+
+    #[test]
+    fn test_ground_vehicle_blocked_by_forest() {
+        let mut grid = make_test_grid(16, 16);
+        grid.get_mut(5, 4).unwrap().terrain = TerrainType::Forest;
+        let mut agents = [make_test_agent(0, 5, 5)];
+        agents[0].morphology = AgentMorphology::GroundVehicle;
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Up)];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        assert_eq!(results[0], MoveResult::Impassable);
+    }
+
+    #[test]
+    fn test_ground_vehicle_faster_on_ground_terrain() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_test_agent(0, 5, 5)];
+        agents[0].morphology = AgentMorphology::GroundVehicle;
+        agents[0].stamina = 655360;
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let initial_stamina = agents[0].stamina;
+        let dc = default_drone_config();
+        let actions = vec![Action::Move(Direction::Right)];
+        process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            Some(&dc),
+        );
+
+        let vehicle_cost = initial_stamina - agents[0].stamina;
+
+        // Now test ground agent same movement
+        let mut grid2 = make_test_grid(16, 16);
+        let mut agents2 = [make_test_agent(0, 5, 5)];
+        agents2[0].stamina = 655360;
+        grid2.get_mut(5, 5).unwrap().agent_id = Some(0);
+        let actions2 = vec![Action::Move(Direction::Right)];
+        process_movements(
+            &mut agents2,
+            &mut grid2,
+            &actions2,
+            &default_physics(),
+            None,
+        );
+        let ground_cost = initial_stamina - agents2[0].stamina;
+
+        // Vehicle should be faster (lower cost) on ground terrain
+        assert!(
+            vehicle_cost < ground_cost,
+            "vehicle cost {} should be less than ground cost {}",
+            vehicle_cost,
+            ground_cost
+        );
+    }
+
     #[test]
     fn test_push_agent_at_boundary_no_adjacent_tile() {
         let mut grid = make_test_grid(16, 16);
@@ -953,7 +1261,7 @@ mod tests {
                     grid.get_mut(x, y).unwrap().agent_id = Some(0);
                     let actions = vec![Action::Move(dir)];
                     let results = process_movements(
-                        &mut agents, &mut grid, &actions, &default_physics(),
+                        &mut agents, &mut grid, &actions, &default_physics(), None,
                     );
                     (results, agents[0].position, agents[0].stamina)
                 };
@@ -975,7 +1283,7 @@ mod tests {
                 let mut agents = [make_test_agent(0, x, y)];
                 grid.get_mut(x, y).unwrap().agent_id = Some(0);
                 let actions = vec![Action::Move(dir)];
-                process_movements(&mut agents, &mut grid, &actions, &default_physics());
+                process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
                 prop_assert!(agents[0].position.x < 16);
                 prop_assert!(agents[0].position.y < 16);
             }
@@ -991,7 +1299,7 @@ mod tests {
                 agents[0].stamina = stamina;
                 grid.get_mut(8, 8).unwrap().agent_id = Some(0);
                 let actions = vec![Action::Move(dir)];
-                process_movements(&mut agents, &mut grid, &actions, &default_physics());
+                process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
                 prop_assert!(agents[0].stamina >= 0);
             }
 

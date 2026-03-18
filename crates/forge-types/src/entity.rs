@@ -21,6 +21,23 @@ pub type TeamId = u8;
 /// Communication token — a discrete symbol from the vocabulary.
 pub type CommToken = u16;
 
+/// Agent morphology — determines physics, traversal, and action rules.
+///
+/// Default is `Ground` for backwards compatibility. When drone mechanics
+/// are disabled, all agents behave as `Ground` regardless of morphology.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[non_exhaustive]
+#[repr(u8)]
+pub enum AgentMorphology {
+    /// Standard ground agent (walks on walkable terrain).
+    #[default]
+    Ground = 0,
+    /// Wheeled/tracked ground vehicle (faster on flat terrain, restricted traversal).
+    GroundVehicle = 1,
+    /// Aerial UAV (3D movement, ignores ground obstacles when airborne, battery-dependent).
+    Aerial = 2,
+}
+
 /// An agent in the simulation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
@@ -46,6 +63,23 @@ pub struct Agent {
     pub capabilities: AgentCapabilities,
     /// Whether this agent is alive.
     pub alive: bool,
+    /// Agent morphology type (Ground, GroundVehicle, Aerial).
+    #[serde(default)]
+    pub morphology: AgentMorphology,
+    /// Current altitude (0 = ground level). Only non-zero for Aerial morphology.
+    #[serde(default)]
+    pub altitude: u8,
+    /// Current battery level (fixed-point i32, 16 fractional bits).
+    #[serde(default = "default_battery")]
+    pub battery: i32,
+    /// Current heading direction (for vehicle turn radius).
+    #[serde(default)]
+    pub heading: crate::grid::Direction,
+}
+
+/// Default battery value for serde deserialization (matches starting stamina).
+fn default_battery() -> i32 {
+    crate::constants::DEFAULT_STARTING_BATTERY
 }
 
 impl Agent {
@@ -63,6 +97,10 @@ impl Agent {
             comm_buffer: SmallVec::new(),
             capabilities: AgentCapabilities::default(),
             alive: true,
+            morphology: AgentMorphology::default(),
+            altitude: 0,
+            battery: crate::constants::DEFAULT_STARTING_BATTERY,
+            heading: crate::grid::Direction::Up,
         }
     }
 
@@ -83,6 +121,12 @@ pub struct AgentCapabilities {
     pub can_communicate: bool,
     /// Whether this agent can trade.
     pub can_trade: bool,
+    /// Maximum altitude this agent can reach. 0 for ground-only agents.
+    pub max_altitude: u8,
+    /// Whether this agent can fly (Aerial morphology).
+    pub can_fly: bool,
+    /// Turn radius constraint. 0 = instant turn, 1+ = restricted turning.
+    pub turn_radius: u8,
 }
 
 impl Default for AgentCapabilities {
@@ -92,6 +136,9 @@ impl Default for AgentCapabilities {
             crafting_level: 1,
             can_communicate: true,
             can_trade: true,
+            max_altitude: 0,
+            can_fly: false,
+            turn_radius: 0,
         }
     }
 }
@@ -391,5 +438,49 @@ mod tests {
         assert!(!inv.add_item(ItemType::Wood, 1));
         assert_eq!(inv.occupied_slots(), 0);
         assert_eq!(inv.count_item(ItemType::Wood), 0);
+    }
+
+    #[test]
+    fn test_agent_morphology_default_is_ground() {
+        assert_eq!(AgentMorphology::default(), AgentMorphology::Ground);
+    }
+
+    #[test]
+    fn test_agent_morphology_repr() {
+        assert_eq!(AgentMorphology::Ground as u8, 0);
+        assert_eq!(AgentMorphology::GroundVehicle as u8, 1);
+        assert_eq!(AgentMorphology::Aerial as u8, 2);
+    }
+
+    #[test]
+    fn test_agent_new_has_ground_morphology() {
+        let config = AgentConfig::default();
+        let agent = Agent::new(0, Position::new(5, 5), &config);
+        assert_eq!(agent.morphology, AgentMorphology::Ground);
+        assert_eq!(agent.altitude, 0);
+        assert!(agent.battery > 0);
+        assert_eq!(agent.heading, crate::grid::Direction::Up);
+    }
+
+    #[test]
+    fn test_agent_capabilities_default_no_flight() {
+        let caps = AgentCapabilities::default();
+        assert_eq!(caps.max_altitude, 0);
+        assert!(!caps.can_fly);
+        assert_eq!(caps.turn_radius, 0);
+    }
+
+    #[test]
+    fn test_agent_morphology_serde_roundtrip() {
+        let morphologies = [
+            AgentMorphology::Ground,
+            AgentMorphology::GroundVehicle,
+            AgentMorphology::Aerial,
+        ];
+        for morph in &morphologies {
+            let json = serde_json::to_string(morph).unwrap();
+            let deserialized: AgentMorphology = serde_json::from_str(&json).unwrap();
+            assert_eq!(*morph, deserialized);
+        }
     }
 }

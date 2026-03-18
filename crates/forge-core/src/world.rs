@@ -93,7 +93,31 @@ impl WorldState {
                 let y = rng.next_range(config.world.height as u32) as u16;
                 Position::new(x, y)
             };
-            let agent = Agent::new(i, pos, &config.agents);
+            let mut agent = Agent::new(i, pos, &config.agents);
+
+            // Assign morphology based on drone config
+            if config.drone.enabled {
+                let morphology = if i < config.drone.num_aerial {
+                    forge_types::entity::AgentMorphology::Aerial
+                } else if i < config.drone.num_aerial + config.drone.num_ground_vehicles {
+                    forge_types::entity::AgentMorphology::GroundVehicle
+                } else {
+                    forge_types::entity::AgentMorphology::Ground
+                };
+                agent.morphology = morphology;
+                match morphology {
+                    forge_types::entity::AgentMorphology::Aerial => {
+                        agent.capabilities.can_fly = true;
+                        agent.capabilities.max_altitude = config.drone.max_altitude;
+                        agent.battery = config.drone.starting_battery;
+                    }
+                    forge_types::entity::AgentMorphology::GroundVehicle => {
+                        agent.capabilities.turn_radius = config.drone.vehicle_turn_radius;
+                    }
+                    forge_types::entity::AgentMorphology::Ground | _ => {}
+                }
+            }
+
             agents.push(agent);
         }
 
@@ -294,6 +318,21 @@ impl WorldState {
                     }
                 })
                 .collect(),
+            altitude: agent.altitude,
+            battery: if self.config.drone.enabled
+                && agent.morphology == forge_types::entity::AgentMorphology::Aerial
+            {
+                let max = self.config.drone.max_battery as f32;
+                if max > 0.0 {
+                    (agent.battery as f32 / max).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            },
+            morphology: agent.morphology as u8,
+            heading: agent.heading as u8,
         }
     }
 

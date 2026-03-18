@@ -241,7 +241,7 @@ mod tests {
             intent_label: "explore".to_string(),
             confidence: 0.75,
             search_depth: 10,
-            ucb1_score: 3.14,
+            ucb1_score: 3.15,
             alternatives_considered: 7,
         };
         let json = serde_json::to_string(&entry).unwrap();

@@ -111,7 +111,8 @@ impl ForgeWasmEnv {
     #[instrument(skip_all)]
     pub fn step(&mut self, action: u32) -> String {
         let comm_vocab = self.config.agents.comm_vocab_size;
-        let decoded = Action::from_discrete(action, comm_vocab).unwrap_or(Action::Noop);
+        let decoded = Action::from_discrete(action, comm_vocab, self.config.drone.enabled)
+            .unwrap_or(Action::Noop);
         let result = self.world.step(&[decoded]);
         let response = StepResponse {
             observations: result.observations,
@@ -177,12 +178,13 @@ impl ForgeWasmEnv {
             self.config.agents.default_carry_capacity,
             self.config.agents.comm_buffer_size,
             self.config.task.max_predicates,
+            self.config.drone.enabled,
         );
 
         let space = ObservationSpace {
             flat_shape: vec![flat_size],
             low: 0.0,
-            high: 255.0,
+            high: u8::MAX as f32,
             grid_shape: (view_side, view_side, features_per_tile),
             inventory_size: self.config.agents.default_carry_capacity as usize,
             comm_buffer_size: self.config.agents.comm_buffer_size as usize,
@@ -196,7 +198,10 @@ impl ForgeWasmEnv {
     /// of human-readable action names indexed by action ID.
     #[instrument(skip_all)]
     pub fn action_space_json(&self) -> String {
-        let space = ActionSpace::new(self.config.agents.comm_vocab_size);
+        let space = ActionSpace::new(
+            self.config.agents.comm_vocab_size,
+            self.config.drone.enabled,
+        );
         serde_json::to_string(&space).expect("failed to serialize action space")
     }
 }

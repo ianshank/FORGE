@@ -209,11 +209,11 @@ mod tests {
 
         assert_eq!(agent.action_count(), 0);
 
-        for i in 1..=3 {
+        for i in 1u64..=3 {
             let prompt = CognitivePrompt::builder()
                 .observation("test".into())
                 .build();
-            agent.select_action_with_prompt(prompt, i as u64);
+            agent.select_action_with_prompt(prompt, i);
             assert_eq!(agent.action_count(), i);
         }
     }

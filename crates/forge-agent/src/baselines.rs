@@ -31,7 +31,7 @@ impl<R: Rng> RandomAgent<R> {
     pub fn new(rng: R, comm_vocab_size: u16) -> Self {
         Self {
             rng,
-            action_space_size: Action::space_size(comm_vocab_size),
+            action_space_size: Action::space_size(comm_vocab_size, false),
             comm_vocab_size,
         }
     }
@@ -40,7 +40,7 @@ impl<R: Rng> RandomAgent<R> {
 impl<R: Rng + Send> Agent for RandomAgent<R> {
     fn select_action(&mut self, _state: &WorldState, _agent_idx: usize) -> Action {
         let action_id = self.rng.gen_range(0..self.action_space_size);
-        Action::from_discrete(action_id, self.comm_vocab_size).unwrap_or(Action::Noop)
+        Action::from_discrete(action_id, self.comm_vocab_size, false).unwrap_or(Action::Noop)
     }
 
     fn name(&self) -> &str {
@@ -163,8 +163,10 @@ impl<R: Rng + Send> Agent for HeuristicAgent<R> {
         }
 
         // Otherwise, move in a random direction
-        let dir_idx = self.rng.gen_range(0..4u32);
-        Action::from_discrete(1 + dir_idx, self.comm_vocab_size).unwrap_or(Action::Noop)
+        let dir_idx = self
+            .rng
+            .gen_range(0..forge_types::constants::NUM_DIRECTIONS as u32);
+        Action::from_discrete(1 + dir_idx, self.comm_vocab_size, false).unwrap_or(Action::Noop)
     }
 
     fn name(&self) -> &str {
@@ -235,7 +237,7 @@ mod tests {
             let action = agent.select_action(&state, 0);
             // Should always be a valid action
             let discrete = action.to_discrete();
-            assert!(discrete < Action::space_size(0));
+            assert!(discrete < Action::space_size(0, false));
         }
     }
 
@@ -306,7 +308,7 @@ mod tests {
         for _ in 0..50 {
             let action = agent.select_action(&state, 0);
             let discrete = action.to_discrete();
-            assert!(discrete < Action::space_size(0) || action == Action::PickUp);
+            assert!(discrete < Action::space_size(0, false) || action == Action::PickUp);
         }
     }
 

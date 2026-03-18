@@ -6,17 +6,13 @@
 use forge_types::config::ForgeConfig;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use tracing::instrument;
 
-/// Returns a Python dict describing the observation space for Gymnasium compatibility.
+/// Builds a Gymnasium-compatible observation space description as a Python dict.
 ///
-/// The dict contains:
-/// - "grid_view": {"shape": (h, w, 7), "low": 0, "high": 255, "dtype": "uint8"}
-/// - "inventory": {"shape": (capacity, 2), "low": 0, "high": 65535, "dtype": "uint16"}
-/// - "health": {"low": 0.0, "high": 1.0, "dtype": "float32"}
-/// - "stamina": {"low": 0.0, "high": 1.0, "dtype": "float32"}
-/// - "position": {"shape": (2,), "low": 0, "high": 65535, "dtype": "uint16"}
-/// - "messages": {"shape": (buffer_size,), "low": 0, "high": vocab_size, "dtype": "uint16"}
-/// - "day_phase": {"low": 0, "high": 3, "dtype": "uint8"}
+/// Returns a nested dict describing shape, dtype, and bounds for each observation component:
+/// grid_view, inventory, health, stamina, position, messages, and day_phase.
+#[instrument(skip_all)]
 pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObject> {
     let dict = PyDict::new_bound(py);
 
@@ -34,7 +30,7 @@ pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObj
         ),
     )?;
     grid_dict.set_item("low", 0u8)?;
-    grid_dict.set_item("high", 255u8)?;
+    grid_dict.set_item("high", u8::MAX)?;
     grid_dict.set_item("dtype", "uint8")?;
     dict.set_item("grid_view", grid_dict)?;
 
@@ -43,7 +39,7 @@ pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObj
     let capacity = config.agents.default_carry_capacity as usize;
     inv_dict.set_item("shape", (capacity, 2))?;
     inv_dict.set_item("low", 0u16)?;
-    inv_dict.set_item("high", 65535u16)?;
+    inv_dict.set_item("high", u16::MAX)?;
     inv_dict.set_item("dtype", "uint16")?;
     dict.set_item("inventory", inv_dict)?;
 
@@ -97,14 +93,13 @@ pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObj
     Ok(dict.unbind().into())
 }
 
-/// Returns a Python dict describing the discrete action space for Gymnasium compatibility.
+/// Builds a Gymnasium-compatible discrete action space description as a Python dict.
 ///
-/// The dict contains:
-/// - "type": "Discrete"
-/// - "n": total number of actions
+/// Returns a dict with "type" ("Discrete") and "n" (total actions including drone if enabled).
+#[instrument(skip_all)]
 pub fn action_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObject> {
     let dict = PyDict::new_bound(py);
-    let n = forge_types::Action::space_size(config.agents.comm_vocab_size);
+    let n = forge_types::Action::space_size(config.agents.comm_vocab_size, config.drone.enabled);
     dict.set_item("type", "Discrete")?;
     dict.set_item("n", n)?;
     Ok(dict.unbind().into())

@@ -316,10 +316,10 @@ mod tests {
                 for y in 0..config.height.min(16) {
                     for x in 0..config.width.min(16) {
                         let elev = gen.elevation_at(x, y);
-                        prop_assert!(elev >= 0.0 && elev <= 1.0,
+                        prop_assert!((0.0..=1.0).contains(&elev),
                             "elevation at ({}, {}) = {} out of [0, 1]", x, y, elev);
                         let moist = gen.moisture_at(x, y);
-                        prop_assert!(moist >= 0.0 && moist <= 1.0,
+                        prop_assert!((0.0..=1.0).contains(&moist),
                             "moisture at ({}, {}) = {} out of [0, 1]", x, y, moist);
                     }
                 }
