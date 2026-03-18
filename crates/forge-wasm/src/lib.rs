@@ -183,7 +183,7 @@ impl ForgeWasmEnv {
         let space = ObservationSpace {
             flat_shape: vec![flat_size],
             low: 0.0,
-            high: 255.0,
+            high: u8::MAX as f32,
             grid_shape: (view_side, view_side, features_per_tile),
             inventory_size: self.config.agents.default_carry_capacity as usize,
             comm_buffer_size: self.config.agents.comm_buffer_size as usize,

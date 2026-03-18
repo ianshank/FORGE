@@ -163,7 +163,9 @@ impl<R: Rng + Send> Agent for HeuristicAgent<R> {
         }
 
         // Otherwise, move in a random direction
-        let dir_idx = self.rng.gen_range(0..4u32);
+        let dir_idx = self
+            .rng
+            .gen_range(0..forge_types::constants::NUM_DIRECTIONS as u32);
         Action::from_discrete(1 + dir_idx, self.comm_vocab_size, false).unwrap_or(Action::Noop)
     }
 
