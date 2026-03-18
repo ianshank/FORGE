@@ -179,6 +179,26 @@ pub const OBS_FEATURES_PER_TILE: usize = 7;
 /// (altitude, battery, morphology, heading).
 pub const OBS_DRONE_FIELDS_COUNT: usize = 4;
 
+// ---------- Terrain movement costs (fixed-point) ----------
+
+/// Movement cost for Ground terrain (1.0x — normal speed).
+pub const TERRAIN_COST_GROUND: i32 = FIXED_POINT_ONE;
+/// Movement cost for Ice terrain (0.5x — slippery, reduced stamina).
+pub const TERRAIN_COST_ICE: i32 = FIXED_POINT_ONE / 2;
+/// Movement cost for Sand terrain (1.5x — slower movement).
+pub const TERRAIN_COST_SAND: i32 = FIXED_POINT_ONE + FIXED_POINT_ONE / 2;
+/// Movement cost for Forest terrain (2.0x — dense vegetation).
+pub const TERRAIN_COST_FOREST: i32 = FIXED_POINT_ONE * 2;
+
+// ---------- Item type classification boundaries ----------
+
+/// Items with discriminant below this are raw (harvestable) resources.
+pub const ITEM_TYPE_RAW_MAX: u8 = 10;
+/// Items with discriminant in [ITEM_TYPE_CRAFTED_MIN, ITEM_TYPE_CRAFTED_MAX) are crafted.
+pub const ITEM_TYPE_CRAFTED_MIN: u8 = 10;
+/// Upper exclusive bound for crafted item discriminants.
+pub const ITEM_TYPE_CRAFTED_MAX: u8 = 30;
+
 // ---------- Drone defaults ----------
 
 /// Whether drone mechanics are enabled by default.
@@ -324,5 +344,27 @@ mod tests {
         // Ground cost < FIXED_POINT_ONE means faster than walking
         assert!(DEFAULT_VEHICLE_TERRAIN_COSTS[0] < FIXED_POINT_ONE);
         assert!(DEFAULT_VEHICLE_TERRAIN_COSTS[0] > 0);
+    }
+
+    #[test]
+    fn test_terrain_costs_derived_from_fixed_point() {
+        assert_eq!(TERRAIN_COST_GROUND, FIXED_POINT_ONE);
+        assert_eq!(TERRAIN_COST_ICE, FIXED_POINT_ONE / 2);
+        assert_eq!(TERRAIN_COST_SAND, FIXED_POINT_ONE + FIXED_POINT_ONE / 2);
+        assert_eq!(TERRAIN_COST_FOREST, FIXED_POINT_ONE * 2);
+    }
+
+    #[test]
+    fn test_terrain_cost_ordering() {
+        // Ice < Ground < Sand < Forest
+        assert!(TERRAIN_COST_ICE < TERRAIN_COST_GROUND);
+        assert!(TERRAIN_COST_GROUND < TERRAIN_COST_SAND);
+        assert!(TERRAIN_COST_SAND < TERRAIN_COST_FOREST);
+    }
+
+    #[test]
+    fn test_item_type_boundaries_consistent() {
+        assert_eq!(ITEM_TYPE_RAW_MAX, ITEM_TYPE_CRAFTED_MIN);
+        assert!(ITEM_TYPE_CRAFTED_MIN < ITEM_TYPE_CRAFTED_MAX);
     }
 }

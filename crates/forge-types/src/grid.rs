@@ -120,13 +120,14 @@ impl TerrainType {
     }
 
     /// Movement cost multiplier (fixed-point). Higher = more stamina drain.
-    /// 65536 = 1.0x cost (normal), 131072 = 2.0x cost, etc.
+    /// `FIXED_POINT_ONE` (65536) = 1.0x cost (normal), 2*FIXED_POINT_ONE = 2.0x cost, etc.
     pub fn movement_cost(&self) -> i32 {
+        use crate::constants;
         match self {
-            TerrainType::Ground => 65536,  // 1.0x
-            TerrainType::Ice => 32768,     // 0.5x (slippery, less stamina)
-            TerrainType::Sand => 98304,    // 1.5x
-            TerrainType::Forest => 131072, // 2.0x
+            TerrainType::Ground => constants::TERRAIN_COST_GROUND,
+            TerrainType::Ice => constants::TERRAIN_COST_ICE,
+            TerrainType::Sand => constants::TERRAIN_COST_SAND,
+            TerrainType::Forest => constants::TERRAIN_COST_FOREST,
             // Non-walkable terrains return max cost
             _ => i32::MAX,
         }
@@ -471,11 +472,24 @@ mod tests {
 
     #[test]
     fn test_terrain_movement_cost() {
+        use crate::constants;
         // Walkable terrains have specific costs.
-        assert_eq!(TerrainType::Ground.movement_cost(), 65536); // 1.0x
-        assert_eq!(TerrainType::Ice.movement_cost(), 32768); // 0.5x
-        assert_eq!(TerrainType::Sand.movement_cost(), 98304); // 1.5x
-        assert_eq!(TerrainType::Forest.movement_cost(), 131072); // 2.0x
+        assert_eq!(
+            TerrainType::Ground.movement_cost(),
+            constants::TERRAIN_COST_GROUND
+        );
+        assert_eq!(
+            TerrainType::Ice.movement_cost(),
+            constants::TERRAIN_COST_ICE
+        );
+        assert_eq!(
+            TerrainType::Sand.movement_cost(),
+            constants::TERRAIN_COST_SAND
+        );
+        assert_eq!(
+            TerrainType::Forest.movement_cost(),
+            constants::TERRAIN_COST_FOREST
+        );
 
         // Non-walkable terrains return i32::MAX.
         assert_eq!(TerrainType::Water.movement_cost(), i32::MAX);

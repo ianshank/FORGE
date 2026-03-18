@@ -28,9 +28,9 @@ pub struct TileObservation {
     pub has_resource: bool,
     /// Elevation value.
     pub elevation: u8,
-    /// Object type if present (encoded as u8), or 255 for none.
+    /// Object type if present (encoded as u8), or `OBS_NO_OBJECT` sentinel for none.
     pub object_type: u8,
-    /// Resource type if present (encoded as u8), or 255 for none.
+    /// Resource type if present (encoded as u8), or `OBS_NO_RESOURCE` sentinel for none.
     pub resource_type: u8,
 }
 
@@ -42,8 +42,8 @@ impl Default for TileObservation {
             has_agent: false,
             has_object: false,
             has_resource: false,
-            object_type: 255,
-            resource_type: 255,
+            object_type: constants::OBS_NO_OBJECT,
+            resource_type: constants::OBS_NO_RESOURCE,
         }
     }
 }
@@ -51,7 +51,7 @@ impl Default for TileObservation {
 /// Inventory observation — what the agent carries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventoryObservation {
-    /// Per-slot: (item_type as u8, count). Empty slots use (255, 0).
+    /// Per-slot: (item_type as u8, count). Empty slots use (`OBS_EMPTY_SLOT_ITEM`, 0).
     pub slots: Vec<(u8, u16)>,
 }
 
@@ -225,15 +225,18 @@ mod tests {
     fn test_observation_flat_size() {
         let size = Observation::flat_size(5, 10, 8, 4, false);
         let view_side = 11; // 2*5+1
-        let expected = view_side * view_side * 7 + 10 * 2 + 4 + 8 + 1 + 4;
+        let expected =
+            view_side * view_side * constants::OBS_FEATURES_PER_TILE + 10 * 2 + 4 + 8 + 1 + 4;
         assert_eq!(size, expected);
     }
 
     #[test]
     fn test_action_space_creation() {
-        let space = ActionSpace::new(16);
-        assert_eq!(space.n, 56); // 40 base + 16 comm
-        assert_eq!(space.action_names.len(), 56);
+        let comm_vocab: u16 = 16;
+        let expected_n = crate::action::Action::space_size(comm_vocab, false);
+        let space = ActionSpace::new(comm_vocab);
+        assert_eq!(space.n, expected_n);
+        assert_eq!(space.action_names.len(), expected_n as usize);
         assert_eq!(space.action_names[0], "Noop");
         assert_eq!(space.action_names[1], "Move Up");
     }
@@ -243,7 +246,7 @@ mod tests {
         let tile = TileObservation::default();
         assert_eq!(tile.terrain, 0); // Ground
         assert!(!tile.has_agent);
-        assert_eq!(tile.object_type, 255);
+        assert_eq!(tile.object_type, constants::OBS_NO_OBJECT);
     }
 
     #[test]
@@ -253,7 +256,7 @@ mod tests {
             view_width: 1,
             view_height: 1,
             inventory: InventoryObservation {
-                slots: vec![(255, 0)],
+                slots: vec![(constants::OBS_EMPTY_SLOT_ITEM, 0)],
             },
             health: 1.0,
             stamina: 0.8,
@@ -321,15 +324,15 @@ mod tests {
     #[test]
     fn test_inventory_observation() {
         let inv_obs = InventoryObservation {
-            slots: vec![(0, 5), (1, 3), (255, 0)],
+            slots: vec![(0, 5), (1, 3), (constants::OBS_EMPTY_SLOT_ITEM, 0)],
         };
         assert_eq!(inv_obs.slots.len(), 3);
         // First slot: item type 0 (Wood) with count 5.
         assert_eq!(inv_obs.slots[0], (0, 5));
         // Second slot: item type 1 (Stone) with count 3.
         assert_eq!(inv_obs.slots[1], (1, 3));
-        // Third slot: empty (sentinel 255, count 0).
-        assert_eq!(inv_obs.slots[2], (255, 0));
+        // Third slot: empty (sentinel, count 0).
+        assert_eq!(inv_obs.slots[2], (constants::OBS_EMPTY_SLOT_ITEM, 0));
     }
 
     #[test]
@@ -338,8 +341,8 @@ mod tests {
         let size_drone = Observation::flat_size(5, 10, 8, 4, true);
         assert_eq!(
             size_drone - size_no_drone,
-            4,
-            "drone adds 4 extra features (altitude, battery, morphology, heading)"
+            constants::OBS_DRONE_FIELDS_COUNT,
+            "drone adds extra features (altitude, battery, morphology, heading)"
         );
     }
 
@@ -384,11 +387,11 @@ mod tests {
             flat_shape: vec![100],
             low: 0.0,
             high: 1.0,
-            grid_shape: (11, 11, 7),
+            grid_shape: (11, 11, constants::OBS_FEATURES_PER_TILE),
             inventory_size: 10,
             comm_buffer_size: 8,
         };
         assert_eq!(obs_space.flat_shape[0], 100);
-        assert_eq!(obs_space.grid_shape.2, 7);
+        assert_eq!(obs_space.grid_shape.2, constants::OBS_FEATURES_PER_TILE);
     }
 }

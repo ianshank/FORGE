@@ -55,13 +55,14 @@ pub enum ItemType {
 impl ItemType {
     /// Whether this is a raw (harvestable) resource.
     pub fn is_raw_resource(&self) -> bool {
-        (*self as u8) < 10
+        (*self as u8) < crate::constants::ITEM_TYPE_RAW_MAX
     }
 
     /// Whether this is a crafted item.
     pub fn is_crafted(&self) -> bool {
         let val = *self as u8;
-        (10..30).contains(&val)
+        (crate::constants::ITEM_TYPE_CRAFTED_MIN..crate::constants::ITEM_TYPE_CRAFTED_MAX)
+            .contains(&val)
     }
 
     /// Whether this item is a tool (provides capabilities).
