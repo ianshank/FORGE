@@ -215,7 +215,7 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
         let action = if let Some(a) = actions.get(i) {
             a
         } else {
-            debug!(
+            trace!(
                 agent_id = agent.id,
                 agent_idx = i,
                 "no action provided, defaulting to Noop"
@@ -296,10 +296,11 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
                         action.clone()
                     }
                 }
-                // DropPayload: only valid for airborne Aerial agents
+                // DropPayload: only valid for airborne Aerial agents (altitude > 0)
                 Action::DropPayload(slot) => {
                     if !state.config.drone.enabled
                         || agent.morphology != forge_types::entity::AgentMorphology::Aerial
+                        || agent.altitude == 0
                     {
                         Action::Noop
                     } else if (*slot as usize) >= agent.inventory.capacity() {
@@ -684,7 +685,7 @@ mod tests {
             Action::TakeOff,
             Action::Land,
         ] {
-            let validated = validate_actions(&[action.clone()], &state);
+            let validated = validate_actions(std::slice::from_ref(&action), &state);
             assert_eq!(
                 validated[0],
                 Action::Noop,
@@ -751,7 +752,9 @@ mod tests {
         config.agents.num_agents = 1;
         config.drone.enabled = true;
         config.drone.num_aerial = 1;
-        let state = WorldState::new(config).unwrap();
+        let mut state = WorldState::new(config).unwrap();
+        // Agent must be airborne for DropPayload to be valid
+        state.agents[0].altitude = 3;
 
         let validated = validate_actions(&[Action::DropPayload(0)], &state);
         assert_eq!(validated[0], Action::DropPayload(0));

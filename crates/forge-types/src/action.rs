@@ -118,8 +118,7 @@ impl Action {
     ///
     /// # Panics
     ///
-    /// Does not panic, but drone actions will produce IDs that collide with
-    /// Communicate tokens. Always prefer [`to_discrete_full`] in production code.
+    /// Panics if called on a drone action. Use [`to_discrete_full`] instead.
     pub fn to_discrete(&self) -> u32 {
         match self {
             Action::Noop => 0,
@@ -137,15 +136,15 @@ impl Action {
             Action::Push(Direction::Right) => 38,
             Action::Interact => 39,
             Action::Communicate(token) => 40 + *token as u32,
-            // Drone actions: use placeholder offsets. For correct encoding,
-            // callers must use to_discrete_full(comm_vocab_size) instead.
             Action::Ascend
             | Action::Descend
             | Action::Hover
             | Action::TakeOff
             | Action::Land
             | Action::Scan(_)
-            | Action::DropPayload(_) => self.to_discrete_full(0),
+            | Action::DropPayload(_) => {
+                panic!("drone actions require to_discrete_full(comm_vocab_size)")
+            }
         }
     }
 

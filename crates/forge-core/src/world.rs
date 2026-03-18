@@ -319,10 +319,12 @@ impl WorldState {
                 })
                 .collect(),
             altitude: agent.altitude,
-            battery: if self.config.drone.enabled {
+            battery: if self.config.drone.enabled
+                && agent.morphology == forge_types::entity::AgentMorphology::Aerial
+            {
                 let max = self.config.drone.max_battery as f32;
                 if max > 0.0 {
-                    agent.battery as f32 / max
+                    (agent.battery as f32 / max).clamp(0.0, 1.0)
                 } else {
                     1.0
                 }

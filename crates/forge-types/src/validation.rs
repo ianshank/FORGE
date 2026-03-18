@@ -138,6 +138,46 @@ pub fn validate_config(config: &ForgeConfig) -> ForgeResult<()> {
                 max: i32::MAX.to_string(),
             }));
         }
+        if config.drone.starting_battery <= 0 {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.starting_battery".to_string(),
+                value: config.drone.starting_battery.to_string(),
+                min: "1".to_string(),
+                max: config.drone.max_battery.to_string(),
+            }));
+        }
+        if config.drone.starting_battery > config.drone.max_battery {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.starting_battery".to_string(),
+                value: config.drone.starting_battery.to_string(),
+                min: "1".to_string(),
+                max: config.drone.max_battery.to_string(),
+            }));
+        }
+        if config.drone.aerial_drain_rate < 0 {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.aerial_drain_rate".to_string(),
+                value: config.drone.aerial_drain_rate.to_string(),
+                min: "0".to_string(),
+                max: i32::MAX.to_string(),
+            }));
+        }
+        if config.drone.ascend_cost < 0 {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.ascend_cost".to_string(),
+                value: config.drone.ascend_cost.to_string(),
+                min: "0".to_string(),
+                max: i32::MAX.to_string(),
+            }));
+        }
+        if config.drone.recharge_rate < 0 {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.recharge_rate".to_string(),
+                value: config.drone.recharge_rate.to_string(),
+                min: "0".to_string(),
+                max: i32::MAX.to_string(),
+            }));
+        }
     }
 
     Ok(())

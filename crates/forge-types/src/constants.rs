@@ -247,6 +247,7 @@ pub const NUM_VEHICLE_TERRAIN_TYPES: usize = 8;
 pub const DEFAULT_FALL_DAMAGE_PER_LEVEL: i32 = FIXED_POINT_ONE;
 
 #[cfg(test)]
+#[allow(clippy::assertions_on_constants)]
 mod tests {
     use super::*;
 

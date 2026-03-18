@@ -295,7 +295,7 @@ mod tests {
         for pred in &preds {
             let json = serde_json::to_string(pred).unwrap();
             let deserialized: Predicate = serde_json::from_str(&json).unwrap();
-            assert_eq!(format!("{:?}", pred), format!("{:?}", deserialized));
+            assert_eq!(pred, &deserialized);
         }
     }
 }

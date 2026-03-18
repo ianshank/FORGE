@@ -183,8 +183,8 @@ pub struct ActionSpace {
 
 impl ActionSpace {
     /// Creates an action space with the given communication vocabulary size.
-    pub fn new(comm_vocab_size: u16) -> Self {
-        let n = crate::action::Action::space_size(comm_vocab_size, false);
+    pub fn new(comm_vocab_size: u16, drone_actions_enabled: bool) -> Self {
+        let n = crate::action::Action::space_size(comm_vocab_size, drone_actions_enabled);
         let mut names = vec![
             "Noop".to_string(),
             "Move Up".to_string(),
@@ -210,6 +210,20 @@ impl ActionSpace {
         for i in 0..comm_vocab_size {
             names.push(format!("Communicate {}", i));
         }
+        if drone_actions_enabled {
+            names.push("Ascend".to_string());
+            names.push("Descend".to_string());
+            names.push("Hover".to_string());
+            names.push("TakeOff".to_string());
+            names.push("Land".to_string());
+            names.push("Scan Up".to_string());
+            names.push("Scan Down".to_string());
+            names.push("Scan Left".to_string());
+            names.push("Scan Right".to_string());
+            for i in 0..10 {
+                names.push(format!("DropPayload Slot {}", i));
+            }
+        }
         Self {
             n,
             action_names: names,
@@ -234,7 +248,7 @@ mod tests {
     fn test_action_space_creation() {
         let comm_vocab: u16 = 16;
         let expected_n = crate::action::Action::space_size(comm_vocab, false);
-        let space = ActionSpace::new(comm_vocab);
+        let space = ActionSpace::new(comm_vocab, false);
         assert_eq!(space.n, expected_n);
         assert_eq!(space.action_names.len(), expected_n as usize);
         assert_eq!(space.action_names[0], "Noop");
@@ -370,14 +384,14 @@ mod tests {
 
     #[test]
     fn test_action_space_names_match_count() {
-        let space = ActionSpace::new(0);
+        let space = ActionSpace::new(0, false);
         assert_eq!(
             space.action_names.len() as u32,
             space.n,
             "action names count must match space size"
         );
 
-        let space16 = ActionSpace::new(16);
+        let space16 = ActionSpace::new(16, false);
         assert_eq!(space16.action_names.len() as u32, space16.n);
     }
 
