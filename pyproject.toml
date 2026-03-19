@@ -42,6 +42,18 @@ ignore = [
     "PLR2004", # magic value comparison (acceptable in tests)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Test files use late imports for pytest.importorskip and conditional optional deps
+"tests/**" = ["PLC0415"]
+"demo_ui/tests/**" = ["PLC0415"]
+# Production modules with conditional imports of optional deps (torch, httpx, tomllib)
+"python/forge/agents/**" = ["PLC0415"]
+"python/forge/models/**" = ["PLC0415"]
+"python/forge/training/**" = ["PLC0415"]
+"python/forge/config.py" = ["PLC0415"]
+"python/forge/utils/**" = ["PLC0415"]
+"python/forge_env/utils.py" = ["PLC0415"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["forge_env"]
 

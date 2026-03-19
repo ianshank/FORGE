@@ -108,8 +108,8 @@ Add a dedicated UI panel for the task system:
 
 Add example scripts and CI integration for:
 
-- `train_ppo.py` with Stable Baselines 3
-- `train_ppo_cleanrl.py` with CleanRL
+- `scripts/train.py` with Stable Baselines 3 (partially implemented)
+- CleanRL integration script (planned)
 - W&B / MLflow logging hooks from FORGE env wrappers
 - Pre-trained model checkpoint serving via the demo UI
 
