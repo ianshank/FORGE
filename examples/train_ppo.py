@@ -11,11 +11,17 @@ Usage:
 
     # Without SB3 (random baseline):
     python train_ppo.py --seed 42
+
+    # With custom world size and episode length:
+    python train_ppo.py --width 64 --height 64 --max-steps 1000
 """
 
 import argparse
+import logging
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # --- Optional: Stable Baselines3 -------------------------------------------
 try:
@@ -31,10 +37,10 @@ try:
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
 except ImportError:
     ForgeGymnasiumEnv = None
-    print(
-        "WARNING: Could not import ForgeGymnasiumEnv from forge_env.gymnasium_env.\n"
-        "Make sure the forge-python crate is built and installed:\n"
-        "  cd crates/forge-python && maturin develop\n"
+    logger.warning(
+        "Could not import ForgeGymnasiumEnv from forge_env.gymnasium_env. "
+        "Make sure the forge-python crate is built and installed: "
+        "cd crates/forge-python && maturin develop"
     )
 
 # --- FORGE wrappers ---------------------------------------------------------
@@ -48,45 +54,70 @@ except ImportError:
     FlattenObservationWrapper = None
     RecordEpisodeStatistics = None
     TimeLimit = None
-    print(
-        "WARNING: Could not import wrappers from forge_env.wrappers.\n"
+    logger.warning(
+        "Could not import wrappers from forge_env.wrappers. "
         "FlattenObservationWrapper, TimeLimit, and RecordEpisodeStatistics "
-        "will not be available.\n"
+        "will not be available."
     )
 
+# --- Default hyperparameters (override via CLI args) ------------------------
+_DEFAULT_WORLD_WIDTH = 32
+_DEFAULT_WORLD_HEIGHT = 32
+_DEFAULT_NUM_AGENTS = 1
+_DEFAULT_MAX_STEPS = 500
+_DEFAULT_PPO_N_STEPS = 256
+_DEFAULT_PPO_BATCH_SIZE = 64
+_DEFAULT_PPO_N_EPOCHS = 4
+_DEFAULT_PPO_LEARNING_RATE = 3e-4
+_DEFAULT_TIMESTEPS = 50_000
+_DEFAULT_EVAL_EPISODES = 5
+_DEFAULT_BASELINE_STEPS = 1000
+_DEFAULT_SEED = 42
+_DEFAULT_EVAL_SEED_OFFSET = 1000
 
-def make_env(seed=0):
+
+def make_env(
+    seed: int = 0,
+    width: int = _DEFAULT_WORLD_WIDTH,
+    height: int = _DEFAULT_WORLD_HEIGHT,
+    num_agents: int = _DEFAULT_NUM_AGENTS,
+    max_steps: int = _DEFAULT_MAX_STEPS,
+) -> object | None:
     """Create a FORGE Gymnasium environment with standard wrappers.
 
     The environment is wrapped with:
-    - TimeLimit: caps each episode at 500 steps.
+    - TimeLimit: caps each episode at ``max_steps`` steps.
     - FlattenObservationWrapper: flattens nested observations into a 1-D array.
     - RecordEpisodeStatistics: tracks episode return and length.
 
     Args:
         seed: Random seed for reproducibility.
+        width: World grid width.
+        height: World grid height.
+        num_agents: Number of agents in the environment.
+        max_steps: Maximum steps per episode (TimeLimit).
 
     Returns:
         A wrapped ForgeGymnasiumEnv instance, or None if imports failed.
     """
     if ForgeGymnasiumEnv is None:
-        print("ForgeGymnasiumEnv is not available. Cannot create environment.")
+        logger.error("ForgeGymnasiumEnv is not available. Cannot create environment.")
         return None
 
     config = {
         "world": {
-            "width": 32,
-            "height": 32,
+            "width": width,
+            "height": height,
         },
         "agents": {
-            "num_agents": 1,
+            "num_agents": num_agents,
         },
     }
 
     env = ForgeGymnasiumEnv(config=config, seed=seed)
 
     if TimeLimit is not None:
-        env = TimeLimit(env, max_steps=500)
+        env = TimeLimit(env, max_steps=max_steps)
     if FlattenObservationWrapper is not None:
         env = FlattenObservationWrapper(env)
     if RecordEpisodeStatistics is not None:
@@ -95,39 +126,48 @@ def make_env(seed=0):
     return env
 
 
-def train_with_sb3(timesteps, seed):
+def train_with_sb3(args: argparse.Namespace) -> None:
     """Train a PPO agent using Stable Baselines3.
 
     Args:
-        timesteps: Total number of training timesteps.
-        seed: Random seed for reproducibility.
+        args: Parsed CLI arguments containing all hyperparameters.
     """
-    env = make_env(seed=seed)
+    env = make_env(
+        seed=args.seed,
+        width=args.width,
+        height=args.height,
+        max_steps=args.max_steps,
+    )
     if env is None:
         return
 
-    print(f"Training PPO for {timesteps} timesteps (seed={seed})...")
+    logger.info("Training PPO for %d timesteps (seed=%d)...", args.timesteps, args.seed)
     model = PPO(
         "MlpPolicy",
         env,
         verbose=1,
-        seed=seed,
-        n_steps=256,
-        batch_size=64,
-        n_epochs=4,
-        learning_rate=3e-4,
+        seed=args.seed,
+        n_steps=args.n_steps,
+        batch_size=args.batch_size,
+        n_epochs=args.n_epochs,
+        learning_rate=args.learning_rate,
     )
 
-    model.learn(total_timesteps=timesteps)
+    model.learn(total_timesteps=args.timesteps)
 
-    # Evaluate the trained agent for a few episodes
-    print("\n--- Evaluation ---")
-    eval_env = make_env(seed=seed + 1000)
+    # Evaluate the trained agent
+    logger.info("--- Evaluation ---")
+    eval_env = make_env(
+        seed=args.seed + _DEFAULT_EVAL_SEED_OFFSET,
+        width=args.width,
+        height=args.height,
+        max_steps=args.max_steps,
+    )
     if eval_env is None:
         return
 
     episode_rewards = []
-    for ep in range(5):
+    for ep in range(args.eval_episodes):
         obs, _info = eval_env.reset()
         done = False
         total_reward = 0.0
@@ -137,37 +177,41 @@ def train_with_sb3(timesteps, seed):
             total_reward += reward
             done = terminated or truncated
         episode_rewards.append(total_reward)
-        print(f"  Episode {ep + 1}: reward = {total_reward:.3f}")
+        logger.info("  Episode %d: reward = %.3f", ep + 1, total_reward)
 
     eval_env.close()
     env.close()
 
-    print(f"\nMean evaluation reward: {np.mean(episode_rewards):.3f}")
-    print(f"Std evaluation reward:  {np.std(episode_rewards):.3f}")
+    logger.info("Mean evaluation reward: %.3f", np.mean(episode_rewards))
+    logger.info("Std evaluation reward:  %.3f", np.std(episode_rewards))
 
 
-def run_random_baseline(seed, num_steps=1000):
+def run_random_baseline(args: argparse.Namespace) -> None:
     """Run a random-action baseline when SB3 is not available.
 
     Args:
-        seed: Random seed for reproducibility.
-        num_steps: Number of steps to run.
+        args: Parsed CLI arguments.
     """
-    print(
-        "Stable Baselines3 is not installed. To train with PPO, install it:\n"
-        "  pip install stable-baselines3\n"
+    logger.info(
+        "Stable Baselines3 is not installed. To train with PPO, install it: "
+        "pip install stable-baselines3"
     )
-    print(f"Running random baseline for {num_steps} steps instead...\n")
+    logger.info("Running random baseline for %d steps instead...", args.baseline_steps)
 
-    env = make_env(seed=seed)
+    env = make_env(
+        seed=args.seed,
+        width=args.width,
+        height=args.height,
+        max_steps=args.max_steps,
+    )
     if env is None:
         return
 
     _obs, _info = env.reset()
-    episode_rewards = []
+    episode_rewards: list[float] = []
     current_episode_reward = 0.0
 
-    for _step in range(1, num_steps + 1):
+    for _step in range(1, args.baseline_steps + 1):
         action = env.action_space.sample()
         _obs, reward, terminated, truncated, _info = env.step(action)
         current_episode_reward += reward
@@ -184,35 +228,95 @@ def run_random_baseline(seed, num_steps=1000):
     env.close()
 
     if episode_rewards:
-        print("--- Random Baseline Results ---")
-        print(f"  Episodes completed: {len(episode_rewards)}")
-        print(f"  Mean episode reward: {np.mean(episode_rewards):.3f}")
-        print(f"  Std episode reward:  {np.std(episode_rewards):.3f}")
-        print(f"  Min episode reward:  {np.min(episode_rewards):.3f}")
-        print(f"  Max episode reward:  {np.max(episode_rewards):.3f}")
+        logger.info("--- Random Baseline Results ---")
+        logger.info("  Episodes completed: %d", len(episode_rewards))
+        logger.info("  Mean episode reward: %.3f", np.mean(episode_rewards))
+        logger.info("  Std episode reward:  %.3f", np.std(episode_rewards))
+        logger.info("  Min episode reward:  %.3f", np.min(episode_rewards))
+        logger.info("  Max episode reward:  %.3f", np.max(episode_rewards))
     else:
-        print("No episodes completed within the given steps.")
+        logger.warning("No episodes completed within the given steps.")
 
 
-if __name__ == "__main__":
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser with all configurable hyperparameters."""
     parser = argparse.ArgumentParser(
         description="Train a PPO agent on a FORGE environment (or run a random baseline)."
     )
     parser.add_argument(
         "--timesteps",
         type=int,
-        default=50000,
-        help="Total training timesteps for PPO (default: 50000).",
+        default=_DEFAULT_TIMESTEPS,
+        help=f"Total training timesteps for PPO (default: {_DEFAULT_TIMESTEPS}).",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
-        help="Random seed for reproducibility (default: 42).",
+        default=_DEFAULT_SEED,
+        help=f"Random seed for reproducibility (default: {_DEFAULT_SEED}).",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=_DEFAULT_WORLD_WIDTH,
+        help=f"World grid width (default: {_DEFAULT_WORLD_WIDTH}).",
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=_DEFAULT_WORLD_HEIGHT,
+        help=f"World grid height (default: {_DEFAULT_WORLD_HEIGHT}).",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=_DEFAULT_MAX_STEPS,
+        help=f"Max steps per episode (default: {_DEFAULT_MAX_STEPS}).",
+    )
+    parser.add_argument(
+        "--n-steps",
+        type=int,
+        default=_DEFAULT_PPO_N_STEPS,
+        help=f"PPO rollout buffer size (default: {_DEFAULT_PPO_N_STEPS}).",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=_DEFAULT_PPO_BATCH_SIZE,
+        help=f"PPO minibatch size (default: {_DEFAULT_PPO_BATCH_SIZE}).",
+    )
+    parser.add_argument(
+        "--n-epochs",
+        type=int,
+        default=_DEFAULT_PPO_N_EPOCHS,
+        help=f"PPO optimization epochs per update (default: {_DEFAULT_PPO_N_EPOCHS}).",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=_DEFAULT_PPO_LEARNING_RATE,
+        help=f"PPO learning rate (default: {_DEFAULT_PPO_LEARNING_RATE}).",
+    )
+    parser.add_argument(
+        "--eval-episodes",
+        type=int,
+        default=_DEFAULT_EVAL_EPISODES,
+        help=f"Number of evaluation episodes (default: {_DEFAULT_EVAL_EPISODES}).",
+    )
+    parser.add_argument(
+        "--baseline-steps",
+        type=int,
+        default=_DEFAULT_BASELINE_STEPS,
+        help=f"Steps for random baseline (default: {_DEFAULT_BASELINE_STEPS}).",
+    )
+    return parser
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    args = _build_parser().parse_args()
 
     if SB3_AVAILABLE:
-        train_with_sb3(timesteps=args.timesteps, seed=args.seed)
+        train_with_sb3(args)
     else:
-        run_random_baseline(seed=args.seed)
+        run_random_baseline(args)

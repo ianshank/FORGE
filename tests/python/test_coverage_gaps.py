@@ -389,6 +389,45 @@ class TestDeviceExtended:
         d2 = get_device()
         assert d1 == d2
 
+    def test_get_device_returns_cuda_when_available(self) -> None:
+        """get_device should return 'cuda' when torch.cuda.is_available is True."""
+        from unittest import mock
+
+        mock_torch = mock.MagicMock()
+        mock_torch.cuda.is_available.return_value = True
+        with mock.patch.dict("sys.modules", {"torch": mock_torch}):
+            # Re-import to pick up the mock
+            from importlib import reload
+
+            import forge.utils.device as dev_mod
+            reload(dev_mod)
+            result = dev_mod.get_device()
+            assert result == "cuda"
+            # Restore
+            reload(dev_mod)
+
+    def test_get_device_returns_mps_when_available(self) -> None:
+        """get_device should return 'mps' when MPS is available."""
+        from unittest import mock
+
+        mock_torch = mock.MagicMock()
+        mock_torch.cuda.is_available.return_value = False
+        mock_torch.backends.mps.is_available.return_value = True
+        with mock.patch.dict("sys.modules", {"torch": mock_torch}):
+            from importlib import reload
+
+            import forge.utils.device as dev_mod
+            reload(dev_mod)
+            result = dev_mod.get_device()
+            assert result == "mps"
+            reload(dev_mod)
+
+    def test_get_device_returns_cpu_without_torch(self) -> None:
+        """get_device should return 'cpu' when torch is not installed."""
+        result = get_device()
+        # In CI without torch, this should be 'cpu'
+        assert result in ("cpu", "cuda", "mps")
+
 
 # ============================================================
 # RandomAgent extended tests

@@ -54,7 +54,16 @@ def mock_httpx_client() -> MagicMock:
 
 
 @pytest.fixture()
-def dashboard(mock_httpx_client: MagicMock) -> DashboardClient:
+def _mock_httpx_module() -> MagicMock:
+    """Patch the httpx module so late imports inside _post() succeed."""
+    mock_mod = MagicMock()
+    mock_mod.HTTPError = type("HTTPError", (Exception,), {})
+    with patch.dict("sys.modules", {"httpx": mock_mod}):
+        yield mock_mod
+
+
+@pytest.fixture()
+def dashboard(mock_httpx_client: MagicMock, _mock_httpx_module: MagicMock) -> DashboardClient:
     """Return a DashboardClient with a pre-injected mock session."""
     dc = DashboardClient("http://localhost:8080")
     dc._session = mock_httpx_client

@@ -78,11 +78,6 @@ pub fn process_movements(
             }
         };
 
-        // Check stamina
-        if !config.collision_enabled {
-            // Simplified mode without collision
-        }
-
         let stamina_cost = config.stamina_cost_move;
         if agent.stamina < stamina_cost {
             trace!(agent_id = agent.id, "movement blocked: no stamina");

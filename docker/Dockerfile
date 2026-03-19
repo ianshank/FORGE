@@ -7,7 +7,8 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Rust builder
 # ---------------------------------------------------------------------------
-FROM rust:1.85-bookworm AS rust-builder
+ARG RUST_VERSION=1.85
+FROM rust:${RUST_VERSION}-bookworm AS rust-builder
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
@@ -18,7 +19,8 @@ RUN cargo build --release --workspace
 # Stage 2: Python wheel builder (separate from runtime to avoid Rust toolchain
 # and build-essential ending up in the final image — Gemini review: critical)
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS wheel-builder
+ARG PYTHON_VERSION=3.11
+FROM python:${PYTHON_VERSION}-slim-bookworm AS wheel-builder
 WORKDIR /app
 
 RUN apt-get update && \
@@ -38,7 +40,8 @@ RUN pip install --no-cache-dir maturin && \
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime — slim image, no compilers, no Rust toolchain
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS runtime
+ARG PYTHON_VERSION=3.11
+FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime
 WORKDIR /app
 
 # Runtime-only system deps: libssl3 for TLS, curl for HEALTHCHECK

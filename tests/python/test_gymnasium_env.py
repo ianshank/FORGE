@@ -13,6 +13,18 @@ if TYPE_CHECKING:
 
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
+# Skip entire module when native extension is not built
+_native_available = True
+try:
+    from forge_env.forge_env import ForgeEnv as _NativeEnv  # noqa: F401
+except ImportError:
+    _native_available = False
+
+pytestmark = pytest.mark.skipif(
+    not _native_available,
+    reason="forge_env native extension not available (run maturin develop first)",
+)
+
 
 @pytest.fixture()
 def env() -> Generator[ForgeGymnasiumEnv]:

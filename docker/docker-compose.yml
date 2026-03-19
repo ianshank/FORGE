@@ -3,15 +3,18 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        RUST_VERSION: ${RUST_VERSION:-1.85}
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${FORGE_SIM_PORT:-8080}:8080"
     volumes:
       - ../forge.toml:/app/forge.toml:ro
       - ../configs:/app/configs:ro
     environment:
-      - FORGE_SIMULATION_GRID_SIZE=64
-      - FORGE_HARDWARE_NUM_WORKERS=4
-      - RUST_LOG=info
+      - FORGE_SIMULATION_GRID_SIZE=${FORGE_SIMULATION_GRID_SIZE:-64}
+      - FORGE_HARDWARE_NUM_WORKERS=${FORGE_HARDWARE_NUM_WORKERS:-4}
+      - RUST_LOG=${RUST_LOG:-info}
     healthcheck:
       test: [ "CMD", "curl", "-sf", "http://localhost:8080/health" ]
       interval: 15s
@@ -27,7 +30,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.dashboard
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:${FORGE_DASHBOARD_PORT:-3000}:80"
     depends_on:
       simulation:
         condition: service_healthy
@@ -40,7 +43,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.demo
     ports:
-      - "127.0.0.1:8765:8765"
+      - "127.0.0.1:${FORGE_DEMO_PORT:-8765}:8765"
     volumes:
       - ../forge.toml:/app/forge.toml:ro
     depends_on:

@@ -66,9 +66,11 @@ class TestComputeObsDim:
     def test_compute_obs_dim_with_real_env(self) -> None:
         """Computes correct dimensionality from a real FORGE environment."""
         try:
-            from forge_env.gymnasium_env import ForgeGymnasiumEnv
-        except ImportError as exc:
-            pytest.skip(f"forge_env native extension not available: {exc}")
+            from forge_env.forge_env import ForgeEnv  # noqa: F401
+        except ImportError:
+            pytest.skip("forge_env native extension not available")
+
+        from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
         env = ForgeGymnasiumEnv()
         dim = compute_obs_dim(env)
