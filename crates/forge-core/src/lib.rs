@@ -13,6 +13,7 @@ pub mod combat;
 pub mod communication;
 pub mod crafting;
 pub mod day_night;
+pub mod degradation;
 pub mod drone;
 pub mod events;
 pub mod physics;

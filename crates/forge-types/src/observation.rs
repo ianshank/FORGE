@@ -15,6 +15,16 @@ fn default_battery_obs() -> f32 {
     1.0
 }
 
+/// Default integrity estimate observation value for serde (fully healthy).
+fn default_integrity_obs() -> f32 {
+    1.0
+}
+
+/// Default component integrity observation for serde (all fully healthy).
+fn default_component_integrity() -> [f32; 3] {
+    [1.0; 3]
+}
+
 /// A single tile as observed by an agent.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct TileObservation {
@@ -91,6 +101,13 @@ pub struct Observation {
     /// Agent's current heading direction (0=Up, 1=Down, 2=Left, 3=Right).
     #[serde(default)]
     pub heading: u8,
+    /// Per-component observed integrity [motor, sensor, structure], normalized 0.0-1.0.
+    /// May include observation noise when health monitoring is enabled.
+    #[serde(default = "default_component_integrity")]
+    pub component_integrity: [f32; 3],
+    /// Estimated overall structural integrity (noisy aggregate), normalized 0.0-1.0.
+    #[serde(default = "default_integrity_obs")]
+    pub integrity_estimate: f32,
 }
 
 impl Observation {
@@ -102,6 +119,26 @@ impl Observation {
         comm_buffer_size: u8,
         num_predicates: u16,
         drone_enabled: bool,
+    ) -> usize {
+        Self::flat_size_full(
+            vision_radius,
+            carry_capacity,
+            comm_buffer_size,
+            num_predicates,
+            drone_enabled,
+            false,
+        )
+    }
+
+    /// Returns the total number of elements when flattened, including optional
+    /// health monitoring fields.
+    pub fn flat_size_full(
+        vision_radius: u8,
+        carry_capacity: u8,
+        comm_buffer_size: u8,
+        num_predicates: u16,
+        drone_enabled: bool,
+        health_monitoring_enabled: bool,
     ) -> usize {
         let view_side = 2 * vision_radius as usize + 1;
         let grid_elements = view_side * view_side * constants::OBS_FEATURES_PER_TILE;
@@ -119,6 +156,11 @@ impl Observation {
             + task_elements
             + if drone_enabled {
                 constants::OBS_DRONE_FIELDS_COUNT
+            } else {
+                0
+            }
+            + if health_monitoring_enabled {
+                constants::OBS_HEALTH_MONITORING_FIELDS_COUNT
             } else {
                 0
             }
@@ -282,6 +324,8 @@ mod tests {
             battery: 1.0,
             morphology: 0,
             heading: 0,
+            component_integrity: [1.0; 3],
+            integrity_estimate: 1.0,
         };
 
         let step = StepResult {
@@ -329,6 +373,8 @@ mod tests {
             battery: 1.0,
             morphology: 0,
             heading: 0,
+            component_integrity: [1.0; 3],
+            integrity_estimate: 1.0,
         };
         assert_eq!(obs.altitude, 0);
         assert_eq!(obs.battery, 1.0);
@@ -407,5 +453,43 @@ mod tests {
         };
         assert_eq!(obs_space.flat_shape[0], 100);
         assert_eq!(obs_space.grid_shape.2, constants::OBS_FEATURES_PER_TILE);
+    }
+
+    #[test]
+    fn test_observation_flat_size_with_health_monitoring() {
+        let base = Observation::flat_size_full(5, 10, 8, 4, false, false);
+        let with_hm = Observation::flat_size_full(5, 10, 8, 4, false, true);
+        assert_eq!(
+            with_hm - base,
+            constants::OBS_HEALTH_MONITORING_FIELDS_COUNT,
+            "health monitoring adds component_integrity(3) + integrity_estimate(1) + noisy scalars(3)"
+        );
+    }
+
+    #[test]
+    fn test_observation_flat_size_full_backwards_compat() {
+        // flat_size_full with health_monitoring=false should equal flat_size
+        let old = Observation::flat_size(5, 10, 8, 4, true);
+        let new = Observation::flat_size_full(5, 10, 8, 4, true, false);
+        assert_eq!(old, new);
+    }
+
+    #[test]
+    fn test_observation_serde_without_health_monitoring_defaults() {
+        let json = r#"{
+            "grid_view": [],
+            "view_width": 0,
+            "view_height": 0,
+            "inventory": {"slots": []},
+            "health": 1.0,
+            "stamina": 1.0,
+            "position": [0, 0],
+            "messages": [],
+            "day_phase": 0,
+            "task_progress": []
+        }"#;
+        let obs: Observation = serde_json::from_str(json).unwrap();
+        assert_eq!(obs.component_integrity, [1.0, 1.0, 1.0]);
+        assert_eq!(obs.integrity_estimate, 1.0);
     }
 }

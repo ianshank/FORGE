@@ -289,21 +289,50 @@ impl WorldState {
         let max_health = self.config.agents.max_health as f32;
         let max_stamina = self.config.agents.max_stamina as f32;
 
+        let raw_health = if max_health > 0.0 {
+            agent.health as f32 / max_health
+        } else {
+            0.0
+        };
+        let raw_stamina = if max_stamina > 0.0 {
+            agent.stamina as f32 / max_stamina
+        } else {
+            0.0
+        };
+        let raw_battery = if self.config.drone.enabled
+            && agent.morphology == forge_types::entity::AgentMorphology::Aerial
+        {
+            let max = self.config.drone.max_battery as f32;
+            if max > 0.0 {
+                (agent.battery as f32 / max).clamp(0.0, 1.0)
+            } else {
+                1.0
+            }
+        } else {
+            1.0
+        };
+
+        // Health monitoring: compute noisy observations and component integrity
+        let fp_one = forge_types::constants::FIXED_POINT_ONE as f32;
+        let (component_integrity, integrity_estimate) = if self.config.health_monitoring.enabled {
+            let ci = [
+                agent.components[0].integrity as f32 / fp_one,
+                agent.components[1].integrity as f32 / fp_one,
+                agent.components[2].integrity as f32 / fp_one,
+            ];
+            let avg = (ci[0] + ci[1] + ci[2]) / 3.0;
+            (ci, avg)
+        } else {
+            ([1.0; 3], 1.0)
+        };
+
         Observation {
             grid_view,
             view_width: view_side,
             view_height: view_side,
             inventory,
-            health: if max_health > 0.0 {
-                agent.health as f32 / max_health
-            } else {
-                0.0
-            },
-            stamina: if max_stamina > 0.0 {
-                agent.stamina as f32 / max_stamina
-            } else {
-                0.0
-            },
+            health: raw_health,
+            stamina: raw_stamina,
             position: (agent.position.x, agent.position.y),
             messages: agent.comm_buffer.to_vec(),
             day_phase: self.day_phase,
@@ -319,20 +348,11 @@ impl WorldState {
                 })
                 .collect(),
             altitude: agent.altitude,
-            battery: if self.config.drone.enabled
-                && agent.morphology == forge_types::entity::AgentMorphology::Aerial
-            {
-                let max = self.config.drone.max_battery as f32;
-                if max > 0.0 {
-                    (agent.battery as f32 / max).clamp(0.0, 1.0)
-                } else {
-                    1.0
-                }
-            } else {
-                1.0
-            },
+            battery: raw_battery,
             morphology: agent.morphology as u8,
             heading: agent.heading as u8,
+            component_integrity,
+            integrity_estimate,
         }
     }
 

@@ -246,6 +246,35 @@ pub const NUM_VEHICLE_TERRAIN_TYPES: usize = 8;
 /// Default fall damage per altitude level during emergency landing (fixed-point 1.0).
 pub const DEFAULT_FALL_DAMAGE_PER_LEVEL: i32 = FIXED_POINT_ONE;
 
+// ---------- Health monitoring defaults ----------
+
+/// Whether health monitoring is enabled by default.
+pub const DEFAULT_HEALTH_MONITORING_ENABLED: bool = false;
+/// Number of component types tracked for degradation (Motor, Sensor, Structure).
+pub const NUM_COMPONENT_TYPES: usize = 3;
+/// Number of discrete degradation levels per component for the health state library.
+pub const DEFAULT_NUM_DEGRADATION_LEVELS: u8 = 5;
+/// Per-tick degradation rate for components under active use (fixed-point ~0.0005).
+pub const DEFAULT_DEGRADATION_RATE: i32 = 33;
+/// Minimum motor efficiency below which movement fails (fixed-point 0.25).
+pub const DEFAULT_MOTOR_EFFICIENCY_FLOOR: i32 = FIXED_POINT_ONE / 4;
+/// Per-tick sensor drift rate that increases observation noise (fixed-point ~0.00025).
+pub const DEFAULT_SENSOR_DRIFT_RATE: i32 = 16;
+/// Minimum observation noise sigma (fixed-point 0.0).
+pub const DEFAULT_SENSOR_NOISE_FLOOR: i32 = 0;
+/// Maximum observation noise sigma (fixed-point 0.5).
+pub const DEFAULT_SENSOR_NOISE_CEILING: i32 = FIXED_POINT_ONE / 2;
+/// Damage scale factor for structural degradation (fixed-point 1.0).
+pub const DEFAULT_STRUCTURAL_DAMAGE_SCALE: i32 = FIXED_POINT_ONE;
+/// Base noise applied to health/stamina/battery observation readings (fixed-point ~0.1).
+pub const DEFAULT_OBSERVATION_NOISE_SCALE: i32 = 6554;
+/// Number of additional observation fields when health monitoring is enabled.
+/// [motor_integrity, sensor_integrity, structure_integrity, noisy_health,
+///  noisy_stamina, noisy_battery, integrity_estimate].
+pub const OBS_HEALTH_MONITORING_FIELDS_COUNT: usize = 7;
+/// Whether component degradation is included in observations by default.
+pub const DEFAULT_OBSERVABLE_DEGRADATION: bool = true;
+
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
 mod tests {
@@ -367,5 +396,25 @@ mod tests {
     fn test_item_type_boundaries_consistent() {
         assert_eq!(ITEM_TYPE_RAW_MAX, ITEM_TYPE_CRAFTED_MIN);
         assert!(ITEM_TYPE_CRAFTED_MIN < ITEM_TYPE_CRAFTED_MAX);
+    }
+
+    #[test]
+    fn test_health_monitoring_defaults() {
+        assert!(!DEFAULT_HEALTH_MONITORING_ENABLED);
+        assert_eq!(NUM_COMPONENT_TYPES, 3);
+        assert!(DEFAULT_DEGRADATION_RATE > 0);
+        assert!(DEFAULT_MOTOR_EFFICIENCY_FLOOR > 0);
+        assert!(DEFAULT_MOTOR_EFFICIENCY_FLOOR < FIXED_POINT_ONE);
+        assert!(DEFAULT_SENSOR_DRIFT_RATE > 0);
+        assert!(DEFAULT_SENSOR_NOISE_FLOOR <= DEFAULT_SENSOR_NOISE_CEILING);
+        assert!(DEFAULT_SENSOR_NOISE_CEILING <= FIXED_POINT_ONE);
+        assert_eq!(DEFAULT_STRUCTURAL_DAMAGE_SCALE, FIXED_POINT_ONE);
+        assert!(DEFAULT_OBSERVATION_NOISE_SCALE > 0);
+        assert_eq!(OBS_HEALTH_MONITORING_FIELDS_COUNT, 7);
+    }
+
+    #[test]
+    fn test_num_degradation_levels_nonzero() {
+        assert!(DEFAULT_NUM_DEGRADATION_LEVELS >= 2);
     }
 }

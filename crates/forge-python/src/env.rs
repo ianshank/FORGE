@@ -185,6 +185,22 @@ impl ForgeEnv {
         // Day phase
         dict.set_item("day_phase", obs.day_phase)?;
 
+        // Drone fields
+        dict.set_item("altitude", obs.altitude)?;
+        dict.set_item("battery", obs.battery)?;
+        dict.set_item("morphology", obs.morphology)?;
+        dict.set_item("heading", obs.heading)?;
+
+        // Task progress
+        let progress_vec: Vec<f32> = obs.task_progress.clone();
+        let progress = PyList::new_bound(py, &progress_vec);
+        dict.set_item("task_progress", progress)?;
+
+        // Health monitoring fields
+        let ci = PyList::new_bound(py, obs.component_integrity);
+        dict.set_item("component_integrity", ci)?;
+        dict.set_item("integrity_estimate", obs.integrity_estimate)?;
+
         Ok(dict)
     }
 

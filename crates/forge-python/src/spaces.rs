@@ -81,6 +81,20 @@ pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObj
     day_dict.set_item("dtype", "uint8")?;
     dict.set_item("day_phase", day_dict)?;
 
+    // Health monitoring spaces (always present in dict, values are defaults when disabled)
+    let ci_dict = PyDict::new_bound(py);
+    ci_dict.set_item("shape", (forge_types::constants::NUM_COMPONENT_TYPES,))?;
+    ci_dict.set_item("low", 0.0f32)?;
+    ci_dict.set_item("high", 1.0f32)?;
+    ci_dict.set_item("dtype", "float32")?;
+    dict.set_item("component_integrity", ci_dict)?;
+
+    let ie_dict = PyDict::new_bound(py);
+    ie_dict.set_item("low", 0.0f32)?;
+    ie_dict.set_item("high", 1.0f32)?;
+    ie_dict.set_item("dtype", "float32")?;
+    dict.set_item("integrity_estimate", ie_dict)?;
+
     // Flat dimension values for Python wrapper convenience
     dict.set_item("grid_view_height", view_side)?;
     dict.set_item("grid_view_width", view_side)?;
@@ -89,6 +103,10 @@ pub fn observation_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObj
         forge_types::constants::OBS_FEATURES_PER_TILE,
     )?;
     dict.set_item("inventory_capacity", capacity)?;
+    dict.set_item(
+        "health_monitoring_enabled",
+        config.health_monitoring.enabled,
+    )?;
 
     Ok(dict.unbind().into())
 }

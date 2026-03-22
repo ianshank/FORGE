@@ -42,6 +42,8 @@ pub struct ForgeConfig {
     pub rendering: RenderConfig,
     /// Drone-specific mechanics parameters.
     pub drone: DroneConfig,
+    /// Physics-informed health monitoring parameters.
+    pub health_monitoring: HealthMonitoringConfig,
 }
 
 /// World generation configuration.
@@ -343,6 +345,54 @@ impl Default for DroneConfig {
             fall_damage_per_level: constants::DEFAULT_FALL_DAMAGE_PER_LEVEL,
             num_aerial: 0,
             num_ground_vehicles: 0,
+        }
+    }
+}
+
+/// Configuration for the physics-informed health monitoring system.
+///
+/// When `enabled` is false (default), all degradation systems are skipped
+/// and the simulation behaves identically to pre-health-monitoring versions.
+/// This follows the same gating pattern as [`DroneConfig::enabled`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HealthMonitoringConfig {
+    /// Whether the health monitoring system is enabled.
+    pub enabled: bool,
+    /// Per-tick degradation rate for components under active use (fixed-point).
+    pub degradation_rate: i32,
+    /// Minimum motor efficiency (fixed-point). Movement fails below this.
+    pub motor_efficiency_floor: i32,
+    /// Per-tick sensor drift rate (fixed-point). Increases observation noise.
+    pub sensor_drift_rate: i32,
+    /// Minimum observation noise sigma (fixed-point).
+    pub sensor_noise_floor: i32,
+    /// Maximum observation noise sigma (fixed-point).
+    pub sensor_noise_ceiling: i32,
+    /// Damage scale factor for structural degradation (fixed-point).
+    /// Incoming damage is multiplied by `(2.0 - structural_integrity)`.
+    pub structural_damage_scale: i32,
+    /// Base noise applied to health/stamina/battery observation readings (fixed-point).
+    pub observation_noise_scale: i32,
+    /// Number of discrete degradation levels per component for the health state library.
+    pub num_degradation_levels: u8,
+    /// Whether component degradation data is included in agent observations.
+    pub observable_degradation: bool,
+}
+
+impl Default for HealthMonitoringConfig {
+    fn default() -> Self {
+        Self {
+            enabled: constants::DEFAULT_HEALTH_MONITORING_ENABLED,
+            degradation_rate: constants::DEFAULT_DEGRADATION_RATE,
+            motor_efficiency_floor: constants::DEFAULT_MOTOR_EFFICIENCY_FLOOR,
+            sensor_drift_rate: constants::DEFAULT_SENSOR_DRIFT_RATE,
+            sensor_noise_floor: constants::DEFAULT_SENSOR_NOISE_FLOOR,
+            sensor_noise_ceiling: constants::DEFAULT_SENSOR_NOISE_CEILING,
+            structural_damage_scale: constants::DEFAULT_STRUCTURAL_DAMAGE_SCALE,
+            observation_noise_scale: constants::DEFAULT_OBSERVATION_NOISE_SCALE,
+            num_degradation_levels: constants::DEFAULT_NUM_DEGRADATION_LEVELS,
+            observable_degradation: constants::DEFAULT_OBSERVABLE_DEGRADATION,
         }
     }
 }

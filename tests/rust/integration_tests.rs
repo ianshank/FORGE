@@ -988,3 +988,158 @@ fn test_drone_observation_fields() {
     assert_eq!(obs.altitude, 1, "observation should reflect altitude 1");
     assert!(obs.battery < 1.0, "battery should have decreased");
 }
+
+// ---------------------------------------------------------------------------
+// Health Monitoring Integration Tests
+// ---------------------------------------------------------------------------
+
+/// Creates a config with health monitoring enabled.
+fn make_health_monitoring_config(num_agents: u32, seed: u64) -> ForgeConfig {
+    let mut config = make_config(num_agents, seed);
+    config.health_monitoring.enabled = true;
+    config
+}
+
+/// Run 100 ticks with health monitoring enabled and verify components degrade.
+#[test]
+fn test_degradation_over_episode() {
+    let config = make_health_monitoring_config(1, 42);
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    // Move repeatedly to degrade motor
+    for _ in 0..100 {
+        state.step(&[Action::Move(Direction::Right)]);
+    }
+
+    let agent = &state.agents[0];
+    // Motor should have degraded from movement
+    let motor_integrity = agent.components[0].integrity;
+    assert!(
+        motor_integrity < forge_types::constants::FIXED_POINT_ONE,
+        "motor should degrade after 100 moves, got {motor_integrity}"
+    );
+
+    // Sensor should have drifted
+    let sensor_integrity = agent.components[1].integrity;
+    assert!(
+        sensor_integrity < forge_types::constants::FIXED_POINT_ONE,
+        "sensor should drift after 100 ticks, got {sensor_integrity}"
+    );
+}
+
+/// Verify observations include component integrity data when health monitoring is enabled.
+#[test]
+fn test_health_monitoring_observation_fields() {
+    let config = make_health_monitoring_config(1, 42);
+    let mut state = WorldState::new(config).unwrap();
+    let result = state.reset(Some(42));
+
+    let obs = &result.observations[0];
+    // Initially all components fully healthy
+    for &ci in &obs.component_integrity {
+        assert!(
+            (ci - 1.0).abs() < 0.01,
+            "initial component integrity should be ~1.0, got {ci}"
+        );
+    }
+    assert!(
+        (obs.integrity_estimate - 1.0).abs() < 0.01,
+        "initial integrity estimate should be ~1.0"
+    );
+
+    // After some ticks, integrity should decrease
+    for _ in 0..50 {
+        state.step(&[Action::Move(Direction::Right)]);
+    }
+    let result = state.step(&[Action::Noop]);
+    let obs = &result.observations[0];
+    assert!(
+        obs.component_integrity[1] < 1.0,
+        "sensor integrity should decrease after 50 ticks"
+    );
+}
+
+/// Existing tests must pass unchanged when health monitoring is disabled (default).
+#[test]
+fn test_health_monitoring_backwards_compatible() {
+    let config = make_config(1, 42);
+    assert!(!config.health_monitoring.enabled);
+
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    // Run normal episode
+    for _ in 0..50 {
+        state.step(&[Action::Move(Direction::Right)]);
+    }
+
+    // Components should remain at default values
+    let agent = &state.agents[0];
+    for c in &agent.components {
+        assert_eq!(
+            c.integrity,
+            forge_types::constants::FIXED_POINT_ONE,
+            "components should not degrade when health monitoring disabled"
+        );
+        assert_eq!(c.wear, 0);
+    }
+}
+
+/// Verify same seed produces identical degradation paths.
+#[test]
+fn test_health_monitoring_determinism() {
+    let run = |seed: u64| {
+        let config = make_health_monitoring_config(1, seed);
+        let mut state = WorldState::new(config).unwrap();
+        state.reset(Some(seed));
+        for _ in 0..100 {
+            state.step(&[Action::Move(Direction::Right)]);
+        }
+        state.agents[0].components
+    };
+
+    let run1 = run(42);
+    let run2 = run(42);
+    for i in 0..forge_types::constants::NUM_COMPONENT_TYPES {
+        assert_eq!(
+            run1[i].integrity, run2[i].integrity,
+            "component {i} integrity should be deterministic"
+        );
+        assert_eq!(
+            run1[i].wear, run2[i].wear,
+            "component {i} wear should be deterministic"
+        );
+    }
+}
+
+/// Verify that health monitoring config validates successfully.
+#[test]
+fn test_health_monitoring_config_validates() {
+    let config = make_health_monitoring_config(1, 42);
+    assert!(validate_config(&config).is_ok());
+}
+
+/// Test that degradation observation integrity estimate matches component average.
+#[test]
+fn test_integrity_estimate_matches_average() {
+    let config = make_health_monitoring_config(1, 42);
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    // Move to cause degradation
+    for _ in 0..200 {
+        state.step(&[Action::Move(Direction::Right)]);
+    }
+
+    let result = state.step(&[Action::Noop]);
+    let obs = &result.observations[0];
+    let avg =
+        (obs.component_integrity[0] + obs.component_integrity[1] + obs.component_integrity[2])
+            / 3.0;
+    assert!(
+        (obs.integrity_estimate - avg).abs() < 0.01,
+        "integrity_estimate ({}) should match component average ({avg})",
+        obs.integrity_estimate
+    );
+}

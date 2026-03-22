@@ -6,4 +6,6 @@
 
 pub use crate::baselines::{GreedyNavigator, HeuristicAgent, NoopAgent, RandomAgent};
 pub use crate::forward_model::DefaultForwardModel;
+pub use crate::health_aware::{HealthAwareAgent, HealthAwareForwardModel, HealthAwarePolicy};
+pub use crate::health_model::HealthStateLibrary;
 pub use crate::mcts::search::MctsSearch;

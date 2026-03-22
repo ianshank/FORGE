@@ -38,6 +38,44 @@ pub enum AgentMorphology {
     Aerial = 2,
 }
 
+/// Component types subject to gradual degradation in the health monitoring system.
+///
+/// Each variant maps to a specific subsystem of the agent whose integrity
+/// degrades over time and affects different gameplay mechanics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+#[repr(u8)]
+pub enum ComponentType {
+    /// Motor/drive system — degradation increases movement stamina cost.
+    Motor = 0,
+    /// Sensor array — degradation increases observation noise.
+    Sensor = 1,
+    /// Structural frame — degradation amplifies incoming damage.
+    Structure = 2,
+}
+
+/// Per-component degradation state tracked in fixed-point arithmetic.
+///
+/// `integrity` ranges from [`FIXED_POINT_ONE`](crate::constants::FIXED_POINT_ONE)
+/// (fully healthy) down toward zero (fully degraded). `wear` accumulates
+/// monotonically and drives the integrity reduction.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ComponentState {
+    /// Current integrity level (fixed-point, `FIXED_POINT_ONE` = 100%).
+    pub integrity: i32,
+    /// Cumulative wear counter (fixed-point). Increases monotonically.
+    pub wear: i32,
+}
+
+impl Default for ComponentState {
+    fn default() -> Self {
+        Self {
+            integrity: crate::constants::FIXED_POINT_ONE,
+            wear: 0,
+        }
+    }
+}
+
 /// An agent in the simulation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
@@ -75,11 +113,21 @@ pub struct Agent {
     /// Current heading direction (for vehicle turn radius).
     #[serde(default)]
     pub heading: crate::grid::Direction,
+    /// Per-component degradation states for the health monitoring system.
+    /// Indexed by [`ComponentType`] discriminant: [Motor, Sensor, Structure].
+    /// Only meaningful when `HealthMonitoringConfig::enabled` is true.
+    #[serde(default = "default_components")]
+    pub components: [ComponentState; crate::constants::NUM_COMPONENT_TYPES],
 }
 
 /// Default battery value for serde deserialization (matches starting stamina).
 fn default_battery() -> i32 {
     crate::constants::DEFAULT_STARTING_BATTERY
+}
+
+/// Default component states for serde deserialization (all fully healthy).
+fn default_components() -> [ComponentState; crate::constants::NUM_COMPONENT_TYPES] {
+    [ComponentState::default(); crate::constants::NUM_COMPONENT_TYPES]
 }
 
 impl Agent {
@@ -101,6 +149,7 @@ impl Agent {
             altitude: 0,
             battery: crate::constants::DEFAULT_STARTING_BATTERY,
             heading: crate::grid::Direction::Up,
+            components: default_components(),
         }
     }
 
@@ -481,6 +530,74 @@ mod tests {
             let json = serde_json::to_string(morph).unwrap();
             let deserialized: AgentMorphology = serde_json::from_str(&json).unwrap();
             assert_eq!(*morph, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_component_state_default() {
+        let state = ComponentState::default();
+        assert_eq!(state.integrity, crate::constants::FIXED_POINT_ONE);
+        assert_eq!(state.wear, 0);
+    }
+
+    #[test]
+    fn test_component_type_repr() {
+        assert_eq!(ComponentType::Motor as u8, 0);
+        assert_eq!(ComponentType::Sensor as u8, 1);
+        assert_eq!(ComponentType::Structure as u8, 2);
+    }
+
+    #[test]
+    fn test_agent_components_initialized() {
+        let config = AgentConfig::default();
+        let agent = Agent::new(0, Position::new(0, 0), &config);
+        for component in &agent.components {
+            assert_eq!(component.integrity, crate::constants::FIXED_POINT_ONE);
+            assert_eq!(component.wear, 0);
+        }
+    }
+
+    #[test]
+    fn test_component_state_serde_roundtrip() {
+        let state = ComponentState {
+            integrity: 32768,
+            wear: 16384,
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let deserialized: ComponentState = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.integrity, state.integrity);
+        assert_eq!(deserialized.wear, state.wear);
+    }
+
+    #[test]
+    fn test_agent_serde_without_components_backwards_compat() {
+        // Deserialize an agent JSON without the components field
+        let json = r#"{
+            "id": 0,
+            "position": {"x": 5, "y": 5},
+            "health": 655360,
+            "stamina": 655360,
+            "inventory": {"slots": []},
+            "team": 0,
+            "vision_radius": 5,
+            "carry_capacity": 10,
+            "comm_buffer": [],
+            "capabilities": {
+                "speed_multiplier": 65536,
+                "crafting_level": 1,
+                "can_communicate": true,
+                "can_trade": true,
+                "max_altitude": 0,
+                "can_fly": false,
+                "turn_radius": 0
+            },
+            "alive": true
+        }"#;
+        let agent: Agent = serde_json::from_str(json).unwrap();
+        // Components should default to fully healthy
+        for component in &agent.components {
+            assert_eq!(component.integrity, crate::constants::FIXED_POINT_ONE);
+            assert_eq!(component.wear, 0);
         }
     }
 }

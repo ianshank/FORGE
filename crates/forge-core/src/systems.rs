@@ -113,6 +113,15 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
         );
     }
 
+    // 6c. Health monitoring: component degradation — only when enabled
+    if state.config.health_monitoring.enabled {
+        crate::degradation::process_degradation(
+            &mut state.agents,
+            &validated_actions,
+            &state.config.health_monitoring,
+        );
+    }
+
     // 7. Communication system
     communication::process_communication(
         &mut state.agents,
