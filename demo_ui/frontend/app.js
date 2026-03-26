@@ -600,8 +600,10 @@ class AgentDashboard {
     }
 
     /** Set up (or re-initialise) N agent panels. */
-    init(numAgents = 1) {
+    init(numAgents = 1, worldWidth = 32, worldHeight = 32) {
         this._numAgents = numAgents;
+        this._worldWidth = worldWidth;
+        this._worldHeight = worldHeight;
         if (!this._container) return;
 
         // Teardown existing panels
@@ -651,6 +653,8 @@ class AgentDashboard {
         if (!window.worldRenderer) return;
         const canvas = window.worldRenderer.canvas;
         const ctx = window.worldRenderer.ctx;
+        const worldW = this._worldWidth || 32;
+        const worldH = this._worldHeight || 32;
 
         ctx.save();
         ctx.globalAlpha = 0.6;
@@ -663,8 +667,8 @@ class AgentDashboard {
             ctx.strokeStyle = AGENT_COLORS[i % AGENT_COLORS.length];
             ctx.beginPath();
             positions.forEach(({ x, y }, idx) => {
-                const px = (x / 32) * canvas.width;   // normalise to canvas
-                const py = (y / 32) * canvas.height;
+                const px = (x / worldW) * canvas.width;   // normalise to canvas
+                const py = (y / worldH) * canvas.height;
                 if (idx === 0) ctx.moveTo(px, py);
                 else ctx.lineTo(px, py);
             });

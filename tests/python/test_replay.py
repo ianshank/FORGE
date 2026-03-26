@@ -68,7 +68,7 @@ def _make_replay_data(**overrides: Any) -> ReplayData:
         "actions": [0, 1, 2, 3, 0],
         "rewards": [0.0, 1.0, -0.5, 0.0, 1.0],
         "terminated_at": 5,
-        "observations": [[0.0] * 16] * 6,
+        "observations": [[0.0] * 16] * 5,
         "timestamps_ms": [0.0, 16.0, 32.0, 48.0, 64.0],
     }
     defaults.update(overrides)
@@ -294,5 +294,5 @@ class TestCli:
             _cli([str(out), "--export-gif", str(gif_out)])
         mock_gif.assert_called_once()
         # Verify out_path kwarg was passed correctly (Path or str)
-        call_kwargs = mock_gif.call_args[1]
+        call_kwargs = mock_gif.call_args.kwargs
         assert Path(call_kwargs["out_path"]) == gif_out

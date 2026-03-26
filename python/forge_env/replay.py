@@ -112,7 +112,7 @@ def load_replay(path: str | Path) -> ReplayData:
 
     replay_ver = raw.get("forge_version", "unknown")
     try:
-        from importlib.metadata import version  # noqa: PLC0415
+        from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
 
         current_ver = version("forge-env")
         if current_ver != replay_ver:
@@ -122,7 +122,7 @@ def load_replay(path: str | Path) -> ReplayData:
                 replay_ver,
                 current_ver,
             )
-    except Exception:
+    except PackageNotFoundError:
         pass
 
     return ReplayData(

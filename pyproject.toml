@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "forge-env"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fast Open-source Runtime for Generalist Environments — high-performance RL simulation platform"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -85,7 +85,7 @@ dev = [
 ]
 # Everything for local dev
 all = [
-    "forge-env[test,gym,jax,sb3,cleanrl,logging-hooks,dev]",
+    "forge-env[test,gym,jax,sb3,cleanrl,logging-hooks,replay,dev]",
 ]
 
 

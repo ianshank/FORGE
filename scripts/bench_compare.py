@@ -24,6 +24,7 @@ import argparse
 import json
 import logging
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-_REPORT_PATH = Path("/tmp/bench_report.md")
+_REPORT_PATH = Path(tempfile.gettempdir()) / "bench_report.md"
 _ESTIMATES_FILE = "estimates.json"
 
 
@@ -76,7 +77,7 @@ def _load_bench_results(criterion_dir: Path) -> dict[str, BenchResult]:
     for estimates_file in criterion_dir.rglob(_ESTIMATES_FILE):
         # Criterion layout: criterion/<group>/<bench>/base/estimates.json
         # We skip the "new" folder; only look at "base" (persisted reports)
-        if estimates_file.parent.name not in {"base", "new"}:
+        if estimates_file.parent.name != "base":
             continue
         try:
             data: dict[str, Any] = json.loads(estimates_file.read_text(encoding="utf-8"))

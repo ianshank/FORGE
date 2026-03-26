@@ -28,6 +28,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -65,7 +66,7 @@ def _env_int(name: str, default: int) -> int:
 
 SESSION_TTL_SECONDS: int = _env_int("FORGE_SESSION_TTL", 3600)
 MAX_SESSIONS: int = _env_int("FORGE_MAX_SESSIONS", 64)
-CORS_ORIGINS: list[str] = ["*"]  # tightened via FORGE_CORS_ORIGINS env var in production
+CORS_ORIGINS: list[str] = os.environ.get("FORGE_CORS_ORIGINS", "*").split(",")
 
 # ---------------------------------------------------------------------------
 # Session store
@@ -151,10 +152,11 @@ class SessionResponse(BaseModel):
 
 app = FastAPI(
     title="FORGE Environment API",
-    version="0.1.0",
+    version="0.2.0",
     description="REST API for driving FORGE RL environments over HTTP.",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=_lifespan,
 )
 
 app.add_middleware(
@@ -170,14 +172,24 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 
-@app.on_event("startup")
-async def _start_janitor() -> None:
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Application lifespan: start janitor on startup, cancel on shutdown."""
     async def _janitor_loop() -> None:
         while True:
             await asyncio.sleep(60)
             await _evict_expired()
 
-    _janitor_task: asyncio.Task[None] = asyncio.create_task(_janitor_loop())  # noqa: RUF006
+    task: asyncio.Task[None] = asyncio.create_task(_janitor_loop())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    yield
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
 # ---------------------------------------------------------------------------
@@ -214,13 +226,6 @@ async def create_env(req: CreateEnvRequest) -> SessionResponse:
 
     await _evict_expired()
 
-    async with _lock:
-        if len(_sessions) >= MAX_SESSIONS:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Session limit ({MAX_SESSIONS}) reached. Delete idle sessions first.",
-            )
-
     config: dict[str, Any] = {
         "world": {"width": req.world_width, "height": req.world_height},
         "agents": {"num_agents": req.num_agents},
@@ -234,6 +239,11 @@ async def create_env(req: CreateEnvRequest) -> SessionResponse:
     sess = Session(session_id=session_id, env=env_any, config=config)
 
     async with _lock:
+        if len(_sessions) >= MAX_SESSIONS:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Session limit ({MAX_SESSIONS}) reached. Delete idle sessions first.",
+            )
         _sessions[session_id] = sess
 
     logger.info("Created session %s (grid=%dx%d agents=%d)", session_id, req.world_width, req.world_height, req.num_agents)

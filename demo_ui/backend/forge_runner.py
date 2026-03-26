@@ -97,22 +97,27 @@ async def run_section(
 
     assert proc.stdout is not None
     try:
-        # Stream lines with a loose deadline: read all stdout via communicate()
-        # gated by asyncio.wait_for, which is available from Python 3.9+.
-        stdout_bytes, _ = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except TimeoutError:
-        logger.warning("Section '%s' timed out after %.1fs — killing process", section, timeout)
+        # Stream lines one at a time with a per-line timeout for SSE streaming.
+        while True:
+            try:
+                raw_line = await asyncio.wait_for(
+                    proc.stdout.readline(), timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Section '%s' timed out after %.1fs — killing process", section, timeout)
+                proc.kill()
+                await proc.communicate()  # drain to avoid resource leak
+                yield f"\nERROR: Section timed out after {timeout:.0f}s\n"
+                return
+            if not raw_line:
+                break
+            yield raw_line.decode("utf-8", errors="replace")
+    except Exception:
         proc.kill()
-        await proc.communicate()  # drain to avoid resource leak
-        yield f"\nERROR: Section timed out after {timeout:.0f}s\n"
-        return
+        await proc.communicate()
+        raise
 
-    for raw_line in stdout_bytes.splitlines(keepends=True):
-        yield raw_line.decode("utf-8", errors="replace")
-
-    # proc.communicate() already waited; returncode is now set.
+    await proc.wait()
     rc = proc.returncode
     logger.debug("Section '%s' finished with exit code %d", section, rc)
     if rc != 0:

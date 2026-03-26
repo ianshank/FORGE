@@ -73,14 +73,12 @@ class _BaseWrapper:
     def unwrapped(self) -> Any:
         """Return the innermost (unwrapped) environment.
 
-        Traverses the wrapper chain until it finds an object that does not
-        carry a ``.env`` attribute, returning that as the base environment.
-        This matches the :func:`gymnasium.Env.unwrapped` convention.
+        Delegates to the inner environment's ``unwrapped`` property when
+        available (e.g. Gymnasium envs), otherwise traverses the wrapper
+        chain via ``.env`` attributes.  This matches the
+        :func:`gymnasium.Env.unwrapped` convention.
         """
-        inner: Any = self.env
-        while hasattr(inner, "env"):
-            inner = inner.env
-        return inner
+        return self.env.unwrapped if hasattr(self.env, "unwrapped") else self.env
 
 
 # Public alias so downstream code can reference the base class without the
@@ -386,7 +384,6 @@ class RecordEpisodeWrapper(_BaseWrapper):
     ) -> None:
         super().__init__(env)
         self._out_path = Path(output_path)
-        self._out_path.parent.mkdir(parents=True, exist_ok=True)
         self._seed = seed
         self._config: dict[str, Any] = config or {}
         self._store_obs = store_observations
@@ -395,6 +392,7 @@ class RecordEpisodeWrapper(_BaseWrapper):
         self._rewards: list[float] = []
         self._timestamps_ms: list[float] = []
         self._ep_start_ms: float = 0.0
+        self._recording: bool = False
 
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
@@ -408,10 +406,13 @@ class RecordEpisodeWrapper(_BaseWrapper):
         self._rewards = []
         self._timestamps_ms = []
         self._ep_start_ms = _time.monotonic() * 1000.0
+        self._recording = True
         return obs, info
 
     def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Record action/obs/reward, delegate to inner env, flush on done."""
+        if not self._recording:
+            raise RuntimeError("call reset() before step()")
         t_ms = _time.monotonic() * 1000.0 - self._ep_start_ms
         obs, reward, terminated, truncated, info = self.env.step(action)
         self._actions.append(int(action))
@@ -435,10 +436,12 @@ class RecordEpisodeWrapper(_BaseWrapper):
     def _flush(self, terminated_at: int) -> None:
         import json  # noqa: PLC0415
 
+        self._out_path.parent.mkdir(parents=True, exist_ok=True)
+
         try:
-            from importlib.metadata import version  # noqa: PLC0415
+            from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
             forge_version = version("forge-env")
-        except Exception:
+        except PackageNotFoundError:
             forge_version = "dev"
 
         payload: dict[str, Any] = {

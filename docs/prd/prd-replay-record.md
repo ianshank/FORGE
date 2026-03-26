@@ -26,7 +26,7 @@ Currently FORGE is deterministic given seed + action sequence, but there is no b
 | # | Given | When | Then |
 |---|---|---|---|
 | AC1 | User wraps env with `RecordEpisodeWrapper(env, output_path="replay.json")` | Episode ends | `replay.json` exists and contains `{seed, config, actions, observations}` |
-| AC2 | User loads a replay file | `python -m forge_env.replay replay.json` | ASI grid is rendered step-by-step in terminal, rate-limited to `--fps` |
+| AC2 | User loads a replay file | `python -m forge_env.replay replay.json` | ASCII grid is rendered step-by-step in terminal, rate-limited to `--fps` |
 | AC3 | Demo UI has a "Load Replay" button | User selects a replay JSON | World canvas plays back the episode at configurable speed |
 | AC4 | User clicks "Export GIF" in demo UI | After replay completes | A `.gif` file is downloaded containing the world canvas animation |
 | AC5 | Replay file is loaded from a different version of FORGE | File has `"forge_version"` field | A warning is printed if versions differ, but replay still proceeds |
