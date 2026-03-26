@@ -166,6 +166,72 @@ mod tests {
         assert_eq!(vec.len(), 3);
         assert_eq!(vec[1], 0.5);
     }
+
+    #[test]
+    fn test_multiple_updates_accumulate() {
+        let mut tm = TrustMatrix::new(3, 0.5);
+        let config = test_config();
+        tm.record_cooperation(0, 1, &config);
+        tm.record_cooperation(0, 1, &config);
+        tm.record_cooperation(0, 1, &config);
+        // Three cooperations at lr=0.1 from 0.5 → 0.8
+        let expected = 0.5 + 3.0 * 0.1;
+        assert!((tm.trust(0, 1) - expected).abs() < 1e-6);
+        assert_eq!(tm.interactions(0, 1), 3);
+    }
+
+    #[test]
+    fn test_large_agent_count() {
+        let n = 10;
+        let mut tm = TrustMatrix::new(n, 0.5);
+        let config = test_config();
+        assert_eq!(tm.num_agents(), n);
+
+        // Record interactions across many pairs
+        for i in 0..n {
+            for j in (i + 1)..n {
+                tm.record_cooperation(i, j, &config);
+            }
+        }
+
+        // Verify all pairwise trust increased and stays in bounds
+        for i in 0..n {
+            for j in 0..n {
+                let t = tm.trust(i, j);
+                assert!(t >= 0.0 && t <= 1.0);
+                if i != j {
+                    assert!(t > 0.5, "trust({i},{j}) should have increased");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_trust_vector_length() {
+        for n in [1, 5, 8] {
+            let tm = TrustMatrix::new(n, 0.5);
+            for agent in 0..n {
+                assert_eq!(tm.trust_vector(agent).len(), n);
+            }
+            // Out-of-bounds agent returns empty slice
+            assert_eq!(tm.trust_vector(n + 10).len(), 0);
+        }
+    }
+
+    #[test]
+    fn test_interactions_symmetric_after_mixed() {
+        let mut tm = TrustMatrix::new(4, 0.5);
+        let config = test_config();
+        tm.record_cooperation(1, 2, &config);
+        tm.record_cooperation(1, 2, &config);
+        tm.record_hostility(1, 2, &config);
+
+        assert_eq!(tm.interactions(1, 2), 3);
+        assert_eq!(tm.interactions(2, 1), 3);
+        // Trust values are also symmetric since both cooperation and hostility
+        // update symmetrically
+        assert!((tm.trust(1, 2) - tm.trust(2, 1)).abs() < 1e-6);
+    }
 }
 
 #[cfg(test)]
