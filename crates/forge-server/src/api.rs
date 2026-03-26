@@ -404,4 +404,36 @@ mod tests {
         let snapshot = build_snapshot_from_world(&world);
         assert_eq!(snapshot.tick, 1);
     }
+
+    #[test]
+    fn test_build_snapshot_correctness() {
+        let mut config = forge_types::config::ForgeConfig::default();
+        config.agents.num_agents = 3;
+        config.world.width = 20;
+        config.world.height = 25;
+        let world = forge_core::WorldState::new(config).unwrap();
+        let snapshot = build_snapshot_from_world(&world);
+        assert_eq!(snapshot.tick, 0);
+        assert_eq!(snapshot.agents.len(), 3);
+        assert_eq!(snapshot.grid_width, 20);
+        assert_eq!(snapshot.grid_height, 25);
+        assert_eq!(snapshot.schema_version, SCHEMA_VERSION);
+        assert!(snapshot.events.is_empty());
+        for agent in &snapshot.agents {
+            assert!(agent.alive);
+            assert!(agent.health > 0);
+            assert!(agent.x < 20);
+            assert!(agent.y < 25);
+            assert!(agent.team_id.is_none());
+            assert!(agent.intent.is_none());
+        }
+    }
+
+    #[test]
+    fn test_remix_request_both_fields_none() {
+        let json = r#"{}"#;
+        let req: RemixRequest = serde_json::from_str(json).unwrap();
+        assert!(req.seed.is_none());
+        assert!(req.grid_size.is_none());
+    }
 }
