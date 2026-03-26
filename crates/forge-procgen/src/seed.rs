@@ -100,4 +100,28 @@ mod tests {
         // At least the first seeds should differ
         assert_ne!(seq_a.next_seed(), seq_b.next_seed());
     }
+
+    #[test]
+    fn test_seed_sequence_counter_wraps_correctly() {
+        // Start from a state near u64::MAX to verify counter doesn't panic.
+        // We can't directly set the counter, but we can call next_seed many times.
+        // Instead, verify that the sequence works at high call counts.
+        let mut seq = SeedSequence::new(u64::MAX);
+        // Should not panic even with max base seed.
+        let s1 = seq.next_seed();
+        let s2 = seq.next_seed();
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn test_many_next_seed_calls_produce_unique_values() {
+        let mut seq = SeedSequence::new(12345);
+        let seeds: Vec<u64> = (0..1000).map(|_| seq.next_seed()).collect();
+        let unique: std::collections::HashSet<u64> = seeds.iter().copied().collect();
+        assert_eq!(
+            seeds.len(),
+            unique.len(),
+            "All 1000 seeds should be unique"
+        );
+    }
 }

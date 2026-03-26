@@ -362,6 +362,43 @@ mod tests {
     }
 
     #[test]
+    fn test_tier_at_max_advance_stays_at_max() {
+        let mut ctrl = CurriculumController::new(5, 0.7, 0.3, 1, 3);
+        // Advance to max tier
+        for _ in 0..50 {
+            for _ in 0..5 {
+                ctrl.record_outcome(true);
+            }
+            ctrl.adjust();
+        }
+        assert_eq!(ctrl.current_tier(), 3);
+        // Try to advance further — should stay at max
+        for _ in 0..5 {
+            ctrl.record_outcome(true);
+        }
+        ctrl.adjust();
+        assert_eq!(ctrl.current_tier(), 3);
+    }
+
+    #[test]
+    fn test_retreat_at_min_stays_at_min() {
+        let mut ctrl = CurriculumController::new(5, 0.7, 0.3, 1, 6);
+        assert_eq!(ctrl.current_tier(), 1);
+        // All losses, try to retreat below min_tier=1
+        for _ in 0..5 {
+            ctrl.record_outcome(false);
+        }
+        ctrl.adjust();
+        assert_eq!(ctrl.current_tier(), 1);
+    }
+
+    #[test]
+    fn test_empty_window_win_rate_zero() {
+        let ctrl = CurriculumController::new(10, 0.7, 0.3, 1, 6);
+        assert_eq!(ctrl.current_win_rate(), 0.0);
+    }
+
+    #[test]
     fn test_default_curriculum_params() {
         let params = CurriculumParams::default();
         assert_eq!(params.grid_size, 32);

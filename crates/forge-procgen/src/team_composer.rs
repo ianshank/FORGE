@@ -175,4 +175,25 @@ mod tests {
     fn test_unit_type_default() {
         assert_eq!(UnitType::default(), UnitType::Infantry);
     }
+
+    #[test]
+    fn test_num_teams_zero_returns_empty() {
+        let config = TeamConfig {
+            team_size: 4,
+            num_teams: 0,
+            allow_mixed: true,
+        };
+        let teams = compose_teams(&config, 42);
+        assert!(teams.is_empty());
+    }
+
+    #[test]
+    fn test_unit_type_all_returns_four_variants() {
+        let all = UnitType::all();
+        assert_eq!(all.len(), 4);
+        assert!(all.contains(&UnitType::Scout));
+        assert!(all.contains(&UnitType::Infantry));
+        assert!(all.contains(&UnitType::Support));
+        assert!(all.contains(&UnitType::Heavy));
+    }
 }
