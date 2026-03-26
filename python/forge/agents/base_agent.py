@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from forge.config import DEFAULT_HIDDEN_SIZES
+
 if TYPE_CHECKING:
     import numpy as np
 
@@ -21,7 +23,7 @@ class AgentConfig:
     name: str = "agent"
     learning_rate: float = 3e-4
     gamma: float = 0.99
-    hidden_sizes: list[int] = field(default_factory=lambda: [256, 256])
+    hidden_sizes: list[int] = field(default_factory=lambda: list(DEFAULT_HIDDEN_SIZES))
 
 
 class BaseAgent(ABC):

@@ -324,6 +324,32 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_store_all_query_types_return_empty() {
+        let store = InMemoryStore::new(0, &test_config());
+
+        assert!(store
+            .query(&MemoryQuery::SemanticByKey("any".into()), 10)
+            .is_empty());
+        assert!(store.query(&MemoryQuery::EpisodicByAgent(0), 10).is_empty());
+        assert!(store
+            .query(&MemoryQuery::EpisodicByTag("combat".into()), 10)
+            .is_empty());
+        assert!(store
+            .query(
+                &MemoryQuery::EpisodicByLocation {
+                    x: 5,
+                    y: 5,
+                    radius: 10,
+                },
+                10,
+            )
+            .is_empty());
+        assert!(store
+            .query(&MemoryQuery::PreferenceByContext("ctx".into()), 10)
+            .is_empty());
+    }
+
+    #[test]
     fn test_save_load_roundtrip_preserves_all_subsystems() {
         let dir = std::env::temp_dir().join("forge_memory_test_full");
         std::fs::create_dir_all(&dir).unwrap();
@@ -348,6 +374,117 @@ mod tests {
         assert_eq!(loaded.semantic.len(), 1);
         assert_eq!(loaded.episodic.len(), 1);
         assert_eq!(loaded.preferences.len(), 1);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_decay_with_very_small_rate() {
+        let mut config = test_config();
+        config.decay_rate = 1e-7;
+        config.min_strength = 0.01;
+        let mut store = InMemoryStore::new(0, &config);
+
+        store
+            .semantic
+            .store(SemanticFact::new("fact".into(), "val".into(), 1.0, 1));
+        let ep = Episode::new((0, 5), vec![0], (3, 3), EpisodeOutcome::Success, 1.0);
+        store.episodic.store(ep);
+        let pref = store.preferences.get_or_create("ctx");
+        pref.update_action(1, 1.0, 0.5, 0.05);
+
+        assert_eq!(store.total_entries(), 3);
+
+        // Even after many ticks, tiny decay should not prune strong memories.
+        for _ in 0..1000 {
+            store.tick_decay(&config);
+        }
+        // 1.0 - 1000 * 1e-7 = 0.9999 — well above min_strength.
+        assert_eq!(store.total_entries(), 3);
+    }
+
+    #[test]
+    fn test_total_entries_across_all_subsystems() {
+        let mut store = InMemoryStore::new(0, &test_config());
+        assert_eq!(store.total_entries(), 0);
+
+        store
+            .semantic
+            .store(SemanticFact::new("s1".into(), "v".into(), 1.0, 1));
+        store
+            .semantic
+            .store(SemanticFact::new("s2".into(), "v".into(), 1.0, 2));
+        assert_eq!(store.total_entries(), 2);
+
+        let ep = Episode::new((0, 5), vec![0], (0, 0), EpisodeOutcome::Neutral, 0.0);
+        store.episodic.store(ep);
+        assert_eq!(store.total_entries(), 3);
+
+        store.preferences.get_or_create("pref1");
+        store.preferences.get_or_create("pref2");
+        assert_eq!(store.total_entries(), 5);
+    }
+
+    #[test]
+    fn test_save_load_roundtrip_large_data() {
+        let dir = std::env::temp_dir().join("forge_memory_test_large");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("large_store.bin");
+
+        let config = MemoryConfig {
+            enabled: true,
+            semantic_capacity: 500,
+            episodic_capacity: 500,
+            preference_capacity: 500,
+            ..MemoryConfig::default()
+        };
+        let mut store = InMemoryStore::new(42, &config);
+
+        // Populate with many entries.
+        for i in 0..200 {
+            store.semantic.store(SemanticFact::new(
+                format!("key_{i}"),
+                format!("value_{i}"),
+                (i as f32) / 200.0,
+                i as u64,
+            ));
+        }
+        for i in 0..150 {
+            let mut ep = Episode::new(
+                (i as u64, i as u64 + 10),
+                vec![i as u32 % 10],
+                ((i as u16) % 100, (i as u16) % 100),
+                EpisodeOutcome::Success,
+                i as f32 * 0.1,
+            );
+            ep.tags.push(format!("tag_{}", i % 5));
+            ep.event_summaries.push(format!("event_{i}"));
+            store.episodic.store(ep);
+        }
+        for i in 0..50 {
+            let pref = store.preferences.get_or_create(&format!("ctx_{i}"));
+            pref.update_action(i as u32, 1.0, 0.5, 0.05);
+        }
+
+        let total_before = store.total_entries();
+        assert_eq!(total_before, 200 + 150 + 50);
+
+        store.save_to_file(&path).unwrap();
+        let loaded = InMemoryStore::load_from_file(&path).unwrap();
+
+        assert_eq!(loaded.agent_id, 42);
+        assert_eq!(loaded.total_entries(), total_before);
+        assert_eq!(loaded.semantic.len(), 200);
+        assert_eq!(loaded.episodic.len(), 150);
+        assert_eq!(loaded.preferences.len(), 50);
+
+        // Spot-check a few entries survived the roundtrip.
+        assert!(loaded.semantic.get("key_0").is_some());
+        assert!(loaded.semantic.get("key_199").is_some());
+        assert_eq!(
+            loaded.preferences.get("ctx_0").unwrap().preferred_action(),
+            Some(0)
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }

@@ -243,6 +243,25 @@ pub const DEFAULT_VEHICLE_TERRAIN_COSTS: [i32; 8] = [
 ];
 /// Number of terrain types used for vehicle terrain cost array sizing.
 pub const NUM_VEHICLE_TERRAIN_TYPES: usize = 8;
+
+// ---------- MCTS defaults ----------
+
+/// Inline capacity for SmallVec in physics hot path.
+/// Avoids heap allocation when the number of agents is at or below this threshold.
+pub const PHYSICS_SMALLVEC_CAPACITY: usize = 16;
+
+/// Default PUCT exploration constant (c_puct) for MCTS.
+pub const DEFAULT_MCTS_C_PUCT: f32 = 1.41;
+/// Default number of MCTS simulations per search.
+pub const DEFAULT_MCTS_NUM_SIMULATIONS: u32 = 100;
+/// Default maximum MCTS tree depth.
+pub const DEFAULT_MCTS_MAX_DEPTH: u32 = 50;
+/// Default MCTS discount factor for future rewards.
+pub const DEFAULT_MCTS_DISCOUNT: f32 = 0.99;
+/// Default MCTS temperature for action selection (1.0 = proportional to visits).
+pub const DEFAULT_MCTS_TEMPERATURE: f32 = 1.0;
+/// Default MCTS action space size.
+pub const DEFAULT_MCTS_ACTION_SPACE: u32 = 32;
 /// Default fall damage per altitude level during emergency landing (fixed-point 1.0).
 pub const DEFAULT_FALL_DAMAGE_PER_LEVEL: i32 = FIXED_POINT_ONE;
 

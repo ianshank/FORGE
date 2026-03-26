@@ -132,6 +132,69 @@ mod tests {
         assert_eq!(scores[0], 1.0);
         assert_eq!(scores[1], 0.0);
     }
+
+    #[test]
+    fn test_mixed_cooperation_hostility_ratio() {
+        let mut rt = ReputationTracker::new(1);
+        // 3 cooperative, 1 hostile → (3-1)/4 = 0.5
+        rt.record_cooperation(0);
+        rt.record_cooperation(0);
+        rt.record_cooperation(0);
+        rt.record_hostility(0);
+        assert!((rt.reputation(0) - 0.5).abs() < 1e-6);
+
+        // Add 1 more hostile → (3-2)/5 = 0.2
+        rt.record_hostility(0);
+        assert!((rt.reputation(0) - 0.2).abs() < 1e-6);
+
+        // Equal coop and hostile → 0.0
+        let mut rt2 = ReputationTracker::new(1);
+        rt2.record_cooperation(0);
+        rt2.record_hostility(0);
+        assert!((rt2.reputation(0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_out_of_bounds_agent_reputation() {
+        let rt = ReputationTracker::new(3);
+        assert_eq!(rt.reputation(3), 0.0);
+        assert_eq!(rt.reputation(100), 0.0);
+        assert_eq!(rt.reputation(usize::MAX), 0.0);
+    }
+
+    #[test]
+    fn test_many_agents_bounds() {
+        let n = 20;
+        let mut rt = ReputationTracker::new(n);
+        // Mix of operations across many agents
+        for i in 0..n {
+            for _ in 0..(i + 1) {
+                rt.record_cooperation(i);
+            }
+            for _ in 0..i {
+                rt.record_hostility(i);
+            }
+        }
+        for i in 0..n {
+            let r = rt.reputation(i);
+            assert!(r >= -1.0, "reputation({i}) = {r} below -1.0");
+            assert!(r <= 1.0, "reputation({i}) = {r} above 1.0");
+        }
+
+        // Agent 0 had 1 coop, 0 hostile → 1.0
+        assert_eq!(rt.reputation(0), 1.0);
+        // Agent 1 had 2 coop, 1 hostile → (2-1)/3 = 0.333...
+        assert!((rt.reputation(1) - 1.0 / 3.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_out_of_bounds_record_is_noop() {
+        let mut rt = ReputationTracker::new(2);
+        rt.record_cooperation(5); // should not panic
+        rt.record_hostility(5); // should not panic
+        assert_eq!(rt.reputation(0), 0.0);
+        assert_eq!(rt.reputation(1), 0.0);
+    }
 }
 
 #[cfg(test)]

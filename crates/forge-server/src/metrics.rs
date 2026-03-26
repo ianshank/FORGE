@@ -309,6 +309,38 @@ mod tests {
     }
 
     #[test]
+    fn test_metrics_collector_multiple_record_tick_calls() {
+        let mut collector = MetricsCollector::new();
+        for _ in 0..100 {
+            collector.record_tick();
+        }
+        let snapshot = collector.snapshot();
+        assert_eq!(snapshot.simulation_ticks, 100);
+    }
+
+    #[test]
+    fn test_snapshot_sps_computation() {
+        let mut collector = MetricsCollector::new();
+        // Record some ticks to get a positive SPS.
+        for _ in 0..50 {
+            collector.record_tick();
+        }
+        let snapshot = collector.snapshot();
+        assert_eq!(snapshot.simulation_ticks, 50);
+        // SPS should be positive since ticks were recorded between new() and snapshot().
+        assert!(
+            snapshot.steps_per_second > 0.0,
+            "SPS should be > 0 after recording ticks, got {}",
+            snapshot.steps_per_second
+        );
+
+        // After snapshot, recording zero more ticks and taking another snapshot
+        // should yield a very low or zero SPS.
+        let snapshot2 = collector.snapshot();
+        assert_eq!(snapshot2.simulation_ticks, 50); // total unchanged
+    }
+
+    #[test]
     fn test_training_metrics_roundtrip() {
         let metrics = TrainingMetrics {
             episode: 100,

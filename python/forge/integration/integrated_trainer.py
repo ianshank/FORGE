@@ -73,7 +73,7 @@ class IntegratedTrainer:
         step_fn: Callable[[int], tuple[np.ndarray, float, bool, bool, dict[str, Any]]],
         agent_act_fn: Callable[[np.ndarray], int],
         domain: str = "navigation",
-    ) -> dict[str, float]:
+    ) -> dict[str, float | str]:
         """Run a single integrated training episode.
 
         Args:
@@ -83,7 +83,7 @@ class IntegratedTrainer:
             domain: Curriculum domain label for this episode.
 
         Returns:
-            Episode metrics.
+            Episode metrics (numeric values and string labels).
         """
         obs = reset_fn()
         total_reward = 0.0

@@ -225,6 +225,49 @@ mod tests {
     }
 
     #[test]
+    fn test_timed_with_zero_time_limit() {
+        let config = ObjectiveGenConfig {
+            time_limit_range: (0, 0),
+            // Force generation of a Timed node by using high depth and low primitive_probability.
+            max_depth: 3,
+            difficulty_tier: 3,
+            primitive_probability: 0.0,
+            ..Default::default()
+        };
+        // Generate many objectives; at least one should contain a Timed variant.
+        // With time_limit=0, evaluating at tick=0 should fail (tick >= time_limit).
+        let obj = Objective::Timed {
+            objective: Box::new(Objective::Primitive(ObjectivePrimitive::ReachLocation {
+                x: 0,
+                y: 0,
+            })),
+            time_limit: 0,
+        };
+        let completed = std::collections::HashSet::new();
+        // At tick=0 with time_limit=0, the inner is InProgress but tick >= time_limit => Failed
+        assert_eq!(
+            obj.evaluate(0, &completed),
+            crate::grammar::ObjectiveStatus::Failed
+        );
+    }
+
+    #[test]
+    fn test_deeply_nested_objective_depth_5() {
+        let config = ObjectiveGenConfig {
+            max_depth: 5,
+            difficulty_tier: 5,
+            primitive_probability: 0.0, // Maximize nesting
+            max_breadth: 2,
+            ..Default::default()
+        };
+        let obj = generate_objective(&config, 32, 32, 42);
+        let depth = objective_depth(&obj);
+        // With max_depth=5 and difficulty_tier=5, effective_depth = min(5, 6) = 5
+        // Depth should be > 1 since primitive_probability is 0 and we have room.
+        assert!(depth > 1, "Expected nested objective, got depth={depth}");
+    }
+
+    #[test]
     fn test_higher_difficulty_potentially_deeper() {
         let low = ObjectiveGenConfig {
             difficulty_tier: 1,

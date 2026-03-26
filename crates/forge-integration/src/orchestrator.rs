@@ -204,6 +204,83 @@ mod tests {
         assert!(orch.agent_memory(99).is_none());
         assert!(orch.agent_memory_mut(0).is_some());
     }
+
+    #[test]
+    fn test_memory_write_interval_one_decays_every_tick() {
+        let config = IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 1,
+            memory: {
+                let mut m = forge_memory::config::MemoryConfig::default();
+                m.enabled = true;
+                m
+            },
+            ..IntegrationConfig::default()
+        };
+        let mut orch = IntegrationOrchestrator::new(2, config);
+        // With interval=1, every tick triggers the memory decay branch.
+        // Just verify it doesn't panic over multiple ticks.
+        for _ in 0..10 {
+            orch.tick();
+        }
+        assert_eq!(orch.current_tick(), 10);
+    }
+
+    #[test]
+    fn test_hostility_affects_only_agent_a_reputation() {
+        let mut orch = IntegrationOrchestrator::new(3, test_config());
+        let rep_a_before = orch.reputation.reputation(0);
+        let rep_b_before = orch.reputation.reputation(1);
+        orch.record_hostility(0, 1);
+        let rep_a_after = orch.reputation.reputation(0);
+        let rep_b_after = orch.reputation.reputation(1);
+        // Only agent_a (index 0) should have reputation change from hostility.
+        assert!(
+            rep_a_after < rep_a_before,
+            "Agent A reputation should decrease: before={rep_a_before}, after={rep_a_after}"
+        );
+        assert_eq!(
+            rep_b_before, rep_b_after,
+            "Agent B reputation should be unchanged"
+        );
+    }
+
+    #[test]
+    fn test_blend_rewards_zero_social_weight_returns_pure_task() {
+        let config = IntegrationConfig {
+            enabled: true,
+            social_reward_weight: 0.0,
+            ..IntegrationConfig::default()
+        };
+        let orch = IntegrationOrchestrator::new(3, config);
+        let task_rewards = vec![1.0, 2.0, 3.0];
+        let blended = orch.blend_rewards(&task_rewards);
+        assert_eq!(blended, task_rewards);
+    }
+
+    #[test]
+    fn test_agent_memory_invalid_index() {
+        let orch = IntegrationOrchestrator::new(2, test_config());
+        assert!(orch.agent_memory(0).is_some());
+        assert!(orch.agent_memory(1).is_some());
+        assert!(orch.agent_memory(2).is_none());
+        assert!(orch.agent_memory(usize::MAX).is_none());
+    }
+
+    #[test]
+    fn test_agent_memory_mut_invalid_index() {
+        let mut orch = IntegrationOrchestrator::new(1, test_config());
+        assert!(orch.agent_memory_mut(0).is_some());
+        assert!(orch.agent_memory_mut(1).is_none());
+    }
+
+    #[test]
+    fn test_num_agents_consistency() {
+        for n in [0, 1, 5, 10] {
+            let orch = IntegrationOrchestrator::new(n, test_config());
+            assert_eq!(orch.num_agents(), n);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -285,6 +285,108 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_small_grid_generation() {
+        let mut config = default_config();
+        config.width = 4;
+        config.height = 4;
+        config.min_dimension = 4;
+        let gen = TerrainGenerator::new(&config, 42);
+        let mut grid = Grid::new(4, 4);
+        gen.generate(&mut grid);
+
+        // All 16 tiles should have valid terrain
+        for tile in &grid.tiles {
+            assert!(matches!(
+                tile.terrain,
+                TerrainType::Ground
+                    | TerrainType::Water
+                    | TerrainType::Sand
+                    | TerrainType::Forest
+                    | TerrainType::Mountain
+            ));
+        }
+    }
+
+    #[test]
+    fn test_large_biome_scale() {
+        let mut config = default_config();
+        config.biome_scale = 1.0; // very high scale -> very small features
+        let gen = TerrainGenerator::new(&config, 42);
+        let mut grid = Grid::new(config.width, config.height);
+        gen.generate(&mut grid);
+
+        // Should not panic and produce valid terrain
+        for tile in &grid.tiles {
+            assert!(tile.elevation <= 255);
+        }
+    }
+
+    #[test]
+    fn test_tiny_biome_scale() {
+        let mut config = default_config();
+        config.biome_scale = 0.01; // very small scale -> very large biome patches
+        let gen = TerrainGenerator::new(&config, 42);
+        let mut grid = Grid::new(config.width, config.height);
+        gen.generate(&mut grid);
+
+        // Should not panic
+        for tile in &grid.tiles {
+            assert!(tile.elevation <= 255);
+        }
+    }
+
+    #[test]
+    fn test_elevation_at_range() {
+        let config = default_config();
+        let gen = TerrainGenerator::new(&config, 42);
+
+        // Sample various coordinates — all should be in [0.0, 1.0]
+        for y in 0..config.height {
+            for x in 0..config.width {
+                let elev = gen.elevation_at(x, y);
+                assert!(
+                    (0.0..=1.0).contains(&elev),
+                    "elevation_at({x}, {y}) = {elev} out of [0, 1]"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_moisture_differs_from_elevation() {
+        let config = default_config();
+        let gen = TerrainGenerator::new(&config, 42);
+
+        // Moisture and elevation use different seed offsets, so they should differ
+        let mut differ = false;
+        for y in 0..config.height.min(10) {
+            for x in 0..config.width.min(10) {
+                if (gen.elevation_at(x, y) - gen.moisture_at(x, y)).abs() > 0.001 {
+                    differ = true;
+                    break;
+                }
+            }
+        }
+        assert!(differ, "Moisture and elevation layers should differ");
+    }
+
+    #[test]
+    fn test_rectangular_grid() {
+        let mut config = default_config();
+        config.width = 32;
+        config.height = 8;
+        config.min_dimension = 8;
+        let gen = TerrainGenerator::new(&config, 123);
+        let mut grid = Grid::new(32, 8);
+        gen.generate(&mut grid);
+
+        assert_eq!(grid.tiles.len(), 32 * 8);
+        for tile in &grid.tiles {
+            assert!(tile.elevation <= 255);
+        }
+    }
+
     // ---- Proptest: terrain generation invariants ----
 
     mod proptests {

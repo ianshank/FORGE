@@ -438,6 +438,124 @@ mod tests {
     }
 
     #[test]
+    fn test_run_episode_multi_agent() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.seed = 42;
+        config.agents.num_agents = 3;
+        config.agents.comm_vocab_size = 0;
+        config.task.max_episode_length = 50;
+        let mut state = WorldState::new(config).unwrap();
+
+        let mut agents: Vec<Box<dyn Agent>> = vec![
+            Box::new(NoopAgent),
+            Box::new(RandomAgent::new(Pcg64Mcg::seed_from_u64(1), 0)),
+            Box::new(GreedyNavigator::new(8, 8)),
+        ];
+
+        let rewards = run_episode(&mut state, &mut agents, 20);
+        assert_eq!(rewards.len(), 3);
+        assert!(state.tick > 0);
+    }
+
+    #[test]
+    fn test_random_agent_with_comm_vocab() {
+        let rng = Pcg64Mcg::seed_from_u64(42);
+        let mut agent = RandomAgent::new(rng, 4);
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.agents.num_agents = 1;
+        config.agents.comm_vocab_size = 4;
+        let state = WorldState::new(config).unwrap();
+
+        for _ in 0..50 {
+            let action = agent.select_action(&state, 0);
+            let discrete = action.to_discrete();
+            assert!(discrete < Action::space_size(4, false));
+        }
+    }
+
+    #[test]
+    fn test_random_agent_determinism() {
+        let state = make_test_world();
+
+        let mut agent1 = RandomAgent::new(Pcg64Mcg::seed_from_u64(42), 0);
+        let mut agent2 = RandomAgent::new(Pcg64Mcg::seed_from_u64(42), 0);
+
+        for _ in 0..20 {
+            let a1 = agent1.select_action(&state, 0);
+            let a2 = agent2.select_action(&state, 0);
+            assert_eq!(a1, a2, "Same seed should produce same actions");
+        }
+    }
+
+    #[test]
+    fn test_greedy_navigator_diagonal() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.agents.num_agents = 1;
+        let mut state = WorldState::new(config).unwrap();
+
+        // Agent at (2, 2), target at (5, 8) — dy(6) > dx(3), should move down
+        state.agents[0].position = Position::new(2, 2);
+        let mut agent = GreedyNavigator::new(5, 8);
+        let action = agent.select_action(&state, 0);
+        assert_eq!(action, Action::Move(Direction::Down));
+    }
+
+    #[test]
+    fn test_greedy_navigator_equal_delta() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.agents.num_agents = 1;
+        let mut state = WorldState::new(config).unwrap();
+
+        // Agent at (2, 2), target at (5, 5) — dx==dy, should prefer horizontal (dx.abs >= dy.abs)
+        state.agents[0].position = Position::new(2, 2);
+        let mut agent = GreedyNavigator::new(5, 5);
+        let action = agent.select_action(&state, 0);
+        assert_eq!(action, Action::Move(Direction::Right));
+    }
+
+    #[test]
+    fn test_heuristic_agent_with_comm_vocab() {
+        let rng = Pcg64Mcg::seed_from_u64(42);
+        let mut agent = HeuristicAgent::new(rng, 4);
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.agents.num_agents = 1;
+        config.agents.comm_vocab_size = 4;
+        let state = WorldState::new(config).unwrap();
+
+        for _ in 0..20 {
+            let action = agent.select_action(&state, 0);
+            let _ = action.to_discrete(); // should not panic
+        }
+    }
+
+    #[test]
+    fn test_run_episode_with_fewer_agents_than_state() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.seed = 42;
+        config.agents.num_agents = 3;
+        config.agents.comm_vocab_size = 0;
+        config.task.max_episode_length = 50;
+        let mut state = WorldState::new(config).unwrap();
+
+        // Only provide 1 agent — should still work for the available agent
+        let mut agents: Vec<Box<dyn Agent>> = vec![Box::new(NoopAgent)];
+        let rewards = run_episode(&mut state, &mut agents, 10);
+        assert_eq!(rewards.len(), 3);
+    }
+
+    #[test]
     fn test_agent_name() {
         let noop = NoopAgent;
         assert_eq!(noop.name(), "NoopAgent");

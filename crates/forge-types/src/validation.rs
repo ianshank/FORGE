@@ -418,6 +418,98 @@ mod tests {
         assert!(validate_config(&config).is_ok());
     }
 
+    #[test]
+    fn test_drone_starting_battery_exceeds_max() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.starting_battery = 200_000;
+        config.drone.max_battery = 100_000;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("starting_battery"));
+    }
+
+    #[test]
+    fn test_drone_negative_aerial_drain_rate() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.aerial_drain_rate = -100;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("aerial_drain_rate"));
+    }
+
+    #[test]
+    fn test_drone_negative_ascend_cost() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.ascend_cost = -50;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("ascend_cost"));
+    }
+
+    #[test]
+    fn test_drone_negative_recharge_rate() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.recharge_rate = -10;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("recharge_rate"));
+    }
+
+    #[test]
+    fn test_drone_zero_starting_battery() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.starting_battery = 0;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("starting_battery"));
+    }
+
+    #[test]
+    fn test_drone_valid_zero_aerial_drain_rate() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        config.drone.aerial_drain_rate = 0;
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_drone_valid_zero_ascend_cost() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        config.drone.ascend_cost = 0;
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_drone_valid_zero_recharge_rate() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        config.drone.recharge_rate = 0;
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_drone_starting_battery_equals_max() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        config.drone.starting_battery = config.drone.max_battery;
+        assert!(validate_config(&config).is_ok());
+    }
+
     // ---- Proptest: validation invariants ----
 
     mod proptests {

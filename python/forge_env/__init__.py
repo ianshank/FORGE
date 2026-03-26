@@ -34,13 +34,13 @@ from forge_env.vecenv import ForgeAsyncVecEnv, ForgeSyncVecEnv, make_forge_vec_e
 
 # Optional imports — guarded so forge_env remains importable without SB3/torch.
 try:
-    from forge_env.feature_extractors import ForgeGridCnnExtractor, ForgeObsExtractor  # noqa: E402
+    from forge_env.feature_extractors import ForgeGridCnnExtractor, ForgeObsExtractor
     _HAS_EXTRACTORS = True
 except ImportError:
     _HAS_EXTRACTORS = False
 
 try:
-    from forge_env.sb3_callbacks import ForgeCurriculumCallback, ForgeMetricsCallback  # noqa: E402
+    from forge_env.sb3_callbacks import ForgeCurriculumCallback, ForgeMetricsCallback
     _HAS_CALLBACKS = True
 except ImportError:
     _HAS_CALLBACKS = False

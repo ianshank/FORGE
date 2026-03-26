@@ -340,4 +340,49 @@ mod tests {
         // Cloned state shares the same Arc — both should see the update
         assert_eq!(cloned.read().tick, 99);
     }
+
+    #[test]
+    fn test_concurrent_read_after_update() {
+        let state = SharedState::new();
+        let snapshot = SimulationSnapshot {
+            tick: 42,
+            agents: vec![AgentSnapshot {
+                id: 0,
+                x: 1,
+                y: 2,
+                health: 100,
+                alive: true,
+                team_id: None,
+                intent: None,
+                vision_radius: 5,
+            }],
+            grid_width: 32,
+            grid_height: 32,
+            events: vec![],
+            schema_version: SCHEMA_VERSION,
+        };
+        state.update(snapshot);
+
+        // Multiple reads should all see the same state.
+        let r1 = state.read();
+        let r2 = state.read();
+        assert_eq!(r1.tick, 42);
+        assert_eq!(r2.tick, 42);
+        assert_eq!(r1.agents.len(), 1);
+        assert_eq!(r2.agents.len(), 1);
+    }
+
+    #[test]
+    fn test_default_snapshot_has_zero_tick() {
+        let snapshot = SimulationSnapshot::default();
+        assert_eq!(snapshot.tick, 0);
+        assert!(snapshot.agents.is_empty());
+        assert_eq!(snapshot.grid_width, 0);
+        assert_eq!(snapshot.grid_height, 0);
+
+        // SharedState::new() also starts with zero tick.
+        let state = SharedState::new();
+        let read = state.read();
+        assert_eq!(read.tick, 0);
+    }
 }

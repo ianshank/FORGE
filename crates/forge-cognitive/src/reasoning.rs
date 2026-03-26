@@ -209,4 +209,88 @@ mod tests {
         assert_eq!(deser.steps[0].step_type, ReasoningType::Observe);
         assert_eq!(deser.steps[3].step_type, ReasoningType::Act);
     }
+
+    #[test]
+    fn test_trace_with_many_steps() {
+        let mut trace = ReasoningTrace::new();
+        let types = [
+            ReasoningType::Observe,
+            ReasoningType::Remember,
+            ReasoningType::Think,
+            ReasoningType::Plan,
+            ReasoningType::Act,
+            ReasoningType::Reflect,
+        ];
+
+        // Add 12 steps cycling through all types
+        for i in 0..12 {
+            let step_type = types[i % types.len()].clone();
+            trace.add_step(ReasoningStep::new(step_type, format!("step {i}"), i as u64));
+        }
+
+        assert_eq!(trace.steps.len(), 12);
+        // Verify ordering is preserved
+        for (i, step) in trace.steps.iter().enumerate() {
+            assert_eq!(step.content, format!("step {i}"));
+            assert_eq!(step.tick, i as u64);
+        }
+
+        // Serialization roundtrip with many steps
+        let json = serde_json::to_string(&trace).unwrap();
+        let deser: ReasoningTrace = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.steps.len(), 12);
+    }
+
+    #[test]
+    fn test_reasoning_type_all_variants_accessible() {
+        // Verify each variant can be constructed, cloned, debug-printed, and compared
+        let variants = vec![
+            ReasoningType::Observe,
+            ReasoningType::Remember,
+            ReasoningType::Think,
+            ReasoningType::Plan,
+            ReasoningType::Act,
+            ReasoningType::Reflect,
+        ];
+
+        assert_eq!(variants.len(), 6);
+
+        // All variants are distinct
+        for (i, a) in variants.iter().enumerate() {
+            for (j, b) in variants.iter().enumerate() {
+                if i == j {
+                    assert_eq!(a, b);
+                } else {
+                    assert_ne!(a, b);
+                }
+            }
+        }
+
+        // Debug formatting works for all
+        for v in &variants {
+            let debug = format!("{:?}", v);
+            assert!(!debug.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_empty_trace_properties() {
+        let trace = ReasoningTrace::new();
+
+        assert!(trace.steps.is_empty());
+        assert_eq!(trace.steps.len(), 0);
+        assert_eq!(trace.selected_action, 0);
+        assert_eq!(trace.confidence, 0.0);
+
+        // Empty trace serializes and deserializes correctly
+        let json = serde_json::to_string(&trace).unwrap();
+        let deser: ReasoningTrace = serde_json::from_str(&json).unwrap();
+        assert!(deser.steps.is_empty());
+        assert_eq!(deser.selected_action, 0);
+        assert_eq!(deser.confidence, 0.0);
+
+        // Clone of empty trace is also empty
+        let cloned = trace.clone();
+        assert!(cloned.steps.is_empty());
+    }
 }

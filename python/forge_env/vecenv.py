@@ -21,10 +21,13 @@ make_forge_vec_env
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import multiprocessing as mp
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +80,8 @@ _CMD_GET_SPACES = "get_spaces"
 
 def _worker(
     env_fn: Callable[[], Any],
-    pipe: "mp.connection.Connection",
-    parent_pipe: "mp.connection.Connection",
+    pipe: mp.connection.Connection,
+    parent_pipe: mp.connection.Connection,
 ) -> None:
     """Worker loop executed in a subprocess.
 
@@ -109,7 +112,7 @@ def _worker(
                 break
             else:  # pragma: no cover
                 pipe.send(RuntimeError(f"Unknown command: {cmd}"))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         pipe.send(exc)
     finally:
         pipe.close()
@@ -181,8 +184,8 @@ class ForgeSyncVecEnv:
 
     def step(
         self,
-        actions: "np.ndarray",
-    ) -> tuple[dict[str, Any], "np.ndarray", "np.ndarray", "np.ndarray", list[dict[str, Any]]]:
+        actions: np.ndarray,
+    ) -> tuple[dict[str, Any], np.ndarray, np.ndarray, np.ndarray, list[dict[str, Any]]]:
         """Step all environments with the given per-env actions.
 
         Args:
@@ -273,12 +276,12 @@ class ForgeAsyncVecEnv:
         self.num_envs: int = len(env_fns)
         ctx = mp.get_context(context)
 
-        self._parent_pipes: list["mp.connection.Connection"] = []
-        self._processes: list["mp.Process"] = []
+        self._parent_pipes: list[mp.connection.Connection] = []
+        self._processes: list[mp.Process] = []
 
         for fn in env_fns:
             parent_conn, child_conn = ctx.Pipe()
-            process = ctx.Process(
+            process = ctx.Process(  # type: ignore[attr-defined]
                 target=_worker,
                 args=(fn, child_conn, parent_conn),
                 daemon=True,
@@ -329,8 +332,8 @@ class ForgeAsyncVecEnv:
 
     def step(
         self,
-        actions: "np.ndarray",
-    ) -> tuple[dict[str, Any], "np.ndarray", "np.ndarray", "np.ndarray", list[dict[str, Any]]]:
+        actions: np.ndarray,
+    ) -> tuple[dict[str, Any], np.ndarray, np.ndarray, np.ndarray, list[dict[str, Any]]]:
         """Step all environments asynchronously.
 
         Args:
@@ -398,10 +401,8 @@ class ForgeAsyncVecEnv:
     def close(self) -> None:
         """Send close command to all workers and join processes."""
         for pipe in self._parent_pipes:
-            try:
+            with contextlib.suppress(BrokenPipeError):
                 pipe.send((_CMD_CLOSE, None))
-            except BrokenPipeError:  # pragma: no cover
-                pass
         for pipe in self._parent_pipes:
             pipe.close()
         for process in self._processes:

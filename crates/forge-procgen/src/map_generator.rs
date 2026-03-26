@@ -309,4 +309,40 @@ mod tests {
         // Left side and right side are disconnected
         assert!(!is_connected(&grid));
     }
+
+    #[test]
+    fn test_small_grid_4x4() {
+        let config = MapGenConfig {
+            width: 4,
+            height: 4,
+            seed: 7,
+            num_clusters: 2,
+            cluster_size_min: 1,
+            cluster_size_max: 2,
+            ..Default::default()
+        };
+        let gen = MapGenerator::new(config);
+        let grid = gen.generate();
+        assert_eq!(grid.width, 4);
+        assert_eq!(grid.height, 4);
+        assert_eq!(grid.tiles.len(), 16);
+    }
+
+    #[test]
+    fn test_deterministic_same_config_same_result() {
+        let config = MapGenConfig {
+            width: 8,
+            height: 8,
+            seed: 999,
+            ..Default::default()
+        };
+        let gen_a = MapGenerator::new(config.clone());
+        let gen_b = MapGenerator::new(config);
+        let grid_a = gen_a.generate();
+        let grid_b = gen_b.generate();
+        assert_eq!(grid_a.tiles.len(), grid_b.tiles.len());
+        for (a, b) in grid_a.tiles.iter().zip(grid_b.tiles.iter()) {
+            assert_eq!(a.terrain, b.terrain);
+        }
+    }
 }

@@ -15,6 +15,7 @@ import numpy as np
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.config import (
+    DEFAULT_ACTION_DIM,
     DEFAULT_BATCH_SIZE,
     DEFAULT_CLIP_RATIO,
     DEFAULT_ENTROPY_COEFF,
@@ -22,15 +23,13 @@ from forge.config import (
     DEFAULT_GAE_LAMBDA,
     DEFAULT_GAMMA,
     DEFAULT_MAX_GRAD_NORM,
+    DEFAULT_OBS_DIM,
     DEFAULT_VALUE_COEFF,
 )
 from forge.models.policy_network import ActorCriticNetwork
 from forge.utils.device import get_device
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_OBS_DIM = 64
-DEFAULT_ACTION_DIM = 8
 
 
 @dataclass

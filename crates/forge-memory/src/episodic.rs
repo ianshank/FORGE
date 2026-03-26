@@ -232,6 +232,82 @@ mod tests {
         mem.tick_decay(0.01, 0.05);
         assert!(mem.is_empty());
     }
+
+    #[test]
+    fn test_multi_agent_query() {
+        let mut mem = EpisodicMemory::new(100);
+        // Episode involving agents 1, 2, and 3.
+        mem.store(make_episode(0, vec![1, 2, 3], "team"));
+        // Episode involving only agent 2.
+        mem.store(make_episode(10, vec![2], "solo"));
+        // Episode involving agents 3 and 4.
+        mem.store(make_episode(20, vec![3, 4], "pair"));
+
+        // Agent 2 appears in two episodes.
+        assert_eq!(mem.query_by_agent(2).len(), 2);
+        // Agent 3 appears in two episodes.
+        assert_eq!(mem.query_by_agent(3).len(), 2);
+        // Agent 1 appears in one episode.
+        assert_eq!(mem.query_by_agent(1).len(), 1);
+        // Agent 4 appears in one episode.
+        assert_eq!(mem.query_by_agent(4).len(), 1);
+        // Agent 99 appears in no episodes.
+        assert_eq!(mem.query_by_agent(99).len(), 0);
+    }
+
+    #[test]
+    fn test_episode_with_empty_tag_strings() {
+        let mut mem = EpisodicMemory::new(100);
+        let mut ep = Episode::new((0, 10), vec![1], (5, 5), EpisodeOutcome::Neutral, 0.0);
+        ep.tags.push(String::new());
+        mem.store(ep);
+
+        // Querying by empty tag should match.
+        assert_eq!(mem.query_by_tag("").len(), 1);
+        // Querying by a non-empty tag should not match.
+        assert_eq!(mem.query_by_tag("combat").len(), 0);
+    }
+
+    #[test]
+    fn test_empty_event_summaries() {
+        let ep = Episode::new((0, 10), vec![1], (5, 5), EpisodeOutcome::Success, 1.0);
+        assert!(ep.event_summaries.is_empty());
+
+        let mut mem = EpisodicMemory::new(100);
+        mem.store(ep);
+        let results = mem.query_by_agent(1);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].event_summaries.is_empty());
+    }
+
+    #[test]
+    fn test_query_by_location_radius_zero() {
+        let mut mem = EpisodicMemory::new(100);
+        let mut ep = Episode::new((0, 10), vec![1], (10, 20), EpisodeOutcome::Success, 1.0);
+        ep.tags.push("here".into());
+        mem.store(ep);
+
+        // Radius 0: only exact match.
+        assert_eq!(mem.query_by_location(10, 20, 0).len(), 1);
+        // One step away with radius 0 should miss.
+        assert_eq!(mem.query_by_location(11, 20, 0).len(), 0);
+        assert_eq!(mem.query_by_location(10, 21, 0).len(), 0);
+    }
+
+    #[test]
+    fn test_query_by_location_exactly_on_boundary() {
+        let mut mem = EpisodicMemory::new(100);
+        let mut ep = Episode::new((0, 10), vec![1], (10, 10), EpisodeOutcome::Neutral, 0.0);
+        ep.tags.push("boundary".into());
+        mem.store(ep);
+
+        // Manhattan distance from (10,10) to (15,10) = 5, exactly on boundary.
+        assert_eq!(mem.query_by_location(15, 10, 5).len(), 1);
+        // Manhattan distance from (10,10) to (13,12) = 3+2 = 5, exactly on boundary.
+        assert_eq!(mem.query_by_location(13, 12, 5).len(), 1);
+        // Manhattan distance from (10,10) to (16,10) = 6, just outside boundary.
+        assert_eq!(mem.query_by_location(16, 10, 5).len(), 0);
+    }
 }
 
 #[cfg(test)]

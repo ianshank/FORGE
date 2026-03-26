@@ -230,6 +230,98 @@ mod tests {
         assert_eq!(mem.query_by_strength(0.5).len(), 1);
         assert_eq!(mem.query_by_strength(0.0).len(), 2);
     }
+
+    #[test]
+    fn test_eviction_tie_breaking_identical_strength() {
+        // When multiple facts have identical strength, eviction should still
+        // succeed deterministically (min_by picks the first minimum).
+        let mut mem = SemanticMemory::new(3);
+        let mut f1 = SemanticFact::new("a".into(), "1".into(), 1.0, 1);
+        f1.strength = 0.5;
+        let mut f2 = SemanticFact::new("b".into(), "2".into(), 1.0, 2);
+        f2.strength = 0.5;
+        let mut f3 = SemanticFact::new("c".into(), "3".into(), 1.0, 3);
+        f3.strength = 0.5;
+        mem.store(f1);
+        mem.store(f2);
+        mem.store(f3);
+        assert_eq!(mem.len(), 3);
+
+        // Insert a fourth; one of the tied facts must be evicted.
+        mem.store(SemanticFact::new("d".into(), "4".into(), 1.0, 4));
+        assert_eq!(mem.len(), 3);
+        // The new fact should be present.
+        assert!(mem.get("d").is_some());
+        // Exactly one of the original three was evicted.
+        let remaining: usize = ["a", "b", "c"]
+            .iter()
+            .filter(|k| mem.get(k).is_some())
+            .count();
+        assert_eq!(remaining, 2);
+    }
+
+    #[test]
+    fn test_capacity_one_single_fact_replacement() {
+        let mut mem = SemanticMemory::new(1);
+        mem.store(SemanticFact::new("first".into(), "v1".into(), 1.0, 1));
+        assert_eq!(mem.len(), 1);
+        assert_eq!(mem.get("first").unwrap().value, "v1");
+
+        // Storing a second fact evicts the first.
+        mem.store(SemanticFact::new("second".into(), "v2".into(), 1.0, 2));
+        assert_eq!(mem.len(), 1);
+        assert!(mem.get("first").is_none());
+        assert_eq!(mem.get("second").unwrap().value, "v2");
+
+        // Replacing by same key at capacity=1 works without eviction.
+        mem.store(SemanticFact::new("second".into(), "v3".into(), 0.9, 3));
+        assert_eq!(mem.len(), 1);
+        assert_eq!(mem.get("second").unwrap().value, "v3");
+    }
+
+    #[test]
+    fn test_query_by_prefix_empty_prefix_returns_all() {
+        let mut mem = SemanticMemory::new(100);
+        mem.store(SemanticFact::new("alpha".into(), "1".into(), 1.0, 1));
+        mem.store(SemanticFact::new("beta".into(), "2".into(), 1.0, 2));
+        mem.store(SemanticFact::new("gamma".into(), "3".into(), 1.0, 3));
+
+        // Empty prefix matches all keys (every string starts with "").
+        let results = mem.query_by_prefix("", 100);
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_query_by_strength_zero_returns_all() {
+        let mut mem = SemanticMemory::new(100);
+        let mut f1 = SemanticFact::new("a".into(), "1".into(), 1.0, 1);
+        f1.strength = 0.0;
+        mem.store(f1);
+        let mut f2 = SemanticFact::new("b".into(), "2".into(), 1.0, 2);
+        f2.strength = 0.5;
+        mem.store(f2);
+        mem.store(SemanticFact::new("c".into(), "3".into(), 1.0, 3));
+
+        let results = mem.query_by_strength(0.0);
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_store_fact_with_empty_key_and_value() {
+        let mut mem = SemanticMemory::new(100);
+        mem.store(SemanticFact::new(String::new(), String::new(), 0.5, 0));
+        assert_eq!(mem.len(), 1);
+
+        let fact = mem.get("").unwrap();
+        assert_eq!(fact.key, "");
+        assert_eq!(fact.value, "");
+        assert_eq!(fact.confidence, 0.5);
+
+        // Replacing with the same empty key works.
+        mem.store(SemanticFact::new(String::new(), "updated".into(), 0.9, 1));
+        assert_eq!(mem.len(), 1);
+        assert_eq!(mem.get("").unwrap().value, "updated");
+    }
 }
 
 #[cfg(test)]

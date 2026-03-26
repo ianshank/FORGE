@@ -1,9 +1,11 @@
 """FORGE: Python agent framework for the FORGE simulation project."""
 from __future__ import annotations
 
+import contextlib
+
 # Expose training loggers at the forge package level so that scripts can do:
 #   from forge import ForgeLogger, WandbLogger
-try:
+with contextlib.suppress(ImportError):
     from forge.training.loggers import (  # noqa: F401
         CompositeLogger,
         ForgeLogger,
@@ -12,5 +14,3 @@ try:
         WandbLogger,
         make_logger,
     )
-except ImportError:
-    pass  # Optional; loggers are available directly from forge.training.loggers

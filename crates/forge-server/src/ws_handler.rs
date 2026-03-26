@@ -428,4 +428,23 @@ mod tests {
         }
         assert_eq!(manager.active_clients(), 50);
     }
+
+    #[test]
+    fn test_duplicate_add_client_overwrites() {
+        let mut manager = SubscriptionManager::new();
+        manager.add_client(1, 0);
+        manager.add_client(1, 10);
+        assert_eq!(manager.active_clients(), 1);
+        // The subscription should reflect the latest add.
+        let ids = manager.client_ids();
+        assert_eq!(ids, vec![1]);
+    }
+
+    #[test]
+    fn test_remove_client_returns_false_for_nonexistent() {
+        let mut manager = SubscriptionManager::new();
+        assert!(!manager.remove_client(42));
+        assert!(!manager.remove_client(0));
+        assert!(!manager.remove_client(u64::MAX));
+    }
 }
