@@ -6,6 +6,17 @@ FORGE is a 14-crate Rust workspace (simulation sandbox for training AI agents) a
 
 ---
 
+## Phase 0: Establish Green Baseline
+
+Before any new development, fix the 2 pre-existing test failures identified in PR #2 to ensure a clean starting point. The verification plan for every subsequent phase requires all tests to pass -- this is only meaningful if the baseline is already green.
+
+- Investigate and fix the 2 failing tests on the default branch
+- Confirm `cargo test --workspace` passes with zero failures
+- Confirm `pytest tests/python/ -v` passes with zero failures (skips are acceptable)
+- Document root causes and fixes in commit messages
+
+---
+
 ## Phase 1: Close Coverage Gaps (Target: All Files >= 85%)
 
 ### 1a. `forge-task/predicate.rs` (78.9% -> 90%+)
@@ -121,7 +132,8 @@ FORGE is a 14-crate Rust workspace (simulation sandbox for training AI agents) a
 ### 3a. PR #11 -- Docker Multi-Service Deployment
 **Branch:** `feat/docker-deployment`
 - Review for conflicts with main branch
-- Validate Docker Compose 3-service stack (simulation:8080, dashboard:3000, demo:8765)
+- Validate Docker Compose 3-service stack with unified port configuration
+- Unify all service ports via env-var config (`FORGE_PORT`, `FORGE_DASHBOARD_PORT`, `FORGE_SIM_PORT`) -- no hardcoded port numbers across docker-compose.yml, E2E tests, or launcher scripts
 - Ensure health checks pass, TypeScript/lint fixes are clean
 - Merge or rebase onto current main
 
@@ -154,7 +166,7 @@ FORGE is a 14-crate Rust workspace (simulation sandbox for training AI agents) a
 
 ### 4c. Docker Finalization
 **Files:** `docker/`, `docker-compose.yml`
-- Multi-stage builds: rust:1.85 -> python:3.11-slim
+- Multi-stage builds: rust:1.82-bookworm -> python:3.11-slim
 - Health check endpoints
 - Non-root user, localhost-only binding
 - Docker Hub multi-arch image publishing (CI step)
@@ -229,7 +241,7 @@ FORGE is a 14-crate Rust workspace (simulation sandbox for training AI agents) a
 - **Deterministic**: `fixed` crate for physics, `rand_pcg` for RNG, seed flows through all layers
 - **85%+ coverage**: Every phase includes specific test plans; proptest for invariant verification
 - **Zero allocation on hot path**: `PhysicsScratch` pattern for pre-allocated buffers
-- **Structured logging**: `tracing` with `#[instrument]` on all public functions
+- **Structured logging**: `tracing` with `#[instrument]` on key public functions that perform significant work (skip trivial getters to avoid log noise and overhead)
 
 ---
 
