@@ -78,8 +78,8 @@ def test_import_utils() -> None:
 def _skip_if_no_native() -> None:
     """Skip the calling test when the forge_env native extension is not built."""
     try:
-        from forge_env.gymnasium_env import ForgeGymnasiumEnv
-        if ForgeGymnasiumEnv is None:
+        from forge_env import gymnasium_env
+        if gymnasium_env._NativeEnv is None:
             pytest.skip("forge_env running in pure-Python mode (no native backend)")
     except ImportError as exc:
         pytest.skip(f"forge_env native extension not available: {exc}")

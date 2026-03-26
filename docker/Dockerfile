@@ -7,33 +7,31 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Rust builder
 # ---------------------------------------------------------------------------
-FROM rust:1.85-bookworm AS rust-builder
+FROM rust:1.82-bookworm AS rust-builder
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 # Note: tests/ is intentionally excluded — not needed for cargo build --release
-RUN cargo build --release --workspace
+RUN cargo build --release -p forge-server
 
 # ---------------------------------------------------------------------------
 # Stage 2: Python wheel builder (separate from runtime to avoid Rust toolchain
 # and build-essential ending up in the final image — Gemini review: critical)
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS wheel-builder
+FROM rust:1.82-bookworm AS wheel-builder
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl build-essential && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    apt-get install -y --no-install-recommends python3-dev python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
-ENV PATH="/root/.cargo/bin:${PATH}"
+RUN pip install --no-cache-dir --break-system-packages maturin
 
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY python/ /app/python/
 COPY pyproject.toml /app/
-RUN pip install --no-cache-dir maturin && \
-    maturin build --release -m crates/forge-python/Cargo.toml --out /app/dist
+RUN maturin build --release -m crates/forge-python/Cargo.toml --out /app/dist
 
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime — slim image, no compilers, no Rust toolchain
