@@ -118,10 +118,6 @@ mod tests {
         let mut seq = SeedSequence::new(12345);
         let seeds: Vec<u64> = (0..1000).map(|_| seq.next_seed()).collect();
         let unique: std::collections::HashSet<u64> = seeds.iter().copied().collect();
-        assert_eq!(
-            seeds.len(),
-            unique.len(),
-            "All 1000 seeds should be unique"
-        );
+        assert_eq!(seeds.len(), unique.len(), "All 1000 seeds should be unique");
     }
 }

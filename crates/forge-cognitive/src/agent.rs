@@ -325,7 +325,11 @@ mod tests {
         assert_eq!(action, 0);
         assert_eq!(trace.selected_action, 0);
         // The Think step content should contain the error message
-        let think_step = trace.steps.iter().find(|s| s.step_type == ReasoningType::Think).unwrap();
+        let think_step = trace
+            .steps
+            .iter()
+            .find(|s| s.step_type == ReasoningType::Think)
+            .unwrap();
         assert!(think_step.content.contains("simulated LLM failure"));
     }
 

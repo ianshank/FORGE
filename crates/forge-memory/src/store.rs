@@ -330,9 +330,7 @@ mod tests {
         assert!(store
             .query(&MemoryQuery::SemanticByKey("any".into()), 10)
             .is_empty());
-        assert!(store
-            .query(&MemoryQuery::EpisodicByAgent(0), 10)
-            .is_empty());
+        assert!(store.query(&MemoryQuery::EpisodicByAgent(0), 10).is_empty());
         assert!(store
             .query(&MemoryQuery::EpisodicByTag("combat".into()), 10)
             .is_empty());

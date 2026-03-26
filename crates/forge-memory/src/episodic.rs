@@ -258,13 +258,7 @@ mod tests {
     #[test]
     fn test_episode_with_empty_tag_strings() {
         let mut mem = EpisodicMemory::new(100);
-        let mut ep = Episode::new(
-            (0, 10),
-            vec![1],
-            (5, 5),
-            EpisodeOutcome::Neutral,
-            0.0,
-        );
+        let mut ep = Episode::new((0, 10), vec![1], (5, 5), EpisodeOutcome::Neutral, 0.0);
         ep.tags.push(String::new());
         mem.store(ep);
 
@@ -276,13 +270,7 @@ mod tests {
 
     #[test]
     fn test_empty_event_summaries() {
-        let ep = Episode::new(
-            (0, 10),
-            vec![1],
-            (5, 5),
-            EpisodeOutcome::Success,
-            1.0,
-        );
+        let ep = Episode::new((0, 10), vec![1], (5, 5), EpisodeOutcome::Success, 1.0);
         assert!(ep.event_summaries.is_empty());
 
         let mut mem = EpisodicMemory::new(100);
@@ -295,13 +283,7 @@ mod tests {
     #[test]
     fn test_query_by_location_radius_zero() {
         let mut mem = EpisodicMemory::new(100);
-        let mut ep = Episode::new(
-            (0, 10),
-            vec![1],
-            (10, 20),
-            EpisodeOutcome::Success,
-            1.0,
-        );
+        let mut ep = Episode::new((0, 10), vec![1], (10, 20), EpisodeOutcome::Success, 1.0);
         ep.tags.push("here".into());
         mem.store(ep);
 
@@ -315,13 +297,7 @@ mod tests {
     #[test]
     fn test_query_by_location_exactly_on_boundary() {
         let mut mem = EpisodicMemory::new(100);
-        let mut ep = Episode::new(
-            (0, 10),
-            vec![1],
-            (10, 10),
-            EpisodeOutcome::Neutral,
-            0.0,
-        );
+        let mut ep = Episode::new((0, 10), vec![1], (10, 10), EpisodeOutcome::Neutral, 0.0);
         ep.tags.push("boundary".into());
         mem.store(ep);
 

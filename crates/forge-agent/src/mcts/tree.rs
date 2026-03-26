@@ -4,6 +4,7 @@
 //! Each node tracks visit counts, cumulative value, prior probabilities,
 //! and child indices.
 
+use forge_types::constants;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -30,12 +31,12 @@ pub struct MctsConfig {
 impl Default for MctsConfig {
     fn default() -> Self {
         Self {
-            c_puct: 1.41,
-            num_simulations: 100,
-            max_depth: 50,
-            discount: 0.99,
-            temperature: 1.0,
-            action_space: 32,
+            c_puct: constants::DEFAULT_MCTS_C_PUCT,
+            num_simulations: constants::DEFAULT_MCTS_NUM_SIMULATIONS,
+            max_depth: constants::DEFAULT_MCTS_MAX_DEPTH,
+            discount: constants::DEFAULT_MCTS_DISCOUNT,
+            temperature: constants::DEFAULT_MCTS_TEMPERATURE,
+            action_space: constants::DEFAULT_MCTS_ACTION_SPACE,
         }
     }
 }

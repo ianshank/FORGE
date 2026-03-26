@@ -135,7 +135,9 @@ pub(crate) fn process_movements_with_scratch(
 
     // Snapshot agent positions and altitudes for aerial collision detection
     // Uses stack-allocated SmallVec to avoid heap allocation for small agent counts
-    let agents_snapshot: smallvec::SmallVec<[(Position, u8, bool); 16]> = agents
+    let agents_snapshot: smallvec::SmallVec<
+        [(Position, u8, bool); forge_types::constants::PHYSICS_SMALLVEC_CAPACITY],
+    > = agents
         .iter()
         .map(|a| (a.position, a.altitude, a.alive))
         .collect();

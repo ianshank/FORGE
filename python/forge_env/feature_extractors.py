@@ -24,22 +24,18 @@ degrade gracefully with an :class:`ImportError` if either is missing.
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
-try:
-    import numpy as np
-
-    HAS_NUMPY = True
-except ImportError:  # pragma: no cover
-    HAS_NUMPY = False
+HAS_NUMPY = importlib.util.find_spec("numpy") is not None
 
 try:
     import torch
-    import torch.nn as nn
+    from torch import nn
 
     HAS_TORCH = True
 except ImportError:
@@ -86,7 +82,7 @@ def _build_cnn(
     cnn_channels: tuple[int, ...],
     kernel_sizes: tuple[int, ...],
     strides: tuple[int, ...],
-) -> "nn.Sequential":
+) -> nn.Sequential:
     """Build a configurable CNN with ReLU activations.
 
     Args:
@@ -99,7 +95,7 @@ def _build_cnn(
     Returns:
         A :class:`torch.nn.Sequential` CNN ending with a :class:`Flatten`.
     """
-    layers: list["nn.Module"] = []
+    layers: list[nn.Module] = []
     current_channels = in_channels
     for out_ch, k, s in zip(cnn_channels, kernel_sizes, strides):
         layers.append(nn.Conv2d(current_channels, out_ch, kernel_size=k, stride=s))
@@ -110,11 +106,11 @@ def _build_cnn(
 
 
 def _cnn_output_dim(
-    cnn: "nn.Sequential",
+    cnn: nn.Sequential,
     grid_h: int,
     grid_w: int,
     in_channels: int,
-    device: "torch.device",
+    device: torch.device,
 ) -> int:
     """Compute the flat output dimension of a CNN by running a dummy forward pass.
 
@@ -134,7 +130,7 @@ def _cnn_output_dim(
     return int(out.shape[1])
 
 
-def _scalar_obs_dim(observation_space: "gym.spaces.Dict") -> int:
+def _scalar_obs_dim(observation_space: gym.spaces.Dict) -> int:
     """Compute the total flattened dimension of non-grid observation keys.
 
     Args:
@@ -181,7 +177,7 @@ class ForgeGridCnnExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
 
     def __init__(
         self,
-        observation_space: "gym.spaces.Dict",
+        observation_space: gym.spaces.Dict,
         features_dim: int = 256,
         cnn_channels: tuple[int, ...] = (32, 64),
         cnn_kernel_sizes: tuple[int, ...] = (3, 3),
@@ -213,7 +209,7 @@ class ForgeGridCnnExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             grid_h, grid_w, in_channels, cnn_out_dim, features_dim,
         )
 
-    def forward(self, observations: dict[str, "torch.Tensor"]) -> "torch.Tensor":
+    def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
         """Extract features from the ``grid_view`` observation.
 
         Args:
@@ -238,7 +234,7 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
 
     Two branches:
 
-    * **CNN branch** — processes ``grid_view`` (H×W×C) with configurable
+    * **CNN branch** — processes ``grid_view`` (HxWxC) with configurable
       convolutional layers.
     * **MLP branch** — flattens and concatenates all remaining keys
       (health, stamina, position, inventory, day_phase, task_progress, …)
@@ -262,7 +258,7 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
 
     def __init__(
         self,
-        observation_space: "gym.spaces.Dict",
+        observation_space: gym.spaces.Dict,
         cnn_out_dim: int = 256,
         cnn_channels: tuple[int, ...] = (32, 64),
         cnn_kernel_sizes: tuple[int, ...] = (3, 3),
@@ -315,7 +311,7 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             scalar_in, mlp_out, cnn_out_dim if self._has_grid else 0, self._features_dim,
         )
 
-    def forward(self, observations: dict[str, "torch.Tensor"]) -> "torch.Tensor":
+    def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
         """Extract and concatenate CNN + MLP features.
 
         Args:

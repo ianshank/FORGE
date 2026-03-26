@@ -6,10 +6,11 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 /// Configuration for a completion request.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionConfig {
     /// Model to use.
     pub model: String,
@@ -20,7 +21,7 @@ pub struct CompletionConfig {
 }
 
 /// Response from a cognitive provider.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionResponse {
     /// The generated text.
     pub text: String,

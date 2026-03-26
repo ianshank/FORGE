@@ -245,7 +245,10 @@ mod tests {
         };
         let completed = std::collections::HashSet::new();
         // At tick=0 with time_limit=0, the inner is InProgress but tick >= time_limit => Failed
-        assert_eq!(obj.evaluate(0, &completed), crate::grammar::ObjectiveStatus::Failed);
+        assert_eq!(
+            obj.evaluate(0, &completed),
+            crate::grammar::ObjectiveStatus::Failed
+        );
     }
 
     #[test]

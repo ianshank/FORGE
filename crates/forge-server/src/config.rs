@@ -22,15 +22,43 @@ const DEFAULT_ALLOWED_ORIGINS: &str = "http://localhost:5173";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
     /// Socket address to bind the HTTP/WebSocket server to.
+    #[serde(default = "default_bind_addr")]
     pub bind_addr: SocketAddr,
     /// Broadcast channel capacity for WebSocket fan-out.
+    #[serde(default = "default_broadcast_capacity")]
     pub broadcast_capacity: usize,
     /// Simulation tick interval in milliseconds.
+    #[serde(default = "default_tick_interval_ms")]
     pub tick_interval_ms: u64,
     /// Tracing env filter string.
+    #[serde(default = "default_log_filter")]
     pub log_filter: String,
     /// Allowed CORS origins (comma-separated).
+    #[serde(default = "default_allowed_origins")]
     pub allowed_origins: Vec<String>,
+}
+
+fn default_bind_addr() -> SocketAddr {
+    DEFAULT_BIND_ADDR.parse().expect("valid default addr")
+}
+
+fn default_broadcast_capacity() -> usize {
+    DEFAULT_BROADCAST_CAPACITY
+}
+
+fn default_tick_interval_ms() -> u64 {
+    DEFAULT_TICK_INTERVAL_MS
+}
+
+fn default_log_filter() -> String {
+    DEFAULT_LOG_FILTER.to_string()
+}
+
+fn default_allowed_origins() -> Vec<String> {
+    DEFAULT_ALLOWED_ORIGINS
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect()
 }
 
 impl Default for ServerConfig {

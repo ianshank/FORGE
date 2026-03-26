@@ -225,11 +225,7 @@ mod tests {
         // Add 12 steps cycling through all types
         for i in 0..12 {
             let step_type = types[i % types.len()].clone();
-            trace.add_step(ReasoningStep::new(
-                step_type,
-                format!("step {i}"),
-                i as u64,
-            ));
+            trace.add_step(ReasoningStep::new(step_type, format!("step {i}"), i as u64));
         }
 
         assert_eq!(trace.steps.len(), 12);

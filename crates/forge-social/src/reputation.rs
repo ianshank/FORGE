@@ -191,7 +191,7 @@ mod tests {
     fn test_out_of_bounds_record_is_noop() {
         let mut rt = ReputationTracker::new(2);
         rt.record_cooperation(5); // should not panic
-        rt.record_hostility(5);   // should not panic
+        rt.record_hostility(5); // should not panic
         assert_eq!(rt.reputation(0), 0.0);
         assert_eq!(rt.reputation(1), 0.0);
     }

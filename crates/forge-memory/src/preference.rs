@@ -267,7 +267,10 @@ mod tests {
         // Creating a third should evict the weakest ("alpha").
         mem.get_or_create("gamma");
         assert_eq!(mem.len(), 2);
-        assert!(mem.get("alpha").is_none(), "weakest preference should be evicted");
+        assert!(
+            mem.get("alpha").is_none(),
+            "weakest preference should be evicted"
+        );
         assert!(mem.get("beta").is_some());
         assert!(mem.get("gamma").is_some());
 

@@ -97,6 +97,12 @@ DEFAULT_ENTROPY_COEFF: float = 0.01
 DEFAULT_VALUE_COEFF: float = 0.5
 DEFAULT_MAX_GRAD_NORM: float = 0.5
 
+# Agent architecture defaults.
+DEFAULT_OBS_DIM: int = 64
+DEFAULT_ACTION_DIM: int = 8
+DEFAULT_ACTION_SIZE: int = 8
+DEFAULT_HIDDEN_SIZES: list[int] = [256, 256]
+
 # Feature-extractor defaults (ForgeGridCnnExtractor / ForgeObsExtractor).
 DEFAULT_CNN_CHANNELS: tuple[int, ...] = (32, 64)
 DEFAULT_CNN_KERNEL_SIZES: tuple[int, ...] = (3, 3)

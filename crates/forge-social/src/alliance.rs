@@ -304,7 +304,10 @@ mod tests {
         sys.update(&trust, &config, 0);
 
         // With threshold 0.0, mutual trust 0.0 >= 0.0 so alliances should form
-        assert!(sys.num_alliances() > 0, "alliances should form at threshold 0.0");
+        assert!(
+            sys.num_alliances() > 0,
+            "alliances should form at threshold 0.0"
+        );
         // With 4 agents forming pairs, expect 2 alliances
         assert_eq!(sys.num_alliances(), 2);
     }
