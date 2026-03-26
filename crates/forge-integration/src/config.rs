@@ -78,4 +78,29 @@ mod tests {
     fn test_defaults_valid() {
         forge_types::assert_config_defaults_valid!(IntegrationConfig);
     }
+
+    #[test]
+    fn test_all_fields_accessible_with_custom_values() {
+        let config = IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 42,
+            social_reward_weight: 0.75,
+            meta_learning_enabled: true,
+            meta_lr: 0.05,
+            curriculum_domains: vec!["custom_domain".to_string()],
+            memory: MemoryConfig::default(),
+            social: SocialConfig::default(),
+            cognitive: CognitiveConfig::default(),
+        };
+        assert!(config.enabled);
+        assert_eq!(config.memory_write_interval, 42);
+        assert_eq!(config.social_reward_weight, 0.75);
+        assert!(config.meta_learning_enabled);
+        assert_eq!(config.meta_lr, 0.05);
+        assert_eq!(config.curriculum_domains, vec!["custom_domain".to_string()]);
+        // Sub-configs are accessible
+        let _mem = &config.memory;
+        let _soc = &config.social;
+        let _cog = &config.cognitive;
+    }
 }

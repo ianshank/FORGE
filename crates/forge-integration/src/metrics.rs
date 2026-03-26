@@ -41,4 +41,33 @@ mod tests {
         let deser: IntegrationMetrics = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.total_memory_entries, 100);
     }
+
+    #[test]
+    fn test_default_values_all_zero() {
+        let m = IntegrationMetrics::default();
+        assert_eq!(m.total_memory_entries, 0);
+        assert_eq!(m.mean_trust, 0.0);
+        assert_eq!(m.mean_reputation, 0.0);
+        assert_eq!(m.active_alliances, 0);
+        assert_eq!(m.social_reward_fraction, 0.0);
+        assert_eq!(m.tick, 0);
+    }
+
+    #[test]
+    fn test_all_fields_settable() {
+        let m = IntegrationMetrics {
+            total_memory_entries: 500,
+            mean_trust: 0.8,
+            mean_reputation: 0.9,
+            active_alliances: 3,
+            social_reward_fraction: 0.25,
+            tick: 1000,
+        };
+        assert_eq!(m.total_memory_entries, 500);
+        assert_eq!(m.mean_trust, 0.8);
+        assert_eq!(m.mean_reputation, 0.9);
+        assert_eq!(m.active_alliances, 3);
+        assert_eq!(m.social_reward_fraction, 0.25);
+        assert_eq!(m.tick, 1000);
+    }
 }

@@ -178,4 +178,70 @@ mod tests {
         assert!(registry.get("anthropic").is_none());
         assert_eq!(registry.available().len(), 1);
     }
+
+    #[test]
+    fn test_registry_duplicate_names_overwrites() {
+        let mut registry = ProviderRegistry::new();
+        registry.register("mock".into(), Box::new(MockProvider::new("first".into())));
+        registry.register("mock".into(), Box::new(MockProvider::new("second".into())));
+
+        // Should still have only one provider
+        assert_eq!(registry.available().len(), 1);
+
+        // The second registration should overwrite the first
+        let config = CompletionConfig {
+            model: "test".into(),
+            temperature: 0.0,
+            max_tokens: 100,
+        };
+        let provider = registry.get("mock").unwrap();
+        let response = provider.complete("anything", &config).unwrap();
+        assert_eq!(response.text, "second");
+    }
+
+    #[test]
+    fn test_mock_provider_no_matching_prefix_falls_back() {
+        let mut provider = MockProvider::new("fallback response".into());
+        provider.add_response("alpha:".into(), "alpha hit".into());
+        provider.add_response("beta:".into(), "beta hit".into());
+
+        let config = CompletionConfig {
+            model: "test".into(),
+            temperature: 0.0,
+            max_tokens: 100,
+        };
+
+        // Prompt does not start with any registered prefix
+        let response = provider.complete("gamma: something", &config).unwrap();
+        assert_eq!(response.text, "fallback response");
+    }
+
+    #[test]
+    fn test_mock_provider_empty_default_response() {
+        let provider = MockProvider::new(String::new());
+        let config = CompletionConfig {
+            model: "test".into(),
+            temperature: 0.0,
+            max_tokens: 100,
+        };
+
+        let response = provider.complete("any prompt", &config).unwrap();
+        assert_eq!(response.text, "");
+    }
+
+    #[test]
+    fn test_completion_response_token_counts() {
+        let provider = MockProvider::new("action: 1".into());
+        let config = CompletionConfig {
+            model: "test".into(),
+            temperature: 0.5,
+            max_tokens: 256,
+        };
+
+        let prompt = "hello world"; // 11 bytes
+        let response = provider.complete(prompt, &config).unwrap();
+        assert_eq!(response.input_tokens, prompt.len() as u32);
+        assert_eq!(response.output_tokens, 10);
+        assert_eq!(response.text, "action: 1");
+    }
 }

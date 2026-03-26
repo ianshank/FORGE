@@ -196,4 +196,78 @@ mod tests {
         assert!(rendered.contains("[Preference]"));
         assert!(rendered.contains("gathering"));
     }
+
+    #[test]
+    fn test_prompt_builder_all_fields_set() {
+        let prompt = CognitivePrompt::builder()
+            .system_prompt("Custom system prompt.".into())
+            .observation("I see a river to the north.".into())
+            .social("Ally: agent_42, Trust: 0.9".into())
+            .task("Cross the river and gather fish.".into())
+            .actions(vec!["Noop".into(), "MoveNorth".into(), "Fish".into()])
+            .build();
+
+        // Attach memory context directly (builder .memories() requires MemoryEntry)
+        let mut prompt = prompt;
+        prompt.memory_context = vec!["Caught fish before at tick 50".into()];
+
+        let rendered = prompt.render();
+
+        // All sections should be present and non-empty
+        assert!(rendered.contains("# System\nCustom system prompt."));
+        assert!(rendered.contains("# Observation\nI see a river to the north."));
+        assert!(rendered.contains("# Relevant Memories"));
+        assert!(rendered.contains("- Caught fish before at tick 50"));
+        assert!(rendered.contains("# Social Context\nAlly: agent_42, Trust: 0.9"));
+        assert!(rendered.contains("# Current Task\nCross the river and gather fish."));
+        assert!(rendered.contains("# Available Actions"));
+        assert!(rendered.contains("0: Noop"));
+        assert!(rendered.contains("1: MoveNorth"));
+        assert!(rendered.contains("2: Fish"));
+        assert!(rendered.contains("# Respond with your reasoning"));
+    }
+
+    #[test]
+    fn test_prompt_builder_only_required_fields() {
+        let prompt = CognitivePrompt::builder()
+            .observation("minimal observation".into())
+            .build();
+
+        let rendered = prompt.render();
+
+        // System and observation are always present
+        assert!(rendered.contains("# System"));
+        assert!(rendered.contains("# Observation\nminimal observation"));
+        // Optional sections should be absent
+        assert!(!rendered.contains("# Relevant Memories"));
+        assert!(!rendered.contains("# Social Context"));
+        assert!(!rendered.contains("# Current Task"));
+        assert!(!rendered.contains("# Available Actions"));
+        // Footer is always present
+        assert!(rendered.contains("# Respond with your reasoning"));
+    }
+
+    #[test]
+    fn test_prompt_render_with_special_characters() {
+        let prompt = CognitivePrompt::builder()
+            .observation("Agent sees: <wood> & \"stone\" at (3,5)".into())
+            .task("Collect items worth > $100 & < $500".into())
+            .actions(vec![
+                "Pick<Wood>".into(),
+                "Mine \"Stone\"".into(),
+                "Noop & Wait".into(),
+            ])
+            .build();
+
+        let rendered = prompt.render();
+
+        // Special characters should be preserved verbatim
+        assert!(rendered.contains("<wood>"));
+        assert!(rendered.contains("& \"stone\""));
+        assert!(rendered.contains("(3,5)"));
+        assert!(rendered.contains("> $100 & < $500"));
+        assert!(rendered.contains("Pick<Wood>"));
+        assert!(rendered.contains("Mine \"Stone\""));
+        assert!(rendered.contains("Noop & Wait"));
+    }
 }

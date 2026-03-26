@@ -228,6 +228,86 @@ mod tests {
         let sys = AllianceSystem::new(4);
         assert!(sys.alliance_members(999).is_empty());
     }
+
+    #[test]
+    fn test_multi_agent_alliance_formations() {
+        // With 6 agents and high trust, multiple alliances should form
+        let mut sys = AllianceSystem::new(6);
+        let trust = TrustMatrix::new(6, 0.9);
+        let config = test_config();
+        sys.update(&trust, &config, 0);
+
+        // With all trust at 0.9 (above 0.7 threshold), pairs form alliances
+        assert!(sys.num_alliances() > 0);
+        // Since agents can only be in one alliance, at most 3 alliances (6/2)
+        assert!(sys.num_alliances() <= 3);
+
+        // Verify every allied agent has a valid membership
+        for i in 0..6 {
+            if let Some(aid) = sys.alliance_of(i) {
+                let members = sys.alliance_members(aid);
+                assert!(members.contains(&i));
+                assert!(members.len() >= 2);
+            }
+        }
+    }
+
+    #[test]
+    fn test_alliance_dissolution_clears_membership() {
+        let mut sys = AllianceSystem::new(4);
+        let mut trust = TrustMatrix::new(4, 0.9);
+        let config = test_config();
+        sys.update(&trust, &config, 0);
+
+        // Identify an allied pair
+        let allied_agent = (0..4).find(|&i| sys.alliance_of(i).is_some());
+        assert!(allied_agent.is_some(), "should have at least one alliance");
+        let agent = allied_agent.unwrap();
+        let aid = sys.alliance_of(agent).unwrap();
+        let partner = sys
+            .alliance_members(aid)
+            .into_iter()
+            .find(|&m| m != agent)
+            .unwrap();
+
+        // Destroy trust between the pair (drop below threshold * 0.5 = 0.35)
+        for _ in 0..20 {
+            trust.record_hostility(agent, partner, &config);
+        }
+        sys.update(&trust, &config, 100);
+
+        // Alliance should be dissolved; both agents should have no alliance
+        assert!(
+            sys.alliance_of(agent).is_none() || sys.alliance_of(partner).is_none(),
+            "at least one of the pair should lose alliance membership"
+        );
+    }
+
+    #[test]
+    fn test_alliance_members_nonexistent_id() {
+        let sys = AllianceSystem::new(10);
+        assert!(sys.alliance_members(0).is_empty());
+        assert!(sys.alliance_members(42).is_empty());
+        assert!(sys.alliance_members(u32::MAX).is_empty());
+    }
+
+    #[test]
+    fn test_zero_threshold_all_form() {
+        let mut sys = AllianceSystem::new(4);
+        let trust = TrustMatrix::new(4, 0.0); // all trust at 0.0
+        let config = SocialConfig {
+            alliance_threshold: 0.0,
+            max_alliances: 3,
+            trust_update_rate: 0.1,
+            ..SocialConfig::default()
+        };
+        sys.update(&trust, &config, 0);
+
+        // With threshold 0.0, mutual trust 0.0 >= 0.0 so alliances should form
+        assert!(sys.num_alliances() > 0, "alliances should form at threshold 0.0");
+        // With 4 agents forming pairs, expect 2 alliances
+        assert_eq!(sys.num_alliances(), 2);
+    }
 }
 
 #[cfg(test)]

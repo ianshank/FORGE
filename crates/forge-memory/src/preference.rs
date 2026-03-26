@@ -199,6 +199,84 @@ mod tests {
         pref.update_action(1, 1.0, 0.5, 0.05);
         assert!(pref.strength <= 1.0);
     }
+
+    #[test]
+    fn test_update_nonexistent_action_creates_it() {
+        let mut pref = Preference::new("combat".into());
+        assert!(pref.action_weights.is_empty());
+
+        // First insertion: action does not exist yet, should be created with
+        // weight equal to the reward value.
+        pref.update_action(42, 0.8, 0.5, 0.05);
+        assert_eq!(pref.action_weights.len(), 1);
+        assert_eq!(pref.action_weights[0], (42, 0.8));
+        assert_eq!(pref.update_count, 1);
+
+        // Second call: now the action exists, EMA applies.
+        pref.update_action(42, 0.2, 0.5, 0.05);
+        assert_eq!(pref.action_weights.len(), 1);
+        // EMA: 0.8 * 0.5 + 0.2 * 0.5 = 0.5
+        let w = pref.action_weights[0].1;
+        assert!((w - 0.5).abs() < 1e-5);
+        assert_eq!(pref.update_count, 2);
+    }
+
+    #[test]
+    fn test_preferred_action_single_entry() {
+        let mut pref = Preference::new("ctx".into());
+        pref.update_action(7, 0.3, 0.5, 0.05);
+        assert_eq!(pref.preferred_action(), Some(7));
+    }
+
+    #[test]
+    fn test_preferred_action_all_equal_weights() {
+        let mut pref = Preference::new("ctx".into());
+        // Insert three actions all with the same reward (and they are new,
+        // so each gets the raw reward as its weight).
+        pref.action_weights.push((1, 0.5));
+        pref.action_weights.push((2, 0.5));
+        pref.action_weights.push((3, 0.5));
+
+        // preferred_action uses max_by which returns the last max for equal
+        // elements; we just verify it returns *some* valid action.
+        let preferred = pref.preferred_action().unwrap();
+        assert!([1, 2, 3].contains(&preferred));
+    }
+
+    #[test]
+    fn test_preferred_action_empty() {
+        let pref = Preference::new("ctx".into());
+        assert_eq!(pref.preferred_action(), None);
+    }
+
+    #[test]
+    fn test_get_or_create_eviction_at_capacity() {
+        let mut mem = PreferenceMemory::new(2);
+
+        // Fill to capacity with differing strengths.
+        {
+            let p1 = mem.get_or_create("alpha");
+            p1.strength = 0.2;
+        }
+        {
+            let p2 = mem.get_or_create("beta");
+            p2.strength = 0.8;
+        }
+        assert_eq!(mem.len(), 2);
+
+        // Creating a third should evict the weakest ("alpha").
+        mem.get_or_create("gamma");
+        assert_eq!(mem.len(), 2);
+        assert!(mem.get("alpha").is_none(), "weakest preference should be evicted");
+        assert!(mem.get("beta").is_some());
+        assert!(mem.get("gamma").is_some());
+
+        // Accessing an existing key at capacity should NOT evict.
+        mem.get_or_create("beta");
+        assert_eq!(mem.len(), 2);
+        assert!(mem.get("beta").is_some());
+        assert!(mem.get("gamma").is_some());
+    }
 }
 
 #[cfg(test)]

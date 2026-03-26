@@ -275,6 +275,96 @@ mod tests {
         assert_eq!(parse_action_id("ACTION: 2"), Some(2));
         assert_eq!(parse_action_id("Action 4"), Some(4));
     }
+
+    #[test]
+    fn test_parse_action_id_bare_word_action() {
+        // "action" alone with no following number — no digits at all → None
+        assert_eq!(parse_action_id("action"), None);
+    }
+
+    #[test]
+    fn test_parse_action_id_negative_number() {
+        // "action -1" — the dash is stripped by trim_matches, leaving "1"
+        assert_eq!(parse_action_id("action -1"), Some(1));
+    }
+
+    #[test]
+    fn test_parse_action_id_large_number() {
+        assert_eq!(parse_action_id("action 999999"), Some(999999));
+    }
+
+    /// A provider that always returns an error.
+    struct ErrorProvider;
+
+    impl CognitiveProvider for ErrorProvider {
+        fn name(&self) -> &str {
+            "error"
+        }
+
+        fn complete(
+            &self,
+            _prompt: &str,
+            _config: &CompletionConfig,
+        ) -> Result<crate::provider::CompletionResponse, String> {
+            Err("simulated LLM failure".to_string())
+        }
+    }
+
+    #[test]
+    fn test_error_response_from_provider_defaults_to_noop() {
+        let config = CognitiveConfig::default();
+        let mut agent = CognitiveAgent::new(Box::new(ErrorProvider), config);
+
+        let prompt = CognitivePrompt::builder()
+            .observation("I see a wall.".into())
+            .actions(vec!["Noop".into(), "MoveUp".into()])
+            .build();
+
+        let (action, trace) = agent.select_action_with_prompt(prompt, 5);
+        // Provider error → default action 0
+        assert_eq!(action, 0);
+        assert_eq!(trace.selected_action, 0);
+        // The Think step content should contain the error message
+        let think_step = trace.steps.iter().find(|s| s.step_type == ReasoningType::Think).unwrap();
+        assert!(think_step.content.contains("simulated LLM failure"));
+    }
+
+    #[test]
+    fn test_empty_prompt_no_observation_no_memory_no_social() {
+        let provider = MockProvider::new("action: 0".into());
+        let config = CognitiveConfig::default();
+        let mut agent = CognitiveAgent::new(Box::new(provider), config);
+
+        let prompt = CognitivePrompt::builder().build();
+
+        let (action, trace) = agent.select_action_with_prompt(prompt, 0);
+        assert_eq!(action, 0);
+        // Should have Observe + Think (no Remember since memory_context is empty)
+        assert_eq!(trace.steps.len(), 2);
+        assert_eq!(trace.steps[0].step_type, ReasoningType::Observe);
+        assert_eq!(trace.steps[1].step_type, ReasoningType::Think);
+        // Observe content is empty string
+        assert!(trace.steps[0].content.is_empty());
+    }
+
+    #[test]
+    fn test_multiple_sequential_action_selections() {
+        let provider = MockProvider::new("action: 1".into());
+        let config = CognitiveConfig::default();
+        let mut agent = CognitiveAgent::new(Box::new(provider), config);
+
+        for i in 1u64..=5 {
+            let prompt = CognitivePrompt::builder()
+                .observation(format!("tick {i}"))
+                .build();
+            let (action, _) = agent.select_action_with_prompt(prompt, i);
+            assert_eq!(action, 1);
+            assert_eq!(agent.action_count(), i);
+        }
+        // After 5 calls, last_trace should correspond to the final call
+        assert_eq!(agent.last_trace().selected_action, 1);
+        assert_eq!(agent.action_count(), 5);
+    }
 }
 
 #[cfg(test)]

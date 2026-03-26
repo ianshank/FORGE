@@ -116,4 +116,81 @@ mod tests {
         let rewards = computer.compute(&trust, &reputation, &config);
         assert!(rewards[0] > 0.0, "trusted agent should get positive reward");
     }
+
+    #[test]
+    fn test_different_weights() {
+        let trust = TrustMatrix::new(2, 0.5);
+        let mut reputation = ReputationTracker::new(2);
+        reputation.record_cooperation(0); // agent 0 reputation = 1.0
+        let config = SocialConfig::default();
+
+        // Heavy reputation weight
+        let computer_rep = SocialRewardComputer::new(SocialRewardConfig {
+            cooperation_weight: 0.0,
+            reputation_weight: 1.0,
+            alliance_weight: 0.0,
+        });
+        let rewards_rep = computer_rep.compute(&trust, &reputation, &config);
+        // Agent 0 should get reward = 1.0 * 1.0 = 1.0 (reputation only)
+        assert!((rewards_rep[0] - 1.0).abs() < 1e-6);
+        // Agent 1 has 0 reputation
+        assert!(rewards_rep[1].abs() < 1e-6);
+
+        // Heavy cooperation weight, zero reputation weight
+        let computer_coop = SocialRewardComputer::new(SocialRewardConfig {
+            cooperation_weight: 1.0,
+            reputation_weight: 0.0,
+            alliance_weight: 0.0,
+        });
+        let rewards_coop = computer_coop.compute(&trust, &reputation, &config);
+        // Trust is all at initial 0.5, so mean_trust - initial = 0.0
+        assert!(rewards_coop[0].abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_large_agent_count() {
+        let n = 50;
+        let mut trust = TrustMatrix::new(n, 0.5);
+        let mut reputation = ReputationTracker::new(n);
+        let config = SocialConfig::default();
+
+        // Give some agents cooperation and hostility
+        for i in 0..n / 2 {
+            trust.record_cooperation(i, i + 1, &config);
+            reputation.record_cooperation(i);
+        }
+        for i in n / 2..n {
+            reputation.record_hostility(i);
+        }
+
+        let computer = SocialRewardComputer::new(SocialRewardConfig::default());
+        let rewards = computer.compute(&trust, &reputation, &config);
+        assert_eq!(rewards.len(), n);
+
+        // All rewards should be finite
+        for (i, r) in rewards.iter().enumerate() {
+            assert!(r.is_finite(), "reward[{i}] is not finite: {r}");
+        }
+    }
+
+    #[test]
+    fn test_all_neutral_zero_rewards() {
+        // Zero trust, zero reputation => all rewards should be near-zero or negative
+        let trust = TrustMatrix::new(5, 0.0);
+        let reputation = ReputationTracker::new(5);
+        let config = SocialConfig {
+            trust_initial: 0.0,
+            ..SocialConfig::default()
+        };
+        let computer = SocialRewardComputer::new(SocialRewardConfig::default());
+
+        let rewards = computer.compute(&trust, &reputation, &config);
+        assert_eq!(rewards.len(), 5);
+        for (i, r) in rewards.iter().enumerate() {
+            assert!(
+                r.abs() < 1e-6,
+                "reward[{i}] should be ~0 with zero trust and zero reputation, got {r}"
+            );
+        }
+    }
 }
