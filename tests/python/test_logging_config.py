@@ -1,4 +1,5 @@
 """Tests for forge.utils.logging_config module."""
+
 from __future__ import annotations
 
 import json
@@ -107,9 +108,7 @@ class TestSetupLogging:
         # Should have console + file handlers
         assert len(root.handlers) == 2
 
-        file_handlers = [
-            h for h in root.handlers if isinstance(h, logging.FileHandler)
-        ]
+        file_handlers = [h for h in root.handlers if isinstance(h, logging.FileHandler)]
         assert len(file_handlers) == 1
 
         # Verify the file is writable

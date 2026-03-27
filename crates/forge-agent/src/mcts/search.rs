@@ -53,7 +53,7 @@ impl<F: ForwardModel, P: PolicyValue> MctsSearch<F, P> {
 
         // Select best action based on visit counts
         let action_id = tree.best_action().unwrap_or(0);
-        Action::from_discrete(action_id, self.comm_vocab_size).unwrap_or(Action::Noop)
+        Action::from_discrete(action_id, self.comm_vocab_size, false).unwrap_or(Action::Noop)
     }
 
     /// Runs a single MCTS simulation: select, expand, evaluate, backpropagate.
@@ -67,7 +67,7 @@ impl<F: ForwardModel, P: PolicyValue> MctsSearch<F, P> {
                 Some(child_id) => {
                     // Simulate the action to get the next state
                     let action_id = tree.node(child_id).action.unwrap_or(0);
-                    let action = Action::from_discrete(action_id, self.comm_vocab_size)
+                    let action = Action::from_discrete(action_id, self.comm_vocab_size, false)
                         .unwrap_or(Action::Noop);
 
                     let num_agents = self.model.num_agents(&state);
@@ -188,7 +188,7 @@ mod tests {
 
         let action = search.search(&state, 0);
         let discrete = action.to_discrete();
-        assert!(discrete < Action::space_size(0));
+        assert!(discrete < Action::space_size(0, false));
     }
 
     #[test]
@@ -200,7 +200,7 @@ mod tests {
         // tree structure being non-deterministic with uniform policy)
         let search = make_search();
         let a1 = search.search(&state, 0);
-        assert!(a1.to_discrete() < Action::space_size(0));
+        assert!(a1.to_discrete() < Action::space_size(0, false));
     }
 
     #[test]
@@ -217,7 +217,7 @@ mod tests {
         let state = make_test_state();
 
         let action = agent.select_action(&state, 0);
-        assert!(action.to_discrete() < Action::space_size(0));
+        assert!(action.to_discrete() < Action::space_size(0, false));
     }
 
     #[test]
@@ -235,7 +235,7 @@ mod tests {
 
         // Even with 1 simulation, should return a valid action
         let action = search.search(&state, 0);
-        assert!(action.to_discrete() < Action::space_size(0));
+        assert!(action.to_discrete() < Action::space_size(0, false));
     }
 
     #[test]
@@ -262,5 +262,130 @@ mod tests {
         let search = make_search();
         assert_eq!(search.config().num_simulations, 10);
         assert_eq!(search.config().action_space, 32);
+    }
+
+    #[test]
+    fn test_mcts_max_depth_one() {
+        let model = DefaultForwardModel::new(0);
+        let policy = UniformPolicy::new(32);
+        let config = MctsConfig {
+            num_simulations: 20,
+            action_space: 32,
+            max_depth: 1, // shallow tree — triggers depth limit early
+            ..MctsConfig::default()
+        };
+        let search = MctsSearch::new(model, policy, config, 0);
+        let state = make_test_state();
+
+        let action = search.search(&state, 0);
+        assert!(action.to_discrete() < Action::space_size(0, false));
+    }
+
+    #[test]
+    fn test_mcts_agent_idx_out_of_bounds() {
+        let model = DefaultForwardModel::new(0);
+        let policy = UniformPolicy::new(32);
+        let config = MctsConfig {
+            num_simulations: 5,
+            action_space: 32,
+            max_depth: 3,
+            ..MctsConfig::default()
+        };
+        let search = MctsSearch::new(model, policy, config, 0);
+        let state = make_test_state();
+
+        // agent_idx 99 is beyond the number of agents
+        let action = search.search(&state, 99);
+        // Should still return a valid action (or Noop) without panicking
+        let _ = action.to_discrete();
+    }
+
+    #[test]
+    fn test_mcts_multi_agent_search() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 8;
+        config.world.height = 8;
+        config.world.seed = 42;
+        config.agents.num_agents = 3;
+        config.agents.default_vision_radius = 3;
+        config.agents.comm_vocab_size = 0;
+        config.task.max_episode_length = 100;
+        let state = WorldState::new(config).unwrap();
+
+        let model = DefaultForwardModel::new(0);
+        let policy = UniformPolicy::new(32);
+        let mcts_config = MctsConfig {
+            num_simulations: 10,
+            action_space: 32,
+            max_depth: 3,
+            ..MctsConfig::default()
+        };
+        let search = MctsSearch::new(model, policy, mcts_config, 0);
+
+        // Search for agent 1 (not agent 0)
+        let action = search.search(&state, 1);
+        assert!(action.to_discrete() < Action::space_size(0, false));
+
+        // Search for agent 2
+        let model2 = DefaultForwardModel::new(0);
+        let policy2 = UniformPolicy::new(32);
+        let search2 = MctsSearch::new(
+            model2,
+            policy2,
+            MctsConfig {
+                num_simulations: 5,
+                action_space: 32,
+                max_depth: 3,
+                ..MctsConfig::default()
+            },
+            0,
+        );
+        let action2 = search2.search(&state, 2);
+        assert!(action2.to_discrete() < Action::space_size(0, false));
+    }
+
+    #[test]
+    fn test_mcts_with_comm_vocab() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 8;
+        config.world.height = 8;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        config.agents.default_vision_radius = 3;
+        config.agents.comm_vocab_size = 4;
+        config.task.max_episode_length = 100;
+        let state = WorldState::new(config).unwrap();
+
+        let model = DefaultForwardModel::new(0);
+        let action_space = Action::space_size(4, false);
+        let policy = UniformPolicy::new(action_space);
+        let mcts_config = MctsConfig {
+            num_simulations: 10,
+            action_space,
+            max_depth: 3,
+            ..MctsConfig::default()
+        };
+        let search = MctsSearch::new(model, policy, mcts_config, 4);
+
+        let action = search.search(&state, 0);
+        assert!(action.to_discrete() < Action::space_size(4, false));
+    }
+
+    #[test]
+    fn test_mcts_many_simulations() {
+        let model = DefaultForwardModel::new(0);
+        let policy = UniformPolicy::new(32);
+        let config = MctsConfig {
+            num_simulations: 100,
+            action_space: 32,
+            max_depth: 10,
+            ..MctsConfig::default()
+        };
+        let search = MctsSearch::new(model, policy, config, 0);
+        let state = make_test_state();
+
+        // Many simulations should still converge to a valid action
+        let action = search.search(&state, 0);
+        assert!(action.to_discrete() < Action::space_size(0, false));
     }
 }

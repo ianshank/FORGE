@@ -5,6 +5,8 @@ import logging
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from forge.utils import dataclass_from_dict
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_SCHEMA_VERSION = 1
@@ -34,10 +36,7 @@ class DecisionTrace:
         """
         version = data.get("schema_version", 1)
         data = cls._migrate(data, version)
-        unknown = set(data.keys()) - set(cls.__dataclass_fields__.keys())
-        if unknown:
-            logger.debug("Ignoring unknown trace fields: %s", unknown)
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        return dataclass_from_dict(cls, data)
 
     @staticmethod
     def _migrate(data: dict[str, Any], from_version: int) -> dict[str, Any]:

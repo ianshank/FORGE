@@ -30,14 +30,35 @@ except ImportError:
 from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: E402
 from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: E402
 from forge_env.utils import benchmark_fps, check_env, make_env, seed_everything  # noqa: E402
+from forge_env.vecenv import ForgeAsyncVecEnv, ForgeSyncVecEnv, make_forge_vec_env  # noqa: E402
+
+# Optional imports — guarded so forge_env remains importable without SB3/torch.
+try:
+    from forge_env.feature_extractors import ForgeGridCnnExtractor, ForgeObsExtractor
+    _HAS_EXTRACTORS = True
+except ImportError:
+    _HAS_EXTRACTORS = False
+
+try:
+    from forge_env.sb3_callbacks import ForgeCurriculumCallback, ForgeMetricsCallback
+    _HAS_CALLBACKS = True
+except ImportError:
+    _HAS_CALLBACKS = False
 
 __all__ = [
+    "ForgeAsyncVecEnv",
+    "ForgeCurriculumCallback",
     "ForgeEnv",
+    "ForgeGridCnnExtractor",
     "ForgeGymnasiumEnv",
+    "ForgeMetricsCallback",
+    "ForgeObsExtractor",
     "ForgeParallelEnv",
+    "ForgeSyncVecEnv",
     "__version__",
     "benchmark_fps",
     "check_env",
     "make_env",
+    "make_forge_vec_env",
     "seed_everything",
 ]

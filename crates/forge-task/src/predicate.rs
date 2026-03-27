@@ -840,4 +840,102 @@ mod tests {
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "active".to_string()), &ctx);
         assert!(result.satisfied);
     }
+
+    // ---- Coverage gap tests: drone predicate wildcard branch ----
+
+    #[test]
+    fn test_unknown_predicate_agent_at_altitude() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let ctx = make_ctx(&agents, 0);
+        // AgentAtAltitude hits the wildcard `_` branch
+        let result = evaluate_predicate(&Predicate::AgentAtAltitude(0, 5), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_unknown_predicate_battery_above() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::BatteryAbove(0, 0.5), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_unknown_predicate_agent_airborne() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::AgentAirborne(0), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_unknown_predicate_agent_landed() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::AgentLanded(0), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_agent_on_terrain_position_outside_grid() {
+        // Agent at position (200, 200) on a 16x16 grid — grid.get returns None
+        let agents = vec![make_agent(0, 200, 200)];
+        let grid = Grid::new(16, 16);
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: Some(&grid),
+            objects: None,
+        };
+        let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 0), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_object_at_with_none_objects() {
+        let ctx = EvalContext {
+            agents: &[],
+            tick: 0,
+            grid: None,
+            objects: None,
+        };
+        let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_predicate_result_unsatisfied_clamps_progress() {
+        let result = PredicateResult::unsatisfied(-0.5);
+        assert_eq!(result.progress, 0.0);
+
+        let result2 = PredicateResult::unsatisfied(1.5);
+        assert_eq!(result2.progress, 1.0);
+    }
+
+    #[test]
+    fn test_agent_near_one_missing() {
+        // Only agent 0 exists, agent 1 missing
+        let agents = vec![make_agent(0, 5, 5)];
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::AgentNear(0, 1, 3), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_agent_at_far_away() {
+        // Agent very far from target — progress should be near 0
+        let agents = vec![make_agent(0, 0, 0)];
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::AgentAt(0, Position::new(200, 200)), &ctx);
+        assert!(!result.satisfied);
+        // Manhattan distance 400 / max_dist 100 -> clamped to 1.0 -> progress 0.0
+        assert_eq!(result.progress, 0.0);
+    }
 }

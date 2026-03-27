@@ -63,7 +63,9 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install maturin ruff mypy pytest pytest-cov numpy gymnasium httpx
+          pip install maturin ruff mypy pytest pytest-cov numpy gymnasium httpx \
+            stable-baselines3
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Build native extension
         run: maturin develop
       - name: Ruff lint
@@ -75,6 +77,7 @@ jobs:
           pytest tests/python/ -v \
             --cov=forge --cov=forge_env \
             --cov-report=term-missing \
+            --cov-fail-under=85 \
             --cov-config=.coveragerc
 
   demo-ui:

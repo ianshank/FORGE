@@ -4,6 +4,7 @@
 //! Each node tracks visit counts, cumulative value, prior probabilities,
 //! and child indices.
 
+use forge_types::constants;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -30,12 +31,12 @@ pub struct MctsConfig {
 impl Default for MctsConfig {
     fn default() -> Self {
         Self {
-            c_puct: 1.41,
-            num_simulations: 100,
-            max_depth: 50,
-            discount: 0.99,
-            temperature: 1.0,
-            action_space: 32,
+            c_puct: constants::DEFAULT_MCTS_C_PUCT,
+            num_simulations: constants::DEFAULT_MCTS_NUM_SIMULATIONS,
+            max_depth: constants::DEFAULT_MCTS_MAX_DEPTH,
+            discount: constants::DEFAULT_MCTS_DISCOUNT,
+            temperature: constants::DEFAULT_MCTS_TEMPERATURE,
+            action_space: constants::DEFAULT_MCTS_ACTION_SPACE,
         }
     }
 }
@@ -372,5 +373,65 @@ mod tests {
         tree.add_child(0, 2, 0.3);
 
         assert_eq!(tree.node(0).num_children(), 2);
+    }
+
+    // ---- Proptest: MCTS tree invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Tree size increases by exactly 1 per add_child.
+            #[test]
+            fn tree_size_grows(
+                num_children in 0u32..4,
+            ) {
+                let mut tree = MctsTree::new(make_config());
+                prop_assert_eq!(tree.size(), 1);
+
+                for action in 0..num_children {
+                    tree.add_child(0, action, 0.25);
+                    prop_assert_eq!(tree.size(), 2 + action as usize);
+                }
+            }
+
+            /// Backpropagation increments visit count along the path.
+            #[test]
+            fn backprop_visits(
+                value in -10.0f64..10.0,
+                depth in 1u32..4,
+            ) {
+                let mut tree = MctsTree::new(make_config());
+                let mut node = 0;
+                for i in 0..depth {
+                    node = tree.add_child(node, i % 4, 0.25);
+                }
+
+                tree.backpropagate(node, value);
+
+                // All nodes along the path should have exactly 1 visit
+                prop_assert_eq!(tree.node(0).visits, 1);
+                prop_assert_eq!(tree.node(node).visits, 1);
+            }
+
+            /// Mean value is value_sum / visits, or 0 when visits == 0.
+            #[test]
+            fn mean_value_correct(
+                visits in 0u32..100,
+                value_sum in -100.0f64..100.0,
+            ) {
+                let mut node = MctsNode::root(4);
+                node.visits = visits;
+                node.value_sum = value_sum;
+                let mean = node.mean_value();
+                if visits == 0 {
+                    prop_assert_eq!(mean, 0.0);
+                } else {
+                    let expected = value_sum / visits as f64;
+                    prop_assert!((mean - expected).abs() < 1e-5);
+                }
+            }
+        }
     }
 }

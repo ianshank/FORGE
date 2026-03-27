@@ -40,6 +40,8 @@ pub struct ForgeConfig {
     pub curriculum: CurriculumConfig,
     /// Rendering and visualization parameters.
     pub rendering: RenderConfig,
+    /// Drone-specific mechanics parameters.
+    pub drone: DroneConfig,
 }
 
 /// World generation configuration.
@@ -64,6 +66,12 @@ pub struct WorldConfig {
     pub min_dimension: u16,
     /// Maximum world dimension (width or height).
     pub max_dimension: u16,
+    /// Resource respawn rate (ticks between respawn increments).
+    pub resource_respawn_rate: u32,
+    /// Maximum quantity per resource node.
+    pub resource_max_quantity: u16,
+    /// Object placement density scale (multiplied with base probability).
+    pub object_density_scale: f32,
 }
 
 impl Default for WorldConfig {
@@ -78,6 +86,9 @@ impl Default for WorldConfig {
             max_entities: constants::DEFAULT_MAX_ENTITIES,
             min_dimension: constants::MIN_WORLD_DIMENSION,
             max_dimension: constants::MAX_WORLD_DIMENSION,
+            resource_respawn_rate: constants::DEFAULT_RESOURCE_RESPAWN_TICKS,
+            resource_max_quantity: constants::DEFAULT_RESOURCE_MAX_QUANTITY,
+            object_density_scale: constants::DEFAULT_OBJECT_DENSITY_SCALE,
         }
     }
 }
@@ -264,6 +275,74 @@ impl Default for RenderConfig {
             pixel_width: constants::DEFAULT_PIXEL_WIDTH,
             pixel_height: constants::DEFAULT_PIXEL_HEIGHT,
             record_replays: false,
+        }
+    }
+}
+
+/// Configuration for drone-specific mechanics.
+///
+/// When `enabled` is false (default), all drone systems are skipped
+/// and the simulation behaves identically to pre-drone versions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DroneConfig {
+    /// Whether drone mechanics are enabled.
+    pub enabled: bool,
+    /// Maximum altitude for aerial agents.
+    pub max_altitude: u8,
+    /// Battery drain per tick while airborne (fixed-point).
+    pub aerial_drain_rate: i32,
+    /// Battery cost to ascend one level (fixed-point).
+    pub ascend_cost: i32,
+    /// Battery cost to descend one level (fixed-point).
+    pub descend_cost: i32,
+    /// Hover cost per tick (fixed-point).
+    pub hover_cost: i32,
+    /// Battery cost for a scan action (fixed-point).
+    pub scan_cost: i32,
+    /// Scan range in tiles (extends beyond normal vision).
+    pub scan_range: u8,
+    /// Starting battery for aerial agents (fixed-point).
+    pub starting_battery: i32,
+    /// Maximum battery (fixed-point).
+    pub max_battery: i32,
+    /// Battery recharge rate when landed (fixed-point per tick).
+    pub recharge_rate: i32,
+    /// Ground vehicle terrain speed multipliers indexed by TerrainType.
+    /// Fixed-point values. i32::MAX = impassable.
+    pub vehicle_terrain_costs: [i32; 8],
+    /// Vision radius bonus per altitude level for aerial agents.
+    pub altitude_vision_bonus: u8,
+    /// Turn radius for ground vehicles (0 = free, 1+ = restricted).
+    pub vehicle_turn_radius: u8,
+    /// Fall damage per altitude level during emergency landing (fixed-point).
+    pub fall_damage_per_level: i32,
+    /// Number of aerial agents to spawn.
+    pub num_aerial: u32,
+    /// Number of ground vehicle agents to spawn.
+    pub num_ground_vehicles: u32,
+}
+
+impl Default for DroneConfig {
+    fn default() -> Self {
+        Self {
+            enabled: constants::DEFAULT_DRONE_ENABLED,
+            max_altitude: constants::DEFAULT_MAX_ALTITUDE,
+            aerial_drain_rate: constants::DEFAULT_AERIAL_DRAIN_RATE,
+            ascend_cost: constants::DEFAULT_ASCEND_COST,
+            descend_cost: constants::DEFAULT_DESCEND_COST,
+            hover_cost: constants::DEFAULT_HOVER_COST,
+            scan_cost: constants::DEFAULT_SCAN_COST,
+            scan_range: constants::DEFAULT_SCAN_RANGE,
+            starting_battery: constants::DEFAULT_STARTING_BATTERY,
+            max_battery: constants::DEFAULT_MAX_BATTERY,
+            recharge_rate: constants::DEFAULT_RECHARGE_RATE,
+            vehicle_terrain_costs: constants::DEFAULT_VEHICLE_TERRAIN_COSTS,
+            altitude_vision_bonus: constants::DEFAULT_ALTITUDE_VISION_BONUS,
+            vehicle_turn_radius: constants::DEFAULT_VEHICLE_TURN_RADIUS,
+            fall_damage_per_level: constants::DEFAULT_FALL_DAMAGE_PER_LEVEL,
+            num_aerial: 0,
+            num_ground_vehicles: 0,
         }
     }
 }
@@ -463,6 +542,8 @@ num_agents = 4
 
     #[test]
     fn test_from_toml_file() {
+        // Lock needed because from_toml() calls apply_env_overrides()
+        let _lock = ENV_TEST_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join("forge_test_config");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("test_config.toml");
@@ -658,6 +739,45 @@ num_agents = 4
     }
 
     #[test]
+    fn test_drone_config_default_disabled() {
+        let config = DroneConfig::default();
+        assert!(!config.enabled);
+        assert_eq!(config.num_aerial, 0);
+        assert_eq!(config.num_ground_vehicles, 0);
+    }
+
+    #[test]
+    fn test_drone_config_default_values_match_constants() {
+        let config = DroneConfig::default();
+        assert_eq!(config.max_altitude, constants::DEFAULT_MAX_ALTITUDE);
+        assert_eq!(
+            config.aerial_drain_rate,
+            constants::DEFAULT_AERIAL_DRAIN_RATE
+        );
+        assert_eq!(config.starting_battery, constants::DEFAULT_STARTING_BATTERY);
+        assert_eq!(config.max_battery, constants::DEFAULT_MAX_BATTERY);
+    }
+
+    #[test]
+    fn test_forge_config_default_has_drone() {
+        let config = ForgeConfig::default();
+        assert!(!config.drone.enabled);
+    }
+
+    #[test]
+    fn test_drone_config_serde_roundtrip() {
+        let config = DroneConfig {
+            enabled: true,
+            num_aerial: 3,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: DroneConfig = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.enabled);
+        assert_eq!(deserialized.num_aerial, 3);
+    }
+
+    #[test]
     fn test_config_clone_equality() {
         let original = ForgeConfig::default();
         let cloned = original.clone();
@@ -789,5 +909,41 @@ num_agents = 4
             cloned.rendering.record_replays,
             original.rendering.record_replays
         );
+    }
+
+    // ---- Proptest: config invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// ForgeConfig survives JSON roundtrip with arbitrary valid seeds.
+            #[test]
+            fn config_json_roundtrip(seed in 0u64..u64::MAX) {
+                let mut config = ForgeConfig::default();
+                config.world.seed = seed;
+                let json = serde_json::to_string(&config).unwrap();
+                let deser: ForgeConfig = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.world.seed, seed);
+                prop_assert_eq!(deser.world.width, config.world.width);
+                prop_assert_eq!(deser.agents.num_agents, config.agents.num_agents);
+            }
+
+            /// Config with varying dimensions roundtrips correctly.
+            #[test]
+            fn config_dimensions_roundtrip(
+                w in 8u16..512,
+                h in 8u16..512,
+            ) {
+                let mut config = ForgeConfig::default();
+                config.world.width = w;
+                config.world.height = h;
+                let json = serde_json::to_string(&config).unwrap();
+                let deser: ForgeConfig = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.world.width, w);
+                prop_assert_eq!(deser.world.height, h);
+            }
+        }
     }
 }

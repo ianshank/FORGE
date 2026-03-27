@@ -11,6 +11,24 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 
+[project.optional-dependencies]
+# Install individual backends as needed:
+#   pip install -e ".[sb3]"       -- Stable Baselines 3
+#   pip install -e ".[cleanrl]"   -- CleanRL CLI (tyro)
+#   pip install -e ".[wandb]"     -- Weights & Biases
+#   pip install -e ".[mlflow]"    -- MLflow
+#   pip install -e ".[all]"       -- everything
+sb3     = ["stable-baselines3>=2.0", "torch>=2.0"]
+cleanrl = ["torch>=2.0"]
+wandb   = ["wandb>=0.16"]
+mlflow  = ["mlflow>=2.0"]
+all     = [
+    "stable-baselines3>=2.0",
+    "torch>=2.0",
+    "wandb>=0.16",
+    "mlflow>=2.0",
+]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "forge_env"
@@ -83,6 +101,10 @@ module = [
     "torch.*",
     "httpx",
     "httpx.*",
+    "wandb",
+    "wandb.*",
+    "mlflow",
+    "mlflow.*",
 ]
 ignore_missing_imports = true
 # Prevent mypy from descending into third-party source files (e.g. torch uses

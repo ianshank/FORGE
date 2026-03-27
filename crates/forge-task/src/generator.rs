@@ -793,6 +793,121 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_tier_zero_clamped_to_one() {
+        let config = default_config();
+        let mut rng = make_rng(42);
+        // Tier 0 should be clamped up to 1
+        let task = generate_task(&mut rng, 0, &config, 0);
+        assert!(!task.description.is_empty());
+        assert!(task.estimated_steps >= 1);
+    }
+
+    #[test]
+    fn test_generate_tier_above_max_clamped() {
+        let config = default_config();
+        let mut rng = make_rng(42);
+        // Tier 255 should be clamped to max_tier (6)
+        let task = generate_task(&mut rng, 255, &config, 0);
+        assert!(!task.description.is_empty());
+        assert!(task.estimated_steps >= 1);
+    }
+
+    #[test]
+    fn test_generate_all_tiers_no_panic() {
+        let config = default_config();
+        for tier in 0..=10 {
+            let mut rng = make_rng(tier as u64);
+            let task = generate_task(&mut rng, tier, &config, tier as u64);
+            assert!(!task.description.is_empty());
+            assert!(!task.dense_reward_weights.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_active_task_progress_length_matches_atoms() {
+        let config = default_config();
+        for tier in 1..=6 {
+            let mut rng = make_rng(tier as u64 * 100);
+            let active = generate_active_task(&mut rng, tier, &config, tier as u64);
+            let atom_count = count_atoms(&active.definition.goal).max(1);
+            assert_eq!(
+                active.progress.len(),
+                atom_count,
+                "progress length should match atom count for tier {}",
+                tier
+            );
+        }
+    }
+
+    #[test]
+    fn test_describe_predicate_agent_near() {
+        let task = TaskComposition::Atom(Predicate::AgentNear(0, 1, 5));
+        let desc = describe_task(&task);
+        assert!(desc.contains("agent 0"));
+        assert!(desc.contains("within"));
+        assert!(desc.contains("agent 1"));
+    }
+
+    #[test]
+    fn test_task_gen_config_custom_values() {
+        let config = TaskGenConfig {
+            max_tier: 3,
+            world_width: 32,
+            world_height: 32,
+            num_agents: 4,
+            max_predicates: 16,
+            base_reward: 2.5,
+        };
+        assert_eq!(config.max_tier, 3);
+        assert_eq!(config.world_width, 32);
+        assert_eq!(config.num_agents, 4);
+        assert_eq!(config.base_reward, 2.5);
+    }
+
+    #[test]
+    fn test_count_atoms_single() {
+        let task = TaskComposition::Atom(Predicate::AgentAt(0, Position::new(0, 0)));
+        assert_eq!(count_atoms(&task), 1);
+    }
+
+    #[test]
+    fn test_count_atoms_before() {
+        let task = TaskComposition::Before(
+            Box::new(TaskComposition::And(vec![
+                TaskComposition::Atom(Predicate::AgentAt(0, Position::new(0, 0))),
+                TaskComposition::Atom(Predicate::AgentHas(0, ItemType::Wood, 1)),
+            ])),
+            100,
+        );
+        assert_eq!(count_atoms(&task), 2);
+    }
+
+    #[test]
+    fn test_count_atoms_while() {
+        let task = TaskComposition::While(
+            Box::new(TaskComposition::Atom(Predicate::HealthAbove(0, 0.5))),
+            Box::new(TaskComposition::Atom(Predicate::AgentAt(
+                0,
+                Position::new(5, 5),
+            ))),
+        );
+        assert_eq!(count_atoms(&task), 2);
+    }
+
+    #[test]
+    fn test_count_atoms_without() {
+        let task = TaskComposition::Without(
+            Box::new(TaskComposition::Atom(Predicate::AgentHas(
+                0,
+                ItemType::Wood,
+                1,
+            ))),
+            0,
+        );
+        assert_eq!(count_atoms(&task), 1);
+    }
+
+    #[test]
     fn test_count_atoms() {
         let task = TaskComposition::And(vec![
             TaskComposition::Atom(Predicate::AgentAt(0, Position::new(0, 0))),

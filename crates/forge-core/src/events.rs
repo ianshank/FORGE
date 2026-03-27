@@ -99,6 +99,45 @@ pub enum SimulationEvent {
         /// Simulation tick when the event occurred.
         tick: u64,
     },
+    /// An agent changed altitude.
+    AltitudeChange {
+        /// Agent that changed altitude.
+        agent_id: u32,
+        /// Previous altitude.
+        old_altitude: u8,
+        /// New altitude.
+        new_altitude: u8,
+        /// Agent position.
+        position: (u16, u16),
+        /// Tick when it happened.
+        tick: u64,
+    },
+    /// An agent's battery was depleted, forcing an emergency landing.
+    ForcedLanding {
+        /// Agent that was forced to land.
+        agent_id: u32,
+        /// Altitude the agent fell from.
+        fall_altitude: u8,
+        /// Damage taken from the fall (fixed-point).
+        damage: i32,
+        /// Agent position.
+        position: (u16, u16),
+        /// Tick when it happened.
+        tick: u64,
+    },
+    /// An agent dropped a payload from the air.
+    PayloadDrop {
+        /// Agent that dropped the payload.
+        agent_id: u32,
+        /// Type of item dropped.
+        item_type: u8,
+        /// Position where payload landed.
+        position: (u16, u16),
+        /// Altitude from which it was dropped.
+        altitude: u8,
+        /// Tick when it happened.
+        tick: u64,
+    },
 }
 
 /// A bounded, append-only log of [`SimulationEvent`]s.
@@ -180,7 +219,10 @@ fn event_tick(event: &SimulationEvent) -> u64 {
         | SimulationEvent::AgentDeath { tick, .. }
         | SimulationEvent::CraftComplete { tick, .. }
         | SimulationEvent::TaskComplete { tick, .. }
-        | SimulationEvent::IntentDeclared { tick, .. } => *tick,
+        | SimulationEvent::IntentDeclared { tick, .. }
+        | SimulationEvent::AltitudeChange { tick, .. }
+        | SimulationEvent::ForcedLanding { tick, .. }
+        | SimulationEvent::PayloadDrop { tick, .. } => *tick,
     }
 }
 

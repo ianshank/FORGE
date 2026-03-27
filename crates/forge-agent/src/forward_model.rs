@@ -39,12 +39,13 @@ impl DefaultForwardModel {
     #[instrument(skip_all)]
     pub fn new(comm_vocab_size: u16) -> Self {
         Self {
-            action_space: Action::space_size(comm_vocab_size),
+            action_space: Action::space_size(comm_vocab_size, false),
         }
     }
 }
 
 impl ForwardModel for DefaultForwardModel {
+    #[instrument(skip_all)]
     fn simulate(&self, state: &WorldState, actions: &[Action]) -> (WorldState, StepResult) {
         let mut next_state = state.clone();
         let result = next_state.step(actions);

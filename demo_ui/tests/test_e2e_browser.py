@@ -15,6 +15,7 @@ browser-based demo UI renders correctly and responds to user interaction.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -30,8 +31,9 @@ pw = pytest.importorskip("playwright.sync_api")
 
 from playwright.sync_api import Page, sync_playwright  # noqa: E402
 
-SERVER_PORT = 18765
-SERVER_URL = f"http://127.0.0.1:{SERVER_PORT}"
+SERVER_HOST = os.environ.get("FORGE_DEMO_HOST", "127.0.0.1")
+SERVER_PORT = int(os.environ.get("FORGE_DEMO_PORT", "18765"))
+SERVER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +46,7 @@ def server() -> Generator[subprocess.Popen[bytes], None, None]:
             "uvicorn",
             "demo_ui.backend.main:app",
             "--host",
-            "127.0.0.1",
+            SERVER_HOST,
             "--port",
             str(SERVER_PORT),
             "--log-level",

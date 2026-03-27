@@ -1,0 +1,8 @@
+[memory]
+enabled = false
+semantic_capacity = 10000
+episodic_capacity = 5000
+preference_capacity = 1000
+decay_rate = 0.001
+retrieval_top_k = 10
+min_strength = 0.01

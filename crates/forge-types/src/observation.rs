@@ -6,8 +6,14 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::constants;
 use crate::entity::CommToken;
 use crate::grid::TerrainType;
+
+/// Default battery observation value for serde (fully charged).
+fn default_battery_obs() -> f32 {
+    1.0
+}
 
 /// A single tile as observed by an agent.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -22,9 +28,9 @@ pub struct TileObservation {
     pub has_resource: bool,
     /// Elevation value.
     pub elevation: u8,
-    /// Object type if present (encoded as u8), or 255 for none.
+    /// Object type if present (encoded as u8), or `OBS_NO_OBJECT` sentinel for none.
     pub object_type: u8,
-    /// Resource type if present (encoded as u8), or 255 for none.
+    /// Resource type if present (encoded as u8), or `OBS_NO_RESOURCE` sentinel for none.
     pub resource_type: u8,
 }
 
@@ -36,8 +42,8 @@ impl Default for TileObservation {
             has_agent: false,
             has_object: false,
             has_resource: false,
-            object_type: 255,
-            resource_type: 255,
+            object_type: constants::OBS_NO_OBJECT,
+            resource_type: constants::OBS_NO_RESOURCE,
         }
     }
 }
@@ -45,7 +51,7 @@ impl Default for TileObservation {
 /// Inventory observation — what the agent carries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventoryObservation {
-    /// Per-slot: (item_type as u8, count). Empty slots use (255, 0).
+    /// Per-slot: (item_type as u8, count). Empty slots use (`OBS_EMPTY_SLOT_ITEM`, 0).
     pub slots: Vec<(u8, u16)>,
 }
 
@@ -73,6 +79,18 @@ pub struct Observation {
     pub day_phase: u8,
     /// Per-task-predicate completion progress (0.0-1.0 each).
     pub task_progress: Vec<f32>,
+    /// Agent's current altitude (0 = ground level).
+    #[serde(default)]
+    pub altitude: u8,
+    /// Agent's battery level, normalized 0.0-1.0. Defaults to 1.0 when drone disabled.
+    #[serde(default = "default_battery_obs")]
+    pub battery: f32,
+    /// Agent's morphology type (0=Ground, 1=GroundVehicle, 2=Aerial).
+    #[serde(default)]
+    pub morphology: u8,
+    /// Agent's current heading direction (0=Up, 1=Down, 2=Left, 3=Right).
+    #[serde(default)]
+    pub heading: u8,
 }
 
 impl Observation {
@@ -83,9 +101,10 @@ impl Observation {
         carry_capacity: u8,
         comm_buffer_size: u8,
         num_predicates: u16,
+        drone_enabled: bool,
     ) -> usize {
         let view_side = 2 * vision_radius as usize + 1;
-        let grid_elements = view_side * view_side * 7; // 7 features per tile
+        let grid_elements = view_side * view_side * constants::OBS_FEATURES_PER_TILE;
         let inventory_elements = carry_capacity as usize * 2; // (type, count) per slot
         let scalar_elements = 4; // health, stamina, position.x, position.y
         let comm_elements = comm_buffer_size as usize;
@@ -98,6 +117,11 @@ impl Observation {
             + comm_elements
             + day_elements
             + task_elements
+            + if drone_enabled {
+                constants::OBS_DRONE_FIELDS_COUNT
+            } else {
+                0
+            }
     }
 }
 
@@ -159,8 +183,8 @@ pub struct ActionSpace {
 
 impl ActionSpace {
     /// Creates an action space with the given communication vocabulary size.
-    pub fn new(comm_vocab_size: u16) -> Self {
-        let n = crate::action::Action::space_size(comm_vocab_size);
+    pub fn new(comm_vocab_size: u16, drone_actions_enabled: bool) -> Self {
+        let n = crate::action::Action::space_size(comm_vocab_size, drone_actions_enabled);
         let mut names = vec![
             "Noop".to_string(),
             "Move Up".to_string(),
@@ -169,13 +193,13 @@ impl ActionSpace {
             "Move Right".to_string(),
             "Pick Up".to_string(),
         ];
-        for i in 0..10 {
+        for i in 0..constants::ACTION_DROP_SLOTS {
             names.push(format!("Drop Slot {}", i));
         }
-        for i in 0..10 {
+        for i in 0..constants::ACTION_USE_SLOTS {
             names.push(format!("Use Slot {}", i));
         }
-        for i in 0..9 {
+        for i in 0..constants::ACTION_CRAFT_SLOTS {
             names.push(format!("Craft Recipe {}", i));
         }
         names.push("Push Up".to_string());
@@ -185,6 +209,20 @@ impl ActionSpace {
         names.push("Interact".to_string());
         for i in 0..comm_vocab_size {
             names.push(format!("Communicate {}", i));
+        }
+        if drone_actions_enabled {
+            names.push("Ascend".to_string());
+            names.push("Descend".to_string());
+            names.push("Hover".to_string());
+            names.push("TakeOff".to_string());
+            names.push("Land".to_string());
+            names.push("Scan Up".to_string());
+            names.push("Scan Down".to_string());
+            names.push("Scan Left".to_string());
+            names.push("Scan Right".to_string());
+            for i in 0..10 {
+                names.push(format!("DropPayload Slot {}", i));
+            }
         }
         Self {
             n,
@@ -199,17 +237,20 @@ mod tests {
 
     #[test]
     fn test_observation_flat_size() {
-        let size = Observation::flat_size(5, 10, 8, 4);
+        let size = Observation::flat_size(5, 10, 8, 4, false);
         let view_side = 11; // 2*5+1
-        let expected = view_side * view_side * 7 + 10 * 2 + 4 + 8 + 1 + 4;
+        let expected =
+            view_side * view_side * constants::OBS_FEATURES_PER_TILE + 10 * 2 + 4 + 8 + 1 + 4;
         assert_eq!(size, expected);
     }
 
     #[test]
     fn test_action_space_creation() {
-        let space = ActionSpace::new(16);
-        assert_eq!(space.n, 56); // 40 base + 16 comm
-        assert_eq!(space.action_names.len(), 56);
+        let comm_vocab: u16 = 16;
+        let expected_n = crate::action::Action::space_size(comm_vocab, false);
+        let space = ActionSpace::new(comm_vocab, false);
+        assert_eq!(space.n, expected_n);
+        assert_eq!(space.action_names.len(), expected_n as usize);
         assert_eq!(space.action_names[0], "Noop");
         assert_eq!(space.action_names[1], "Move Up");
     }
@@ -219,7 +260,7 @@ mod tests {
         let tile = TileObservation::default();
         assert_eq!(tile.terrain, 0); // Ground
         assert!(!tile.has_agent);
-        assert_eq!(tile.object_type, 255);
+        assert_eq!(tile.object_type, constants::OBS_NO_OBJECT);
     }
 
     #[test]
@@ -229,7 +270,7 @@ mod tests {
             view_width: 1,
             view_height: 1,
             inventory: InventoryObservation {
-                slots: vec![(255, 0)],
+                slots: vec![(constants::OBS_EMPTY_SLOT_ITEM, 0)],
             },
             health: 1.0,
             stamina: 0.8,
@@ -237,6 +278,10 @@ mod tests {
             messages: vec![],
             day_phase: 1,
             task_progress: vec![0.5],
+            altitude: 0,
+            battery: 1.0,
+            morphology: 0,
+            heading: 0,
         };
 
         let step = StepResult {
@@ -268,16 +313,99 @@ mod tests {
     }
 
     #[test]
+    fn test_observation_drone_fields_default() {
+        let obs = Observation {
+            grid_view: vec![],
+            view_width: 0,
+            view_height: 0,
+            inventory: InventoryObservation { slots: vec![] },
+            health: 1.0,
+            stamina: 1.0,
+            position: (0, 0),
+            messages: vec![],
+            day_phase: 0,
+            task_progress: vec![],
+            altitude: 0,
+            battery: 1.0,
+            morphology: 0,
+            heading: 0,
+        };
+        assert_eq!(obs.altitude, 0);
+        assert_eq!(obs.battery, 1.0);
+        assert_eq!(obs.morphology, 0);
+    }
+
+    #[test]
     fn test_inventory_observation() {
         let inv_obs = InventoryObservation {
-            slots: vec![(0, 5), (1, 3), (255, 0)],
+            slots: vec![(0, 5), (1, 3), (constants::OBS_EMPTY_SLOT_ITEM, 0)],
         };
         assert_eq!(inv_obs.slots.len(), 3);
         // First slot: item type 0 (Wood) with count 5.
         assert_eq!(inv_obs.slots[0], (0, 5));
         // Second slot: item type 1 (Stone) with count 3.
         assert_eq!(inv_obs.slots[1], (1, 3));
-        // Third slot: empty (sentinel 255, count 0).
-        assert_eq!(inv_obs.slots[2], (255, 0));
+        // Third slot: empty (sentinel, count 0).
+        assert_eq!(inv_obs.slots[2], (constants::OBS_EMPTY_SLOT_ITEM, 0));
+    }
+
+    #[test]
+    fn test_observation_flat_size_with_drones() {
+        let size_no_drone = Observation::flat_size(5, 10, 8, 4, false);
+        let size_drone = Observation::flat_size(5, 10, 8, 4, true);
+        assert_eq!(
+            size_drone - size_no_drone,
+            constants::OBS_DRONE_FIELDS_COUNT,
+            "drone adds extra features (altitude, battery, morphology, heading)"
+        );
+    }
+
+    #[test]
+    fn test_observation_serde_with_drone_defaults() {
+        // Deserialize an observation without drone fields (backwards compat)
+        let json = r#"{
+            "grid_view": [],
+            "view_width": 0,
+            "view_height": 0,
+            "inventory": {"slots": []},
+            "health": 1.0,
+            "stamina": 1.0,
+            "position": [0, 0],
+            "messages": [],
+            "day_phase": 0,
+            "task_progress": []
+        }"#;
+        let obs: Observation = serde_json::from_str(json).unwrap();
+        assert_eq!(obs.altitude, 0, "altitude default should be 0");
+        assert_eq!(obs.battery, 1.0, "battery default should be 1.0");
+        assert_eq!(obs.morphology, 0, "morphology default should be 0 (Ground)");
+        assert_eq!(obs.heading, 0, "heading default should be 0 (Up)");
+    }
+
+    #[test]
+    fn test_action_space_names_match_count() {
+        let space = ActionSpace::new(0, false);
+        assert_eq!(
+            space.action_names.len() as u32,
+            space.n,
+            "action names count must match space size"
+        );
+
+        let space16 = ActionSpace::new(16, false);
+        assert_eq!(space16.action_names.len() as u32, space16.n);
+    }
+
+    #[test]
+    fn test_observation_space_construction() {
+        let obs_space = ObservationSpace {
+            flat_shape: vec![100],
+            low: 0.0,
+            high: 1.0,
+            grid_shape: (11, 11, constants::OBS_FEATURES_PER_TILE),
+            inventory_size: 10,
+            comm_buffer_size: 8,
+        };
+        assert_eq!(obs_space.flat_shape[0], 100);
+        assert_eq!(obs_space.grid_shape.2, constants::OBS_FEATURES_PER_TILE);
     }
 }

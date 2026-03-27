@@ -87,6 +87,10 @@ pub const MAX_STACK_SIZE: u16 = 64;
 
 /// Default ticks between resource respawn increments.
 pub const DEFAULT_RESOURCE_RESPAWN_TICKS: u32 = 100;
+/// Default maximum quantity per resource node.
+pub const DEFAULT_RESOURCE_MAX_QUANTITY: u16 = 5;
+/// Default object placement density scale.
+pub const DEFAULT_OBJECT_DENSITY_SCALE: f32 = 1.0;
 
 /// Number of terrain types (for observation encoding).
 pub const NUM_TERRAIN_TYPES: usize = 8;
@@ -98,6 +102,13 @@ pub const DEFAULT_LAVA_DAMAGE: i32 = 65536; // 1.0
 
 /// Number of cardinal directions.
 pub const NUM_DIRECTIONS: usize = 4;
+
+/// Number of inventory drop action slots in the action encoding.
+pub const ACTION_DROP_SLOTS: usize = 10;
+/// Number of inventory use action slots in the action encoding.
+pub const ACTION_USE_SLOTS: usize = 10;
+/// Number of craft recipe action slots in the action encoding.
+pub const ACTION_CRAFT_SLOTS: usize = 9;
 
 /// Number of fractional bits in fixed-point representation (16 bits).
 pub const FIXED_POINT_SHIFT: u32 = 16;
@@ -164,7 +175,98 @@ pub const VISION_MODIFIER_NIGHT: f32 = 0.5;
 /// Number of features per tile in grid observation encoding.
 pub const OBS_FEATURES_PER_TILE: usize = 7;
 
+/// Number of additional observation fields when drone mechanics are enabled
+/// (altitude, battery, morphology, heading).
+pub const OBS_DRONE_FIELDS_COUNT: usize = 4;
+
+// ---------- Terrain movement costs (fixed-point) ----------
+
+/// Movement cost for Ground terrain (1.0x — normal speed).
+pub const TERRAIN_COST_GROUND: i32 = FIXED_POINT_ONE;
+/// Movement cost for Ice terrain (0.5x — slippery, reduced stamina).
+pub const TERRAIN_COST_ICE: i32 = FIXED_POINT_ONE / 2;
+/// Movement cost for Sand terrain (1.5x — slower movement).
+pub const TERRAIN_COST_SAND: i32 = FIXED_POINT_ONE + FIXED_POINT_ONE / 2;
+/// Movement cost for Forest terrain (2.0x — dense vegetation).
+pub const TERRAIN_COST_FOREST: i32 = FIXED_POINT_ONE * 2;
+
+// ---------- Item type classification boundaries ----------
+
+/// Items with discriminant below this are raw (harvestable) resources.
+pub const ITEM_TYPE_RAW_MAX: u8 = 10;
+/// Items with discriminant in [ITEM_TYPE_CRAFTED_MIN, ITEM_TYPE_CRAFTED_MAX) are crafted.
+pub const ITEM_TYPE_CRAFTED_MIN: u8 = 10;
+/// Upper exclusive bound for crafted item discriminants.
+pub const ITEM_TYPE_CRAFTED_MAX: u8 = 30;
+
+// ---------- Drone defaults ----------
+
+/// Whether drone mechanics are enabled by default.
+pub const DEFAULT_DRONE_ENABLED: bool = false;
+/// Default maximum altitude for aerial agents.
+pub const DEFAULT_MAX_ALTITUDE: u8 = 10;
+/// Default battery drain per tick while airborne (fixed-point ~0.15).
+pub const DEFAULT_AERIAL_DRAIN_RATE: i32 = 9830;
+/// Default battery cost to ascend one level (fixed-point ~0.2).
+pub const DEFAULT_ASCEND_COST: i32 = 13107;
+/// Default battery cost to descend one level (fixed-point ~0.05).
+pub const DEFAULT_DESCEND_COST: i32 = 3277;
+/// Default hover cost per tick (fixed-point ~0.1).
+pub const DEFAULT_HOVER_COST: i32 = 6554;
+/// Default scan action battery cost (fixed-point ~0.08).
+pub const DEFAULT_SCAN_COST: i32 = 5243;
+/// Default scan range in tiles.
+pub const DEFAULT_SCAN_RANGE: u8 = 12;
+/// Default starting battery for aerial agents (fixed-point 10.0).
+pub const DEFAULT_STARTING_BATTERY: i32 = 655360;
+/// Default maximum battery (fixed-point 10.0).
+pub const DEFAULT_MAX_BATTERY: i32 = 655360;
+/// Default battery recharge rate per tick when landed (fixed-point ~0.03).
+pub const DEFAULT_RECHARGE_RATE: i32 = 1966;
+/// Default vision bonus per altitude level for aerial agents.
+pub const DEFAULT_ALTITUDE_VISION_BONUS: u8 = 2;
+/// Default ground vehicle turn radius.
+pub const DEFAULT_VEHICLE_TURN_RADIUS: u8 = 1;
+/// Number of discrete drone action slots in the action space.
+pub const DRONE_ACTION_COUNT: u32 = 19;
+/// Default ground vehicle terrain costs [Ground, Water, Wall, Lava, Ice, Sand, Forest, Mountain].
+/// Fixed-point values. i32::MAX = impassable.
+pub const DEFAULT_VEHICLE_TERRAIN_COSTS: [i32; 8] = [
+    32768,    // Ground: 0.5x (faster)
+    i32::MAX, // Water: impassable
+    i32::MAX, // Wall: impassable
+    i32::MAX, // Lava: impassable
+    49152,    // Ice: 0.75x
+    45875,    // Sand: 0.7x
+    i32::MAX, // Forest: impassable
+    i32::MAX, // Mountain: impassable
+];
+/// Number of terrain types used for vehicle terrain cost array sizing.
+pub const NUM_VEHICLE_TERRAIN_TYPES: usize = 8;
+
+// ---------- MCTS defaults ----------
+
+/// Inline capacity for SmallVec in physics hot path.
+/// Avoids heap allocation when the number of agents is at or below this threshold.
+pub const PHYSICS_SMALLVEC_CAPACITY: usize = 16;
+
+/// Default PUCT exploration constant (c_puct) for MCTS.
+pub const DEFAULT_MCTS_C_PUCT: f32 = 1.41;
+/// Default number of MCTS simulations per search.
+pub const DEFAULT_MCTS_NUM_SIMULATIONS: u32 = 100;
+/// Default maximum MCTS tree depth.
+pub const DEFAULT_MCTS_MAX_DEPTH: u32 = 50;
+/// Default MCTS discount factor for future rewards.
+pub const DEFAULT_MCTS_DISCOUNT: f32 = 0.99;
+/// Default MCTS temperature for action selection (1.0 = proportional to visits).
+pub const DEFAULT_MCTS_TEMPERATURE: f32 = 1.0;
+/// Default MCTS action space size.
+pub const DEFAULT_MCTS_ACTION_SPACE: u32 = 32;
+/// Default fall damage per altitude level during emergency landing (fixed-point 1.0).
+pub const DEFAULT_FALL_DAMAGE_PER_LEVEL: i32 = FIXED_POINT_ONE;
+
 #[cfg(test)]
+#[allow(clippy::assertions_on_constants)]
 mod tests {
     use super::*;
 
@@ -205,5 +307,84 @@ mod tests {
     #[test]
     fn test_obs_features_per_tile() {
         assert_eq!(OBS_FEATURES_PER_TILE, 7);
+    }
+
+    #[test]
+    fn test_drone_constants_starting_battery_equals_max() {
+        assert_eq!(DEFAULT_STARTING_BATTERY, DEFAULT_MAX_BATTERY);
+    }
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn test_drone_ascend_cost_within_battery() {
+        assert!(DEFAULT_ASCEND_COST < DEFAULT_STARTING_BATTERY);
+    }
+
+    #[test]
+    fn test_vehicle_terrain_costs_length() {
+        assert_eq!(
+            DEFAULT_VEHICLE_TERRAIN_COSTS.len(),
+            NUM_VEHICLE_TERRAIN_TYPES
+        );
+    }
+
+    #[test]
+    fn test_drone_action_count() {
+        // 5 basic (Ascend, Descend, Hover, TakeOff, Land) + 4 Scan + 10 DropPayload
+        assert_eq!(DRONE_ACTION_COUNT, 19);
+    }
+
+    #[test]
+    fn test_fall_damage_default_matches_fixed_point_one() {
+        assert_eq!(DEFAULT_FALL_DAMAGE_PER_LEVEL, FIXED_POINT_ONE);
+    }
+
+    #[test]
+    fn test_drone_costs_are_positive() {
+        assert!(DEFAULT_AERIAL_DRAIN_RATE > 0);
+        assert!(DEFAULT_ASCEND_COST > 0);
+        assert!(DEFAULT_DESCEND_COST > 0);
+        assert!(DEFAULT_HOVER_COST > 0);
+        assert!(DEFAULT_SCAN_COST > 0);
+        assert!(DEFAULT_RECHARGE_RATE > 0);
+    }
+
+    #[test]
+    fn test_vehicle_terrain_costs_has_impassable() {
+        // Water, Wall, Lava, Forest, Mountain should be impassable
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[1], i32::MAX); // Water
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[2], i32::MAX); // Wall
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[3], i32::MAX); // Lava
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[6], i32::MAX); // Forest
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[7], i32::MAX); // Mountain
+    }
+
+    #[test]
+    fn test_vehicle_terrain_costs_ground_is_faster() {
+        // Ground cost < FIXED_POINT_ONE means faster than walking
+        assert!(DEFAULT_VEHICLE_TERRAIN_COSTS[0] < FIXED_POINT_ONE);
+        assert!(DEFAULT_VEHICLE_TERRAIN_COSTS[0] > 0);
+    }
+
+    #[test]
+    fn test_terrain_costs_derived_from_fixed_point() {
+        assert_eq!(TERRAIN_COST_GROUND, FIXED_POINT_ONE);
+        assert_eq!(TERRAIN_COST_ICE, FIXED_POINT_ONE / 2);
+        assert_eq!(TERRAIN_COST_SAND, FIXED_POINT_ONE + FIXED_POINT_ONE / 2);
+        assert_eq!(TERRAIN_COST_FOREST, FIXED_POINT_ONE * 2);
+    }
+
+    #[test]
+    fn test_terrain_cost_ordering() {
+        // Ice < Ground < Sand < Forest
+        assert!(TERRAIN_COST_ICE < TERRAIN_COST_GROUND);
+        assert!(TERRAIN_COST_GROUND < TERRAIN_COST_SAND);
+        assert!(TERRAIN_COST_SAND < TERRAIN_COST_FOREST);
+    }
+
+    #[test]
+    fn test_item_type_boundaries_consistent() {
+        assert_eq!(ITEM_TYPE_RAW_MAX, ITEM_TYPE_CRAFTED_MIN);
+        assert!(ITEM_TYPE_CRAFTED_MIN < ITEM_TYPE_CRAFTED_MAX);
     }
 }

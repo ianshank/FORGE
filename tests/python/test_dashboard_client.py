@@ -1,4 +1,5 @@
 """Tests for forge.utils.dashboard_client module."""
+
 from __future__ import annotations
 
 import logging
@@ -147,9 +148,7 @@ class TestDashboardClient:
         assert dc._session is None
 
     @patch("forge.utils.dashboard_client.httpx", create=True)
-    def test_lazy_session_created_on_first_request(
-        self, mock_httpx_mod: MagicMock
-    ) -> None:
+    def test_lazy_session_created_on_first_request(self, mock_httpx_mod: MagicMock) -> None:
         """Session is created lazily on first _post call."""
         mock_client_instance = MagicMock()
         response = MagicMock()

@@ -15,12 +15,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from forge.config import DEFAULT_ACTION_SIZE, DEFAULT_HIDDEN_SIZES
+
 if TYPE_CHECKING:
     import torch
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_ACTION_SIZE = 8
 
 
 class PolicyNetwork(ABC):
@@ -98,7 +98,7 @@ class ActorCriticNetwork:
         from torch import nn  # noqa: PLC0415
 
         if hidden_sizes is None:
-            hidden_sizes = [256, 256]
+            hidden_sizes = list(DEFAULT_HIDDEN_SIZES)
 
         self.obs_dim = obs_dim
         self.action_dim = action_dim

@@ -326,4 +326,125 @@ mod tests {
         assert!(json.contains("DecisionTraces"));
         assert!(json.contains("intentLabel"));
     }
+
+    #[test]
+    fn test_subscription_manager_default() {
+        let manager = SubscriptionManager::default();
+        assert_eq!(manager.active_clients(), 0);
+        assert!(manager.client_ids().is_empty());
+    }
+
+    #[test]
+    fn test_subscription_manager_duplicate_client_id() {
+        let mut manager = SubscriptionManager::new();
+        manager.add_client(1, 0);
+        manager.add_client(1, 5); // Same ID, should overwrite
+        assert_eq!(manager.active_clients(), 1);
+    }
+
+    #[test]
+    fn test_subscription_manager_remove_nonexistent() {
+        let mut manager = SubscriptionManager::new();
+        assert!(!manager.remove_client(999));
+    }
+
+    #[test]
+    fn test_client_subscription_fields() {
+        let mut manager = SubscriptionManager::new();
+        manager.add_client(42, 100);
+        let ids = manager.client_ids();
+        assert_eq!(ids, vec![42]);
+    }
+
+    #[test]
+    fn test_ws_message_error_roundtrip() {
+        let msg = WsMessage::Error("something went wrong".to_string());
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: WsMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            WsMessage::Error(e) => assert_eq!(e, "something went wrong"),
+            _ => panic!("Expected Error variant"),
+        }
+    }
+
+    #[test]
+    fn test_ws_message_decision_traces_roundtrip() {
+        let traces = vec![
+            crate::metrics::DecisionTraceEntry {
+                agent_id: 1,
+                tick: 10,
+                intent_label: "attack".to_string(),
+                confidence: 0.95,
+                search_depth: 3,
+                ucb1_score: 2.1,
+                alternatives_considered: 5,
+            },
+            crate::metrics::DecisionTraceEntry {
+                agent_id: 2,
+                tick: 10,
+                intent_label: "retreat".to_string(),
+                confidence: 0.6,
+                ..Default::default()
+            },
+        ];
+        let msg = WsMessage::DecisionTraces(traces);
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: WsMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            WsMessage::DecisionTraces(t) => {
+                assert_eq!(t.len(), 2);
+                assert_eq!(t[0].agent_id, 1);
+                assert_eq!(t[1].intent_label, "retreat");
+            }
+            _ => panic!("Expected DecisionTraces variant"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_ws_message_all_variants() {
+        let variants: Vec<WsMessage> = vec![
+            WsMessage::StateUpdate(SimulationSnapshot::default()),
+            WsMessage::TrainingMetrics(crate::metrics::TrainingMetrics::default()),
+            WsMessage::DecisionTraces(vec![]),
+            WsMessage::Error("err".to_string()),
+        ];
+        for msg in &variants {
+            let result = serialize_ws_message(msg);
+            assert!(result.is_ok(), "Failed to serialize: {:?}", msg);
+        }
+    }
+
+    #[test]
+    fn test_subscription_manager_many_clients() {
+        let mut manager = SubscriptionManager::new();
+        for i in 0..100 {
+            manager.add_client(i, i);
+        }
+        assert_eq!(manager.active_clients(), 100);
+        assert_eq!(manager.client_ids().len(), 100);
+
+        for i in 0..50 {
+            assert!(manager.remove_client(i));
+        }
+        assert_eq!(manager.active_clients(), 50);
+    }
+
+    #[test]
+    fn test_duplicate_add_client_overwrites() {
+        let mut manager = SubscriptionManager::new();
+        manager.add_client(1, 0);
+        manager.add_client(1, 10);
+        assert_eq!(manager.active_clients(), 1);
+        // The subscription should reflect the latest add.
+        let ids = manager.client_ids();
+        assert_eq!(ids, vec![1]);
+    }
+
+    #[test]
+    fn test_remove_client_returns_false_for_nonexistent() {
+        let mut manager = SubscriptionManager::new();
+        assert!(!manager.remove_client(42));
+        assert!(!manager.remove_client(0));
+        assert!(!manager.remove_client(u64::MAX));
+    }
 }

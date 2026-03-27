@@ -595,4 +595,44 @@ mod tests {
             "tiles beyond night radius should become Explored, not Hidden"
         );
     }
+
+    // ---- Proptest: visibility invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// An agent always sees its own tile.
+            #[test]
+            fn agent_sees_own_tile(
+                x in 1u16..30,
+                y in 1u16..30,
+                phase in 0u8..4,
+            ) {
+                let mut grid = make_grid(32, 32);
+                let agent = make_agent(0, x, y);
+                update_visibility(&[agent], &mut grid, phase);
+                prop_assert_eq!(
+                    grid.get(x, y).unwrap().visibility,
+                    VisibilityState::Visible,
+                );
+            }
+
+            /// Visibility mask has correct shape for given vision radius.
+            #[test]
+            fn visibility_mask_shape(
+                vr in 0u8..6,
+                x in 6u16..26,
+                y in 6u16..26,
+            ) {
+                let grid = make_grid(32, 32);
+                let mut agent = make_agent(0, x, y);
+                agent.vision_radius = vr;
+                let mask = visibility_mask(&agent, &grid);
+                let side = 2 * vr as usize + 1;
+                prop_assert_eq!(mask.len(), side * side);
+            }
+        }
+    }
 }

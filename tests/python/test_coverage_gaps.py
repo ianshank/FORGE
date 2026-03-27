@@ -15,6 +15,7 @@ Brings test coverage to 80%+ by testing:
 - ActorCriticNetwork (dimension validation on load)
 - TraceLogger (size limits, closed logger)
 """
+
 from __future__ import annotations
 
 import json
@@ -52,7 +53,7 @@ class TestWorldModel:
     def test_cannot_instantiate_abc(self) -> None:
         """WorldModel is abstract."""
         with pytest.raises(TypeError):
-            WorldModel()  # type: ignore[abstract]
+            WorldModel()
 
     def test_identity_predict_returns_copy(self) -> None:
         """IdentityWorldModel.predict returns a copy, not a reference."""
@@ -96,7 +97,7 @@ class TestProcessRewardModel:
     def test_cannot_instantiate_abc(self) -> None:
         """ProcessRewardModel is abstract."""
         with pytest.raises(TypeError):
-            ProcessRewardModel()  # type: ignore[abstract]
+            ProcessRewardModel()
 
     def test_constant_default_score(self) -> None:
         """ConstantRewardModel defaults to 1.0."""
@@ -170,8 +171,13 @@ class TestLoggingConfig:
         """JsonFormatter produces valid JSON with expected fields."""
         formatter = JsonFormatter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="hello %s", args=("world",), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="hello %s",
+            args=("world",),
+            exc_info=None,
         )
         result = formatter.format(record)
         data = json.loads(result)
@@ -187,8 +193,13 @@ class TestLoggingConfig:
             raise ValueError("test error")
         except ValueError:
             record = logging.LogRecord(
-                name="test", level=logging.ERROR, pathname="", lineno=0,
-                msg="error", args=(), exc_info=sys.exc_info(),
+                name="test",
+                level=logging.ERROR,
+                pathname="",
+                lineno=0,
+                msg="error",
+                args=(),
+                exc_info=sys.exc_info(),
             )
         result = formatter.format(record)
         data = json.loads(result)
@@ -547,9 +558,14 @@ class TestDecisionTraceMigration:
     def test_roundtrip_preserves_all_fields(self) -> None:
         """Full roundtrip through to_dict/from_dict preserves data."""
         original = DecisionTrace(
-            tick=42, agent_id="agent_0", action=3,
-            confidence=0.95, search_depth=5, ucb1_score=1.5,
-            intent_label="explore", preconditions=["has_key", "is_alive"],
+            tick=42,
+            agent_id="agent_0",
+            action=3,
+            confidence=0.95,
+            search_depth=5,
+            ucb1_score=1.5,
+            intent_label="explore",
+            preconditions=["has_key", "is_alive"],
             expected_outcome="find_treasure",
         )
         restored = DecisionTrace.from_dict(original.to_dict())

@@ -1,0 +1,8 @@
+[social]
+enabled = false
+trust_initial = 0.5
+trust_update_rate = 0.1
+cooperation_reward_weight = 0.3
+betrayal_penalty = -0.5
+alliance_threshold = 0.7
+max_alliances = 3

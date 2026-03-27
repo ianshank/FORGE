@@ -1,0 +1,24 @@
+[package]
+name = "forge-integration-layer"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Cross-layer integration orchestrator for the FORGE platform"
+
+[dependencies]
+forge-types = { workspace = true }
+forge-memory = { path = "../forge-memory" }
+forge-social = { path = "../forge-social" }
+forge-cognitive = { path = "../forge-cognitive" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

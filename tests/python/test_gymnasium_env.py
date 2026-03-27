@@ -2,6 +2,7 @@
 
 Uses the real compiled Rust native extension instead of mocks.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -61,8 +62,13 @@ class TestObservationSpaceStructure:
     def test_observation_space_structure(self, env: ForgeGymnasiumEnv) -> None:
         obs_space = env.observation_space
         expected_keys = {
-            "grid_view", "inventory", "health", "stamina",
-            "position", "messages", "day_phase",
+            "grid_view",
+            "inventory",
+            "health",
+            "stamina",
+            "position",
+            "messages",
+            "day_phase",
         }
         assert set(obs_space.spaces.keys()) == expected_keys
 

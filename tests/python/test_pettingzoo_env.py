@@ -2,6 +2,7 @@
 
 Uses the real compiled Rust native extension instead of mocks.
 """
+
 from __future__ import annotations
 
 import pytest

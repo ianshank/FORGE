@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -91,23 +91,73 @@ class SimulationConfig:
     schema_version: int = 1
 
 
+DEFAULT_LEARNING_RATE: float = 3e-4
+DEFAULT_GAMMA: float = 0.99
+DEFAULT_GAE_LAMBDA: float = 0.95
+DEFAULT_CLIP_RATIO: float = 0.2
+DEFAULT_EPOCHS: int = 4
+DEFAULT_BATCH_SIZE: int = 256
+DEFAULT_ROLLOUT_LENGTH: int = 2048
+DEFAULT_ENTROPY_COEFF: float = 0.01
+DEFAULT_VALUE_COEFF: float = 0.5
+DEFAULT_MAX_GRAD_NORM: float = 0.5
+
+# Agent architecture defaults.
+DEFAULT_OBS_DIM: int = 64
+DEFAULT_ACTION_DIM: int = 8
+DEFAULT_ACTION_SIZE: int = 8
+DEFAULT_HIDDEN_SIZES: list[int] = [256, 256]
+
+# Feature-extractor defaults (ForgeGridCnnExtractor / ForgeObsExtractor).
+DEFAULT_CNN_CHANNELS: tuple[int, ...] = (32, 64)
+DEFAULT_CNN_KERNEL_SIZES: tuple[int, ...] = (3, 3)
+DEFAULT_CNN_STRIDES: tuple[int, ...] = (1, 1)
+DEFAULT_FEATURES_DIM: int = 256
+DEFAULT_MLP_HIDDEN_SIZES: tuple[int, ...] = (128,)
+
+# Logging / curriculum defaults.
+DEFAULT_LOG_FREQ: int = 1000
+DEFAULT_CURRICULUM_TARGET_SUCCESS_RATE: float = 0.7
+DEFAULT_CURRICULUM_WINDOW_SIZE: int = 100
+DEFAULT_CURRICULUM_ADJUSTMENT_RATE: int = 1
+
+
 @dataclass
 class TrainingConfig:
-    """Training hyper-parameters."""
+    """Training hyper-parameters.
 
-    learning_rate: float = 3e-4
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
-    clip_ratio: float = 0.2
-    epochs: int = 4
-    batch_size: int = 256
-    rollout_length: int = 2048
-    target_success_rate: float = 0.5
-    curriculum_window_size: int = 100
+    All fields have sensible defaults so that existing code that constructs
+    ``TrainingConfig()`` without arguments continues to work unchanged.
+    New fields added here are backwards-compatible additions only.
+    """
+
+    learning_rate: float = DEFAULT_LEARNING_RATE
+    gamma: float = DEFAULT_GAMMA
+    gae_lambda: float = DEFAULT_GAE_LAMBDA
+    clip_ratio: float = DEFAULT_CLIP_RATIO
+    epochs: int = DEFAULT_EPOCHS
+    batch_size: int = DEFAULT_BATCH_SIZE
+    rollout_length: int = DEFAULT_ROLLOUT_LENGTH
+    target_success_rate: float = DEFAULT_CURRICULUM_TARGET_SUCCESS_RATE
+    curriculum_window_size: int = DEFAULT_CURRICULUM_WINDOW_SIZE
     checkpoint_interval: int = 100
-    entropy_coeff: float = 0.01
-    value_coeff: float = 0.5
-    max_grad_norm: float = 0.5
+    entropy_coeff: float = DEFAULT_ENTROPY_COEFF
+    value_coeff: float = DEFAULT_VALUE_COEFF
+    max_grad_norm: float = DEFAULT_MAX_GRAD_NORM
+
+    # --- Feature-extractor configuration (SB3 / CleanRL) -------------------
+    cnn_channels: tuple[int, ...] = DEFAULT_CNN_CHANNELS
+    cnn_kernel_sizes: tuple[int, ...] = DEFAULT_CNN_KERNEL_SIZES
+    cnn_strides: tuple[int, ...] = DEFAULT_CNN_STRIDES
+    features_dim: int = DEFAULT_FEATURES_DIM
+    mlp_hidden_sizes: tuple[int, ...] = DEFAULT_MLP_HIDDEN_SIZES
+
+    # --- Logging configuration ----------------------------------------------
+    log_freq: int = DEFAULT_LOG_FREQ
+
+    # --- Curriculum (mirrors CurriculumConfig on the Rust side) -------------
+    curriculum_enabled: bool = False
+    curriculum_adjustment_rate: int = DEFAULT_CURRICULUM_ADJUSTMENT_RATE
 
 
 @dataclass
@@ -214,7 +264,36 @@ class ForgeConfig:
 
 
 def _build_section(cls: type, data: dict[str, Any]) -> Any:
-    """Instantiate a dataclass from *data*, ignoring unknown keys."""
+    """Instantiate a dataclass from *data*, ignoring unknown keys.
+
+    Lists loaded from TOML are converted to tuples for fields whose default
+    value is a tuple, preserving the declared type contract.
+    """
+    # Collect fields that default to a tuple so we can coerce TOML lists.
+    _tuple_fields: set[str] = set()
+    for f in fields(cls):
+        # Prefer an explicit default; fall back to default_factory if present.
+        default: Any
+        if f.default is not MISSING:
+            default = f.default
+        elif getattr(f, "default_factory", MISSING) is not MISSING:  # type: ignore[attr-defined]
+            try:
+                default = f.default_factory()  # type: ignore[misc]
+            except TypeError:
+                # Non-callable or requires arguments; treat as no usable default.
+                continue
+        else:
+            continue
+        if isinstance(default, tuple):
+            _tuple_fields.add(f.name)
+
     known = {f.name for f in fields(cls)}
-    filtered = {k: v for k, v in data.items() if k in known}
+    filtered: dict[str, Any] = {}
+    for k, v in data.items():
+        if k not in known:
+            continue
+        if k in _tuple_fields and isinstance(v, list):
+            filtered[k] = tuple(v)
+        else:
+            filtered[k] = v
     return cls(**filtered)

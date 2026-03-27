@@ -40,10 +40,11 @@ impl Position {
 }
 
 /// Cardinal directions for movement and facing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Direction {
     /// Upward (decreasing y).
+    #[default]
     Up = 0,
     /// Downward (increasing y).
     Down = 1,
@@ -119,13 +120,14 @@ impl TerrainType {
     }
 
     /// Movement cost multiplier (fixed-point). Higher = more stamina drain.
-    /// 65536 = 1.0x cost (normal), 131072 = 2.0x cost, etc.
+    /// `FIXED_POINT_ONE` (65536) = 1.0x cost (normal), 2*FIXED_POINT_ONE = 2.0x cost, etc.
     pub fn movement_cost(&self) -> i32 {
+        use crate::constants;
         match self {
-            TerrainType::Ground => 65536,  // 1.0x
-            TerrainType::Ice => 32768,     // 0.5x (slippery, less stamina)
-            TerrainType::Sand => 98304,    // 1.5x
-            TerrainType::Forest => 131072, // 2.0x
+            TerrainType::Ground => constants::TERRAIN_COST_GROUND,
+            TerrainType::Ice => constants::TERRAIN_COST_ICE,
+            TerrainType::Sand => constants::TERRAIN_COST_SAND,
+            TerrainType::Forest => constants::TERRAIN_COST_FOREST,
             // Non-walkable terrains return max cost
             _ => i32::MAX,
         }
@@ -470,11 +472,24 @@ mod tests {
 
     #[test]
     fn test_terrain_movement_cost() {
+        use crate::constants;
         // Walkable terrains have specific costs.
-        assert_eq!(TerrainType::Ground.movement_cost(), 65536); // 1.0x
-        assert_eq!(TerrainType::Ice.movement_cost(), 32768); // 0.5x
-        assert_eq!(TerrainType::Sand.movement_cost(), 98304); // 1.5x
-        assert_eq!(TerrainType::Forest.movement_cost(), 131072); // 2.0x
+        assert_eq!(
+            TerrainType::Ground.movement_cost(),
+            constants::TERRAIN_COST_GROUND
+        );
+        assert_eq!(
+            TerrainType::Ice.movement_cost(),
+            constants::TERRAIN_COST_ICE
+        );
+        assert_eq!(
+            TerrainType::Sand.movement_cost(),
+            constants::TERRAIN_COST_SAND
+        );
+        assert_eq!(
+            TerrainType::Forest.movement_cost(),
+            constants::TERRAIN_COST_FOREST
+        );
 
         // Non-walkable terrains return i32::MAX.
         assert_eq!(TerrainType::Water.movement_cost(), i32::MAX);
@@ -494,5 +509,90 @@ mod tests {
         // Invalid index returns None.
         assert_eq!(Direction::from_index(4), None);
         assert_eq!(Direction::from_index(255), None);
+    }
+
+    // ---- Proptest: grid invariants ----
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn arb_direction() -> impl Strategy<Value = Direction> {
+            prop_oneof![
+                Just(Direction::Up),
+                Just(Direction::Down),
+                Just(Direction::Left),
+                Just(Direction::Right),
+            ]
+        }
+
+        proptest! {
+            /// Manhattan distance is symmetric.
+            #[test]
+            fn manhattan_symmetric(
+                ax in 0u16..256,
+                ay in 0u16..256,
+                bx in 0u16..256,
+                by in 0u16..256,
+            ) {
+                let a = Position::new(ax, ay);
+                let b = Position::new(bx, by);
+                prop_assert_eq!(a.manhattan_distance(&b), b.manhattan_distance(&a));
+            }
+
+            /// Manhattan distance is non-negative and satisfies triangle inequality with origin.
+            #[test]
+            fn manhattan_triangle(
+                ax in 0u16..256,
+                ay in 0u16..256,
+                bx in 0u16..256,
+                by in 0u16..256,
+            ) {
+                let a = Position::new(ax, ay);
+                let b = Position::new(bx, by);
+                let origin = Position::new(0, 0);
+                let ab = a.manhattan_distance(&b);
+                let ao = a.manhattan_distance(&origin);
+                let ob = origin.manhattan_distance(&b);
+                prop_assert!(ab <= ao + ob);
+            }
+
+            /// Offset produces in-bounds result or None.
+            #[test]
+            fn offset_in_bounds(
+                x in 0u16..64,
+                y in 0u16..64,
+                dir in arb_direction(),
+            ) {
+                let pos = Position::new(x, y);
+                if let Some(new_pos) = pos.offset(dir, 64, 64) {
+                    prop_assert!(new_pos.x < 64);
+                    prop_assert!(new_pos.y < 64);
+                }
+            }
+
+            /// Grid get is in-bounds for valid coordinates.
+            #[test]
+            fn grid_get_valid(
+                w in 1u16..32,
+                h in 1u16..32,
+                x in 0u16..32,
+                y in 0u16..32,
+            ) {
+                let grid = Grid::new(w, h);
+                if x < w && y < h {
+                    prop_assert!(grid.get(x, y).is_some());
+                } else {
+                    prop_assert!(grid.get(x, y).is_none());
+                }
+            }
+
+            /// TerrainType from_u8 roundtrips for valid values.
+            #[test]
+            fn terrain_from_u8_valid(i in 0u8..8) {
+                let terrain = TerrainType::from_u8(i).unwrap();
+                prop_assert_eq!(terrain as u8, i);
+            }
+        }
     }
 }
