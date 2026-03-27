@@ -36,7 +36,8 @@ A high-performance simulation platform for training and evaluating AI agents, bu
 - **Cross-platform**: Native Python bindings (PyO3/maturin) and WebAssembly bindings (wasm-bindgen)
 - **Zero allocation hot path**: `WorldState::step()` is designed to avoid heap allocation
 - **Structured tracing**: `#[instrument]` on public functions throughout with `tracing` crate
-- **685+ tests**: 614 Rust + 71 Python tests with property-based testing via `proptest`
+- **893+ tests**: 614 Rust + 279 Python tests with property-based testing via `proptest`
+- **Coverage-gated Python CI**: `pytest` now enforces `--cov-fail-under=85` for the Python package surface
 
 ## Quick Start
 
@@ -379,17 +380,45 @@ All config structs derive `Clone, Debug, Serialize, Deserialize` and implement `
 
 ## Docker
 
-```bash
-# Build and run with Docker Compose
-cd docker
-docker compose up --build
+FORGE ships a production-ready three-service Docker Compose stack:
 
-# Or build individually
-docker build -f docker/Dockerfile -t forge .
-docker build -f docker/Dockerfile.demo -t forge-demo .
+| Service | Image | URL | Description |
+|---------|-------|-----|-------------|
+| `simulation` | `rust:1.85` + `python:3.11-slim` | `http://localhost:8080` | Rust simulation server + `forge_env` native extension |
+| `dashboard` | `node:20` → `nginx:1.27-alpine` | `http://localhost:3000` | React dashboard via nginx reverse proxy |
+| `demo` | `python:3.11-slim` | `http://localhost:8765` | FastAPI/uvicorn demo UI |
+
+```bash
+# Build all images and start the stack
+docker compose -f docker/docker-compose.yml up -d --build
+
+# Check service health
+docker compose -f docker/docker-compose.yml ps
+
+# View logs
+docker compose -f docker/docker-compose.yml logs -f
+
+# Stop
+docker compose -f docker/docker-compose.yml down
 ```
 
-Ports are bound to `127.0.0.1` by default for security. Override via environment variables.
+**Smoke test after startup:**
+
+```bash
+curl http://localhost:8080/health  # → {"status":"ok","uptimeSeconds":N}
+curl -I http://localhost:3000/     # → HTTP/1.1 200 OK (React SPA)
+curl http://localhost:8765/health  # → {"status":"ok"}
+```
+
+Ports are bound to `127.0.0.1` by default for security. The dashboard's nginx instance reverse-proxies `/api/` and `/ws` to the simulation service, so all traffic can be addressed through port 3000.
+
+**Build individual images:**
+
+```bash
+docker build -f docker/Dockerfile -t forge-simulation .
+docker build -f docker/Dockerfile.dashboard -t forge-dashboard .
+docker build -f docker/Dockerfile.demo -t forge-demo .
+```
 
 ## Project Stats
 
@@ -399,10 +428,11 @@ Ports are bound to `127.0.0.1` by default for security. Override via environment
 | Python source | ~2,500 lines (wrappers, training, agents, utils) |
 | Examples, tests, scripts | ~4,500 lines |
 | Rust tests | 614 (unit + property-based + integration) |
-| Python tests | 71 (pytest) |
+| Python tests | 279 (pytest) |
 | Dependencies | See [`Cargo.toml`](Cargo.toml) for full list |
 
 ## Developed By
+
 Ian Cruickshank
 
 ## License

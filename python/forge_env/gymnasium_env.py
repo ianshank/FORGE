@@ -35,6 +35,7 @@ _DEFAULT_GRID_CHANNELS = 7  # OBS_FEATURES_PER_TILE
 _DEFAULT_CARRY_CAPACITY = 10  # DEFAULT_CARRY_CAPACITY
 _DEFAULT_NUM_DAY_PHASES = 4  # NUM_DAY_PHASES
 _DEFAULT_ACTION_N = 40  # Action::space_size(0) base actions with no comm
+_UINT16_MAX = 65535  # Maximum value for uint16 observation ranges
 
 
 class ForgeGymnasiumEnv:
@@ -87,16 +88,16 @@ class ForgeGymnasiumEnv:
                     low=0, high=255, shape=(view_h, view_w, channels), dtype=np.uint8
                 ),
                 "inventory": spaces.Box(
-                    low=0, high=65535, shape=(inv_capacity, 2), dtype=np.uint16
+                    low=0, high=_UINT16_MAX, shape=(inv_capacity, 2), dtype=np.uint16
                 ),
                 "health": spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32),
                 "stamina": spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32),
                 "position": spaces.Box(
-                    low=0, high=65535, shape=(2,), dtype=np.uint16
+                    low=0, high=_UINT16_MAX, shape=(2,), dtype=np.uint16
                 ),
                 "messages": spaces.Box(
                     low=0,
-                    high=65535,
+                    high=_UINT16_MAX,
                     shape=(native_obs_space.get("messages", {}).get("shape", (0,))),
                     dtype=np.uint16,
                 ),

@@ -159,6 +159,12 @@ class TestLoggingConfig:
             file_handlers = [h for h in root.handlers if isinstance(h, logging.FileHandler)]
             assert len(file_handlers) >= 1
         finally:
+            # Close and remove all file handlers before deletion (required on Windows).
+            root = logging.getLogger()
+            for h in list(root.handlers):
+                if isinstance(h, logging.FileHandler):
+                    h.close()
+                    root.removeHandler(h)
             Path(path).unlink(missing_ok=True)
 
     def test_json_formatter_output(self) -> None:

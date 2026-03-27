@@ -9,13 +9,19 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from forge_env.gymnasium_env import (
+    _DEFAULT_CARRY_CAPACITY,
+    _DEFAULT_GRID_CHANNELS,
+    _DEFAULT_VIEW_SIDE,
+)
+
 # ---------------------------------------------------------------------------
 # Mock observation data matching the native wrapper's expected structure.
 # ---------------------------------------------------------------------------
 
 MOCK_OBS: dict = {
-    "grid_view": [[[0] * 7] * 11] * 11,
-    "inventory": [[0, 0]] * 10,
+    "grid_view": [[[0] * _DEFAULT_GRID_CHANNELS] * _DEFAULT_VIEW_SIDE] * _DEFAULT_VIEW_SIDE,
+    "inventory": [[0, 0]] * _DEFAULT_CARRY_CAPACITY,
     "health": 0.8,
     "stamina": 0.9,
     "position": [5, 5],
@@ -24,10 +30,10 @@ MOCK_OBS: dict = {
 }
 
 NATIVE_OBS_SPACE: dict = {
-    "grid_view_height": 11,
-    "grid_view_width": 11,
-    "grid_view_channels": 7,
-    "inventory_capacity": 10,
+    "grid_view_height": _DEFAULT_VIEW_SIDE,
+    "grid_view_width": _DEFAULT_VIEW_SIDE,
+    "grid_view_channels": _DEFAULT_GRID_CHANNELS,
+    "inventory_capacity": _DEFAULT_CARRY_CAPACITY,
 }
 
 NATIVE_OBS_SPACE_WITH_MESSAGES: dict = {

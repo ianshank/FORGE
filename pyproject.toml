@@ -33,6 +33,7 @@ all     = [
 features = ["pyo3/extension-module"]
 module-name = "forge_env"
 python-source = "python"
+manifest-path = "crates/forge-python/Cargo.toml"
 
 [tool.ruff]
 target-version = "py39"
@@ -77,7 +78,11 @@ show_error_codes = true
 
 [[tool.mypy.overrides]]
 module = [
-    "forge_env.forge_env",
+    # forge_env is a native Rust extension (PyO3/maturin) with no type stubs.
+    # All submodules must be listed here so mypy/Pylance ignores missing stubs
+    # when the extension isn't built locally.
+    "forge_env",
+    "forge_env.*",
     "tomllib",
     "tomli",
     "jax",
@@ -102,10 +107,13 @@ module = [
     "mlflow.*",
 ]
 ignore_missing_imports = true
+# Prevent mypy from descending into third-party source files (e.g. torch uses
+# Python 3.10+ pattern matching which is incompatible with our py3.9 target).
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --cov=python --cov-report=term-missing --cov-fail-under=85"

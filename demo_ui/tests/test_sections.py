@@ -65,7 +65,7 @@ SECTION_KEYWORDS: dict[str, list[str]] = {
 @pytest.mark.parametrize("section", list(SECTION_KEYWORDS.keys()))
 async def test_section_produces_output(section: str) -> None:
     """Every section produces at least one non-empty output line."""
-    from demo_ui.backend.forge_runner import run_section  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import run_section
 
     lines = await collect_lines(run_section(section, seed=42, quick=True))
     non_empty = [line for line in lines if line.strip()]
@@ -76,7 +76,7 @@ async def test_section_produces_output(section: str) -> None:
 @pytest.mark.parametrize("section,keywords", list(SECTION_KEYWORDS.items()))
 async def test_section_contains_keywords(section: str, keywords: list[str]) -> None:
     """Each section's output contains its expected keywords."""
-    from demo_ui.backend.forge_runner import run_section  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import run_section
 
     lines = await collect_lines(run_section(section, seed=42, quick=True))
     combined = " ".join(lines)
@@ -90,7 +90,7 @@ async def test_section_contains_keywords(section: str, keywords: list[str]) -> N
 @pytest.mark.anyio
 async def test_section_does_not_crash_with_different_seed() -> None:
     """worldgen section runs cleanly with a non-default seed."""
-    from demo_ui.backend.forge_runner import run_section  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import run_section
 
     lines = await collect_lines(run_section("worldgen", seed=1337, quick=True))
     non_empty = [line for line in lines if line.strip()]
@@ -100,7 +100,7 @@ async def test_section_does_not_crash_with_different_seed() -> None:
 @pytest.mark.anyio
 async def test_unknown_section_returns_error() -> None:
     """Passing an unknown section key yields an ERROR line and terminates."""
-    from demo_ui.backend.forge_runner import run_section  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import run_section
 
     lines = await collect_lines(run_section("not_a_section", seed=42, quick=True))
     assert any("ERROR" in line for line in lines)
@@ -109,7 +109,7 @@ async def test_unknown_section_returns_error() -> None:
 @pytest.mark.anyio
 async def test_run_all_yields_section_markers() -> None:
     """run_all() yields __SECTION_START__ and __SECTION_END__ markers."""
-    from demo_ui.backend.forge_runner import run_all  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import run_all
 
     lines = await collect_lines(run_all(seed=42, quick=True))
     starts = [line for line in lines if "__SECTION_START__" in line]

@@ -1,0 +1,35 @@
+# FORGE Dashboard — Lightweight production container (nginx + static React build)
+# Multi-stage: build with Node, serve with nginx.
+
+# Stage 1: Build the React dashboard
+FROM node:20-bookworm-slim AS builder
+WORKDIR /build
+
+# Install deps using lockfile only — deterministic, fails if lockfile is missing
+COPY dashboard/package.json dashboard/package-lock.json ./
+RUN npm ci --ignore-scripts
+
+COPY dashboard/ ./
+RUN npm run build
+
+# Stage 2: Serve with nginx:alpine
+FROM nginx:1.27-alpine AS runtime
+
+# Remove default nginx config
+RUN rm /etc/nginx/conf.d/default.conf
+
+# Install wget for HEALTHCHECK (not included in nginx:alpine by default)
+RUN apk --no-cache add wget
+
+# Copy our custom nginx config (SPA routing + /api/ and /ws reverse proxy)
+COPY docker/nginx.conf /etc/nginx/conf.d/forge.conf
+
+# Copy built assets from Stage 1
+COPY --from=builder /build/dist/ /usr/share/nginx/html/
+
+EXPOSE 80
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://localhost/healthz || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -24,6 +24,7 @@ DEFAULT_LOG_INTERVAL = 10
 DEFAULT_EVAL_EPISODES = 10
 DEFAULT_ROLLOUT_LENGTH = 2048
 DEFAULT_MAX_EPISODE_STEPS = 512
+DEFAULT_CHECKPOINT_DIR = "checkpoints"
 
 
 @dataclass
@@ -117,7 +118,7 @@ class PPOTrainerConfig:
     checkpoint_interval: int = DEFAULT_CHECKPOINT_INTERVAL
     eval_interval: int = DEFAULT_EVAL_INTERVAL
     eval_episodes: int = DEFAULT_EVAL_EPISODES
-    checkpoint_dir: str = "checkpoints"
+    checkpoint_dir: str = DEFAULT_CHECKPOINT_DIR
 
     @classmethod
     def from_forge_config(cls, forge_config: Any) -> PPOTrainerConfig:

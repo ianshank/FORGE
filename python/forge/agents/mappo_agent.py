@@ -28,6 +28,7 @@ from forge.config import (
 )
 from forge.models.policy_network import ActorCriticNetwork
 from forge.utils.device import get_device
+from forge_env.wrappers import DEFAULT_REWARD_EPSILON
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +206,7 @@ class MAPPOAgent(BaseAgent):
 
         # Normalize advantages
         if advantages.numel() > 1:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            advantages = (advantages - advantages.mean()) / (advantages.std() + DEFAULT_REWARD_EPSILON)
 
         cfg = self.mappo_config
         n_samples = obs.shape[0]

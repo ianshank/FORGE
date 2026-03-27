@@ -13,7 +13,7 @@ import type {
 /** Root application component — FORGE Dashboard. */
 export function App() {
   const { state, connectionStatus } = useSimulationState();
-  const [selectedAgent, setSelectedAgent] = useState<AgentState | null>(null);
+  const [selectedAgent, _setSelectedAgent] = useState<AgentState | null>(null);
   const [metricsHistory] = useState<TrainingMetrics[]>([]);
 
   return (
@@ -23,13 +23,12 @@ export function App() {
         <h1 className="text-lg font-bold">FORGE Dashboard</h1>
         <div className="flex items-center gap-3 text-sm">
           <span
-            className={`inline-block w-2 h-2 rounded-full ${
-              connectionStatus === "connected"
+            className={`inline-block w-2 h-2 rounded-full ${connectionStatus === "connected"
                 ? "bg-green-500"
                 : connectionStatus === "connecting"
                   ? "bg-yellow-500"
                   : "bg-red-500"
-            }`}
+              }`}
           />
           <span className="text-gray-400">
             {connectionStatus === "connected"

@@ -68,7 +68,7 @@ def sample_results_md(tmp_path: Path) -> Path:
 @pytest.fixture()
 async def client() -> AsyncIterator[AsyncClient]:
     """AsyncClient over the FastAPI ASGI app."""
-    from demo_ui.backend.main import app  # noqa: PLC0415
+    from demo_ui.backend.main import app
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -82,7 +82,7 @@ async def client() -> AsyncIterator[AsyncClient]:
 
 def test_parse_results_md_structure(sample_results_md: Path) -> None:
     """parse_results_md returns the expected top-level keys."""
-    from demo_ui.backend.forge_runner import parse_results_md  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import parse_results_md
 
     result = parse_results_md(sample_results_md)
     assert "date" in result
@@ -95,7 +95,7 @@ def test_parse_results_md_structure(sample_results_md: Path) -> None:
 
 def test_parse_results_md_values(sample_results_md: Path) -> None:
     """parse_results_md extracts correct field values."""
-    from demo_ui.backend.forge_runner import parse_results_md  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import parse_results_md
 
     result = parse_results_md(sample_results_md)
     assert result["date"] == "2026-02-26"
@@ -106,7 +106,7 @@ def test_parse_results_md_values(sample_results_md: Path) -> None:
 
 def test_parse_results_md_sections(sample_results_md: Path) -> None:
     """parse_results_md extracts all 8 section statuses."""
-    from demo_ui.backend.forge_runner import parse_results_md  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import parse_results_md
 
     result = parse_results_md(sample_results_md)
     sections = result["sections"]
@@ -117,7 +117,7 @@ def test_parse_results_md_sections(sample_results_md: Path) -> None:
 
 def test_parse_results_md_performance(sample_results_md: Path) -> None:
     """parse_results_md extracts performance metrics."""
-    from demo_ui.backend.forge_runner import parse_results_md  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import parse_results_md
 
     result = parse_results_md(sample_results_md)
     perf = result["performance"]
@@ -127,7 +127,7 @@ def test_parse_results_md_performance(sample_results_md: Path) -> None:
 
 def test_parse_results_md_missing_file(tmp_path: Path) -> None:
     """parse_results_md returns error dict when file missing."""
-    from demo_ui.backend.forge_runner import parse_results_md  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import parse_results_md
 
     result = parse_results_md(tmp_path / "nonexistent.md")
     assert "error" in result
@@ -160,7 +160,7 @@ async def test_sections_endpoint_count(client: AsyncClient) -> None:
 @pytest.mark.anyio
 async def test_sections_endpoint_keys(client: AsyncClient) -> None:
     """GET /api/sections contains all expected section keys."""
-    from demo_ui.backend.forge_runner import SECTIONS  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import SECTIONS
 
     resp = await client.get("/api/sections")
     keys = {s["key"] for s in resp.json()}
@@ -219,14 +219,14 @@ async def test_run_all_returns_stream(client: AsyncClient) -> None:
 
 
 def test_sections_constant_is_dict() -> None:
-    from demo_ui.backend.forge_runner import SECTIONS  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import SECTIONS
 
     assert isinstance(SECTIONS, dict)
     assert len(SECTIONS) == 8
 
 
 def test_sections_constant_has_expected_keys() -> None:
-    from demo_ui.backend.forge_runner import SECTIONS  # noqa: PLC0415
+    from demo_ui.backend.forge_runner import SECTIONS
 
     expected = {
         "worldgen",

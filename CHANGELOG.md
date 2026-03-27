@@ -11,6 +11,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Python Coverage Expansion
+
+- Added `tests/python/test_device.py` to cover accelerator detection paths in `forge.utils.device`
+- Expanded `tests/python/test_mappo.py` with config-factory, auto-device, batched action, and `RandomPolicyNetwork` coverage
+- Expanded `tests/python/test_forge_env.py` to exercise `forge_env.__init__`, `forge_env.utils`, wrapper edge cases, and pure-Python fallback branches
+
+### Changed
+
+#### Python Gap Analysis Cleanup
+
+- Replaced remaining hard-coded Python values with named constants in the Gymnasium env wrapper, MAPPO reward normalization, trainer checkpoint defaults, dashboard client tests, and shared pytest fixtures
+- Enforced a Python coverage floor with `pytest --cov-fail-under=85` in `pyproject.toml`
+- Standardized Python test fixtures and assertions around exported wrapper constants instead of duplicated literals
+
+#### Docker Multi-Service Deployment (`docker/`)
+
+Production-ready Docker Compose stack with three independently deployed services:
+
+**Simulation Service** (`docker/Dockerfile`)
+
+- Upgraded Rust base image to `1.85` (required for `fixed` crate edition 2024)
+- Builds `forge-server` binary via multi-stage `rust:1.85-bookworm` → `python:3.11-slim-bookworm`
+- Builds `forge_env` native Python extension via `maturin build -m crates/forge-python/Cargo.toml`
+- `HEALTHCHECK` on `/health` endpoint with 15s interval, 3s timeout, 3 retries
+
+**Dashboard Service** (`docker/Dockerfile.dashboard`, `docker/nginx.conf`)
+
+- Dedicated `node:20 → nginx:1.27-alpine` multi-stage image (~40 MB vs monolithic)
+- Nginx serves the React SPA with SPA routing (all paths → `index.html`)
+- Reverse proxies `/api/` and `/ws` → `simulation:8080` for same-origin access
+- `/healthz` endpoint to satisfy Docker health checks
+
+**Demo UI Service** (`docker/Dockerfile.demo`)
+
+- No changes to the Dockerfile, but fully integrated into the new Compose stack
+- Exposed on `http://localhost:8765`
+
+**Orchestration** (`docker/docker-compose.yml`)
+
+- Bridge network `forge-net` for inter-service communication by name
+- Health-gated `depends_on`: dashboard + demo wait for `simulation` to be `healthy`
+- `restart: unless-stopped` for production resilience
+- All ports bound to `127.0.0.1` for security
+
+**Build Context** (`.dockerignore`)
+
+- Excludes `target/`, `node_modules/`, `.git/`, caches, and coverage artifacts
+
+#### Dashboard TypeScript Fixes
+
+- `tsconfig.json`: Added `"types": ["vite/client"]` for `import.meta.env` recognition
+- `tsconfig.node.json`: Added `"types": ["node"]` for `process.env` in `vite.config.ts`
+- `vite.config.ts`: Added `/// <reference types="vitest" />` triple-slash directive
+- `App.tsx`: Prefixed unused `setSelectedAgent` → `_setSelectedAgent` (`noUnusedLocals`)
+- `package.json`: Added `@types/node` devDependency
+
+#### Python Test Quality
+
+- Fixed `# noqa: PLC0415` directives across test files (ruff RUF100 auto-fix)
+- Fixed `TC003` in `test_gymnasium_env.py`: moved `Generator` import into `TYPE_CHECKING` block
+- Improved type annotations from `object` → specific env types (`ForgeGymnasiumEnv`, `ForgeParallelEnv`)
+
+### Deployment URLs
+
+After `docker compose -f docker/docker-compose.yml up -d`:
+
+| Service | URL | Health |
+|---------|-----|--------|
+| Simulation (Rust/Axum) | `http://localhost:8080` | `GET /health` |
+| Dashboard (React/nginx) | `http://localhost:3000` | nginx |
+| Demo UI (FastAPI) | `http://localhost:8765` | `GET /health` |
+
 #### Interactive Demo UI (`demo_ui/`)
 
 A full-stack interactive web application that streams the FORGE demo live in the browser.

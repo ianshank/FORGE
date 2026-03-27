@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -197,8 +198,6 @@ class ActorCriticNetwork:
 
     def save(self, path: str) -> None:
         """Save model weights to disk."""
-        from pathlib import Path  # noqa: PLC0415
-
         import torch  # noqa: PLC0415
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)

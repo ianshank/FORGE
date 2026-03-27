@@ -229,8 +229,6 @@ def seed_everything(seed: int) -> None:
     # Optional: seed PyTorch if installed
     try:
         import torch  # noqa: PLC0415
-
-        torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
     except ImportError:

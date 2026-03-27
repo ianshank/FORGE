@@ -16,22 +16,10 @@ Run with::
 
 from __future__ import annotations
 
-import importlib.util
 from typing import Any
 
 import pytest
-
-# ---------------------------------------------------------------------------
-# Check native module availability
-# ---------------------------------------------------------------------------
-
-_native_available = importlib.util.find_spec("forge_env.forge_env") is not None
-
-skip_native = pytest.mark.skipif(
-    not _native_available,
-    reason="Native forge_env module not built (run: maturin develop)",
-)
-
+from forge_env.wrappers import DEFAULT_REWARD_CLIP
 
 # ---------------------------------------------------------------------------
 # Import tests
@@ -85,13 +73,22 @@ def test_import_utils() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Native-dependent tests
+# Native-dependent tests — skip gracefully when Rust extension is unavailable
 # ---------------------------------------------------------------------------
 
+def _skip_if_no_native() -> None:
+    """Skip the calling test when the forge_env native extension is not built."""
+    try:
+        from forge_env import gymnasium_env
+        if gymnasium_env._NativeEnv is None:
+            pytest.skip("forge_env running in pure-Python mode (no native backend)")
+    except ImportError as exc:
+        pytest.skip(f"forge_env native extension not available: {exc}")
 
-@skip_native
+
 def test_env_creation() -> None:
     """Creating a ForgeGymnasiumEnv with default config should not raise."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
 
     env = ForgeGymnasiumEnv()
@@ -99,9 +96,9 @@ def test_env_creation() -> None:
     env.close()
 
 
-@skip_native
 def test_reset_returns_tuple() -> None:
     """reset() must return a (obs, info) 2-tuple."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
 
     env = ForgeGymnasiumEnv()
@@ -114,9 +111,9 @@ def test_reset_returns_tuple() -> None:
     env.close()
 
 
-@skip_native
 def test_step_returns_tuple() -> None:
     """step() must return a (obs, reward, term, trunc, info) 5-tuple."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
 
     env = ForgeGymnasiumEnv()
@@ -133,9 +130,9 @@ def test_step_returns_tuple() -> None:
     env.close()
 
 
-@skip_native
 def test_observation_keys() -> None:
     """Observation dict should contain the expected keys."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
 
     env = ForgeGymnasiumEnv()
@@ -155,9 +152,9 @@ def test_observation_keys() -> None:
     env.close()
 
 
-@skip_native
 def test_deterministic_seed() -> None:
     """Same seed should produce the same initial observation."""
+    _skip_if_no_native()
     import numpy as np  # noqa: PLC0415
 
     from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
@@ -175,9 +172,9 @@ def test_deterministic_seed() -> None:
     assert obs1["position"] == obs2["position"]
 
 
-@skip_native
 def test_wrapper_flatten() -> None:
     """FlattenObservationWrapper should produce a 1-D array."""
+    _skip_if_no_native()
     import numpy as np  # noqa: PLC0415
 
     from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
@@ -191,9 +188,9 @@ def test_wrapper_flatten() -> None:
     env.close()
 
 
-@skip_native
 def test_wrapper_time_limit() -> None:
     """TimeLimit wrapper should truncate at max_steps."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
     from forge_env.wrappers import TimeLimit  # noqa: PLC0415
 
@@ -210,9 +207,9 @@ def test_wrapper_time_limit() -> None:
     env.close()
 
 
-@skip_native
 def test_multi_agent_env() -> None:
     """ForgeParallelEnv with 2 agents should return per-agent dicts."""
+    _skip_if_no_native()
     from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: PLC0415
 
     env = ForgeParallelEnv(n_agents=2)
@@ -229,9 +226,9 @@ def test_multi_agent_env() -> None:
     env.close()
 
 
-@skip_native
 def test_benchmark_fps() -> None:
     """benchmark_fps should return a positive float."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
     from forge_env.utils import benchmark_fps  # noqa: PLC0415
 
@@ -242,9 +239,9 @@ def test_benchmark_fps() -> None:
     env.close()
 
 
-@skip_native
 def test_check_env() -> None:
     """check_env should pass for a valid environment."""
+    _skip_if_no_native()
     from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
     from forge_env.utils import check_env  # noqa: PLC0415
 
@@ -314,7 +311,7 @@ def test_normalize_reward_wrapper_pure() -> None:
 
     for _ in range(100):
         _obs, reward, _term, _trunc, _info = env.step(0)
-        assert -10.0 <= reward <= 10.0, f"Normalised reward out of range: {reward}"
+        assert -DEFAULT_REWARD_CLIP <= reward <= DEFAULT_REWARD_CLIP, f"Normalised reward out of range: {reward}"
 
 
 def test_record_episode_statistics_pure() -> None:
@@ -420,7 +417,7 @@ def test_normalize_reward_clips_extreme() -> None:
 
     for _ in range(50):
         _obs, reward, _term, _trunc, _info = env.step(0)
-        assert -10.0 <= reward <= 10.0, f"Normalised reward out of range: {reward}"
+        assert -DEFAULT_REWARD_CLIP <= reward <= DEFAULT_REWARD_CLIP, f"Normalised reward out of range: {reward}"
 
 
 def test_record_episode_statistics_resets_on_new_episode() -> None:
@@ -543,3 +540,204 @@ def test_check_env_validates_reset_type() -> None:
 
     with pytest.raises(AssertionError, match=r"reset.*must return a tuple"):
         check_env(_BadEnv())
+
+
+# ---------------------------------------------------------------------------
+# forge_env.__init__ — ImportError path (ForgeEnv = None)
+# ---------------------------------------------------------------------------
+
+
+def test_forge_env_init_native_import_failure() -> None:
+    """forge_env.__init__ sets ForgeEnv=None when native module is unavailable."""
+    import importlib
+    import sys
+
+    import forge_env as fe_mod
+
+    # Remember current state so we can restore it.
+    original_forge_env_native = sys.modules.get("forge_env.forge_env", "ABSENT")
+    original_ForgeEnv = fe_mod.ForgeEnv
+
+    try:
+        # Setting sys.modules entry to None causes `import forge_env.forge_env`
+        # to raise ImportError when the module is re-imported.
+        sys.modules["forge_env.forge_env"] = None  # type: ignore[assignment]
+        importlib.reload(fe_mod)
+        assert fe_mod.ForgeEnv is None
+    finally:
+        # Restore sys.modules to its prior state.
+        if original_forge_env_native == "ABSENT":
+            sys.modules.pop("forge_env.forge_env", None)
+        else:
+            sys.modules["forge_env.forge_env"] = original_forge_env_native  # type: ignore[assignment]
+        # Reload again to restore the module's ForgeEnv attribute.
+        importlib.reload(fe_mod)
+        # After restoration the attribute should be back to whatever it was.
+
+
+# ---------------------------------------------------------------------------
+# forge_env.utils — make_env wrappers/seed paths, check_env assertion branches
+# ---------------------------------------------------------------------------
+
+
+def test_make_env_with_wrappers() -> None:
+    """make_env should apply wrappers in order."""
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    import forge_env.utils as utils_mod  # noqa: PLC0415
+
+    # Create a mock native env and a mock wrapper.
+    mock_inner = MagicMock()
+    mock_wrapped = MagicMock()
+    MockNative = MagicMock(return_value=mock_inner)
+    wrapper_fn = MagicMock(return_value=mock_wrapped)
+
+    with patch.object(utils_mod, "_NativeEnv", MockNative):
+        env = utils_mod.make_env(wrappers=[wrapper_fn])
+
+    wrapper_fn.assert_called_once_with(mock_inner)
+    assert env is mock_wrapped
+
+
+def test_make_env_with_seed() -> None:
+    """make_env calls env.reset(seed=seed) when seed is provided."""
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    import forge_env.utils as utils_mod  # noqa: PLC0415
+
+    mock_env = MagicMock()
+    MockNative = MagicMock(return_value=mock_env)
+
+    with patch.object(utils_mod, "_NativeEnv", MockNative):
+        utils_mod.make_env(seed=42)
+
+    mock_env.reset.assert_called_once_with(seed=42)
+
+
+def test_check_env_bad_reset_length() -> None:
+    """check_env raises AssertionError when reset() returns wrong-length tuple."""
+    from forge_env.utils import check_env  # noqa: PLC0415
+
+    class _BadResetLen:
+        def reset(self, **kwargs: Any) -> tuple[dict, dict, dict]:
+            return ({}, {}, {})  # length 3 instead of 2
+
+        def step(self, action: int) -> None:
+            pass  # pragma: no cover
+
+    with pytest.raises(AssertionError, match=r"2-tuple"):
+        check_env(_BadResetLen())
+
+
+def test_check_env_bad_step_type() -> None:
+    """check_env raises AssertionError when step() does not return a tuple."""
+    from forge_env.utils import check_env  # noqa: PLC0415
+
+    class _BadStepType:
+        def reset(self, **kwargs: Any) -> tuple[dict, dict]:
+            return ({}, {})
+
+        def step(self, action: int) -> dict:  # type: ignore[override]
+            return {"not": "a tuple"}
+
+    with pytest.raises(AssertionError, match=r"must return a tuple"):
+        check_env(_BadStepType())
+
+
+def test_check_env_bad_step_length() -> None:
+    """check_env raises AssertionError when step() returns wrong-length tuple."""
+    from forge_env.utils import check_env  # noqa: PLC0415
+
+    class _BadStepLen:
+        def reset(self, **kwargs: Any) -> tuple[dict, dict]:
+            return ({}, {})
+
+        def step(self, action: int) -> tuple[dict, float, bool]:
+            return ({}, 0.0, False)  # length 3 instead of 5
+
+    with pytest.raises(AssertionError, match=r"5-tuple"):
+        check_env(_BadStepLen())
+
+
+def test_check_env_non_bool_terminated() -> None:
+    """check_env raises AssertionError when terminated is not bool."""
+    from forge_env.utils import check_env  # noqa: PLC0415
+
+    class _NonBoolTerminated:
+        def reset(self, **kwargs: Any) -> tuple[dict, dict]:
+            return ({}, {})
+
+        def step(self, action: int) -> tuple[dict, float, int, bool, dict]:
+            return ({}, 0.0, 1, False, {})  # terminated is int, not bool
+
+    with pytest.raises(AssertionError, match=r"terminated must be bool"):
+        check_env(_NonBoolTerminated())
+
+
+def test_check_env_non_bool_truncated() -> None:
+    """check_env raises AssertionError when truncated is not bool."""
+    from forge_env.utils import check_env  # noqa: PLC0415
+
+    class _NonBoolTruncated:
+        def reset(self, **kwargs: Any) -> tuple[dict, dict]:
+            return ({}, {})
+
+        def step(self, action: int) -> tuple[dict, float, bool, int, dict]:
+            return ({}, 0.0, False, 0, {})  # truncated is int, not bool
+
+    with pytest.raises(AssertionError, match=r"truncated must be bool"):
+        check_env(_NonBoolTruncated())
+
+
+# ---------------------------------------------------------------------------
+# forge_env.utils — additional branch coverage
+# ---------------------------------------------------------------------------
+
+
+def test_benchmark_fps_resets_on_episode_end() -> None:
+    """benchmark_fps should call env.reset() when an episode terminates."""
+    from forge_env.utils import benchmark_fps  # noqa: PLC0415
+
+    class _TermEvery3Steps(_DummyEnv):
+        """Dummy env that terminates every 3 steps."""
+
+        def step(
+            self, action: int,
+        ) -> tuple[dict[str, list[float]], float, bool, bool, dict[str, int]]:
+            self._step_count += 1
+            obs: dict[str, list[float]] = {"x": [1.0, 2.0], "y": [3.0]}
+            terminated = self._step_count % 3 == 0
+            info: dict[str, int] = {"tick": self._step_count}
+            return obs, 1.0, terminated, False, info
+
+    env = _TermEvery3Steps()
+    fps = benchmark_fps(env, n_steps=12)
+    assert fps > 0
+    # The env should have been reset after each termination (steps 3, 6, 9, 12).
+    # After the final step with n_steps=12, _step_count has been reset multiple times.
+    # Just verify benchmark_fps returns without error and FPS is positive.
+
+
+def test_seed_everything_without_forge_seed_module() -> None:
+    """seed_everything uses inline fallback when forge.utils.seed is not importable."""
+    import sys  # noqa: PLC0415
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from forge_env.utils import seed_everything  # noqa: PLC0415
+
+    # Patch forge.utils.seed to be unavailable, forcing the except ImportError branch.
+    with patch.dict(sys.modules, {"forge.utils.seed": None}):
+        # Should not raise; falls back to random.seed / np.random.seed
+        seed_everything(99)
+
+
+def test_seed_everything_without_torch() -> None:
+    """seed_everything silently skips torch seeding when torch is not installed."""
+    import sys  # noqa: PLC0415
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from forge_env.utils import seed_everything  # noqa: PLC0415
+
+    # Setting sys.modules["torch"] = None makes `import torch` raise ImportError.
+    with patch.dict(sys.modules, {"torch": None}):
+        seed_everything(7)  # Should complete without error

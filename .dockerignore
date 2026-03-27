@@ -1,0 +1,31 @@
+# Build artifacts
+target/
+node_modules/
+dashboard/dist/
+demo_ui/.mypy_cache/
+
+# Caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+.benchmarks/
+.coverage
+
+# VCS & IDE
+.git/
+.github/
+.vscode/
+*.swp
+*.swo
+
+# Test output
+test-results/
+coverage/
+*.profraw
+
+# Dev files
+.claude/
+.gemini/
+Agent.md
+CLAUDE.md

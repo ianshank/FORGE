@@ -136,6 +136,74 @@ Shows the major containers (deployable units) within FORGE.
 
 ---
 
+### 2.1 Docker Deployment Architecture
+
+The production deployment packages FORGE as three Docker containers orchestrated via Compose.
+
+```
+  User Browser                Developer / RL Researcher
+       │                              │
+       │ http://localhost:3000        │ http://localhost:8765
+       ▼                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                       forge-net (bridge)                          │
+│                                                                   │
+│  ┌───────────────────────┐   ┌──────────────────────────────┐    │
+│  │  dashboard            │   │  demo                        │    │
+│  │  nginx:1.27-alpine    │   │  python:3.11-slim            │    │
+│  │                       │   │                              │    │
+│  │  :80 ──► host:3000    │   │  :8765 ──► host:8765        │    │
+│  │                       │   │                              │    │
+│  │  Serves React SPA     │   │  FastAPI/uvicorn             │    │
+│  │  /api/ ──────────────┐│   │  SSE demo streams            │    │
+│  │  /ws   ──────────────┤│   │                              │    │
+│  └──────────────────────┼┘   └─────────────┬────────────────┘    │
+│                         │                  │                      │
+│                         │ proxy to         │ HTTP/WS to sim svc   │
+│                         ▼                  ▼                      │
+│              ┌───────────────────────────────────┐               │
+│              │  simulation                        │               │
+│              │  rust:1.85-bookworm (build)        │               │
+│              │  python:3.11-slim  (runtime)       │               │
+│              │                                    │               │
+│              │  :8080 ──► host:8080              │               │
+│              │                                    │               │
+│              │  forge-server (Axum HTTP/WS)       │               │
+│              │  forge_env.so (PyO3 native ext.)   │               │
+│              │                                    │               │
+│              │  GET /health   → {"status":"ok"}   │               │
+│              │  GET /api/config, /api/metrics     │               │
+│              │  WS  /ws       → live state        │               │
+│              └───────────────────────────────────┘               │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Startup sequence** (health-gated):
+
+1. `simulation` starts → waits for `/health` to return 200 (up to 3×15s retries)
+2. `dashboard` and `demo` start only after `simulation` is **healthy**
+
+**Ports** (all bound to `127.0.0.1`):
+
+| Container | Internal | Host | Protocol |
+|-----------|----------|------|----------|
+| simulation | 8080 | 8080 | HTTP/WS |
+| dashboard | 80 | 3000 | HTTP |
+| demo | 8765 | 8765 | HTTP/SSE |
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `docker/Dockerfile` | `rust:1.85` build → `python:3.11-slim` runtime; maturin native ext |
+| `docker/Dockerfile.dashboard` | `node:20` build → `nginx:1.27-alpine` serve |
+| `docker/Dockerfile.demo` | `python:3.11-slim`; FastAPI/uvicorn |
+| `docker/docker-compose.yml` | Three-service orchestration with health gates |
+| `docker/nginx.conf` | SPA routing + `/api/` and `/ws` reverse proxy |
+| `.dockerignore` | Excludes `target/`, `node_modules/`, `.git/` |
+
+---
+
 ## Level 3: Component Diagram
 
 ### 3.1 forge-core — Simulation Engine
@@ -672,7 +740,28 @@ FORGE guarantees that `same seed + same actions = byte-identical state`:
 └──────────────────────────────────────────────────────┘
 ```
 
-### 4.4 Action Space Encoding
+### 4.4 Python Test Architecture
+
+The Python surface is validated in layers so wrapper logic, pure-Python fallbacks, and training utilities can evolve without depending on a fully built native extension in every test.
+
+```
+tests/python/
+├── conftest.py                 Shared fixtures built from exported defaults
+├── test_forge_env.py           Wrapper contracts, fallback imports, utils branches
+├── test_mappo.py               MAPPO config factories, policy behavior, batch actions
+├── test_device.py              CPU/CUDA/MPS detection without hardware dependencies
+├── test_dashboard_client.py    Dashboard client contract tests
+└── ...                         Module-focused tests for wrappers, config, and training
+```
+
+Test layering keeps the suite fast and deterministic:
+
+- Pure-Python tests validate wrapper bookkeeping, reward normalization bounds, and helper utilities without requiring the Rust extension
+- Native-optional tests call `_skip_if_no_native()` so CI can still execute the Python suite when the extension is unavailable
+- Import/device branches are tested with module patching instead of machine-specific hardware assumptions
+- Shared constants in fixtures and assertions keep config defaults aligned with production modules instead of duplicating literals
+
+### 4.5 Action Space Encoding
 
 ```
 Index:  0   1   2   3   4   5   6 ··· 15  16 ··· 25  26 ··· 34  35 36 37 38  39  40 ···
@@ -683,7 +772,7 @@ Index:  0   1   2   3   4   5   6 ··· 15  16 ··· 25  26 ··· 34  35 36 3
                                                                    act
 ```
 
-### 4.5 Biome Classification
+### 4.6 Biome Classification
 
 ```
      Elevation

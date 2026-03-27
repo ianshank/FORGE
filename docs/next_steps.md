@@ -6,7 +6,20 @@ Post-demo-UI priorities, roughly in order of impact.
 
 ## Immediate (v0.2)
 
-### 1. Playwright E2E Browser Tests
+### 1. Python Gap Analysis Follow-Through
+
+The Python gap-analysis pass is now in place:
+
+- Hard-coded Python defaults were moved behind named constants where they affect env wrappers, MAPPO reward normalization, trainer checkpoint paths, and shared test fixtures
+- Coverage now fails below 85% for the Python package surface
+- Under-covered Python modules now have dedicated tests for device selection, env utility fallback branches, and MAPPO config factories
+
+Next follow-through work:
+
+- Add CI reporting that publishes Python coverage artifacts on pull requests
+- Split slow native-backed Python tests from pure-Python branch coverage tests for faster local iteration
+
+### 2. Playwright E2E Browser Tests
 
 Add `playwright`-based end-to-end tests for the demo UI to validate:
 
@@ -20,7 +33,7 @@ Add `playwright`-based end-to-end tests for the demo UI to validate:
 demo_ui/tests/test_e2e_browser.py
 ```
 
-### 2. GitHub Actions CI for Demo UI
+### 3. GitHub Actions CI for Demo UI
 
 Extend `.github/workflows/` to include:
 
@@ -29,25 +42,28 @@ Extend `.github/workflows/` to include:
 - Smoke-test the server with `httpx` (headless)
 - Cache `pip` installs for faster runs
 
-### 3. Docker Container for Demo UI
+### 4. ✅ Docker Container for Demo UI — COMPLETED
 
-Package the entire demo UI into a single Docker image for zero-setup deployment:
+The full three-service Docker Compose stack is now deployed:
 
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /forge
-COPY demo_ui/ demo_ui/
-COPY examples/ examples/
-COPY demo_results.md .
-RUN pip install -r demo_ui/backend/requirements.txt
-CMD ["python", "-m", "uvicorn", "demo_ui.backend.main:app", "--host", "0.0.0.0", "--port", "8765"]
-```
+- `docker/Dockerfile.dashboard` — React SPA served via nginx:alpine
+- `docker/Dockerfile` — Rust simulation server + forge_env native extension
+- `docker/Dockerfile.demo` — FastAPI demo UI
+- `docker/docker-compose.yml` — Orchestration with health-gated `depends_on`, bridge network, restart policies
+- `docker/nginx.conf` — SPA routing + reverse proxy for `/api/` and `/ws`
+- `.dockerignore` — Optimized build contexts
+
+**New Docker next steps:**
+
+- Publish images to Docker Hub (`ianshank/forge-simulation`, `forge-dashboard`, `forge-demo`)
+- Add multi-arch builds (`linux/amd64` + `linux/arm64`) via `docker buildx`
+- Tag images on GitHub release with semantic versions
 
 ---
 
 ## Near-term (v0.3)
 
-### 4. GitHub Pages / WASM Live Demo
+### 5. GitHub Pages / WASM Live Demo
 
 Compile `forge-wasm` and serve a **fully-static** demo directly from `gh-pages`:
 
@@ -55,7 +71,7 @@ Compile `forge-wasm` and serve a **fully-static** demo directly from `gh-pages`:
 - Replace the SSE backend with in-browser WASM calls
 - Enables public shareable demo link
 
-### 5. Benchmark Regression Tracking
+### 6. Benchmark Regression Tracking
 
 Integrate `forge-bench` Criterion results into the demo UI's stats panel:
 
@@ -63,7 +79,7 @@ Integrate `forge-bench` Criterion results into the demo UI's stats panel:
 - Plot step-throughput over releases
 - Flag regressions (>5% slowdown) as PR failures
 
-### 6. Replay / Record Mode
+### 7. Replay / Record Mode
 
 Allow the demo UI to:
 
@@ -75,7 +91,7 @@ Allow the demo UI to:
 
 ## Longer-term (v1.0)
 
-### 7. REST API for External Integrations
+### 8. REST API for External Integrations
 
 Expose FORGE as a proper REST service so external tools (notebooks, ML frameworks) can drive it:
 
@@ -85,7 +101,7 @@ POST /api/env/step           {"action": 1}
 GET  /api/env/render         → returns ASCII + grid JSON
 ```
 
-### 8. Multi-Agent Dashboard
+### 9. Multi-Agent Dashboard
 
 Extend the demo UI world canvas to show:
 
@@ -93,7 +109,7 @@ Extend the demo UI world canvas to show:
 - Communication token visualization
 - Reward curves per agent
 
-### 9. Task Curriculum Visualizer
+### 10. Task Curriculum Visualizer
 
 Add a dedicated UI panel for the task system:
 
@@ -101,7 +117,7 @@ Add a dedicated UI panel for the task system:
 - Curriculum tier distribution histogram
 - Live success/failure rate as the agent trains
 
-### 10. SB3 / Cleanrl Training Integration
+### 11. SB3 / Cleanrl Training Integration
 
 Add example scripts and CI integration for:
 
@@ -121,3 +137,5 @@ Add example scripts and CI integration for:
 | `demo_ui` as installable package | Medium | `pip install -e demo_ui/` makes imports cleaner |
 | Section-level output parsing | Low | Parse structured data from `forge_demo.py` for richer stats |
 | `run_demo.ps1` → `run_demo.sh` cross-platform | Medium | Add Bash launcher for Linux/macOS users |
+| Python coverage gate maintenance | Medium | Keep new modules above the 85% floor as Python surface area grows |
+| Native vs pure-Python test split | Medium | Separate fast branch-coverage tests from extension-backed integration tests |
