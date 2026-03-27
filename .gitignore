@@ -6,7 +6,7 @@ node_modules/
 # Rust
 /target/
 **/*.rs.bk
-Cargo.lock
+# Cargo.lock is tracked so builds are reproducible (recommended for applications)
 
 # Python
 __pycache__/
@@ -73,3 +73,16 @@ docker/dist/
 htmlcov/
 .coverage
 coverage.xml
+coverage/
+
+# Local test output / build artifacts
+test-results/
+test_output.txt
+test_results.txt
+pytest_out.txt
+maturin_out.txt
+maturin_err.txt
+coverage.json
+
+# Copilot memory workspace state
+/memories/

@@ -36,7 +36,8 @@ A high-performance simulation platform for training and evaluating AI agents, bu
 - **Cross-platform**: Native Python bindings (PyO3/maturin) and WebAssembly bindings (wasm-bindgen)
 - **Zero allocation hot path**: `WorldState::step()` is designed to avoid heap allocation
 - **Structured tracing**: `#[instrument]` on public functions throughout with `tracing` crate
-- **685+ tests**: 614 Rust + 71 Python tests with property-based testing via `proptest`
+- **893+ tests**: 614 Rust + 279 Python tests with property-based testing via `proptest`
+- **Coverage-gated Python CI**: `pytest` now enforces `--cov-fail-under=85` for the Python package surface
 
 ## Quick Start
 
@@ -427,7 +428,7 @@ docker build -f docker/Dockerfile.demo -t forge-demo .
 | Python source | ~2,500 lines (wrappers, training, agents, utils) |
 | Examples, tests, scripts | ~4,500 lines |
 | Rust tests | 614 (unit + property-based + integration) |
-| Python tests | 71 (pytest) |
+| Python tests | 279 (pytest) |
 | Dependencies | See [`Cargo.toml`](Cargo.toml) for full list |
 
 ## Developed By

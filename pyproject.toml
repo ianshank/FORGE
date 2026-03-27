@@ -15,6 +15,7 @@ classifiers = [
 features = ["pyo3/extension-module"]
 module-name = "forge_env"
 python-source = "python"
+manifest-path = "crates/forge-python/Cargo.toml"
 
 [tool.ruff]
 target-version = "py39"
@@ -84,10 +85,13 @@ module = [
     "httpx.*",
 ]
 ignore_missing_imports = true
+# Prevent mypy from descending into third-party source files (e.g. torch uses
+# Python 3.10+ pattern matching which is incompatible with our py3.9 target).
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --cov=python --cov-report=term-missing --cov-fail-under=85"

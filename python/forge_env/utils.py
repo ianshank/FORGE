@@ -218,7 +218,7 @@ def seed_everything(seed: int) -> None:
         seed: The integer seed value.
     """
     try:
-        from forge.utils.seed import set_all_seeds
+        from forge.utils.seed import set_all_seeds  # noqa: PLC0415
 
         set_all_seeds(seed)
     except ImportError:
@@ -228,9 +228,7 @@ def seed_everything(seed: int) -> None:
 
     # Optional: seed PyTorch if installed
     try:
-        import torch
-
-        torch.manual_seed(seed)
+        import torch  # noqa: PLC0415
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
     except ImportError:

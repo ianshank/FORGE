@@ -9,6 +9,8 @@ from forge.utils.dashboard_client import DashboardClient, _to_camel_case
 
 logger = logging.getLogger(__name__)
 
+_TEST_BASE_URL = "http://localhost:8080"
+
 
 # ---------------------------------------------------------------------------
 # _to_camel_case tests
@@ -56,7 +58,7 @@ def mock_httpx_client() -> MagicMock:
 @pytest.fixture()
 def dashboard(mock_httpx_client: MagicMock) -> DashboardClient:
     """Return a DashboardClient with a pre-injected mock session."""
-    dc = DashboardClient("http://localhost:8080")
+    dc = DashboardClient(_TEST_BASE_URL)
     dc._session = mock_httpx_client
     return dc
 
@@ -77,7 +79,7 @@ class TestDashboardClient:
 
         assert result is True
         mock_httpx_client.post.assert_called_once_with(
-            "http://localhost:8080/api/training-metrics",
+            f"{_TEST_BASE_URL}/api/training-metrics",
             json={"meanReward": 3.14, "episode": 10},
         )
 
@@ -107,7 +109,7 @@ class TestDashboardClient:
             {"agentId": 1, "tick": 6, "intentLabel": "move"},
         ]
         mock_httpx_client.post.assert_called_once_with(
-            "http://localhost:8080/api/decision-traces",
+            f"{_TEST_BASE_URL}/api/decision-traces",
             json=expected_payload,
         )
 
@@ -119,7 +121,7 @@ class TestDashboardClient:
 
         assert result is True
         mock_httpx_client.post.assert_called_once_with(
-            "http://localhost:8080/api/decision-traces",
+            f"{_TEST_BASE_URL}/api/decision-traces",
             json=[],
         )
 
@@ -134,14 +136,14 @@ class TestDashboardClient:
 
     def test_close_without_session(self) -> None:
         """Closing without a session does not raise."""
-        dc = DashboardClient("http://localhost:8080")
+        dc = DashboardClient(_TEST_BASE_URL)
         assert dc._session is None
         dc.close()  # should not raise
         assert dc._session is None
 
     def test_lazy_session_creation(self) -> None:
         """Session is not created at construction time."""
-        dc = DashboardClient("http://localhost:8080")
+        dc = DashboardClient(_TEST_BASE_URL)
         assert dc._session is None
 
     @patch("forge.utils.dashboard_client.httpx", create=True)
@@ -155,7 +157,7 @@ class TestDashboardClient:
         mock_client_instance.post.return_value = response
         mock_httpx_mod.Client.return_value = mock_client_instance
 
-        dc = DashboardClient("http://localhost:8080")
+        dc = DashboardClient(_TEST_BASE_URL)
         assert dc._session is None
 
         with patch.dict("sys.modules", {"httpx": mock_httpx_mod}):

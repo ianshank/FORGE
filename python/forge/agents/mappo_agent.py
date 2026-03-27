@@ -16,6 +16,7 @@ import numpy as np
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.models.policy_network import ActorCriticNetwork
 from forge.utils.device import get_device
+from forge_env.wrappers import DEFAULT_REWARD_EPSILON
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ class MAPPOAgent(BaseAgent):
         Returns:
             (action_id, info_dict) where info_dict contains log_prob and value.
         """
-        import torch
+        import torch  # noqa: PLC0415
 
         self.network.eval_mode()
         with torch.no_grad():
@@ -150,7 +151,7 @@ class MAPPOAgent(BaseAgent):
             entropies: Shape (batch,).
             values: Shape (batch,).
         """
-        import torch
+        import torch  # noqa: PLC0415
 
         self.network.eval_mode()
         with torch.no_grad():
@@ -181,7 +182,7 @@ class MAPPOAgent(BaseAgent):
         Returns:
             Dict of training metrics.
         """
-        import torch
+        import torch  # noqa: PLC0415
 
         self.network.train_mode()
         device = torch.device(self._device)
@@ -196,7 +197,7 @@ class MAPPOAgent(BaseAgent):
 
         # Normalize advantages
         if advantages.numel() > 1:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            advantages = (advantages - advantages.mean()) / (advantages.std() + DEFAULT_REWARD_EPSILON)
 
         cfg = self.mappo_config
         n_samples = obs.shape[0]

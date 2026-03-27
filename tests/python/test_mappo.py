@@ -303,3 +303,202 @@ class TestPPOTrainer:
         for m in metrics_list:
             for k, v in m.items():
                 assert np.isfinite(v), f"Non-finite metric: {k}={v}"
+
+
+# ---------------------------------------------------------------------------
+# MAPPOConfig.from_forge_config
+# ---------------------------------------------------------------------------
+
+
+class TestMAPPOConfigFromForgeConfig:
+    """Tests for MAPPOConfig.from_forge_config()."""
+
+    def test_from_forge_config_defaults(self) -> None:
+        """from_forge_config with default ForgeConfig should populate all fields."""
+        from forge.config import ForgeConfig  # noqa: PLC0415
+
+        forge_cfg = ForgeConfig.from_dict({})
+        mappo_cfg = MAPPOConfig.from_forge_config(forge_cfg)
+
+        tc = forge_cfg.training
+        assert mappo_cfg.learning_rate == tc.learning_rate
+        assert mappo_cfg.gamma == tc.gamma
+        assert mappo_cfg.gae_lambda == tc.gae_lambda
+        assert mappo_cfg.clip_ratio == tc.clip_ratio
+        assert mappo_cfg.epochs == tc.epochs
+        assert mappo_cfg.batch_size == tc.batch_size
+        assert mappo_cfg.entropy_coeff == tc.entropy_coeff
+        assert mappo_cfg.value_coeff == tc.value_coeff
+        assert mappo_cfg.max_grad_norm == tc.max_grad_norm
+
+    def test_from_forge_config_custom_values(self) -> None:
+        """from_forge_config should propagate non-default training values."""
+        from forge.config import ForgeConfig  # noqa: PLC0415
+
+        forge_cfg = ForgeConfig.from_dict(
+            {"training": {"learning_rate": 1e-3, "gamma": 0.95, "epochs": 8}}
+        )
+        mappo_cfg = MAPPOConfig.from_forge_config(forge_cfg)
+
+        assert mappo_cfg.learning_rate == pytest.approx(1e-3)
+        assert mappo_cfg.gamma == pytest.approx(0.95)
+        assert mappo_cfg.epochs == 8
+
+
+# ---------------------------------------------------------------------------
+# PPOTrainerConfig.from_forge_config
+# ---------------------------------------------------------------------------
+
+
+class TestPPOTrainerConfigFromForgeConfig:
+    """Tests for PPOTrainerConfig.from_forge_config()."""
+
+    def test_from_forge_config_defaults(self) -> None:
+        """from_forge_config with default ForgeConfig should populate fields."""
+        from forge.config import ForgeConfig  # noqa: PLC0415
+
+        forge_cfg = ForgeConfig.from_dict({})
+        trainer_cfg = PPOTrainerConfig.from_forge_config(forge_cfg)
+
+        assert trainer_cfg.rollout_length == forge_cfg.training.rollout_length
+        assert trainer_cfg.max_episode_steps == forge_cfg.simulation.max_episode_length
+        assert trainer_cfg.checkpoint_interval == forge_cfg.training.checkpoint_interval
+
+    def test_from_forge_config_custom_values(self) -> None:
+        """from_forge_config should propagate non-default values."""
+        from forge.config import ForgeConfig  # noqa: PLC0415
+
+        forge_cfg = ForgeConfig.from_dict(
+            {
+                "training": {"rollout_length": 512, "checkpoint_interval": 50},
+                "simulation": {"max_episode_length": 200},
+            }
+        )
+        trainer_cfg = PPOTrainerConfig.from_forge_config(forge_cfg)
+
+        assert trainer_cfg.rollout_length == 512
+        assert trainer_cfg.max_episode_steps == 200
+        assert trainer_cfg.checkpoint_interval == 50
+
+
+# ---------------------------------------------------------------------------
+# MAPPOAgent with device="auto"
+# ---------------------------------------------------------------------------
+
+
+class TestMAPPOAgentDeviceAuto:
+    """Tests for MAPPOAgent initialised with device='auto'."""
+
+    def test_device_auto_calls_get_device(self) -> None:
+        """MAPPOAgent with device='auto' should call get_device() to resolve it."""
+        from unittest.mock import patch  # noqa: PLC0415
+
+        with patch("forge.agents.mappo_agent.get_device", return_value="cpu") as mock_gd:
+            config = MAPPOConfig(
+                obs_dim=OBS_DIM,
+                action_dim=ACTION_DIM,
+                hidden_sizes=list(HIDDEN_SIZES),
+                device="auto",
+            )
+            agent = MAPPOAgent(config)
+            mock_gd.assert_called_once()
+            assert agent.device == "cpu"
+
+
+# ---------------------------------------------------------------------------
+# MAPPOAgent.act_batch with deterministic=True
+# ---------------------------------------------------------------------------
+
+
+class TestMAPPOAgentActBatchDeterministic:
+    """Tests for MAPPOAgent.act_batch deterministic mode."""
+
+    def _make_agent(self) -> MAPPOAgent:
+        config = MAPPOConfig(
+            obs_dim=OBS_DIM,
+            action_dim=ACTION_DIM,
+            hidden_sizes=list(HIDDEN_SIZES),
+            device="cpu",
+        )
+        return MAPPOAgent(config)
+
+    def test_deterministic_is_consistent(self) -> None:
+        """act_batch(deterministic=True) returns the same actions for the same input."""
+        agent = self._make_agent()
+        obs = np.random.default_rng(0).standard_normal((BATCH_SIZE, OBS_DIM)).astype(np.float32)
+
+        actions_a, _, _, _ = agent.act_batch(obs, deterministic=True)
+        actions_b, _, _, _ = agent.act_batch(obs, deterministic=True)
+
+        np.testing.assert_array_equal(actions_a, actions_b)
+
+    def test_deterministic_output_shapes(self) -> None:
+        """act_batch(deterministic=True) should return arrays of correct shapes."""
+        agent = self._make_agent()
+        obs = np.random.default_rng(1).standard_normal((BATCH_SIZE, OBS_DIM)).astype(np.float32)
+
+        actions, log_probs, entropies, values = agent.act_batch(obs, deterministic=True)
+
+        assert actions.shape == (BATCH_SIZE,)
+        assert log_probs.shape == (BATCH_SIZE,)
+        assert entropies.shape == (BATCH_SIZE,)
+        assert values.shape == (BATCH_SIZE,)
+        assert (actions >= 0).all()
+        assert (actions < ACTION_DIM).all()
+
+
+# ---------------------------------------------------------------------------
+# RandomPolicyNetwork
+# ---------------------------------------------------------------------------
+
+
+class TestRandomPolicyNetwork:
+    """Tests for RandomPolicyNetwork — uniform random baseline."""
+
+    def test_forward_returns_uniform_probabilities(self) -> None:
+        """forward() should return a uniform probability array of correct size."""
+        from forge.models.policy_network import RandomPolicyNetwork  # noqa: PLC0415
+
+        net = RandomPolicyNetwork(action_size=6)
+        obs = np.zeros(10, dtype=np.float32)  # shape doesn't matter for random
+        probs = net.forward(obs)
+
+        assert probs.shape == (6,)
+        assert probs.dtype == np.float32
+        np.testing.assert_allclose(probs, np.full(6, 1 / 6, dtype=np.float32), atol=1e-6)
+
+    def test_train_step_returns_empty_dict(self) -> None:
+        """train_step() should return an empty dict (no-op)."""
+        from forge.models.policy_network import RandomPolicyNetwork  # noqa: PLC0415
+
+        net = RandomPolicyNetwork()
+        result = net.train_step({"observations": np.zeros((4, 8), dtype=np.float32)})
+        assert result == {}
+
+    def test_save_is_noop(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """save() should not raise and should not create any file."""
+        from forge.models.policy_network import RandomPolicyNetwork  # noqa: PLC0415
+
+        net = RandomPolicyNetwork()
+        path = str(tmp_path / "model.pkl")
+        net.save(path)  # should not raise
+
+    def test_load_is_noop(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """load() should not raise even for a non-existent path."""
+        from forge.models.policy_network import RandomPolicyNetwork  # noqa: PLC0415
+
+        net = RandomPolicyNetwork()
+        path = str(tmp_path / "nonexistent.pkl")
+        net.load(path)  # should not raise
+
+    def test_default_action_size(self) -> None:
+        """RandomPolicyNetwork uses DEFAULT_ACTION_SIZE=8 by default."""
+        from forge.models.policy_network import (  # noqa: PLC0415
+            DEFAULT_ACTION_SIZE,
+            RandomPolicyNetwork,
+        )
+
+        net = RandomPolicyNetwork()
+        assert net.action_size == DEFAULT_ACTION_SIZE
+        probs = net.forward(np.zeros(4, dtype=np.float32))
+        assert probs.shape == (DEFAULT_ACTION_SIZE,)

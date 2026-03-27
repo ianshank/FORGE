@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -114,7 +115,5 @@ class CheckpointManager:
             oldest = checkpoints.pop(0)
             oldest_path = Path(str(oldest["path"]))
             if oldest_path.exists():
-                import shutil
-
                 shutil.rmtree(oldest_path)
                 logger.info("Removed old checkpoint: %s", oldest_path)

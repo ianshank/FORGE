@@ -10,7 +10,7 @@ import pytest
 @pytest.fixture()
 def parallel_env() -> object:
     """Create a ForgeParallelEnv with 3 agents using real native backend."""
-    from forge_env.pettingzoo_env import ForgeParallelEnv
+    from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: PLC0415
 
     env = ForgeParallelEnv(n_agents=3, config=None)
     yield env

@@ -740,7 +740,28 @@ FORGE guarantees that `same seed + same actions = byte-identical state`:
 └──────────────────────────────────────────────────────┘
 ```
 
-### 4.4 Action Space Encoding
+### 4.4 Python Test Architecture
+
+The Python surface is validated in layers so wrapper logic, pure-Python fallbacks, and training utilities can evolve without depending on a fully built native extension in every test.
+
+```
+tests/python/
+├── conftest.py                 Shared fixtures built from exported defaults
+├── test_forge_env.py           Wrapper contracts, fallback imports, utils branches
+├── test_mappo.py               MAPPO config factories, policy behavior, batch actions
+├── test_device.py              CPU/CUDA/MPS detection without hardware dependencies
+├── test_dashboard_client.py    Dashboard client contract tests
+└── ...                         Module-focused tests for wrappers, config, and training
+```
+
+Test layering keeps the suite fast and deterministic:
+
+- Pure-Python tests validate wrapper bookkeeping, reward normalization bounds, and helper utilities without requiring the Rust extension
+- Native-optional tests call `_skip_if_no_native()` so CI can still execute the Python suite when the extension is unavailable
+- Import/device branches are tested with module patching instead of machine-specific hardware assumptions
+- Shared constants in fixtures and assertions keep config defaults aligned with production modules instead of duplicating literals
+
+### 4.5 Action Space Encoding
 
 ```
 Index:  0   1   2   3   4   5   6 ··· 15  16 ··· 25  26 ··· 34  35 36 37 38  39  40 ···
@@ -751,7 +772,7 @@ Index:  0   1   2   3   4   5   6 ··· 15  16 ··· 25  26 ··· 34  35 36 3
                                                                    act
 ```
 
-### 4.5 Biome Classification
+### 4.6 Biome Classification
 
 ```
      Elevation

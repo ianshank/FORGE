@@ -15,9 +15,14 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 logger = logging.getLogger(__name__)
 
@@ -132,11 +137,6 @@ class ForgeConfig:
         ForgeConfig
             Parsed configuration with env overrides applied.
         """
-        try:
-            import tomllib  # Python 3.11+
-        except ModuleNotFoundError:
-            import tomli as tomllib
-
         resolved = cls._resolve_path(path)
         if resolved is not None:
             raw = resolved.read_text(encoding="utf-8")
@@ -210,8 +210,6 @@ class ForgeConfig:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise the full config as a nested dict."""
-        from dataclasses import asdict
-
         return asdict(self)
 
 

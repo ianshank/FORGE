@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Python Coverage Expansion
+
+- Added `tests/python/test_device.py` to cover accelerator detection paths in `forge.utils.device`
+- Expanded `tests/python/test_mappo.py` with config-factory, auto-device, batched action, and `RandomPolicyNetwork` coverage
+- Expanded `tests/python/test_forge_env.py` to exercise `forge_env.__init__`, `forge_env.utils`, wrapper edge cases, and pure-Python fallback branches
+
+### Changed
+
+#### Python Gap Analysis Cleanup
+
+- Replaced remaining hard-coded Python values with named constants in the Gymnasium env wrapper, MAPPO reward normalization, trainer checkpoint defaults, dashboard client tests, and shared pytest fixtures
+- Enforced a Python coverage floor with `pytest --cov-fail-under=85` in `pyproject.toml`
+- Standardized Python test fixtures and assertions around exported wrapper constants instead of duplicated literals
+
 #### Docker Multi-Service Deployment (`docker/`)
 
 Production-ready Docker Compose stack with three independently deployed services:
