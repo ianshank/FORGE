@@ -576,6 +576,54 @@ def test_forge_env_init_native_import_failure() -> None:
         # After restoration the attribute should be back to whatever it was.
 
 
+def test_forge_env_init_feature_extractors_import_failure() -> None:
+    """forge_env.__init__ remains importable when feature extractors are unavailable."""
+    import importlib  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    import forge_env as fe_mod  # noqa: PLC0415
+
+    original_feature_extractors = sys.modules.get("forge_env.feature_extractors", "ABSENT")
+
+    try:
+        sys.modules["forge_env.feature_extractors"] = None  # type: ignore[assignment]
+        importlib.reload(fe_mod)
+        assert fe_mod._HAS_EXTRACTORS is False
+        assert fe_mod.ForgeGridCnnExtractor is None
+        assert fe_mod.ForgeObsExtractor is None
+        assert fe_mod.ForgeGymnasiumEnv is not None
+    finally:
+        if original_feature_extractors == "ABSENT":
+            sys.modules.pop("forge_env.feature_extractors", None)
+        else:
+            sys.modules["forge_env.feature_extractors"] = original_feature_extractors  # type: ignore[assignment]
+        importlib.reload(fe_mod)
+
+
+def test_forge_env_init_sb3_callbacks_import_failure() -> None:
+    """forge_env.__init__ remains importable when SB3 callbacks are unavailable."""
+    import importlib  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    import forge_env as fe_mod  # noqa: PLC0415
+
+    original_callbacks = sys.modules.get("forge_env.sb3_callbacks", "ABSENT")
+
+    try:
+        sys.modules["forge_env.sb3_callbacks"] = None  # type: ignore[assignment]
+        importlib.reload(fe_mod)
+        assert fe_mod._HAS_CALLBACKS is False
+        assert fe_mod.ForgeCurriculumCallback is None
+        assert fe_mod.ForgeMetricsCallback is None
+        assert fe_mod.ForgeSyncVecEnv is not None
+    finally:
+        if original_callbacks == "ABSENT":
+            sys.modules.pop("forge_env.sb3_callbacks", None)
+        else:
+            sys.modules["forge_env.sb3_callbacks"] = original_callbacks  # type: ignore[assignment]
+        importlib.reload(fe_mod)
+
+
 # ---------------------------------------------------------------------------
 # forge_env.utils — make_env wrappers/seed paths, check_env assertion branches
 # ---------------------------------------------------------------------------

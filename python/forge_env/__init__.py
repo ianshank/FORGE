@@ -33,12 +33,16 @@ from forge_env.utils import benchmark_fps, check_env, make_env, seed_everything 
 from forge_env.vecenv import ForgeAsyncVecEnv, ForgeSyncVecEnv, make_forge_vec_env  # noqa: E402
 
 # Optional imports — guarded so forge_env remains importable without SB3/torch.
+ForgeGridCnnExtractor = None
+ForgeObsExtractor = None
 try:
     from forge_env.feature_extractors import ForgeGridCnnExtractor, ForgeObsExtractor
     _HAS_EXTRACTORS = True
 except ImportError:
     _HAS_EXTRACTORS = False
 
+ForgeCurriculumCallback = None
+ForgeMetricsCallback = None
 try:
     from forge_env.sb3_callbacks import ForgeCurriculumCallback, ForgeMetricsCallback
     _HAS_CALLBACKS = True
