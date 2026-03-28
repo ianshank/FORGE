@@ -135,6 +135,29 @@ class RSSMWorldModel(WorldModel):
             vec[action] = 1.0
         return vec
 
+    def _split_state(
+        self, state_t: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Split a state tensor into (deterministic, stochastic) parts.
+
+        Accepts either a pure stochastic state ``(B, stochastic_dim)`` or a
+        full concatenated state ``(B, deterministic_dim + stochastic_dim)``.
+        Any other shape produces zero tensors of the correct sizes.
+        """
+        import torch  # noqa: PLC0415
+
+        c = self._config
+        if state_t.shape[-1] == c.stochastic_dim:
+            det = torch.zeros(state_t.shape[0], c.deterministic_dim, device=self._device)
+            stoch = state_t
+        elif state_t.shape[-1] == c.deterministic_dim + c.stochastic_dim:
+            det = state_t[..., : c.deterministic_dim]
+            stoch = state_t[..., c.deterministic_dim :]
+        else:
+            det = torch.zeros(state_t.shape[0], c.deterministic_dim, device=self._device)
+            stoch = torch.zeros(state_t.shape[0], c.stochastic_dim, device=self._device)
+        return det, stoch
+
     def _reparametrise(self, mean_logvar: torch.Tensor) -> torch.Tensor:
         """Sample from a Gaussian using the reparametrisation trick."""
         import torch  # noqa: PLC0415
@@ -178,29 +201,11 @@ class RSSMWorldModel(WorldModel):
         """
         import torch  # noqa: PLC0415
 
-        c = self._config
         with torch.no_grad():
             state_t = torch.as_tensor(state, dtype=torch.float32, device=self._device)
             if state_t.dim() == 1:
                 state_t = state_t.unsqueeze(0)
-
-            # Split or zero-pad to (deterministic, stochastic)
-            full_dim = c.deterministic_dim + c.stochastic_dim
-            if state_t.shape[-1] == c.stochastic_dim:
-                det = torch.zeros(
-                    state_t.shape[0], c.deterministic_dim, device=self._device
-                )
-                stoch = state_t
-            elif state_t.shape[-1] == full_dim:
-                det = state_t[..., : c.deterministic_dim]
-                stoch = state_t[..., c.deterministic_dim :]
-            else:
-                det = torch.zeros(
-                    state_t.shape[0], c.deterministic_dim, device=self._device
-                )
-                stoch = torch.zeros(
-                    state_t.shape[0], c.stochastic_dim, device=self._device
-                )
+            det, stoch = self._split_state(state_t)
 
             action_oh = self._one_hot_action(action).unsqueeze(0)
             gru_input = torch.cat([stoch, action_oh], dim=-1)
@@ -224,19 +229,12 @@ class RSSMWorldModel(WorldModel):
         """
         import torch  # noqa: PLC0415
 
-        c = self._config
         T = len(actions)
         with torch.no_grad():
             state_t = torch.as_tensor(state, dtype=torch.float32, device=self._device)
             if state_t.dim() == 1:
                 state_t = state_t.unsqueeze(0)
-
-            if state_t.shape[-1] == c.stochastic_dim:
-                det = torch.zeros(1, c.deterministic_dim, device=self._device)
-                stoch = state_t
-            else:
-                det = state_t[..., : c.deterministic_dim]
-                stoch = state_t[..., c.deterministic_dim :]
+            det, stoch = self._split_state(state_t)
 
             predictions = []
             for t in range(T):

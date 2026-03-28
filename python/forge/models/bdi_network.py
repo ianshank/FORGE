@@ -84,6 +84,22 @@ class BDIState:
     affect: np.ndarray
 
 
+def _to_tensor(
+    arr: np.ndarray,
+    device: str,
+) -> torch.Tensor:
+    """Convert a numpy array to a 2-D (1, N) float32 tensor on *device*.
+
+    If the array is already 1-D it is unsqueezed to add a batch dimension.
+    """
+    import torch  # noqa: PLC0415
+
+    t = torch.as_tensor(arr, dtype=torch.float32, device=torch.device(device))
+    if t.dim() == 1:
+        t = t.unsqueeze(0)
+    return t
+
+
 def _build_mlp(
     input_dim: int,
     output_dim: int,
@@ -168,11 +184,7 @@ class BDINetwork:
         import torch  # noqa: PLC0415
 
         with torch.no_grad():
-            obs_t = torch.as_tensor(
-                obs, dtype=torch.float32, device=torch.device(self._config.device)
-            )
-            if obs_t.dim() == 1:
-                obs_t = obs_t.unsqueeze(0)
+            obs_t = _to_tensor(obs, self._config.device)
             result = self.belief_net(obs_t)
         out: np.ndarray = result.squeeze(0).cpu().numpy()
         return out
@@ -190,13 +202,8 @@ class BDINetwork:
         import torch  # noqa: PLC0415
 
         with torch.no_grad():
-            dev = torch.device(self._config.device)
-            obs_t = torch.as_tensor(obs, dtype=torch.float32, device=dev)
-            belief_t = torch.as_tensor(belief, dtype=torch.float32, device=dev)
-            if obs_t.dim() == 1:
-                obs_t = obs_t.unsqueeze(0)
-            if belief_t.dim() == 1:
-                belief_t = belief_t.unsqueeze(0)
+            obs_t = _to_tensor(obs, self._config.device)
+            belief_t = _to_tensor(belief, self._config.device)
             combined = torch.cat([obs_t, belief_t], dim=-1)
             result = self.desire_net(combined)
         out: np.ndarray = result.squeeze(0).cpu().numpy()
@@ -217,13 +224,8 @@ class BDINetwork:
         import torch  # noqa: PLC0415
 
         with torch.no_grad():
-            dev = torch.device(self._config.device)
-            belief_t = torch.as_tensor(belief, dtype=torch.float32, device=dev)
-            desire_t = torch.as_tensor(desire, dtype=torch.float32, device=dev)
-            if belief_t.dim() == 1:
-                belief_t = belief_t.unsqueeze(0)
-            if desire_t.dim() == 1:
-                desire_t = desire_t.unsqueeze(0)
+            belief_t = _to_tensor(belief, self._config.device)
+            desire_t = _to_tensor(desire, self._config.device)
             combined = torch.cat([belief_t, desire_t], dim=-1)
             result = self.intention_net(combined)
         out: np.ndarray = result.squeeze(0).cpu().numpy()
@@ -242,13 +244,8 @@ class BDINetwork:
         import torch  # noqa: PLC0415
 
         with torch.no_grad():
-            dev = torch.device(self._config.device)
-            obs_t = torch.as_tensor(obs, dtype=torch.float32, device=dev)
-            belief_t = torch.as_tensor(belief, dtype=torch.float32, device=dev)
-            if obs_t.dim() == 1:
-                obs_t = obs_t.unsqueeze(0)
-            if belief_t.dim() == 1:
-                belief_t = belief_t.unsqueeze(0)
+            obs_t = _to_tensor(obs, self._config.device)
+            belief_t = _to_tensor(belief, self._config.device)
             combined = torch.cat([obs_t, belief_t], dim=-1)
             result = self.affect_net(combined)
         out: np.ndarray = result.squeeze(0).cpu().numpy()

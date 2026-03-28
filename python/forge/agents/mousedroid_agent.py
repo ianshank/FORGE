@@ -65,6 +65,21 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CONSTITUTIONAL_HIDDEN_SIZES: list[int] = [256, 256]
 
+# PPO / constitutional RL training defaults
+DEFAULT_PPO_CLIP_RATIO: float = 0.2
+DEFAULT_CONSTITUTIONAL_VALUE_COEFF: float = 0.5
+DEFAULT_CONSTITUTIONAL_ENTROPY_COEFF: float = 0.01
+DEFAULT_CONSTITUTIONAL_GRAD_CLIP: float = 0.5
+
+# Numerical stability epsilon for intention modulation
+DEFAULT_INTENTION_MODULATION_EPSILON: float = 1e-8
+
+# File suffixes used when saving/loading composite agent checkpoints
+_RSSM_SUFFIX = ".rssm.pt"
+_BDI_SUFFIX = ".bdi.pt"
+_POLICY_SUFFIX = ".policy.pt"
+_CONSTITUTIONAL_SUFFIX = ".constitutional.pt"
+
 
 @dataclass
 class MouseDroidConfig(AgentConfig):
@@ -110,6 +125,15 @@ class MouseDroidConfig(AgentConfig):
     constitutional_hidden_sizes: list[int] = field(
         default_factory=lambda: list(DEFAULT_CONSTITUTIONAL_HIDDEN_SIZES)
     )
+
+    # PPO training hyperparameters
+    ppo_clip_ratio: float = DEFAULT_PPO_CLIP_RATIO
+    constitutional_value_coeff: float = DEFAULT_CONSTITUTIONAL_VALUE_COEFF
+    constitutional_entropy_coeff: float = DEFAULT_CONSTITUTIONAL_ENTROPY_COEFF
+    constitutional_grad_clip: float = DEFAULT_CONSTITUTIONAL_GRAD_CLIP
+
+    # Numerical stability
+    intention_modulation_epsilon: float = DEFAULT_INTENTION_MODULATION_EPSILON
 
     # Behaviour
     auto_download: bool = True
@@ -245,7 +269,9 @@ class MouseDroidAgent(BaseAgent):
         # Modulate priors with intention signal (softmax weighting)
         intention_weight = float(np.mean(np.abs(bdi_state.intention)))
         modulated_priors = priors * (1.0 + intention_weight)
-        modulated_priors = modulated_priors / (modulated_priors.sum() + 1e-8)
+        modulated_priors = modulated_priors / (
+            modulated_priors.sum() + self._md_config.intention_modulation_epsilon
+        )
 
         # Sample action from modulated distribution
         action = int(np.random.default_rng().choice(len(modulated_priors), p=modulated_priors))
@@ -301,16 +327,23 @@ class MouseDroidAgent(BaseAgent):
         entropy = dist.entropy().mean()
 
         # PPO clipped objective
-        clip_ratio = self._md_config.gamma  # reuse gamma as clip — default 0.99
+        clip = self._md_config.ppo_clip_ratio
         ratio = torch.exp(new_log_probs - old_log_probs)
-        clipped = torch.clamp(ratio, 1.0 - 0.2, 1.0 + 0.2)
+        clipped = torch.clamp(ratio, 1.0 - clip, 1.0 + clip)
         policy_loss = -torch.min(ratio * advantages, clipped * advantages).mean()
         value_loss = nn.functional.mse_loss(values, returns)
-        loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
+        loss = (
+            policy_loss
+            + self._md_config.constitutional_value_coeff * value_loss
+            - self._md_config.constitutional_entropy_coeff * entropy
+        )
 
         self._constitutional.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self._constitutional.parameters(), 0.5)
+        torch.nn.utils.clip_grad_norm_(
+            self._constitutional.parameters(),
+            self._md_config.constitutional_grad_clip,
+        )
         self._constitutional.optimizer.step()
 
         return {
@@ -390,10 +423,10 @@ class MouseDroidAgent(BaseAgent):
         base = Path(path)
         base.parent.mkdir(parents=True, exist_ok=True)
 
-        self._world_model.save(str(base.with_suffix(".rssm.pt")))
-        self._bdi.save(str(base.with_suffix(".bdi.pt")))
-        self._policy.save(str(base.with_suffix(".policy.pt")))
-        self._constitutional.save(str(base.with_suffix(".constitutional.pt")))
+        self._world_model.save(str(base.with_suffix(_RSSM_SUFFIX)))
+        self._bdi.save(str(base.with_suffix(_BDI_SUFFIX)))
+        self._policy.save(str(base.with_suffix(_POLICY_SUFFIX)))
+        self._constitutional.save(str(base.with_suffix(_CONSTITUTIONAL_SUFFIX)))
 
         # Metadata
         meta = {
@@ -416,10 +449,10 @@ class MouseDroidAgent(BaseAgent):
         """Load all sub-component weights and metadata."""
         base = Path(path)
 
-        self._world_model.load(str(base.with_suffix(".rssm.pt")))
-        self._bdi.load(str(base.with_suffix(".bdi.pt")))
-        self._policy.load(str(base.with_suffix(".policy.pt")))
-        self._constitutional.load(str(base.with_suffix(".constitutional.pt")))
+        self._world_model.load(str(base.with_suffix(_RSSM_SUFFIX)))
+        self._bdi.load(str(base.with_suffix(_BDI_SUFFIX)))
+        self._policy.load(str(base.with_suffix(_POLICY_SUFFIX)))
+        self._constitutional.load(str(base.with_suffix(_CONSTITUTIONAL_SUFFIX)))
 
         meta_path = base.with_suffix(".json")
         if meta_path.exists():
