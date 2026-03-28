@@ -424,6 +424,14 @@ class MouseDroidAgent(BaseAgent):
         all_policy_params = encoder_params + actor_params
         sorted_keys = sorted(policy_data.keys())
 
+        if len(sorted_keys) != len(all_policy_params):
+            logger.warning(
+                "Mismatch between policy.npz arrays (%d) and policy parameters (%d). "
+                "Some parameters may remain uninitialized or some arrays may be unused.",
+                len(sorted_keys),
+                len(all_policy_params),
+            )
+
         loaded = 0
         for key, param in zip(sorted_keys, all_policy_params):
             arr = policy_data[key]
@@ -431,7 +439,8 @@ class MouseDroidAgent(BaseAgent):
                 arr, dtype=torch.float32, device=torch.device(self._device)
             )
             if tensor.shape == param.shape:
-                param.data.copy_(tensor)
+                with torch.no_grad():
+                    param.copy_(tensor)
                 loaded += 1
             else:
                 logger.warning(
@@ -447,6 +456,14 @@ class MouseDroidAgent(BaseAgent):
         critic_params = list(self._constitutional.critic_head.parameters())
         sorted_value_keys = sorted(value_data.keys())
 
+        if len(sorted_value_keys) != len(critic_params):
+            logger.warning(
+                "Mismatch between value.npz arrays (%d) and critic parameters (%d). "
+                "Some parameters may remain uninitialized or some arrays may be unused.",
+                len(sorted_value_keys),
+                len(critic_params),
+            )
+
         loaded_v = 0
         for key, param in zip(sorted_value_keys, critic_params):
             arr = value_data[key]
@@ -454,7 +471,8 @@ class MouseDroidAgent(BaseAgent):
                 arr, dtype=torch.float32, device=torch.device(self._device)
             )
             if tensor.shape == param.shape:
-                param.data.copy_(tensor)
+                with torch.no_grad():
+                    param.copy_(tensor)
                 loaded_v += 1
             else:
                 logger.warning(

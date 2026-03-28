@@ -15,7 +15,6 @@ from forge.models.rssm_world_model import (  # noqa: E402
     DEFAULT_DETERMINISTIC_DIM,
     DEFAULT_HIDDEN_DIM,
     DEFAULT_RSSM_WEIGHT_FILE,
-    DEFAULT_STATE_DIM,
     DEFAULT_STOCHASTIC_DIM,
     RSSMConfig,
     RSSMWorldModel,

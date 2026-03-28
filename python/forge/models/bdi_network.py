@@ -26,11 +26,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from forge.config import DEFAULT_OBS_DIM
 
 if TYPE_CHECKING:
+    import numpy as np
     import torch
 
     from forge.utils.weight_loader import WeightLoader
@@ -323,6 +322,15 @@ class BDINetwork:
         params = list(net.parameters())
         sorted_keys = sorted(data.keys())
 
+        if len(sorted_keys) != len(params):
+            logger.warning(
+                "Mismatch between %s arrays (%d) and network parameters (%d). "
+                "Extra arrays or missing parameters will be ignored.",
+                filename,
+                len(sorted_keys),
+                len(params),
+            )
+
         loaded = 0
         for key, param in zip(sorted_keys, params):
             arr = data[key]
@@ -330,7 +338,8 @@ class BDINetwork:
                 arr, dtype=torch.float32, device=torch.device(self._config.device)
             )
             if tensor.shape == param.shape:
-                param.data.copy_(tensor)
+                with torch.no_grad():
+                    param.copy_(tensor)
                 loaded += 1
             else:
                 logger.warning(

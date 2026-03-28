@@ -32,10 +32,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_STATE_DIM = 64
 DEFAULT_HIDDEN_DIM = 128
 DEFAULT_STOCHASTIC_DIM = 32
 DEFAULT_DETERMINISTIC_DIM = 64
+DEFAULT_STATE_DIM = DEFAULT_STOCHASTIC_DIM + DEFAULT_DETERMINISTIC_DIM
 DEFAULT_RSSM_WEIGHT_FILE = "rssm/final.pt"
 
 
@@ -139,12 +139,21 @@ class RSSMWorldModel(WorldModel):
         return self._config
 
     def _one_hot_action(self, action: int) -> torch.Tensor:
-        """Convert a discrete action to a one-hot tensor."""
+        """Convert a discrete action to a one-hot tensor.
+
+        Raises:
+            ValueError: If action is not in [0, action_dim).
+        """
         import torch  # noqa: PLC0415
 
+        if not 0 <= action < self._config.action_dim:
+            msg = (
+                f"Invalid action index: {action}. Expected an integer in the range "
+                f"[0, {self._config.action_dim})."
+            )
+            raise ValueError(msg)
         vec = torch.zeros(self._config.action_dim, device=self._device)
-        if 0 <= action < self._config.action_dim:
-            vec[action] = 1.0
+        vec[action] = 1.0
         return vec
 
     def _split_state(
@@ -154,7 +163,7 @@ class RSSMWorldModel(WorldModel):
 
         Accepts either a pure stochastic state ``(B, stochastic_dim)`` or a
         full concatenated state ``(B, deterministic_dim + stochastic_dim)``.
-        Any other shape produces zero tensors of the correct sizes.
+        Any other shape is considered invalid and results in a ``ValueError``.
         """
         import torch  # noqa: PLC0415
 

@@ -21,13 +21,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from forge.config import DEFAULT_ACTION_DIM, DEFAULT_OBS_DIM
 from forge.models.policy_network import PolicyNetwork
 
 if TYPE_CHECKING:
-    import torch
+    import numpy as np
 
     from forge.utils.weight_loader import WeightLoader
 
@@ -279,12 +277,22 @@ class NeuralMCTSPolicy(PolicyNetwork):
         )
         sorted_keys = sorted(data.keys())
 
+        if len(sorted_keys) != len(all_params):
+            logger.warning(
+                "Weight file %s contains %d arrays but network expects %d parameters; "
+                "extra arrays or missing parameters will be ignored.",
+                filename,
+                len(sorted_keys),
+                len(all_params),
+            )
+
         loaded = 0
         for key, param in zip(sorted_keys, all_params):
             arr = data[key]
             tensor = torch.as_tensor(arr, dtype=torch.float32, device=self._device)
             if tensor.shape == param.shape:
-                param.data.copy_(tensor)
+                with torch.no_grad():
+                    param.copy_(tensor)
                 loaded += 1
             else:
                 logger.warning(
