@@ -446,10 +446,11 @@ def train(args: argparse.Namespace) -> None:
                     alpha = log_alpha.exp().item()
 
                 # Soft target update
-                for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
-                    target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
-                for param, target_param in zip(qf2.parameters(), qf2_target.parameters()):
-                    target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
+                with torch.no_grad():
+                    for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
+                        target_param.copy_(args.tau * param + (1 - args.tau) * target_param)
+                    for param, target_param in zip(qf2.parameters(), qf2_target.parameters()):
+                        target_param.copy_(args.tau * param + (1 - args.tau) * target_param)
 
         # --- Logging ---
         if global_step % args.log_freq == 0:

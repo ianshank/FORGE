@@ -25,6 +25,32 @@ DEFAULT_NUM_ENVS = 8
 DEFAULT_SWEEP_EPISODES = 50
 DEFAULT_SWEEP_WORKERS = 4
 
+# Canonical constraint definitions for constitutional RL
+DEFAULT_CONSTITUTIONAL_CONSTRAINTS: list[dict[str, Any]] = [
+    {"name": "battery_minimum", "forge_field": "battery", "threshold": 0.2, "is_lower_bound": True},
+    {"name": "altitude_ceiling", "forge_field": "altitude", "threshold": 0.9, "is_lower_bound": False},
+    {"name": "speed_ceiling", "forge_field": "stamina_inverse", "threshold": 0.8, "is_lower_bound": False},
+    {"name": "geofence", "forge_field": "boundary_distance", "threshold": 0.1, "is_lower_bound": True},
+    {"name": "threat_exclusion", "forge_field": "threat_proximity", "threshold": 0.3, "is_lower_bound": True},
+]
+
+# Canonical tier definitions for platform curriculum
+DEFAULT_CAR_TIERS: list[dict[str, Any]] = [
+    {"tier": 1, "name": "Straight Line", "forge_scenario": "patrol", "success_threshold": 0.8},
+    {"tier": 2, "name": "Obstacle Avoidance", "forge_scenario": "patrol", "success_threshold": 0.7},
+    {"tier": 3, "name": "Multi-Waypoint", "forge_scenario": "patrol", "success_threshold": 0.6},
+    {"tier": 4, "name": "Dynamic Traffic", "forge_scenario": "escort", "success_threshold": 0.5},
+    {"tier": 5, "name": "Full Mission", "forge_scenario": "search_and_rescue", "success_threshold": 0.4},
+]
+
+DEFAULT_DRONE_TIERS: list[dict[str, Any]] = [
+    {"tier": 1, "name": "Hover and Altitude", "forge_scenario": "patrol", "success_threshold": 0.7},
+    {"tier": 2, "name": "Waypoint Navigation", "forge_scenario": "patrol", "success_threshold": 0.6},
+    {"tier": 3, "name": "Patrol Pattern", "forge_scenario": "patrol", "success_threshold": 0.5},
+    {"tier": 4, "name": "Search and Rescue", "forge_scenario": "search_and_rescue", "success_threshold": 0.4},
+    {"tier": 5, "name": "Multi-Drone Escort", "forge_scenario": "escort", "success_threshold": 0.3},
+]
+
 
 @dataclass
 class ActionAdapterConfig:
@@ -104,13 +130,9 @@ class ConstitutionalTrainerConfig:
     num_epochs: int = 100
     value_loss_weight: float = 0.5
     log_interval: int = 20
-    constraints: list[dict[str, Any]] = field(default_factory=lambda: [
-        {"name": "battery_minimum", "forge_field": "battery", "threshold": 0.2, "is_lower_bound": True},
-        {"name": "altitude_ceiling", "forge_field": "altitude", "threshold": 0.9, "is_lower_bound": False},
-        {"name": "speed_ceiling", "forge_field": "stamina_inverse", "threshold": 0.8, "is_lower_bound": False},
-        {"name": "geofence", "forge_field": "boundary_distance", "threshold": 0.1, "is_lower_bound": True},
-        {"name": "threat_exclusion", "forge_field": "threat_proximity", "threshold": 0.3, "is_lower_bound": True},
-    ])
+    constraints: list[dict[str, Any]] = field(
+        default_factory=lambda: [dict(c) for c in DEFAULT_CONSTITUTIONAL_CONSTRAINTS]
+    )
 
 
 @dataclass

@@ -12,18 +12,15 @@ from typing import Any
 
 import numpy as np
 
-from forge.mangomas.config import ConstitutionalTrainerConfig
+from forge.mangomas.config import (
+    DEFAULT_CONSTITUTIONAL_CONSTRAINTS,
+    ConstitutionalTrainerConfig,
+)
 
 logger = logging.getLogger(__name__)
 
-# FORGE → MangoMAS constraint mapping
-DEFAULT_CONSTRAINTS: list[dict[str, Any]] = [
-    {"name": "battery_minimum", "forge_field": "battery", "threshold": 0.2, "is_lower_bound": True},
-    {"name": "altitude_ceiling", "forge_field": "altitude", "threshold": 0.9, "is_lower_bound": False},
-    {"name": "speed_ceiling", "forge_field": "stamina_inverse", "threshold": 0.8, "is_lower_bound": False},
-    {"name": "geofence", "forge_field": "boundary_distance", "threshold": 0.1, "is_lower_bound": True},
-    {"name": "threat_exclusion", "forge_field": "threat_proximity", "threshold": 0.3, "is_lower_bound": True},
-]
+# Backward-compatible alias — canonical source is config.DEFAULT_CONSTITUTIONAL_CONSTRAINTS
+DEFAULT_CONSTRAINTS: list[dict[str, Any]] = DEFAULT_CONSTITUTIONAL_CONSTRAINTS
 
 
 @dataclass
