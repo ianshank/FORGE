@@ -291,6 +291,19 @@ mod tests {
     }
 
     #[test]
+    fn test_vision_radius_uses_smaller_rectangular_dimension() {
+        let mut config = ForgeConfig::default();
+        config.world.min_dimension = 4;
+        config.world.width = 11;
+        config.world.height = 7;
+        config.agents.default_vision_radius = 3; // 2*3+1 = 7, fits min side exactly
+        assert!(validate_config(&config).is_ok());
+
+        config.agents.default_vision_radius = 4; // 2*4+1 = 9, exceeds height
+        assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
     fn test_boundary_resource_density_zero() {
         let mut config = ForgeConfig::default();
         config.world.resource_density = 0.0;
@@ -301,6 +314,16 @@ mod tests {
     fn test_boundary_resource_density_one() {
         let mut config = ForgeConfig::default();
         config.world.resource_density = 1.0;
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_boundary_resource_density_epsilons_are_valid() {
+        let mut config = ForgeConfig::default();
+        config.world.resource_density = f32::EPSILON;
+        assert!(validate_config(&config).is_ok());
+
+        config.world.resource_density = 1.0 - f32::EPSILON;
         assert!(validate_config(&config).is_ok());
     }
 
@@ -507,6 +530,16 @@ mod tests {
         config.drone.enabled = true;
         config.drone.num_aerial = 1;
         config.drone.starting_battery = config.drone.max_battery;
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_drone_starting_battery_minimum_positive_value_is_valid() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        config.drone.max_battery = 100;
+        config.drone.starting_battery = 1;
         assert!(validate_config(&config).is_ok());
     }
 

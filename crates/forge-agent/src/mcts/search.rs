@@ -89,6 +89,10 @@ impl<F: ForwardModel, P: PolicyValue> MctsSearch<F, P> {
             }
         }
 
+        if self.model.is_terminal(&state) {
+            tree.node_mut(node_id).is_terminal = true;
+        }
+
         // Phase 2: Expansion — if the node is not terminal and not fully expanded
         if !tree.node(node_id).is_terminal && !tree.node(node_id).is_expanded() {
             let pv_output = self.policy.evaluate(&state, agent_idx);
@@ -154,8 +158,57 @@ impl<F: ForwardModel, P: PolicyValue> MctsAgent<F, P> {
 mod tests {
     use super::*;
     use crate::forward_model::DefaultForwardModel;
-    use crate::mcts::policy::UniformPolicy;
+    use crate::mcts::policy::{PolicyValueOutput, UniformPolicy};
     use forge_types::config::ForgeConfig;
+    use forge_types::observation::{StepInfo, StepResult};
+
+    #[derive(Debug, Clone)]
+    struct StubForwardModel {
+        terminal: bool,
+        num_agents: usize,
+    }
+
+    impl ForwardModel for StubForwardModel {
+        fn simulate(&self, state: &WorldState, _actions: &[Action]) -> (WorldState, StepResult) {
+            (
+                state.clone(),
+                StepResult {
+                    observations: Vec::new(),
+                    rewards: vec![0.0; self.num_agents.max(1)],
+                    terminated: self.terminal,
+                    truncated: false,
+                    info: StepInfo::default(),
+                },
+            )
+        }
+
+        fn is_terminal(&self, _state: &WorldState) -> bool {
+            self.terminal
+        }
+
+        fn num_agents(&self, _state: &WorldState) -> usize {
+            self.num_agents
+        }
+
+        fn action_space_size(&self) -> u32 {
+            64
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct FixedPolicy {
+        priors: Vec<f32>,
+        value: f32,
+    }
+
+    impl PolicyValue for FixedPolicy {
+        fn evaluate(&self, _state: &WorldState, _agent_idx: usize) -> PolicyValueOutput {
+            PolicyValueOutput {
+                priors: self.priors.clone(),
+                value: self.value,
+            }
+        }
+    }
 
     fn make_test_state() -> WorldState {
         let mut config = ForgeConfig::default();
@@ -387,5 +440,52 @@ mod tests {
         // Many simulations should still converge to a valid action
         let action = search.search(&state, 0);
         assert!(action.to_discrete() < Action::space_size(0, false));
+    }
+
+    #[test]
+    fn test_mcts_terminal_root_returns_noop() {
+        let state = make_test_state();
+        let model = StubForwardModel {
+            terminal: true,
+            num_agents: 1,
+        };
+        let policy = FixedPolicy {
+            priors: vec![1.0; 4],
+            value: 0.75,
+        };
+        let config = MctsConfig {
+            num_simulations: 4,
+            action_space: 4,
+            max_depth: 3,
+            ..MctsConfig::default()
+        };
+        let search = MctsSearch::new(model, policy, config, 0);
+
+        let action = search.search(&state, 0);
+
+        assert_eq!(action, Action::Noop);
+    }
+
+    #[test]
+    fn test_mcts_invalid_best_action_falls_back_to_noop() {
+        let state = make_test_state();
+        let mut priors = vec![0.0; 64];
+        priors[63] = 1.0;
+        let model = StubForwardModel {
+            terminal: false,
+            num_agents: 1,
+        };
+        let policy = FixedPolicy { priors, value: 0.0 };
+        let config = MctsConfig {
+            num_simulations: 2,
+            action_space: 64,
+            max_depth: 3,
+            ..MctsConfig::default()
+        };
+        let search = MctsSearch::new(model, policy, config, 0);
+
+        let action = search.search(&state, 0);
+
+        assert_eq!(action, Action::Noop);
     }
 }

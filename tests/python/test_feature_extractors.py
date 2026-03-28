@@ -142,6 +142,16 @@ class TestScalarObsDim:
         space_without = _make_dict_space(include_scalars=True, include_messages=False)
         assert _scalar_obs_dim(space_with) == _scalar_obs_dim(space_without)
 
+    def test_varied_shapes_are_counted_correctly(self) -> None:
+        space = gym.spaces.Dict(
+            {
+                "scalar_1d": gym.spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32),
+                "scalar_0d": gym.spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+                "scalar_2d": gym.spaces.Box(low=0, high=1, shape=(3, 4), dtype=np.float32),
+            }
+        )
+        assert _scalar_obs_dim(space) == 18
+
 
 # ---------------------------------------------------------------------------
 # ForgeGridCnnExtractor
@@ -305,6 +315,34 @@ class TestForgeObsExtractor:
             mlp_hidden_sizes=(128,),
         )
         assert e1.features_dim != e2.features_dim
+
+    def test_missing_scalar_key_is_zero_filled(self) -> None:
+        extractor = self._make(cnn_out_dim=32, mlp_hidden_sizes=(16,))
+        obs = _make_obs_batch(_make_dict_space(), batch_size=2)
+        del obs["inventory"]
+        out = extractor(obs)
+        assert out.shape == (2, 32 + 16)
+
+    def test_no_parts_returns_zero_tensor(self) -> None:
+        space = _make_dict_space(include_grid=False, include_scalars=False, include_messages=True)
+        extractor = ForgeObsExtractor(
+            space,
+            cnn_out_dim=0,
+            cnn_channels=(8,),
+            cnn_kernel_sizes=(3,),
+            cnn_strides=(1,),
+            mlp_hidden_sizes=(),
+        )
+        obs = _make_obs_batch(space, batch_size=3)
+        out = extractor(obs)
+        assert out.shape == (3, 0)
+
+    def test_grid_extractor_preserves_batch_size_for_multiple_batches(self) -> None:
+        extractor = ForgeGridCnnExtractor(_make_dict_space(), features_dim=32)
+        for batch_size in (1, 4, 8):
+            obs = _make_obs_batch(_make_dict_space(), batch_size=batch_size)
+            out = extractor(obs)
+            assert out.shape == (batch_size, 32)
 
 
 # ---------------------------------------------------------------------------

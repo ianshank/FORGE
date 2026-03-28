@@ -279,6 +279,12 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             for k in observation_space.spaces
             if k not in _GRID_KEYS and k not in _SKIP_KEYS
         )
+        self._scalar_dims: dict[str, int] = {
+            key: int(math.prod(observation_space.spaces[key].shape))
+            if observation_space.spaces[key].shape
+            else 1
+            for key in self._scalar_keys
+        }
 
         # CNN branch
         if "grid_view" in observation_space.spaces:
@@ -321,6 +327,9 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             Feature tensor of shape ``(batch, features_dim)``.
         """
         parts: list[torch.Tensor] = []
+        batch_source = next(iter(observations.values()))
+        batch_size = batch_source.shape[0]
+        batch_device = batch_source.device
 
         # CNN branch
         if self._has_grid:
@@ -330,11 +339,18 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             parts.append(cnn_feat)
 
         # MLP branch — concatenate all scalar keys
-        scalar_parts = [
-            observations[k].float().reshape(observations[k].shape[0], -1)
-            for k in self._scalar_keys
-            if k in observations
-        ]
+        scalar_parts: list[torch.Tensor] = []
+        for key in self._scalar_keys:
+            if key in observations:
+                scalar_parts.append(observations[key].float().reshape(batch_size, -1))
+            else:
+                scalar_parts.append(
+                    torch.zeros(
+                        batch_size,
+                        self._scalar_dims[key],
+                        device=batch_device,
+                    )
+                )
         if scalar_parts:
             scalar_cat = torch.cat(scalar_parts, dim=-1)
             mlp_feat = self._mlp(scalar_cat)
@@ -344,8 +360,7 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             # Observation space has neither a grid nor any scalar fields.
             # Return a zero tensor of the declared features_dim so callers
             # always receive a consistently-shaped output.
-            some_tensor = next(iter(observations.values()))
             return torch.zeros(
-                some_tensor.shape[0], self._features_dim, device=some_tensor.device
+                batch_size, self._features_dim, device=batch_device
             )
         return torch.cat(parts, dim=-1)

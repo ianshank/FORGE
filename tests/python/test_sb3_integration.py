@@ -157,6 +157,21 @@ class TestForgeCurriculumCallback:
 
         assert "does not expose .envs" in caplog.text
 
+    def test_env_without_set_config_is_skipped(self, caplog: pytest.LogCaptureFixture) -> None:
+        cb = self._make(target=0.5, window=2)
+
+        class BareEnv:
+            pass
+
+        cb.training_env.envs = [BareEnv()]
+
+        with caplog.at_level("DEBUG"):
+            _call_on_step(cb, [{_EPISODE_KEY: {}, _TASK_SUCCESS_KEY: True}])
+            _call_on_step(cb, [{_EPISODE_KEY: {}, _TASK_SUCCESS_KEY: True}])
+
+        assert cb.current_tier == 2
+        assert "does not support set_config" in caplog.text
+
     def test_on_step_returns_true(self) -> None:
         cb = self._make()
         result = _call_on_step(cb, [])
@@ -209,6 +224,22 @@ class TestForgeMetricsCallback:
         assert "episode/task_progress" in logged
         assert logged["episode/task_progress"] == pytest.approx(0.75)
 
+    def test_records_scalar_task_progress(self) -> None:
+        mock_logger = MagicMock()
+        cb = self._make(log_freq=1, forge_logger=mock_logger)
+        infos = [{"episode": {"r": 0.0, "l": 1}, "task_progress": 0.5}]
+        _call_on_step(cb, infos)
+        logged = mock_logger.log.call_args[0][0]
+        assert logged["episode/task_progress"] == pytest.approx(0.5)
+
+    def test_records_empty_task_progress_as_zero(self) -> None:
+        mock_logger = MagicMock()
+        cb = self._make(log_freq=1, forge_logger=mock_logger)
+        infos = [{"episode": {"r": 0.0, "l": 1}, "task_progress": []}]
+        _call_on_step(cb, infos)
+        logged = mock_logger.log.call_args[0][0]
+        assert logged["episode/task_progress"] == pytest.approx(0.0)
+
     def test_records_task_success(self) -> None:
         mock_logger = MagicMock()
         cb = self._make(log_freq=1, forge_logger=mock_logger)
@@ -249,6 +280,12 @@ class TestForgeMetricsCallback:
         cb = self._make(log_freq=1000, forge_logger=mock_logger)
         cb._on_training_end()
         mock_logger.close.assert_called_once()
+
+    def test_flush_without_pending_metrics_is_noop(self) -> None:
+        mock_logger = MagicMock()
+        cb = self._make(log_freq=1000, forge_logger=mock_logger)
+        cb._flush()
+        mock_logger.log.assert_not_called()
 
     def test_on_step_returns_true(self) -> None:
         cb = self._make()
