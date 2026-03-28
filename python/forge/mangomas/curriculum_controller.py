@@ -47,18 +47,16 @@ class PlatformCurriculumController:
 
     def __init__(
         self,
-        platform: str = "drone",
+        platform: str | None = None,
         config: CurriculumConfig | None = None,
         tiers: list[dict[str, Any]] | None = None,
     ) -> None:
-        self.platform = platform
         self.config = config or CurriculumConfig()
+        self.platform = platform or self.config.platform
         if tiers:
             self._tiers = tiers
-        elif self.config.tiers:
-            self._tiers = self.config.tiers
         else:
-            self._tiers = DRONE_TIERS if platform == "drone" else CAR_TIERS
+            self._tiers = self.config.resolved_tiers(platform=self.platform)
         self._current_tier = 1
         self._max_unlocked_tier = 1
         self._rng = np.random.default_rng(self.config.seed)
@@ -72,7 +70,7 @@ class PlatformCurriculumController:
 
         logger.info(
             "PlatformCurriculumController: platform=%s, %d tiers",
-            platform,
+            self.platform,
             len(self._tiers),
         )
 

@@ -56,9 +56,8 @@ except ImportError:
 
 try:
     import torch
-    import torch.nn as nn
-    import torch.nn.functional as F  # noqa: N812
-    import torch.optim as optim
+    import torch.nn.functional as F
+    from torch import nn, optim
 except ImportError:
     logger.error("PyTorch is required. Install with: pip install torch")
     sys.exit(1)
@@ -85,6 +84,11 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent / "configs" / "training" / "sac_default.toml"
+_DEFAULT_ENV_WIDTH = 32
+_DEFAULT_ENV_HEIGHT = 32
+_DEFAULT_MAX_STEPS = 500
+_DEFAULT_SEED = 0
+_DEFAULT_HIDDEN_SIZES = (256, 256)
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -98,9 +102,27 @@ def _load_toml(path: Path) -> dict[str, Any]:
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
+def _normalize_hidden_sizes(hidden_sizes: list[int] | tuple[int, ...] | None) -> tuple[int, ...]:
+    """Normalize configured hidden sizes to a non-empty tuple of positive ints."""
+    if not hidden_sizes:
+        return _DEFAULT_HIDDEN_SIZES
+
+    normalized = tuple(int(size) for size in hidden_sizes)
+    if any(size <= 0 for size in normalized):
+        raise ValueError("hidden_sizes must contain positive integers")
+    return normalized
+
+
 def _build_argparser(defaults: dict[str, Any]) -> argparse.ArgumentParser:
     hp = defaults.get("hyperparams", {})
+    env_cfg = defaults.get("env", {})
     log_cfg = defaults.get("logging", {})
+    model_cfg = defaults.get("model", {})
+    feat_cfg = defaults.get("feature_extractor", {})
+
+    default_hidden_sizes = _normalize_hidden_sizes(
+        model_cfg.get("hidden_sizes", feat_cfg.get("mlp_hidden_sizes"))
+    )
 
     p = argparse.ArgumentParser(
         description="CleanRL discrete SAC for FORGE environments",
@@ -109,10 +131,10 @@ def _build_argparser(defaults: dict[str, Any]) -> argparse.ArgumentParser:
     p.add_argument("--config", type=Path, default=_DEFAULT_CONFIG_PATH)
 
     # Env
-    p.add_argument("--env-width", type=int, default=32)
-    p.add_argument("--env-height", type=int, default=32)
-    p.add_argument("--max-steps", type=int, default=500)
-    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--env-width", type=int, default=env_cfg.get("width", _DEFAULT_ENV_WIDTH))
+    p.add_argument("--env-height", type=int, default=env_cfg.get("height", _DEFAULT_ENV_HEIGHT))
+    p.add_argument("--max-steps", type=int, default=env_cfg.get("max_steps", _DEFAULT_MAX_STEPS))
+    p.add_argument("--seed", type=int, default=env_cfg.get("seed", _DEFAULT_SEED))
 
     # SAC hyperparams
     p.add_argument("--total-timesteps", type=int,
@@ -142,6 +164,13 @@ def _build_argparser(defaults: dict[str, Any]) -> argparse.ArgumentParser:
                    default="none")
     p.add_argument("--wandb-project", type=str, default="forge-sac")
     p.add_argument("--log-dir", type=str, default="runs/forge_sac")
+    p.add_argument(
+        "--hidden-sizes",
+        nargs="+",
+        type=int,
+        default=list(default_hidden_sizes),
+        help="Hidden layer sizes for actor and critic networks.",
+    )
 
     return p
 
@@ -325,12 +354,13 @@ def train(args: argparse.Namespace) -> None:
     action_dim = int(env.action_space.n)
 
     replay_buffer = _ReplayBuffer(args.buffer_size, obs_dim, device)
+    hidden_sizes = _normalize_hidden_sizes(tuple(args.hidden_sizes))
 
-    actor = _Actor(obs_dim, action_dim).to(device)
-    qf1 = _SoftQNetwork(obs_dim, action_dim).to(device)
-    qf2 = _SoftQNetwork(obs_dim, action_dim).to(device)
-    qf1_target = _SoftQNetwork(obs_dim, action_dim).to(device)
-    qf2_target = _SoftQNetwork(obs_dim, action_dim).to(device)
+    actor = _Actor(obs_dim, action_dim, hidden_sizes=hidden_sizes).to(device)
+    qf1 = _SoftQNetwork(obs_dim, action_dim, hidden_sizes=hidden_sizes).to(device)
+    qf2 = _SoftQNetwork(obs_dim, action_dim, hidden_sizes=hidden_sizes).to(device)
+    qf1_target = _SoftQNetwork(obs_dim, action_dim, hidden_sizes=hidden_sizes).to(device)
+    qf2_target = _SoftQNetwork(obs_dim, action_dim, hidden_sizes=hidden_sizes).to(device)
     qf1_target.load_state_dict(qf1.state_dict())
     qf2_target.load_state_dict(qf2.state_dict())
 

@@ -11,12 +11,20 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SEED = 42
 DEFAULT_BINS_PER_AXIS = 7
 DEFAULT_GRID_SUMMARY_DIM = 64
 DEFAULT_STATE_DIM_CAR = 18
 DEFAULT_STATE_DIM_DRONE = 22
 DEFAULT_NUM_BDI_INTENTIONS = 8
 DEFAULT_NUM_CONSTITUTIONAL_CONSTRAINTS = 5
+DEFAULT_MANGOMAS_ACTION_DIM = 75
+DEFAULT_CURIOSITY_CHANNELS = (
+    "social",
+    "epistemic",
+    "perceptual",
+    "metacognitive",
+)
 DEFAULT_CURIOSITY_WEIGHTS = (0.4, 0.3, 0.2, 0.1)
 DEFAULT_NUM_CURRICULUM_TIERS = 5
 DEFAULT_TARGET_SUCCESS_RATE = 0.6
@@ -89,7 +97,7 @@ class SweepConfig:
     discount_steps: int = 4
     episodes_per_config: int = DEFAULT_SWEEP_EPISODES
     num_workers: int = DEFAULT_SWEEP_WORKERS
-    seed: int = 42
+    seed: int = DEFAULT_SEED
 
 
 @dataclass
@@ -130,6 +138,9 @@ class ConstitutionalTrainerConfig:
     num_epochs: int = 100
     value_loss_weight: float = 0.5
     log_interval: int = 20
+    state_dim: int = DEFAULT_STATE_DIM_CAR
+    action_dim: int = DEFAULT_MANGOMAS_ACTION_DIM
+    seed: int = DEFAULT_SEED
     constraints: list[dict[str, Any]] = field(
         default_factory=lambda: [dict(c) for c in DEFAULT_CONSTITUTIONAL_CONSTRAINTS]
     )
@@ -142,7 +153,7 @@ class RSSMPreTrainConfig:
     state_dim: int = DEFAULT_STATE_DIM_DRONE
     hidden_dim: int = 200
     latent_dim: int = 30
-    action_dim: int = 75
+    action_dim: int = DEFAULT_MANGOMAS_ACTION_DIM
     learning_rate: float = 3e-4
     batch_size: int = 50
     num_epochs: int = 100
@@ -165,8 +176,20 @@ class CurriculumConfig:
     window_size: int = 100
     warmup_episodes: int = 20
     adjustment_rate: float = 0.1
+    platform: str = "drone"
     tiers: list[dict[str, Any]] = field(default_factory=list)
-    seed: int = 42
+    seed: int = DEFAULT_SEED
+
+    def resolved_tiers(self, platform: str | None = None) -> list[dict[str, Any]]:
+        """Return explicit curriculum tiers for the selected platform."""
+        if self.tiers:
+            return [dict(tier) for tier in self.tiers]
+
+        selected_platform = platform or self.platform
+        default_tiers = (
+            DEFAULT_DRONE_TIERS if selected_platform == "drone" else DEFAULT_CAR_TIERS
+        )
+        return [dict(tier) for tier in default_tiers]
 
 
 @dataclass
@@ -175,8 +198,8 @@ class BatchCollectorConfig:
 
     max_steps: int = DEFAULT_MAX_STEPS
     num_envs: int = DEFAULT_NUM_ENVS
-    seed: int = 42
-    action_space_size: int = 75
+    seed: int = DEFAULT_SEED
+    action_space_size: int = DEFAULT_MANGOMAS_ACTION_DIM
     log_interval: int = 100
 
 
@@ -184,14 +207,14 @@ class BatchCollectorConfig:
 class CuriosityOptimizerConfig:
     """Curiosity weight optimizer configuration."""
 
-    channels: list[str] = field(
-        default_factory=lambda: ["social", "epistemic", "perceptual", "metacognitive"]
+    channels: list[str] = field(default_factory=lambda: list(DEFAULT_CURIOSITY_CHANNELS))
+    initial_weights: list[float] = field(
+        default_factory=lambda: list(DEFAULT_CURIOSITY_WEIGHTS)
     )
-    initial_weights: list[float] = field(default_factory=lambda: [0.4, 0.3, 0.2, 0.1])
     population_size: int = 20
     sigma: float = 0.1
     learning_rate: float = 0.05
-    seed: int = 42
+    seed: int = DEFAULT_SEED
     log_interval: int = 10
 
 

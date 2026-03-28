@@ -38,6 +38,11 @@ try:
 except ImportError:  # pragma: no cover
     HAS_NUMPY = False
 
+try:
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
+except ImportError:  # pragma: no cover
+    ForgeGymnasiumEnv = None
+
 __all__ = [
     "ForgeAsyncVecEnv",
     "ForgeSyncVecEnv",
@@ -462,10 +467,12 @@ def make_forge_vec_env(
         obs, infos = vec_env.reset()
         # obs["grid_view"].shape == (4, 11, 11, 7)
     """
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
-
     if n_envs < 1:
         raise ValueError(f"n_envs must be >= 1, got {n_envs}")
+    if ForgeGymnasiumEnv is None:
+        raise ImportError(
+            "ForgeGymnasiumEnv is unavailable. Build with: cd crates/forge-python && maturin develop"
+        )
 
     def _make_single(env_seed: int) -> Callable[[], Any]:
         """Return a zero-argument factory that creates one wrapped env."""

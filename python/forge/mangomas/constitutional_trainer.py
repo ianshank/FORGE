@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -150,9 +150,9 @@ class ConstitutionalPreTrainer:
 
     def train(self, dataset: ConstitutionalDataset) -> ConstitutionalTrainResult:
         """Train a constraint-aware policy network."""
-        rng = np.random.default_rng(42)
-        state_dim = dataset.observations.shape[1] if dataset.num_samples > 0 else 18
-        n_actions = int(dataset.actions.max()) + 1 if dataset.num_samples > 0 else 75
+        rng = np.random.default_rng(self.config.seed)
+        state_dim = self._resolve_state_dim(dataset)
+        n_actions = self._resolve_action_dim(dataset)
 
         # Initialize policy weights
         scale = np.sqrt(6.0 / (state_dim + n_actions))
@@ -227,11 +227,23 @@ class ConstitutionalPreTrainer:
             loss_history=loss_history,
         )
 
+    def _resolve_state_dim(self, dataset: ConstitutionalDataset) -> int:
+        """Resolve the state dimension from data when available, else config."""
+        if dataset.num_samples > 0:
+            return int(dataset.observations.shape[1])
+        return self.config.state_dim
+
+    def _resolve_action_dim(self, dataset: ConstitutionalDataset) -> int:
+        """Resolve the action dimension from data when available, else config."""
+        if dataset.num_samples > 0:
+            return int(dataset.actions.max()) + 1
+        return self.config.action_dim
+
     def export_weights(self, path: str | Path) -> None:
         """Export trained weights as .npz file."""
         if self._weights is None:
             raise RuntimeError("No trained weights. Call train() first.")
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(str(path), **self._weights)
+        np.savez(str(path), **cast("dict[str, Any]", self._weights))
         logger.info("Constitutional weights exported to %s", path)

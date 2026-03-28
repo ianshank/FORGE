@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from forge.mangomas.config import CuriosityOptimizerConfig
+from forge.mangomas.config import (
+    DEFAULT_CURIOSITY_CHANNELS as CONFIG_DEFAULT_CURIOSITY_CHANNELS,
+)
+from forge.mangomas.config import (
+    DEFAULT_CURIOSITY_WEIGHTS,
+    CuriosityOptimizerConfig,
+)
 from forge.mangomas.curiosity_optimizer import (
     DEFAULT_CURIOSITY_CHANNELS,
     DEFAULT_INITIAL_WEIGHTS,
@@ -181,3 +187,7 @@ class TestDefaultConstants:
         assert len(DEFAULT_INITIAL_WEIGHTS) == len(DEFAULT_CURIOSITY_CHANNELS)
         assert sum(DEFAULT_INITIAL_WEIGHTS) == pytest.approx(1.0)
         assert all(w > 0.0 for w in DEFAULT_INITIAL_WEIGHTS)
+
+    def test_default_aliases_match_config_defaults(self) -> None:
+        assert list(CONFIG_DEFAULT_CURIOSITY_CHANNELS) == DEFAULT_CURIOSITY_CHANNELS
+        assert list(DEFAULT_CURIOSITY_WEIGHTS) == DEFAULT_INITIAL_WEIGHTS
