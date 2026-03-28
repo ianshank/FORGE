@@ -1,0 +1,39 @@
+# Constitutional Constraint Mapping — FORGE → MangoMAS Safety Principles
+
+[constitutional]
+# MangoMAS has 5 hard safety principles. Each maps to a FORGE observation field.
+
+[[constitutional.constraints]]
+name = "battery_minimum"
+description = "Battery must stay above threshold to ensure safe landing"
+forge_field = "battery"
+threshold = 0.2
+is_lower_bound = true
+
+[[constitutional.constraints]]
+name = "altitude_ceiling"
+description = "Altitude must not exceed maximum safe operating height"
+forge_field = "altitude"
+threshold = 0.9
+is_lower_bound = false
+
+[[constitutional.constraints]]
+name = "speed_ceiling"
+description = "Speed must not exceed maximum safe velocity"
+forge_field = "stamina_inverse"
+threshold = 0.8
+is_lower_bound = false
+
+[[constitutional.constraints]]
+name = "geofence"
+description = "Agent must stay within operational boundary"
+forge_field = "boundary_distance"
+threshold = 0.1
+is_lower_bound = true
+
+[[constitutional.constraints]]
+name = "threat_exclusion"
+description = "Agent must maintain safe distance from threats"
+forge_field = "threat_proximity"
+threshold = 0.3
+is_lower_bound = true

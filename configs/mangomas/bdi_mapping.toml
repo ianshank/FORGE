@@ -1,0 +1,28 @@
+# BDI Intention Class Mapping — FORGE Actions → MangoMAS 8-Class BDI
+
+[bdi]
+num_intentions = 8
+
+# Default semantic mapping (used when no overrides match):
+# 0 = Navigate: Move, Ascend, Descend, TakeOff, Land
+# 1 = Gather:   PickUp, Drop, DropPayload
+# 2 = Plan:     Craft
+# 3 = Manipulate: Push, Use, Interact
+# 4 = Cooperate:  Communicate
+# 5 = Evade:    (contextual, assigned by override)
+# 6 = Track:    Scan
+# 7 = Idle:     Noop, Hover
+
+[bdi.intention_names]
+0 = "Navigate"
+1 = "Gather"
+2 = "Plan"
+3 = "Manipulate"
+4 = "Cooperate"
+5 = "Evade"
+6 = "Track"
+7 = "Idle"
+
+# Override mappings: [[bdi.overrides]]
+# action_id = 39  # Interact
+# intention = 4   # Cooperate (instead of default Manipulate)

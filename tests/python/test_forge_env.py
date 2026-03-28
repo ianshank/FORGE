@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+
 from forge_env.wrappers import DEFAULT_REWARD_CLIP
 
 # ---------------------------------------------------------------------------
@@ -79,7 +80,7 @@ def test_import_utils() -> None:
 def _skip_if_no_native() -> None:
     """Skip the calling test when the forge_env native extension is not built."""
     try:
-        from forge_env import gymnasium_env
+        from forge_env import gymnasium_env  # noqa: PLC0415
         if gymnasium_env._NativeEnv is None:
             pytest.skip("forge_env running in pure-Python mode (no native backend)")
     except ImportError as exc:
@@ -549,14 +550,14 @@ def test_check_env_validates_reset_type() -> None:
 
 def test_forge_env_init_native_import_failure() -> None:
     """forge_env.__init__ sets ForgeEnv=None when native module is unavailable."""
-    import importlib
-    import sys
+    import importlib  # noqa: PLC0415
+    import sys  # noqa: PLC0415
 
-    import forge_env as fe_mod
+    import forge_env as fe_mod  # noqa: PLC0415
 
     # Remember current state so we can restore it.
     original_forge_env_native = sys.modules.get("forge_env.forge_env", "ABSENT")
-    original_ForgeEnv = fe_mod.ForgeEnv
+    original_ForgeEnv = fe_mod.ForgeEnv  # noqa: F841
 
     try:
         # Setting sys.modules entry to None causes `import forge_env.forge_env`

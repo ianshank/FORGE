@@ -510,6 +510,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-mangomas"
+version = "0.1.0"
+dependencies = [
+ "forge-agent",
+ "forge-core",
+ "forge-integration-layer",
+ "forge-task",
+ "forge-types",
+ "proptest",
+ "rand 0.8.5",
+ "rand_pcg",
+ "rayon",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-memory"
 version = "0.1.0"
 dependencies = [
