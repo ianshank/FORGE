@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -135,8 +135,11 @@ class MouseDroidConfig(AgentConfig):
     # Numerical stability
     intention_modulation_epsilon: float = DEFAULT_INTENTION_MODULATION_EPSILON
 
-    # Behaviour
-    auto_download: bool = True
+    # Reproducibility
+    seed: int | None = None
+
+    # Behaviour — set to True to auto-download weights on construction
+    auto_download: bool = False
 
 
 class MouseDroidAgent(BaseAgent):
@@ -204,12 +207,24 @@ class MouseDroidAgent(BaseAgent):
             device=device,
         )
 
+        self._rng = np.random.default_rng(config.seed)
+
         logger.info(
             "MouseDroidAgent initialised: obs=%d, act=%d, device=%s",
             config.obs_dim,
             config.action_dim,
             device,
         )
+
+        if config.auto_download:
+            try:
+                self.load_from_hub()
+            except (ImportError, OSError) as exc:
+                logger.warning(
+                    "auto_download enabled but weight loading failed: %s. "
+                    "Call load_from_hub() manually when dependencies are available.",
+                    exc,
+                )
 
     # ----- Properties -----
 
@@ -266,15 +281,26 @@ class MouseDroidAgent(BaseAgent):
         # Policy evaluation
         priors, value = self._policy.evaluate(observation)
 
-        # Modulate priors with intention signal (softmax weighting)
-        intention_weight = float(np.mean(np.abs(bdi_state.intention)))
-        modulated_priors = priors * (1.0 + intention_weight)
-        modulated_priors = modulated_priors / (
-            modulated_priors.sum() + self._md_config.intention_modulation_epsilon
-        )
+        # Modulate priors with per-action intention scaling
+        eps = self._md_config.intention_modulation_epsilon
+        intention_abs = np.abs(bdi_state.intention).astype(priors.dtype)
+        action_scale = np.resize(intention_abs, priors.shape)
+        scale_mean = float(action_scale.mean())
+        if scale_mean > 0.0:
+            action_scale = action_scale / (scale_mean + eps)
+        else:
+            action_scale = np.ones_like(priors)
+        modulated_priors = priors * action_scale
+        total = float(modulated_priors.sum())
+        if total > eps:
+            modulated_priors = modulated_priors / total
+            # Correct residual floating-point error for np.random.choice
+            modulated_priors[-1] += 1.0 - float(modulated_priors.sum())
+        else:
+            modulated_priors = np.full_like(priors, 1.0 / len(priors))
 
         # Sample action from modulated distribution
-        action = int(np.random.default_rng().choice(len(modulated_priors), p=modulated_priors))
+        action = int(self._rng.choice(len(modulated_priors), p=modulated_priors))
 
         self._step_count += 1
 
@@ -393,6 +419,7 @@ class MouseDroidAgent(BaseAgent):
         all_policy_params = encoder_params + actor_params
         sorted_keys = sorted(policy_data.keys())
 
+        loaded = 0
         for key, param in zip(sorted_keys, all_policy_params):
             arr = policy_data[key]
             tensor = torch.as_tensor(
@@ -400,12 +427,22 @@ class MouseDroidAgent(BaseAgent):
             )
             if tensor.shape == param.shape:
                 param.data.copy_(tensor)
+                loaded += 1
+            else:
+                logger.warning(
+                    "Shape mismatch for policy param %s: npz=%s, param=%s — skipping",
+                    key, tensor.shape, param.shape,
+                )
+        logger.info(
+            "Constitutional policy: loaded %d/%d arrays", loaded, len(sorted_keys)
+        )
 
         # Load value weights into critic head
         value_data = loader.load_npz("value.npz")
         critic_params = list(self._constitutional.critic_head.parameters())
         sorted_value_keys = sorted(value_data.keys())
 
+        loaded_v = 0
         for key, param in zip(sorted_value_keys, critic_params):
             arr = value_data[key]
             tensor = torch.as_tensor(
@@ -413,8 +450,15 @@ class MouseDroidAgent(BaseAgent):
             )
             if tensor.shape == param.shape:
                 param.data.copy_(tensor)
-
-        logger.info("Constitutional RL weights loaded from hub")
+                loaded_v += 1
+            else:
+                logger.warning(
+                    "Shape mismatch for value param %s: npz=%s, param=%s — skipping",
+                    key, tensor.shape, param.shape,
+                )
+        logger.info(
+            "Constitutional value: loaded %d/%d arrays", loaded_v, len(sorted_value_keys)
+        )
 
     # ----- Save / Load -----
 
@@ -428,17 +472,10 @@ class MouseDroidAgent(BaseAgent):
         self._policy.save(str(base.with_suffix(_POLICY_SUFFIX)))
         self._constitutional.save(str(base.with_suffix(_CONSTITUTIONAL_SUFFIX)))
 
-        # Metadata
+        # Metadata — serialize full config for checkpoint validation
         meta = {
             "step_count": self._step_count,
-            "obs_dim": self._md_config.obs_dim,
-            "action_dim": self._md_config.action_dim,
-            "config": {
-                "name": self._md_config.name,
-                "repo_id": self._md_config.repo_id,
-                "obs_dim": self._md_config.obs_dim,
-                "action_dim": self._md_config.action_dim,
-            },
+            "config": asdict(self._md_config),
         }
         with base.with_suffix(".json").open("w") as f:
             json.dump(meta, f)

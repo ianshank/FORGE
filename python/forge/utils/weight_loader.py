@@ -119,7 +119,8 @@ class WeightLoader:
             Dictionary mapping array names to :class:`numpy.ndarray` values.
         """
         path = self.resolve_path(filename)
-        data = dict(np.load(str(path), allow_pickle=False))
+        with np.load(str(path), allow_pickle=False) as npz_file:
+            data = {k: np.array(v) for k, v in npz_file.items()}
         logger.info(
             "Loaded .npz %s: %d arrays (%s)",
             filename,

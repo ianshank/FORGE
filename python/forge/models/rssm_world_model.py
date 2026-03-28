@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -154,8 +154,12 @@ class RSSMWorldModel(WorldModel):
             det = state_t[..., : c.deterministic_dim]
             stoch = state_t[..., c.deterministic_dim :]
         else:
-            det = torch.zeros(state_t.shape[0], c.deterministic_dim, device=self._device)
-            stoch = torch.zeros(state_t.shape[0], c.stochastic_dim, device=self._device)
+            msg = (
+                f"Invalid state shape: {state_t.shape}. Expected last dimension "
+                f"to be {c.stochastic_dim} or "
+                f"{c.deterministic_dim + c.stochastic_dim}."
+            )
+            raise ValueError(msg)
         return det, stoch
 
     def _reparametrise(self, mean_logvar: torch.Tensor) -> torch.Tensor:
