@@ -1,0 +1,35 @@
+# MouseDroid agent configuration.
+# Pre-trained autonomous navigation agent with RSSM world model,
+# BDI cognitive architecture, and constitutional RL policy.
+[agent]
+name = "mousedroid"
+type = "mousedroid"
+description = "MouseDroid agent with RSSM + BDI + Constitutional RL"
+
+[agent.hub]
+repo_id = "ianshank/mousedroid-weights"
+revision = "main"
+auto_download = true
+
+[agent.rssm]
+state_dim = 64
+hidden_dim = 128
+stochastic_dim = 32
+deterministic_dim = 64
+
+[agent.bdi]
+belief_dim = 32
+desire_dim = 16
+intention_dim = 16
+affect_dim = 8
+hidden_sizes = [64, 64]
+
+[agent.policy]
+hidden_sizes = [128, 128]
+
+[agent.constitutional]
+hidden_sizes = [256, 256]
+
+[agent.mcts_tuning]
+# Tuning results from training metadata
+best_ucb_c = 1.41

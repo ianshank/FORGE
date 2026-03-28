@@ -18,15 +18,17 @@ classifiers = [
 #   pip install -e ".[wandb]"     -- Weights & Biases
 #   pip install -e ".[mlflow]"    -- MLflow
 #   pip install -e ".[all]"       -- everything
-sb3     = ["stable-baselines3>=2.0", "torch>=2.0"]
-cleanrl = ["torch>=2.0"]
-wandb   = ["wandb>=0.16"]
-mlflow  = ["mlflow>=2.0"]
-all     = [
+sb3        = ["stable-baselines3>=2.0", "torch>=2.0"]
+cleanrl    = ["torch>=2.0"]
+wandb      = ["wandb>=0.16"]
+mlflow     = ["mlflow>=2.0"]
+mousedroid = ["huggingface-hub>=0.20", "torch>=2.0"]
+all        = [
     "stable-baselines3>=2.0",
     "torch>=2.0",
     "wandb>=0.16",
     "mlflow>=2.0",
+    "huggingface-hub>=0.20",
 ]
 
 [tool.maturin]
@@ -105,6 +107,8 @@ module = [
     "wandb.*",
     "mlflow",
     "mlflow.*",
+    "huggingface_hub",
+    "huggingface_hub.*",
 ]
 ignore_missing_imports = true
 # Prevent mypy from descending into third-party source files (e.g. torch uses
