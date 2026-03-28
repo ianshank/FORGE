@@ -39,7 +39,7 @@ impl BdiIntentionMapper {
         self.config.num_bdi_intentions
     }
 
-    /// Maps a FORGE action to a BDI intention class index.
+    /// Map a FORGE action to a BDI intention class (0-7).
     pub fn map_action(&self, action: &Action) -> u8 {
         // Check for overrides first
         let discrete_id = action.to_discrete_full(16); // Standard vocab size
@@ -53,7 +53,7 @@ impl BdiIntentionMapper {
         ActionCategory::from_action(action).as_intention_index()
     }
 
-    /// Maps a discrete action ID to a BDI intention class index.
+    /// Map a FORGE discrete action ID to a BDI intention class.
     pub fn map_action_id(&self, action_id: u32, comm_vocab: u16, drone_enabled: bool) -> u8 {
         match Action::from_discrete(action_id, comm_vocab, drone_enabled) {
             Some(action) => self.map_action(&action),
@@ -106,6 +106,7 @@ impl BdiEpisodeCollector {
     ///
     /// Uses the provided observation adapter to flatten FORGE observations
     /// into state vectors compatible with the BDI GRU+MLP input.
+    #[instrument(skip(self, episodes, adapt_obs))]
     pub fn collect_from_episodes(
         &self,
         episodes: &[Episode],
@@ -215,6 +216,16 @@ mod tests {
     fn test_num_intentions() {
         let mapper = default_mapper();
         assert_eq!(mapper.num_intentions(), 8);
+    }
+
+    #[test]
+    fn test_collect_from_empty_episodes() {
+        let config = TransferConfig::default();
+        let collector = BdiEpisodeCollector::new(config, 16, false);
+        let data = collector
+            .collect_from_episodes(&[], &|_obs| vec![0.0; 18])
+            .unwrap();
+        assert_eq!(data.samples.len(), 0);
     }
 
     #[test]

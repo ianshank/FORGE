@@ -52,7 +52,7 @@ pub enum ActionCategory {
 }
 
 impl ActionCategory {
-    /// Returns the BDI intention class index (0-7).
+    /// Returns the BDI intention index (0-7) for this action category.
     pub fn as_intention_index(&self) -> u8 {
         match self {
             Self::Navigate => 0,
@@ -66,7 +66,7 @@ impl ActionCategory {
         }
     }
 
-    /// Classifies a FORGE action into a semantic category.
+    /// Classify a FORGE action into a semantic action category.
     #[instrument(skip_all)]
     pub fn from_action(action: &Action) -> Self {
         match action {
@@ -113,7 +113,7 @@ impl DiscreteGridAdapter {
         Ok(Self { config, bin_width })
     }
 
-    /// Quantizes a single continuous value to a bin index.
+    /// Quantize a continuous value to a bin index.
     fn quantize(&self, value: f32) -> u32 {
         let clamped = value.clamp(self.config.action_range_min, self.config.action_range_max);
         let normalized = (clamped - self.config.action_range_min) / self.bin_width;
@@ -121,7 +121,7 @@ impl DiscreteGridAdapter {
         bin.min(self.config.bins_per_axis - 1)
     }
 
-    /// Returns the center value of a bin.
+    /// Get the center value for a given bin index.
     fn bin_center(&self, bin: u32) -> f32 {
         self.config.action_range_min + (bin as f32 + 0.5) * self.bin_width
     }

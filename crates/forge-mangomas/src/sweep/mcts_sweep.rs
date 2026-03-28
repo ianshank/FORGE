@@ -128,7 +128,10 @@ impl MctsParamSweep {
 
 /// Generates `steps` evenly spaced f32 values in [min, max].
 fn linspace(min: f32, max: f32, steps: u32) -> Vec<f32> {
-    if steps <= 1 {
+    if steps == 0 {
+        return vec![];
+    }
+    if steps == 1 {
         return vec![min];
     }
     let step_size = (max - min) / (steps - 1) as f32;
@@ -137,7 +140,10 @@ fn linspace(min: f32, max: f32, steps: u32) -> Vec<f32> {
 
 /// Generates `steps` evenly spaced u32 values in [min, max].
 fn linspace_u32(min: u32, max: u32, steps: u32) -> Vec<u32> {
-    if steps <= 1 {
+    if steps == 0 {
+        return vec![];
+    }
+    if steps == 1 {
         return vec![min];
     }
     let step_size = (max - min) as f32 / (steps - 1) as f32;
@@ -208,6 +214,17 @@ mod tests {
 
         assert_eq!(report.results.len(), 2 * 2);
         assert!(report.best.is_some());
+    }
+
+    #[test]
+    fn test_sweep_empty_grid() {
+        let config = SweepConfig {
+            c_puct_steps: 0,
+            ..Default::default()
+        };
+        let sweep = MctsParamSweep::new(config, Platform::Drone);
+        let grid = sweep.generate_grid();
+        assert!(grid.is_empty());
     }
 
     #[test]

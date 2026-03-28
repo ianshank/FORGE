@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -58,13 +58,19 @@ class PlatformCurriculumController:
         self,
         platform: str = "drone",
         config: CurriculumConfig | None = None,
+        tiers: list[dict[str, Any]] | None = None,
     ) -> None:
         self.platform = platform
         self.config = config or CurriculumConfig()
-        self._tiers = DRONE_TIERS if platform == "drone" else CAR_TIERS
+        if tiers:
+            self._tiers = tiers
+        elif self.config.tiers:
+            self._tiers = self.config.tiers
+        else:
+            self._tiers = DRONE_TIERS if platform == "drone" else CAR_TIERS
         self._current_tier = 1
         self._max_unlocked_tier = 1
-        self._rng = np.random.default_rng(42)
+        self._rng = np.random.default_rng(self.config.seed)
 
         # Per-tier outcome tracking
         self._tier_outcomes: dict[int, deque[bool]] = {

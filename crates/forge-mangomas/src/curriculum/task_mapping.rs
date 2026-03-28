@@ -72,7 +72,7 @@ pub enum MissionIR {
 pub struct TaskDslMapper;
 
 impl TaskDslMapper {
-    /// Creates a new mapper.
+    /// Create a new TaskDslMapper with default configuration.
     pub fn new() -> Self {
         Self
     }

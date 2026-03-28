@@ -8,13 +8,13 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
 
-from forge.mangomas.config import SweepConfig, SurpriseValidatorConfig
+from forge.mangomas.config import SweepConfig
 
 logger = logging.getLogger(__name__)
 
@@ -98,19 +98,18 @@ class MCTSSweepRunner:
             self.config.discount_steps,
         )
 
-        grid = []
-        for cp in c_pucts:
-            for sb in sim_budgets:
-                for d in depths:
-                    for disc in discounts:
-                        grid.append(
-                            {
-                                "c_puct": float(cp),
-                                "num_simulations": int(sb),
-                                "max_depth": int(d),
-                                "discount": float(disc),
-                            }
-                        )
+        grid = [
+            {
+                "c_puct": float(cp),
+                "num_simulations": int(sb),
+                "max_depth": int(d),
+                "discount": float(disc),
+            }
+            for cp in c_pucts
+            for sb in sim_budgets
+            for d in depths
+            for disc in discounts
+        ]
         logger.info("Generated parameter grid with %d configurations", len(grid))
         return grid
 

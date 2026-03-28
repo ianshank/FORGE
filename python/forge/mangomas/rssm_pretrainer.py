@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -138,8 +137,8 @@ class RSSMPreTrainer:
 
         # Reward head
         for i, (in_d, out_d) in enumerate(
-            zip([h_dim] + self.config.reward_head_hidden,
-                self.config.reward_head_hidden + [1])
+            zip([h_dim, *self.config.reward_head_hidden],
+                [*self.config.reward_head_hidden, 1])
         ):
             scale = np.sqrt(6.0 / (in_d + out_d))
             self._weights[f"reward_w{i}"] = rng.uniform(-scale, scale, (out_d, in_d)).astype(np.float32)
@@ -147,8 +146,8 @@ class RSSMPreTrainer:
 
         # Value head
         for i, (in_d, out_d) in enumerate(
-            zip([h_dim] + self.config.value_head_hidden,
-                self.config.value_head_hidden + [1])
+            zip([h_dim, *self.config.value_head_hidden],
+                [*self.config.value_head_hidden, 1])
         ):
             scale = np.sqrt(6.0 / (in_d + out_d))
             self._weights[f"value_w{i}"] = rng.uniform(-scale, scale, (out_d, in_d)).astype(np.float32)
@@ -185,13 +184,13 @@ class RSSMPreTrainer:
                     # Simplified: predict next state from current state
                     pred_ns = s  # placeholder — real impl would use GRU
                     t_loss = float(np.mean((pred_ns - ns) ** 2))
-                    r_loss = float(np.mean(r ** 2)) * 0.01  # reward scale
+                    r_loss = float(np.mean(r ** 2)) * self.config.reward_loss_scale
                     epoch_loss += t_loss + r_loss
 
                 epoch_loss /= max(dataset.num_sequences // self.config.batch_size, 1)
                 loss_history.append(epoch_loss)
 
-                if (epoch + 1) % 20 == 0:
+                if (epoch + 1) % self.config.log_interval == 0:
                     logger.debug(
                         "RSSM epoch %d/%d: loss=%.4f",
                         epoch + 1, self.config.num_epochs, epoch_loss,

@@ -5,13 +5,10 @@ from typing import Any
 
 import numpy as np
 import pytest
-
 from forge.mangomas.bdi_trainer import (
+    DEFAULT_ACTION_INTENTION_MAP,
     BDIDataset,
     BDIPreTrainer,
-    BDITrainResult,
-    DEFAULT_ACTION_INTENTION_MAP,
-    INTENTION_NAMES,
 )
 from forge.mangomas.config import BDITrainerConfig
 

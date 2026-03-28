@@ -71,11 +71,13 @@ impl PlatformCurriculum {
     }
 
     /// Records the outcome of a training episode.
+    #[instrument(skip(self))]
     pub fn record_outcome(&mut self, success: bool) {
         self.controller.record_outcome(success);
     }
 
     /// Samples a tier from the current adaptive distribution.
+    #[instrument(skip(self, rng))]
     pub fn sample_tier<R: rand::Rng>(&self, rng: &mut R) -> MangoMasResult<&TierDefinition> {
         let tier = self
             .controller

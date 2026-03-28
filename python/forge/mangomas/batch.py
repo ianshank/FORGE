@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 
@@ -92,18 +92,16 @@ class BatchCollector:
         for ep in range(num_episodes):
             seed = int(self._rng.integers(0, 2**31))
             obs = reset_fn(seed)
-            state_dim = obs.shape[0] if obs.ndim > 0 else 1
-
             obs_list = [obs.copy()]
             action_list = []
             reward_list = []
             done_list = []
 
-            for step in range(self.config.max_steps):
+            for _step in range(self.config.max_steps):
                 if policy_fn is not None:
                     action = policy_fn(obs)
                 else:
-                    action = int(self._rng.integers(0, 75))
+                    action = int(self._rng.integers(0, self.config.action_space_size))
 
                 next_obs, reward, done = step_fn(obs, action)
                 action_list.append(action)
@@ -127,7 +125,7 @@ class BatchCollector:
             )
             episodes.append(ep_data)
 
-            if (ep + 1) % 100 == 0:
+            if (ep + 1) % self.config.log_interval == 0:
                 logger.debug("Collected %d/%d episodes", ep + 1, num_episodes)
 
         elapsed = time.monotonic() - start

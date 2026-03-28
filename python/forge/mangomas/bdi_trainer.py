@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -52,7 +51,7 @@ class BDIDataset:
         counts = np.bincount(self.intentions, minlength=8)
         total = counts.sum()
         if total == 0:
-            return {name: 0.0 for name in INTENTION_NAMES.values()}
+            return dict.fromkeys(INTENTION_NAMES.values(), 0.0)
         return {
             INTENTION_NAMES[i]: float(counts[i]) / float(total)
             for i in range(8)
@@ -98,7 +97,7 @@ class BDIPreTrainer:
         """Map a FORGE action to a BDI intention class."""
         if action_id in self._overrides:
             return self._overrides[action_id]
-        return self._action_map.get(action_name, 7)  # default Idle
+        return self._action_map.get(action_name, self.config.default_intention)
 
     def build_dataset(
         self,
@@ -201,7 +200,7 @@ class BDIPreTrainer:
             loss_history.append(float(epoch_loss))
             acc_history.append(float(epoch_acc))
 
-            if (epoch + 1) % 10 == 0:
+            if (epoch + 1) % self.config.log_interval == 0:
                 logger.debug(
                     "BDI epoch %d/%d: loss=%.4f, acc=%.4f",
                     epoch + 1, self.config.num_epochs, epoch_loss, epoch_acc,

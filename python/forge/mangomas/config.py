@@ -42,6 +42,11 @@ class ObservationAdapterConfig:
     grid_summary_dim: int = DEFAULT_GRID_SUMMARY_DIM
     include_inventory: bool = True
     include_drone_fields: bool = False
+    position_scale: float = 16.0
+    grid_channels: int = 11
+    scalar_fields: int = 5
+    inventory_fields: int = 2
+    drone_fields: int = 4
 
 
 @dataclass
@@ -84,6 +89,8 @@ class BDITrainerConfig:
     batch_size: int = 64
     num_epochs: int = 50
     sequence_length: int = 50
+    log_interval: int = 10
+    default_intention: int = 7  # Idle
 
 
 @dataclass
@@ -95,6 +102,15 @@ class ConstitutionalTrainerConfig:
     learning_rate: float = 3e-4
     batch_size: int = 64
     num_epochs: int = 100
+    value_loss_weight: float = 0.5
+    log_interval: int = 20
+    constraints: list[dict[str, Any]] = field(default_factory=lambda: [
+        {"name": "battery_minimum", "forge_field": "battery", "threshold": 0.2, "is_lower_bound": True},
+        {"name": "altitude_ceiling", "forge_field": "altitude", "threshold": 0.9, "is_lower_bound": False},
+        {"name": "speed_ceiling", "forge_field": "stamina_inverse", "threshold": 0.8, "is_lower_bound": False},
+        {"name": "geofence", "forge_field": "boundary_distance", "threshold": 0.1, "is_lower_bound": True},
+        {"name": "threat_exclusion", "forge_field": "threat_proximity", "threshold": 0.3, "is_lower_bound": True},
+    ])
 
 
 @dataclass
@@ -114,6 +130,8 @@ class RSSMPreTrainConfig:
     reward_head_hidden: list[int] = field(default_factory=lambda: [200, 200])
     value_head_hidden: list[int] = field(default_factory=lambda: [200, 200])
     value_discount: float = 0.99
+    reward_loss_scale: float = 0.01
+    log_interval: int = 20
 
 
 @dataclass
@@ -125,6 +143,8 @@ class CurriculumConfig:
     window_size: int = 100
     warmup_episodes: int = 20
     adjustment_rate: float = 0.1
+    tiers: list[dict[str, Any]] = field(default_factory=list)
+    seed: int = 42
 
 
 @dataclass
@@ -134,6 +154,23 @@ class BatchCollectorConfig:
     max_steps: int = DEFAULT_MAX_STEPS
     num_envs: int = DEFAULT_NUM_ENVS
     seed: int = 42
+    action_space_size: int = 75
+    log_interval: int = 100
+
+
+@dataclass
+class CuriosityOptimizerConfig:
+    """Curiosity weight optimizer configuration."""
+
+    channels: list[str] = field(
+        default_factory=lambda: ["social", "epistemic", "perceptual", "metacognitive"]
+    )
+    initial_weights: list[float] = field(default_factory=lambda: [0.4, 0.3, 0.2, 0.1])
+    population_size: int = 20
+    sigma: float = 0.1
+    learning_rate: float = 0.05
+    seed: int = 42
+    log_interval: int = 10
 
 
 @dataclass
@@ -156,14 +193,17 @@ class MangoMASBridgeConfig:
     rssm_pretrain: RSSMPreTrainConfig = field(default_factory=RSSMPreTrainConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     batch_collector: BatchCollectorConfig = field(default_factory=BatchCollectorConfig)
+    curiosity_optimizer: CuriosityOptimizerConfig = field(
+        default_factory=CuriosityOptimizerConfig
+    )
 
     @classmethod
     def from_toml(cls, path: str | Path) -> MangoMASBridgeConfig:
         """Load configuration from a TOML file."""
         try:
-            import tomllib
+            import tomllib  # noqa: PLC0415
         except ModuleNotFoundError:
-            import tomli as tomllib
+            import tomli as tomllib  # noqa: PLC0415
 
         path = Path(path)
         with path.open("rb") as f:

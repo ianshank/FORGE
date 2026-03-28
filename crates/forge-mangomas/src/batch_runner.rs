@@ -8,7 +8,7 @@ use forge_core::WorldState;
 use forge_types::action::Action;
 use forge_types::observation::Observation;
 use rayon::prelude::*;
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, warn};
 
 use crate::config::BatchRunnerConfig;
 use crate::error::{MangoMasError, MangoMasResult};
@@ -50,7 +50,7 @@ pub struct EpisodeBatch {
 
 /// Action selection strategy for batch collection.
 pub trait ActionPolicy: Send + Sync {
-    /// Selects an action given the current observation and agent index.
+    /// Select an action given the current observation for a specific agent.
     fn select_action(&self, obs: &Observation, agent_idx: usize) -> u32;
 }
 
@@ -160,8 +160,12 @@ impl BatchRunner {
                 .enumerate()
                 .map(|(idx, o)| {
                     let action_id = policy.select_action(o, idx);
-                    Action::from_discrete(action_id, comm_vocab, drone_enabled)
-                        .unwrap_or(Action::Noop)
+                    Action::from_discrete(action_id, comm_vocab, drone_enabled).unwrap_or_else(
+                        || {
+                            warn!(action_id, "Invalid action ID, falling back to Noop");
+                            Action::Noop
+                        },
+                    )
                 })
                 .collect();
 
@@ -177,6 +181,7 @@ impl BatchRunner {
             let done = step_result.terminated || step_result.truncated;
 
             let obs_for_transition = current_obs.into_iter().next().unwrap_or_else(|| {
+                debug!("Empty observation from step, using zero-state fallback");
                 forge_types::observation::Observation {
                     grid_view: vec![],
                     view_width: 0,
@@ -295,6 +300,17 @@ mod tests {
             batch1.episodes[0].total_reward,
             batch2.episodes[0].total_reward
         );
+    }
+
+    #[test]
+    fn test_batch_runner_max_steps() {
+        let mut config = test_config();
+        config.max_episode_steps = 5;
+        let runner = BatchRunner::new(config);
+        let policy = RandomActionPolicy::new(42);
+        let batch = runner.collect_episodes(1, &policy).unwrap();
+        assert_eq!(batch.episodes.len(), 1);
+        assert!(batch.episodes[0].length <= 5);
     }
 
     #[test]

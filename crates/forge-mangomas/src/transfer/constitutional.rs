@@ -6,7 +6,7 @@
 
 use forge_types::observation::Observation;
 use serde::{Deserialize, Serialize};
-use tracing::instrument;
+use tracing::{instrument, warn};
 
 use crate::config::TransferConfig;
 
@@ -60,6 +60,7 @@ impl ConstitutionalConstraintMapper {
     }
 
     /// Checks an observation for constraint violations.
+    #[instrument(skip(self, obs))]
     pub fn check_violations(&self, obs: &Observation) -> Vec<ConstraintViolation> {
         let mut violations = Vec::new();
 
@@ -93,6 +94,7 @@ impl ConstitutionalConstraintMapper {
     /// Computes a constraint penalty reward signal.
     ///
     /// Returns a negative reward proportional to the sum of violation severities.
+    #[instrument(skip(self))]
     pub fn compute_penalty(&self, obs: &Observation) -> f32 {
         let violations = self.check_violations(obs);
         let total_severity: f32 = violations.iter().map(|v| v.severity).sum();
@@ -142,7 +144,7 @@ impl ConstitutionalConstraintMapper {
         constraints
     }
 
-    /// Extracts the relevant value from an observation for a given constraint.
+    /// Extract the observation value for a named constraint field.
     fn extract_value(&self, obs: &Observation, constraint_name: &str) -> f32 {
         match constraint_name {
             "battery_minimum" => obs.battery,
@@ -163,7 +165,13 @@ impl ConstitutionalConstraintMapper {
                     0.8 // No threat
                 }
             }
-            _ => 0.5,
+            _ => {
+                warn!(
+                    field = constraint_name,
+                    "Unknown constraint field, using default value 0.5"
+                );
+                0.5
+            }
         }
     }
 }
@@ -194,6 +202,7 @@ impl ConstraintViolationTracker {
     }
 
     /// Records violations for a single step.
+    #[instrument(skip(self, obs))]
     pub fn record_step(&mut self, obs: &Observation) {
         self.total_steps += 1;
         let violations = self.mapper.check_violations(obs);

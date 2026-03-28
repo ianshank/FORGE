@@ -5,7 +5,6 @@ from typing import Any
 
 import numpy as np
 import pytest
-
 from forge.mangomas.config import RSSMPreTrainConfig
 from forge.mangomas.rssm_pretrainer import RSSMPreTrainer, SequenceDataset
 

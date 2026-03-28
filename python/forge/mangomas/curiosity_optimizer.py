@@ -6,10 +6,12 @@ perceptual, metacognitive) via FORGE multi-agent scenarios.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
+
+from forge.mangomas.config import CuriosityOptimizerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +29,7 @@ class CuriosityWeights:
 
     def as_array(self) -> np.ndarray:
         """Return weights as an ordered numpy array."""
-        return np.array(
-            [self.weights[c] for c in DEFAULT_CURIOSITY_CHANNELS],
-            dtype=np.float32,
-        )
+        return np.array(list(self.weights.values()), dtype=np.float32)
 
     def __repr__(self) -> str:
         parts = [f"{k}={v:.3f}" for k, v in self.weights.items()]
@@ -46,26 +45,28 @@ class CuriosityWeightOptimizer:
 
     def __init__(
         self,
+        config: CuriosityOptimizerConfig | None = None,
         channels: list[str] | None = None,
         initial_weights: list[float] | None = None,
-        population_size: int = 20,
-        sigma: float = 0.1,
-        learning_rate: float = 0.05,
-        seed: int = 42,
+        population_size: int | None = None,
+        sigma: float | None = None,
+        learning_rate: float | None = None,
+        seed: int | None = None,
     ) -> None:
-        self.channels = channels or DEFAULT_CURIOSITY_CHANNELS
+        self._config = config or CuriosityOptimizerConfig()
+        self.channels = channels or self._config.channels
         self._initial = np.array(
-            initial_weights or DEFAULT_INITIAL_WEIGHTS, dtype=np.float32
+            initial_weights or self._config.initial_weights, dtype=np.float32
         )
-        self.population_size = population_size
-        self.sigma = sigma
-        self.learning_rate = learning_rate
-        self._rng = np.random.default_rng(seed)
+        self.population_size = population_size if population_size is not None else self._config.population_size
+        self.sigma = sigma if sigma is not None else self._config.sigma
+        self.learning_rate = learning_rate if learning_rate is not None else self._config.learning_rate
+        self._rng = np.random.default_rng(seed if seed is not None else self._config.seed)
         logger.info(
-            "CuriosityWeightOptimizer: %d channels, pop=%d, σ=%.2f",
+            "CuriosityWeightOptimizer: %d channels, pop=%d, sigma=%.2f",
             len(self.channels),
-            population_size,
-            sigma,
+            self.population_size,
+            self.sigma,
         )
 
     def _normalize(self, w: np.ndarray) -> np.ndarray:
@@ -126,7 +127,7 @@ class CuriosityWeightOptimizer:
                 best_fitness = float(fitnesses[best_idx])
                 best_weights = population[best_idx].copy()
 
-            if (iteration + 1) % 10 == 0:
+            if (iteration + 1) % self._config.log_interval == 0:
                 logger.debug(
                     "Curiosity ES iter %d/%d: best_fitness=%.4f",
                     iteration + 1, num_iterations, best_fitness,

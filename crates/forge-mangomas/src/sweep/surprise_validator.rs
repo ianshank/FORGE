@@ -49,7 +49,7 @@ impl SurpriseAdaptiveBudgetValidator {
         Self { config }
     }
 
-    /// Returns the simulation budget for a given surprise level.
+    /// Get the simulation budget for a given surprise level.
     pub fn budget_for_level(&self, level: SurpriseLevel) -> u32 {
         match level {
             SurpriseLevel::Low => self.config.low_surprise_budget,
@@ -58,7 +58,7 @@ impl SurpriseAdaptiveBudgetValidator {
         }
     }
 
-    /// Classifies a KL divergence value into a surprise level.
+    /// Classify the surprise level based on prediction error magnitude.
     pub fn classify_surprise(&self, kl_divergence: f32) -> SurpriseLevel {
         if kl_divergence < self.config.low_surprise_threshold {
             SurpriseLevel::Low

@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
-
 from forge.mangomas.adapters import ActionSpaceAdapter, ObservationAdapter
-from forge.mangomas.config import ActionAdapterConfig, ObservationAdapterConfig
+from forge.mangomas.config import ActionAdapterConfig
 
 
 class TestActionSpaceAdapter:

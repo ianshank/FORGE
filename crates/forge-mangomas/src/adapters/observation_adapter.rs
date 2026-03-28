@@ -38,7 +38,7 @@ impl FlatStateAdapter {
         Self { config }
     }
 
-    /// Computes grid summary features from tile observations.
+    /// Extract summary statistics from the ego-centric grid observation.
     fn grid_summary(obs: &Observation) -> Vec<f32> {
         let mut agent_count = 0u32;
         let mut object_count = 0u32;
@@ -71,7 +71,7 @@ impl FlatStateAdapter {
         features
     }
 
-    /// Computes inventory summary features.
+    /// Summarize inventory contents as a normalized feature vector.
     fn inventory_summary(obs: &Observation) -> Vec<f32> {
         let total_items: u32 = obs
             .inventory

@@ -6,6 +6,7 @@
 
 use forge_types::action::Action;
 use forge_types::observation::Observation;
+use tracing::instrument;
 
 /// Trait for multi-agent swarm coordination protocols.
 ///
@@ -36,7 +37,7 @@ pub struct IndependentProtocol {
 }
 
 impl IndependentProtocol {
-    /// Creates a new independent (non-coordinating) protocol.
+    /// Create a new independent (no-coordination) protocol.
     pub fn new(swarm_size: usize) -> Self {
         Self { swarm_size }
     }
@@ -47,6 +48,7 @@ impl SwarmProtocol for IndependentProtocol {
         "independent"
     }
 
+    #[instrument(skip(self, observations, _comm_tokens))]
     fn coordinate(&self, observations: &[Observation], _comm_tokens: &[Vec<u16>]) -> Vec<Action> {
         // Stub: all agents do nothing
         vec![Action::Noop; observations.len()]

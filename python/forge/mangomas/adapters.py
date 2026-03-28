@@ -92,6 +92,11 @@ class ActionSpaceAdapter:
         step = (self._hi - self._lo) / self._bins
         return self._lo + step * (bin_idx + 0.5)
 
+    @property
+    def total_action_space(self) -> int:
+        """Total number of discrete actions in the mapped space."""
+        return self._bins ** self.continuous_dims
+
 
 class ObservationAdapter:
     """Converts FORGE observations to flat state vectors for MangoMAS.
@@ -108,6 +113,10 @@ class ObservationAdapter:
         self.config = config or ObservationAdapterConfig()
         self.platform = platform
         self._include_drone = platform == "drone" or self.config.include_drone_fields
+        self._grid_channels = self.config.grid_channels
+        self._scalar_fields = self.config.scalar_fields
+        self._inventory_fields = self.config.inventory_fields
+        self._drone_fields = self.config.drone_fields
         logger.debug(
             "ObservationAdapter: platform=%s, drone_fields=%s",
             platform,
@@ -117,9 +126,8 @@ class ObservationAdapter:
     @property
     def output_dim(self) -> int:
         """Dimensionality of the output state vector."""
-        # grid_summary(11) + scalars(5) + inventory(2) + drone(4 if drone)
-        base = 11 + 5 + 2
-        return base + 4 if self._include_drone else base
+        base = self._grid_channels + self._scalar_fields + self._inventory_fields
+        return base + self._drone_fields if self._include_drone else base
 
     def adapt(self, obs: dict[str, Any]) -> np.ndarray:
         """Convert a FORGE observation dict to a flat state vector."""
@@ -130,7 +138,7 @@ class ObservationAdapter:
         if grid.size > 0:
             parts.append(self._grid_summary(grid))
         else:
-            parts.append(np.zeros(11, dtype=np.float32))
+            parts.append(np.zeros(self._grid_channels, dtype=np.float32))
 
         # Scalar fields
         parts.append(
@@ -138,8 +146,8 @@ class ObservationAdapter:
                 [
                     float(obs.get("health", 1.0)),
                     float(obs.get("stamina", 1.0)),
-                    float(obs.get("position", [0, 0])[0]) / 16.0,  # normalize
-                    float(obs.get("position", [0, 0])[1]) / 16.0,
+                    float(obs.get("position", [0, 0])[0]) / self.config.position_scale,  # normalize
+                    float(obs.get("position", [0, 0])[1]) / self.config.position_scale,
                     float(obs.get("day_phase", 0.0)),
                 ],
                 dtype=np.float32,
@@ -177,13 +185,13 @@ class ObservationAdapter:
     def _grid_summary(self, grid: np.ndarray) -> np.ndarray:
         """Extract summary statistics from the observation grid."""
         if grid.ndim < 3:
-            return np.zeros(11, dtype=np.float32)
+            return np.zeros(self._grid_channels, dtype=np.float32)
         # Channels: agents(0), resources(1), obstacles(2), terrain(3-10)
         n_cells = float(grid.shape[0] * grid.shape[1])
         if n_cells == 0:
-            return np.zeros(11, dtype=np.float32)
-        summary = np.zeros(11, dtype=np.float32)
-        n_channels = min(grid.shape[2], 11)
+            return np.zeros(self._grid_channels, dtype=np.float32)
+        summary = np.zeros(self._grid_channels, dtype=np.float32)
+        n_channels = min(grid.shape[2], self._grid_channels)
         for c in range(min(3, n_channels)):
             summary[c] = float(np.sum(grid[:, :, c] > 0)) / n_cells
         for c in range(3, n_channels):

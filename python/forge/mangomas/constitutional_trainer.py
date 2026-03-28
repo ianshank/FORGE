@@ -82,7 +82,7 @@ class ConstitutionalPreTrainer:
         constraints: list[dict[str, Any]] | None = None,
     ) -> None:
         self.config = config or ConstitutionalTrainerConfig()
-        self.constraints = constraints or DEFAULT_CONSTRAINTS
+        self.constraints = constraints or self.config.constraints
         self._weights: dict[str, np.ndarray] | None = None
         logger.info(
             "ConstitutionalPreTrainer: %d constraints, penalty_weight=%.1f",
@@ -196,7 +196,7 @@ class ConstitutionalPreTrainer:
                 # Value loss
                 value_loss = np.mean((values - r) ** 2)
 
-                batch_loss = policy_loss + 0.5 * value_loss
+                batch_loss = policy_loss + self.config.value_loss_weight * value_loss
                 epoch_loss += float(batch_loss) * len(a)
 
                 # Gradient updates (simplified)
@@ -210,7 +210,7 @@ class ConstitutionalPreTrainer:
             epoch_loss /= max(dataset.num_samples, 1)
             loss_history.append(epoch_loss)
 
-            if (epoch + 1) % 20 == 0:
+            if (epoch + 1) % self.config.log_interval == 0:
                 logger.debug(
                     "Constitutional epoch %d/%d: loss=%.4f",
                     epoch + 1, self.config.num_epochs, epoch_loss,
