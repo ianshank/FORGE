@@ -14,6 +14,7 @@ members = [
     "crates/forge-social",
     "crates/forge-cognitive",
     "crates/forge-integration",
+    "crates/forge-mangomas",
 ]
 resolver = "2"
 

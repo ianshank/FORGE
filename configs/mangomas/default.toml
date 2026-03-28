@@ -1,0 +1,62 @@
+# MangoMAS Integration — Default Configuration
+# All values are overridable. See crates/forge-mangomas/src/config.rs for docs.
+
+[mangomas]
+enabled = false
+platform = "Drone"
+
+[mangomas.action_adapter]
+bins_per_axis = 7
+action_range_min = -1.0
+action_range_max = 1.0
+
+[mangomas.observation_adapter]
+grid_summary_dim = 64
+include_raw_grid = false
+
+[mangomas.batch_runner]
+max_episode_steps = 1000
+num_envs = 8
+seed = 0
+
+[mangomas.sweep]
+episodes_per_config = 50
+num_workers = 4
+c_puct_range = [0.5, 3.0]
+c_puct_steps = 6
+sim_budget_range = [10, 500]
+sim_budget_steps = 5
+depth_range = [10, 100]
+depth_steps = 4
+discount_range = [0.9, 0.999]
+discount_steps = 4
+seed = 0
+
+[mangomas.surprise_validator]
+low_surprise_budget = 25
+base_surprise_budget = 100
+full_surprise_budget = 300
+low_surprise_threshold = 0.1
+high_surprise_threshold = 0.5
+episodes_per_level = 100
+
+[mangomas.transfer]
+num_bdi_intentions = 8
+bdi_collection_episodes = 10000
+rssm_sequence_length = 50
+rssm_collection_episodes = 50000
+constitutional_constraints = [
+    "battery_minimum",
+    "altitude_ceiling",
+    "speed_ceiling",
+    "geofence",
+    "threat_exclusion",
+]
+curiosity_weights = [0.4, 0.3, 0.2, 0.1]
+
+[mangomas.curriculum]
+num_tiers = 5
+target_success_rate = 0.6
+window_size = 100
+warmup_episodes = 20
+adjustment_rate = 0.1

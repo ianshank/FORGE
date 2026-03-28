@@ -1,0 +1,44 @@
+# MangoMAS Car Curriculum — 5-Tier Progressive Training
+
+[curriculum]
+platform = "Car"
+num_tiers = 5
+target_success_rate = 0.6
+window_size = 100
+warmup_episodes = 20
+adjustment_rate = 0.1
+
+[[curriculum.tiers]]
+tier = 1
+name = "Straight Navigation"
+forge_scenario = "patrol"
+description = "Navigate to a single waypoint on open terrain"
+success_threshold = 0.7
+
+[[curriculum.tiers]]
+tier = 2
+name = "Obstacle Avoidance"
+forge_scenario = "patrol"
+description = "Navigate while avoiding static obstacles"
+success_threshold = 0.6
+
+[[curriculum.tiers]]
+tier = 3
+name = "Multi-Waypoint Route"
+forge_scenario = "patrol"
+description = "Complete a sequence of waypoints in order"
+success_threshold = 0.5
+
+[[curriculum.tiers]]
+tier = 4
+name = "Dynamic Obstacles"
+forge_scenario = "area_denial"
+description = "Navigate with moving obstacles and sensor dropout"
+success_threshold = 0.4
+
+[[curriculum.tiers]]
+tier = 5
+name = "Full Mission"
+forge_scenario = "escort"
+description = "Complete multi-step mission with resource constraints"
+success_threshold = 0.3

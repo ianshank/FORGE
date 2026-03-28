@@ -1,0 +1,23 @@
+# RSSM Pre-Training Configuration
+
+[rssm]
+sequence_length = 50
+collection_episodes = 50000
+state_dim = 22        # FlatStateAdapter output dim (drone mode)
+hidden_dim = 200      # GRU hidden state size
+latent_dim = 30       # Stochastic latent dimension
+action_dim = 75       # FORGE action space (with comm + drone)
+
+[rssm.training]
+learning_rate = 3e-4
+batch_size = 50
+num_epochs = 100
+kl_weight = 1.0
+free_nats = 3.0
+
+[rssm.reward_head]
+hidden_sizes = [200, 200]
+
+[rssm.value_head]
+hidden_sizes = [200, 200]
+discount = 0.99
