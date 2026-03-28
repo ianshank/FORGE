@@ -488,4 +488,30 @@ mod tests {
 
         assert_eq!(action, Action::Noop);
     }
+
+    #[test]
+    fn test_mcts_short_priors_uses_uniform_fallback() {
+        // FixedPolicy returns only 2 priors for an action_space of 4.
+        // The unwrap_or fallback path fires for actions 2 and 3.
+        let state = make_test_state();
+        let model = StubForwardModel {
+            terminal: false,
+            num_agents: 1,
+        };
+        let policy = FixedPolicy {
+            priors: vec![1.0; 2],
+            value: 0.0,
+        };
+        let config = MctsConfig {
+            num_simulations: 8,
+            action_space: 4,
+            max_depth: 3,
+            ..MctsConfig::default()
+        };
+        let search = MctsSearch::new(model, policy, config, 0);
+
+        // Should not panic; fallback uniform prior (0.25) used for actions ≥ 2
+        let action = search.search(&state, 0);
+        let _ = action.to_discrete(); // must not panic
+    }
 }
