@@ -1,0 +1,430 @@
+"""MouseDroid composite agent integrating RSSM, BDI, and Constitutional RL.
+
+Composes pre-trained sub-components from the ``ianshank/mousedroid-weights``
+HuggingFace repository into a single :class:`BaseAgent`-compatible agent.
+
+Components:
+    - RSSM world model for latent-space dynamics
+    - BDI encoder for belief/desire/intention/affect
+    - Neural MCTS policy for action prior estimation
+    - Constitutional RL (actor-critic) for PPO fine-tuning
+
+Usage::
+
+    from forge.agents.mousedroid_agent import MouseDroidAgent, MouseDroidConfig
+
+    agent = MouseDroidAgent(MouseDroidConfig())
+    agent.load_from_hub()
+    action, info = agent.act(observation)
+"""
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+from forge.agents.base_agent import AgentConfig, BaseAgent
+from forge.config import DEFAULT_ACTION_DIM, DEFAULT_OBS_DIM
+from forge.models.bdi_network import (
+    DEFAULT_AFFECT_DIM,
+    DEFAULT_BDI_HIDDEN_SIZES,
+    DEFAULT_BELIEF_DIM,
+    DEFAULT_DESIRE_DIM,
+    DEFAULT_INTENTION_DIM,
+    BDIConfig,
+    BDINetwork,
+)
+from forge.models.neural_policy import (
+    DEFAULT_POLICY_HIDDEN_SIZES,
+    NeuralMCTSPolicy,
+    NeuralPolicyConfig,
+)
+from forge.models.rssm_world_model import (
+    DEFAULT_DETERMINISTIC_DIM,
+    DEFAULT_HIDDEN_DIM,
+    DEFAULT_STATE_DIM,
+    DEFAULT_STOCHASTIC_DIM,
+    RSSMConfig,
+    RSSMWorldModel,
+)
+from forge.utils.weight_loader import (
+    DEFAULT_REPO_ID,
+    DEFAULT_REVISION,
+    WeightLoader,
+    WeightLoaderConfig,
+)
+
+if TYPE_CHECKING:
+    from forge.models.policy_network import ActorCriticNetwork
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_CONSTITUTIONAL_HIDDEN_SIZES: list[int] = [256, 256]
+
+
+@dataclass
+class MouseDroidConfig(AgentConfig):
+    """Configuration for :class:`MouseDroidAgent`.
+
+    Aggregates all sub-component configurations into a single dataclass.
+    Extends :class:`AgentConfig` for compatibility with the agent framework.
+    """
+
+    name: str = "mousedroid"
+
+    # HuggingFace Hub
+    repo_id: str = DEFAULT_REPO_ID
+    revision: str = DEFAULT_REVISION
+    cache_dir: str | None = None
+
+    # Shared dimensions
+    obs_dim: int = DEFAULT_OBS_DIM
+    action_dim: int = DEFAULT_ACTION_DIM
+    device: str = "auto"
+
+    # RSSM world model
+    rssm_state_dim: int = DEFAULT_STATE_DIM
+    rssm_hidden_dim: int = DEFAULT_HIDDEN_DIM
+    rssm_stochastic_dim: int = DEFAULT_STOCHASTIC_DIM
+    rssm_deterministic_dim: int = DEFAULT_DETERMINISTIC_DIM
+
+    # BDI
+    belief_dim: int = DEFAULT_BELIEF_DIM
+    desire_dim: int = DEFAULT_DESIRE_DIM
+    intention_dim: int = DEFAULT_INTENTION_DIM
+    affect_dim: int = DEFAULT_AFFECT_DIM
+    bdi_hidden_sizes: list[int] = field(
+        default_factory=lambda: list(DEFAULT_BDI_HIDDEN_SIZES)
+    )
+
+    # MCTS policy
+    policy_hidden_sizes: list[int] = field(
+        default_factory=lambda: list(DEFAULT_POLICY_HIDDEN_SIZES)
+    )
+
+    # Constitutional RL
+    constitutional_hidden_sizes: list[int] = field(
+        default_factory=lambda: list(DEFAULT_CONSTITUTIONAL_HIDDEN_SIZES)
+    )
+
+    # Behaviour
+    auto_download: bool = True
+
+
+class MouseDroidAgent(BaseAgent):
+    """Composite agent integrating RSSM, BDI, neural policy, and constitutional RL.
+
+    On construction, creates all sub-components.  Call :meth:`load_from_hub`
+    to download and load pre-trained weights from HuggingFace.
+
+    Args:
+        config: MouseDroid configuration.
+    """
+
+    def __init__(self, config: MouseDroidConfig) -> None:
+        super().__init__(config)
+        self._md_config = config
+
+        device = config.device
+        if device == "auto":
+            from forge.utils.device import get_device  # noqa: PLC0415
+
+            device = get_device()
+        self._device = device
+
+        # Build sub-components
+        self._world_model = RSSMWorldModel(
+            RSSMConfig(
+                obs_dim=config.obs_dim,
+                action_dim=config.action_dim,
+                state_dim=config.rssm_state_dim,
+                hidden_dim=config.rssm_hidden_dim,
+                stochastic_dim=config.rssm_stochastic_dim,
+                deterministic_dim=config.rssm_deterministic_dim,
+                device=device,
+            )
+        )
+
+        self._bdi = BDINetwork(
+            BDIConfig(
+                obs_dim=config.obs_dim,
+                belief_dim=config.belief_dim,
+                desire_dim=config.desire_dim,
+                intention_dim=config.intention_dim,
+                affect_dim=config.affect_dim,
+                hidden_sizes=config.bdi_hidden_sizes,
+                device=device,
+            )
+        )
+
+        self._policy = NeuralMCTSPolicy(
+            NeuralPolicyConfig(
+                obs_dim=config.obs_dim,
+                action_dim=config.action_dim,
+                hidden_sizes=config.policy_hidden_sizes,
+                device=device,
+            )
+        )
+
+        # Constitutional RL policy (actor-critic for PPO fine-tuning)
+        from forge.models.policy_network import ActorCriticNetwork  # noqa: PLC0415
+
+        self._constitutional = ActorCriticNetwork(
+            obs_dim=config.obs_dim,
+            action_dim=config.action_dim,
+            hidden_sizes=config.constitutional_hidden_sizes,
+            device=device,
+        )
+
+        logger.info(
+            "MouseDroidAgent initialised: obs=%d, act=%d, device=%s",
+            config.obs_dim,
+            config.action_dim,
+            device,
+        )
+
+    # ----- Properties -----
+
+    @property
+    def mousedroid_config(self) -> MouseDroidConfig:
+        """Return the MouseDroid configuration."""
+        return self._md_config
+
+    @property
+    def world_model(self) -> RSSMWorldModel:
+        """Return the RSSM world model sub-component."""
+        return self._world_model
+
+    @property
+    def bdi(self) -> BDINetwork:
+        """Return the BDI network sub-component."""
+        return self._bdi
+
+    @property
+    def policy(self) -> NeuralMCTSPolicy:
+        """Return the neural MCTS policy sub-component."""
+        return self._policy
+
+    @property
+    def constitutional_policy(self) -> ActorCriticNetwork:
+        """Return the constitutional RL actor-critic network."""
+        return self._constitutional
+
+    @property
+    def device(self) -> str:
+        """Return the compute device."""
+        return self._device
+
+    # ----- BaseAgent interface -----
+
+    def act(self, observation: np.ndarray) -> tuple[int, dict[str, Any]]:
+        """Select an action using the BDI-conditioned policy.
+
+        Pipeline:
+            1. BDI encoding: observation -> belief/desire/intention/affect
+            2. Policy evaluation: observation -> action priors + value
+            3. Action selection: sample from priors
+
+        Args:
+            observation: Flat observation array of shape ``(obs_dim,)``.
+
+        Returns:
+            ``(action_id, info_dict)`` where info contains BDI state,
+            policy priors, and value estimate.
+        """
+        # BDI encoding
+        bdi_state = self._bdi.forward(observation)
+
+        # Policy evaluation
+        priors, value = self._policy.evaluate(observation)
+
+        # Modulate priors with intention signal (softmax weighting)
+        intention_weight = float(np.mean(np.abs(bdi_state.intention)))
+        modulated_priors = priors * (1.0 + intention_weight)
+        modulated_priors = modulated_priors / (modulated_priors.sum() + 1e-8)
+
+        # Sample action from modulated distribution
+        action = int(np.random.default_rng().choice(len(modulated_priors), p=modulated_priors))
+
+        self._step_count += 1
+
+        return action, {
+            "value": float(value),
+            "priors": priors.tolist(),
+            "belief_norm": float(np.linalg.norm(bdi_state.belief)),
+            "desire_norm": float(np.linalg.norm(bdi_state.desire)),
+            "intention_norm": float(np.linalg.norm(bdi_state.intention)),
+            "affect_norm": float(np.linalg.norm(bdi_state.affect)),
+        }
+
+    def learn(self, batch: dict[str, np.ndarray]) -> dict[str, float]:
+        """Update the constitutional RL policy with PPO.
+
+        Delegates to the ActorCriticNetwork for policy/value updates.
+
+        Expected batch keys:
+            observations: ``(N, obs_dim)``
+            actions: ``(N,)``
+            old_log_probs: ``(N,)``
+            advantages: ``(N,)``
+            returns: ``(N,)``
+
+        Returns:
+            Dictionary of training metrics.
+        """
+        import torch  # noqa: PLC0415
+        from torch import nn  # noqa: PLC0415
+
+        dev = torch.device(self._device)
+        obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=dev)
+        actions = torch.as_tensor(batch["actions"], dtype=torch.long, device=dev)
+        old_log_probs = torch.as_tensor(
+            batch["old_log_probs"], dtype=torch.float32, device=dev
+        )
+        advantages = torch.as_tensor(
+            batch["advantages"], dtype=torch.float32, device=dev
+        )
+        returns = torch.as_tensor(batch["returns"], dtype=torch.float32, device=dev)
+
+        # Forward through constitutional policy
+        action_logits, values = self._constitutional.forward(obs)
+        values = values.squeeze(-1)
+
+        from torch.distributions import Categorical  # noqa: PLC0415
+
+        dist = Categorical(logits=action_logits)
+        new_log_probs = dist.log_prob(actions)
+        entropy = dist.entropy().mean()
+
+        # PPO clipped objective
+        clip_ratio = self._md_config.gamma  # reuse gamma as clip — default 0.99
+        ratio = torch.exp(new_log_probs - old_log_probs)
+        clipped = torch.clamp(ratio, 1.0 - 0.2, 1.0 + 0.2)
+        policy_loss = -torch.min(ratio * advantages, clipped * advantages).mean()
+        value_loss = nn.functional.mse_loss(values, returns)
+        loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
+
+        self._constitutional.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self._constitutional.parameters(), 0.5)
+        self._constitutional.optimizer.step()
+
+        return {
+            "policy_loss": float(policy_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "entropy": float(entropy.item()),
+            "loss": float(loss.item()),
+        }
+
+    # ----- Hub loading -----
+
+    def load_from_hub(self, loader: WeightLoader | None = None) -> None:
+        """Download and load all pre-trained weights from HuggingFace Hub.
+
+        Creates a :class:`WeightLoader` if none is provided, using the
+        agent's configuration.
+
+        Args:
+            loader: Optional pre-configured weight loader.
+        """
+        if loader is None:
+            loader = WeightLoader(
+                WeightLoaderConfig(
+                    repo_id=self._md_config.repo_id,
+                    revision=self._md_config.revision,
+                    cache_dir=self._md_config.cache_dir,
+                )
+            )
+
+        self._world_model.load_from_hub(loader)
+        self._bdi.load_from_hub(loader)
+        self._policy.load_from_npz(loader)
+
+        # Load constitutional RL weights (policy.npz + value.npz)
+        self._load_constitutional_from_hub(loader)
+
+        logger.info("MouseDroidAgent: all weights loaded from hub")
+
+    def _load_constitutional_from_hub(self, loader: WeightLoader) -> None:
+        """Load constitutional RL policy and value weights from .npz files."""
+        import torch  # noqa: PLC0415
+
+        # Load policy weights into encoder + actor head
+        policy_data = loader.load_npz("policy.npz")
+        encoder_params = list(self._constitutional.encoder.parameters())
+        actor_params = list(self._constitutional.actor_head.parameters())
+        all_policy_params = encoder_params + actor_params
+        sorted_keys = sorted(policy_data.keys())
+
+        for key, param in zip(sorted_keys, all_policy_params):
+            arr = policy_data[key]
+            tensor = torch.as_tensor(
+                arr, dtype=torch.float32, device=torch.device(self._device)
+            )
+            if tensor.shape == param.shape:
+                param.data.copy_(tensor)
+
+        # Load value weights into critic head
+        value_data = loader.load_npz("value.npz")
+        critic_params = list(self._constitutional.critic_head.parameters())
+        sorted_value_keys = sorted(value_data.keys())
+
+        for key, param in zip(sorted_value_keys, critic_params):
+            arr = value_data[key]
+            tensor = torch.as_tensor(
+                arr, dtype=torch.float32, device=torch.device(self._device)
+            )
+            if tensor.shape == param.shape:
+                param.data.copy_(tensor)
+
+        logger.info("Constitutional RL weights loaded from hub")
+
+    # ----- Save / Load -----
+
+    def save(self, path: str) -> None:
+        """Save all sub-component weights and metadata."""
+        base = Path(path)
+        base.parent.mkdir(parents=True, exist_ok=True)
+
+        self._world_model.save(str(base.with_suffix(".rssm.pt")))
+        self._bdi.save(str(base.with_suffix(".bdi.pt")))
+        self._policy.save(str(base.with_suffix(".policy.pt")))
+        self._constitutional.save(str(base.with_suffix(".constitutional.pt")))
+
+        # Metadata
+        meta = {
+            "step_count": self._step_count,
+            "obs_dim": self._md_config.obs_dim,
+            "action_dim": self._md_config.action_dim,
+            "config": {
+                "name": self._md_config.name,
+                "repo_id": self._md_config.repo_id,
+                "obs_dim": self._md_config.obs_dim,
+                "action_dim": self._md_config.action_dim,
+            },
+        }
+        with base.with_suffix(".json").open("w") as f:
+            json.dump(meta, f)
+
+        logger.info("MouseDroidAgent saved to %s", path)
+
+    def load(self, path: str) -> None:
+        """Load all sub-component weights and metadata."""
+        base = Path(path)
+
+        self._world_model.load(str(base.with_suffix(".rssm.pt")))
+        self._bdi.load(str(base.with_suffix(".bdi.pt")))
+        self._policy.load(str(base.with_suffix(".policy.pt")))
+        self._constitutional.load(str(base.with_suffix(".constitutional.pt")))
+
+        meta_path = base.with_suffix(".json")
+        if meta_path.exists():
+            with meta_path.open() as f:
+                meta = json.load(f)
+            self._step_count = meta.get("step_count", 0)
+
+        logger.info("MouseDroidAgent loaded from %s", path)
