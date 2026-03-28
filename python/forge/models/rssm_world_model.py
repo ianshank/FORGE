@@ -280,10 +280,15 @@ class RSSMWorldModel(WorldModel):
 
         Expected batch keys:
             observations: ``(N, obs_dim)``
-            actions: ``(N,)``
 
         Returns:
-            Dictionary of training metrics.
+            Dictionary of training metrics (``loss``, ``recon_loss``,
+            ``kl_loss``).
+
+        Note:
+            This method computes losses and returns metrics but does **not**
+            call ``backward()`` or update any parameters. The caller is
+            responsible for driving the optimizer.
         """
         import torch  # noqa: PLC0415
         from torch import nn  # noqa: PLC0415

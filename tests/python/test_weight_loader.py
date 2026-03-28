@@ -1,7 +1,6 @@
 """Tests for forge.utils.weight_loader module."""
 from __future__ import annotations
 
-import tempfile
 from dataclasses import fields
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,16 +8,14 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-
 from forge.utils.weight_loader import (
+    _HF_MISSING_MSG,
+    _TORCH_MISSING_MSG,
     DEFAULT_REPO_ID,
     DEFAULT_REVISION,
     WeightLoader,
     WeightLoaderConfig,
-    _HF_MISSING_MSG,
-    _TORCH_MISSING_MSG,
 )
-
 
 # ---------------------------------------------------------------------------
 # WeightLoaderConfig
