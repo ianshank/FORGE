@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import tempfile
-from dataclasses import fields
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -161,7 +160,7 @@ class TestMouseDroidAgentAct:
         """act() should return an action within bounds."""
         agent = MouseDroidAgent(_make_config())
         obs = np.random.randn(OBS_DIM).astype(np.float32)
-        action, info = agent.act(obs)
+        action, _info = agent.act(obs)
         assert 0 <= action < ACTION_DIM
 
     def test_returns_info_dict(self) -> None:

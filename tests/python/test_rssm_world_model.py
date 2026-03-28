@@ -57,7 +57,7 @@ class TestRSSMConfig:
     def test_defaults(self) -> None:
         """Default config should use module-level constants."""
         cfg = RSSMConfig()
-        assert cfg.state_dim == DEFAULT_STATE_DIM
+        assert cfg.state_dim == DEFAULT_STOCHASTIC_DIM + DEFAULT_DETERMINISTIC_DIM
         assert cfg.hidden_dim == DEFAULT_HIDDEN_DIM
         assert cfg.stochastic_dim == DEFAULT_STOCHASTIC_DIM
         assert cfg.deterministic_dim == DEFAULT_DETERMINISTIC_DIM
@@ -216,7 +216,6 @@ class TestRSSMWorldModelTrainStep:
         batch = {
             "observations": np.random.randn(N, OBS_DIM).astype(np.float32),
             "actions": np.random.randint(0, ACTION_DIM, N).astype(np.int64),
-            "next_observations": np.random.randn(N, OBS_DIM).astype(np.float32),
         }
         metrics = model.train_step(batch)
         assert "loss" in metrics

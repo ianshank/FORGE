@@ -21,12 +21,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from forge.config import DEFAULT_ACTION_DIM, DEFAULT_OBS_DIM
 from forge.models.world_model import WorldModel
 
 if TYPE_CHECKING:
+    import numpy as np
     import torch
 
     from forge.utils.weight_loader import WeightLoader
@@ -54,6 +53,19 @@ class RSSMConfig:
     stochastic_dim: int = DEFAULT_STOCHASTIC_DIM
     deterministic_dim: int = DEFAULT_DETERMINISTIC_DIM
     device: str = "cpu"
+
+    def __post_init__(self) -> None:
+        """Ensure state_dim equals deterministic_dim + stochastic_dim."""
+        expected = self.deterministic_dim + self.stochastic_dim
+        if self.state_dim != expected:
+            logger.warning(
+                "RSSMConfig.state_dim (%d) != deterministic_dim + stochastic_dim (%d); "
+                "correcting to %d.",
+                self.state_dim,
+                expected,
+                expected,
+            )
+            self.state_dim = expected
 
 
 class RSSMWorldModel(WorldModel):
@@ -260,7 +272,6 @@ class RSSMWorldModel(WorldModel):
         Expected batch keys:
             observations: ``(N, obs_dim)``
             actions: ``(N,)``
-            next_observations: ``(N, obs_dim)``
 
         Returns:
             Dictionary of training metrics.
@@ -271,22 +282,19 @@ class RSSMWorldModel(WorldModel):
         obs = torch.as_tensor(
             batch["observations"], dtype=torch.float32, device=self._device
         )
-        next_obs = torch.as_tensor(
-            batch["next_observations"], dtype=torch.float32, device=self._device
-        )
 
         # Encode current observation
         posterior_params = self.encoder(obs)
         stoch = self._reparametrise(posterior_params)
 
-        # Predict next observation (simplified — ignores recurrence for batch training)
+        # Reconstruct current observation (simplified — ignores recurrence for batch training)
         c = self._config
         det = torch.zeros(obs.shape[0], c.deterministic_dim, device=self._device)
         full_state = torch.cat([det, stoch], dim=-1)
         obs_recon = self.decoder(full_state)
 
-        # Reconstruction loss
-        recon_loss = nn.functional.mse_loss(obs_recon, next_obs)
+        # Reconstruction loss against current observation
+        recon_loss = nn.functional.mse_loss(obs_recon, obs)
 
         # KL divergence (posterior vs unit Gaussian prior)
         dim = c.stochastic_dim

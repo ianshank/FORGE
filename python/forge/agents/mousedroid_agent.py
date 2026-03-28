@@ -294,8 +294,13 @@ class MouseDroidAgent(BaseAgent):
         total = float(modulated_priors.sum())
         if total > eps:
             modulated_priors = modulated_priors / total
-            # Correct residual floating-point error for np.random.choice
-            modulated_priors[-1] += 1.0 - float(modulated_priors.sum())
+            # Clip any negative FP artefacts then renormalize to a valid distribution
+            modulated_priors = np.clip(modulated_priors, 0.0, None)
+            sum_probs = float(modulated_priors.sum())
+            if sum_probs == 0.0:
+                modulated_priors = np.full_like(priors, 1.0 / len(priors))
+            else:
+                modulated_priors = modulated_priors / sum_probs
         else:
             modulated_priors = np.full_like(priors, 1.0 / len(priors))
 
@@ -472,7 +477,7 @@ class MouseDroidAgent(BaseAgent):
         self._policy.save(str(base.with_suffix(_POLICY_SUFFIX)))
         self._constitutional.save(str(base.with_suffix(_CONSTITUTIONAL_SUFFIX)))
 
-        # Metadata — serialize full config for checkpoint validation
+        # Metadata — serialize full config; key dimensions validated on load
         meta = {
             "step_count": self._step_count,
             "config": asdict(self._md_config),
@@ -496,5 +501,18 @@ class MouseDroidAgent(BaseAgent):
             with meta_path.open() as f:
                 meta = json.load(f)
             self._step_count = meta.get("step_count", 0)
+            saved_cfg = meta.get("config", {})
+            for key in ("obs_dim", "action_dim"):
+                saved_val = saved_cfg.get(key)
+                current_val = getattr(self._md_config, key, None)
+                if saved_val is not None and saved_val != current_val:
+                    logger.warning(
+                        "Checkpoint %s=%d does not match current config %s=%d; "
+                        "architecture mismatch may cause errors.",
+                        key,
+                        saved_val,
+                        key,
+                        current_val,
+                    )
 
         logger.info("MouseDroidAgent loaded from %s", path)
