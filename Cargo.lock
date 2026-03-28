@@ -444,6 +444,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-cognitive"
+version = "0.1.0"
+dependencies = [
+ "forge-memory",
+ "forge-types",
+ "proptest",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-core"
 version = "0.1.0"
 dependencies = [
@@ -464,15 +478,67 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-integration-layer"
+version = "0.1.0"
+dependencies = [
+ "forge-cognitive",
+ "forge-memory",
+ "forge-social",
+ "forge-types",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "forge-cognitive",
  "forge-core",
+ "forge-integration-layer",
+ "forge-memory",
+ "forge-social",
  "forge-task",
  "forge-types",
  "forge-worldgen",
  "rand 0.8.5",
  "rand_pcg",
+ "serde_json",
+]
+
+[[package]]
+name = "forge-mangomas"
+version = "0.1.0"
+dependencies = [
+ "forge-agent",
+ "forge-core",
+ "forge-integration-layer",
+ "forge-task",
+ "forge-types",
+ "proptest",
+ "rand 0.8.5",
+ "rand_pcg",
+ "rayon",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "forge-memory"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "forge-types",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
@@ -518,6 +584,18 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "forge-social"
+version = "0.1.0"
+dependencies = [
+ "forge-types",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
