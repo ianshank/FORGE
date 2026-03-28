@@ -119,3 +119,22 @@ class TestPlatformCurriculumController:
             ctrl.record_outcome(True)
 
         assert ctrl.current_tier <= 5
+
+    def test_custom_tiers_parameter(self) -> None:
+        custom = [
+            {"tier": 1, "name": "Custom", "forge_scenario": "patrol", "success_threshold": 0.5},
+        ]
+        ctrl = PlatformCurriculumController(tiers=custom)
+        assert ctrl.tier_info(1)["name"] == "Custom"
+
+    def test_config_tiers_parameter(self) -> None:
+        tiers = [
+            {"tier": 1, "name": "FromConfig", "forge_scenario": "patrol", "success_threshold": 0.6},
+        ]
+        config = CurriculumConfig(tiers=tiers)
+        ctrl = PlatformCurriculumController(config=config)
+        assert ctrl.tier_info(1)["name"] == "FromConfig"
+
+    def test_record_outcome_with_metrics(self) -> None:
+        ctrl = PlatformCurriculumController()
+        ctrl.record_outcome(True, metrics={"reward": 10.0})

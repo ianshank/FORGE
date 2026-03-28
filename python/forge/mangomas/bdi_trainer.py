@@ -48,13 +48,13 @@ class BDIDataset:
 
     def intention_distribution(self) -> dict[str, float]:
         """Return normalized distribution over intention classes."""
-        counts = np.bincount(self.intentions, minlength=8)
+        counts = np.bincount(self.intentions, minlength=len(INTENTION_NAMES))
         total = counts.sum()
         if total == 0:
             return dict.fromkeys(INTENTION_NAMES.values(), 0.0)
         return {
             INTENTION_NAMES[i]: float(counts[i]) / float(total)
-            for i in range(8)
+            for i in range(len(INTENTION_NAMES))
         }
 
 

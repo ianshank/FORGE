@@ -91,6 +91,16 @@ class TestBDIDataset:
         assert dist["Idle"] == pytest.approx(2 / 8)
         assert dist["Evade"] == 0.0
 
+    def test_empty_dataset_intention_distribution(self) -> None:
+        ds = BDIDataset(
+            observations=np.zeros((0, 18)),
+            intentions=np.array([], dtype=np.int64),
+            rewards=np.array([]),
+        )
+        dist = ds.intention_distribution()
+        assert all(v == 0.0 for v in dist.values())
+        assert len(dist) == 8
+
 
 class TestBDIPreTrainer:
     """Tests for BDI pre-training."""

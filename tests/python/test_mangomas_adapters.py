@@ -121,3 +121,41 @@ class TestObservationAdapter:
         assert state.shape == (18,)
         # health defaults to 1.0
         assert state[11] == 1.0
+
+    def test_non_dict_inventory(self) -> None:
+        adapter = ObservationAdapter(platform="car")
+        obs = {
+            "grid_view": [],
+            "health": 1.0,
+            "stamina": 1.0,
+            "position": [0, 0],
+            "day_phase": 0.0,
+            "inventory": [1, 2, 3],
+        }
+        state = adapter.adapt(obs)
+        assert state.shape == (18,)
+        # Non-dict inventory should yield zeros for inventory fields
+        assert state[16] == 0.0
+        assert state[17] == 0.0
+
+    def test_2d_grid_view_fallback(self) -> None:
+        adapter = ObservationAdapter(platform="car")
+        obs = {
+            "grid_view": np.ones((5, 5)),
+            "health": 1.0,
+            "stamina": 1.0,
+            "position": [0, 0],
+            "day_phase": 0.0,
+        }
+        state = adapter.adapt(obs)
+        assert state.shape == (18,)
+        # 2D grid should fall back to zeros for grid summary channels
+        assert np.all(state[:11] == 0.0)
+
+    def test_total_action_space_car(self) -> None:
+        adapter = ActionSpaceAdapter(platform="car")
+        assert adapter.total_action_space == 7 ** 2
+
+    def test_total_action_space_drone(self) -> None:
+        adapter = ActionSpaceAdapter(platform="drone")
+        assert adapter.total_action_space == 7 ** 4

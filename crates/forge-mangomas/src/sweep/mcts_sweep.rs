@@ -10,24 +10,20 @@ use forge_agent::mcts::tree::MctsConfig;
 use rayon::prelude::*;
 use tracing::{debug, info, instrument};
 
-use crate::config::{Platform, SweepConfig};
+use crate::config::SweepConfig;
 use crate::error::MangoMasResult;
 use crate::sweep::results::{SweepReport, SweepResult};
 
 /// Generates and evaluates MCTS hyperparameter configurations.
 pub struct MctsParamSweep {
     config: SweepConfig,
-    _platform: Platform,
 }
 
 impl MctsParamSweep {
     /// Creates a new sweep engine.
     #[instrument(skip_all)]
-    pub fn new(config: SweepConfig, platform: Platform) -> Self {
-        Self {
-            config,
-            _platform: platform,
-        }
+    pub fn new(config: SweepConfig) -> Self {
+        Self { config }
     }
 
     /// Returns the sweep configuration.
@@ -189,7 +185,7 @@ mod tests {
             discount_steps: 2,
             ..SweepConfig::default()
         };
-        let sweep = MctsParamSweep::new(config, Platform::Drone);
+        let sweep = MctsParamSweep::new(config);
         let grid = sweep.generate_grid();
         assert_eq!(grid.len(), 3 * 2 * 2 * 2);
     }
@@ -204,7 +200,7 @@ mod tests {
             episodes_per_config: 1,
             ..SweepConfig::default()
         };
-        let sweep = MctsParamSweep::new(config, Platform::Drone);
+        let sweep = MctsParamSweep::new(config);
         let report = sweep
             .run_sweep(|config, _episodes| {
                 // Mock: reward proportional to c_puct
@@ -222,7 +218,7 @@ mod tests {
             c_puct_steps: 0,
             ..Default::default()
         };
-        let sweep = MctsParamSweep::new(config, Platform::Drone);
+        let sweep = MctsParamSweep::new(config);
         let grid = sweep.generate_grid();
         assert!(grid.is_empty());
     }
@@ -238,7 +234,7 @@ mod tests {
             discount_steps: 1,
             ..SweepConfig::default()
         };
-        let sweep = MctsParamSweep::new(config, Platform::Drone);
+        let sweep = MctsParamSweep::new(config);
         let grid = sweep.generate_grid();
 
         for config in &grid {

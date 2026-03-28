@@ -8,7 +8,10 @@
 use forge_types::observation::Observation;
 use tracing::instrument;
 
-use crate::config::{ObservationAdapterConfig, Platform};
+use crate::config::{
+    ObservationAdapterConfig, Platform, DRONE_FEATURES, GRID_SUMMARY_FEATURES, INVENTORY_FEATURES,
+    SCALAR_FEATURES,
+};
 use crate::error::MangoMasResult;
 
 /// Trait for adapting FORGE observations to MangoMAS-compatible state vectors.
@@ -72,7 +75,7 @@ impl FlatStateAdapter {
     }
 
     /// Summarize inventory contents as a normalized feature vector.
-    fn inventory_summary(obs: &Observation) -> Vec<f32> {
+    fn inventory_summary(&self, obs: &Observation) -> Vec<f32> {
         let total_items: u32 = obs
             .inventory
             .slots
@@ -88,7 +91,7 @@ impl FlatStateAdapter {
         let capacity = obs.inventory.slots.len().max(1) as f32;
 
         vec![
-            total_items as f32 / 100.0, // Normalize by reasonable max
+            total_items as f32 / self.config.inventory_norm,
             occupied_slots as f32 / capacity,
         ]
     }
@@ -105,31 +108,31 @@ impl ObservationAdapter for FlatStateAdapter {
         // Scalar fields (normalized)
         state.push(obs.health);
         state.push(obs.stamina);
-        state.push(obs.position.0 as f32 / 256.0); // Normalize by max world dim
-        state.push(obs.position.1 as f32 / 256.0);
-        state.push(obs.day_phase as f32 / 3.0); // 0-3 → 0.0-1.0
+        state.push(obs.position.0 as f32 / self.config.max_world_dim);
+        state.push(obs.position.1 as f32 / self.config.max_world_dim);
+        state.push(obs.day_phase as f32 / self.config.max_day_phase);
 
         // Inventory summary
-        state.extend(Self::inventory_summary(obs));
+        state.extend(self.inventory_summary(obs));
 
         // Drone fields (always included for drone platform)
         if self.config.platform == Platform::Drone {
-            state.push(obs.altitude as f32 / 10.0); // Normalize by max altitude
+            state.push(obs.altitude as f32 / self.config.max_altitude);
             state.push(obs.battery);
-            state.push(obs.morphology as f32 / 2.0); // 0-2 → 0.0-1.0
-            state.push(obs.heading as f32 / 3.0); // 0-3 → 0.0-1.0
+            state.push(obs.morphology as f32 / self.config.max_morphology);
+            state.push(obs.heading as f32 / self.config.max_heading);
         }
 
         // Raw grid tiles (optional, for RSSM encoder input)
         if self.config.include_raw_grid {
             for tile in &obs.grid_view {
-                state.push(tile.terrain as f32 / 7.0);
+                state.push(tile.terrain as f32 / self.config.max_terrain);
                 state.push(if tile.has_agent { 1.0 } else { 0.0 });
                 state.push(if tile.has_object { 1.0 } else { 0.0 });
                 state.push(if tile.has_resource { 1.0 } else { 0.0 });
-                state.push(tile.elevation as f32 / 10.0);
-                state.push(tile.object_type as f32 / 255.0);
-                state.push(tile.resource_type as f32 / 255.0);
+                state.push(tile.elevation as f32 / self.config.max_elevation);
+                state.push(tile.object_type as f32 / self.config.max_type_id);
+                state.push(tile.resource_type as f32 / self.config.max_type_id);
             }
         }
 
@@ -137,22 +140,18 @@ impl ObservationAdapter for FlatStateAdapter {
     }
 
     fn output_dim(&self) -> usize {
-        let grid_summary = 11; // 3 counts + 8 terrain
-        let scalars = 5; // health, stamina, x, y, day_phase
-        let inventory = 2; // total_items, occupied_ratio
         let drone = if self.config.platform == Platform::Drone {
-            4
+            DRONE_FEATURES
         } else {
             0
         };
         let raw_grid = if self.config.include_raw_grid {
-            // Default 11x11 grid, 7 features per tile
             self.config.grid_summary_dim
         } else {
             0
         };
 
-        grid_summary + scalars + inventory + drone + raw_grid
+        GRID_SUMMARY_FEATURES + SCALAR_FEATURES + INVENTORY_FEATURES + drone + raw_grid
     }
 }
 

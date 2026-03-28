@@ -151,3 +151,18 @@ class TestConstitutionalPreTrainer:
         loaded = np.load(str(path))
         assert "policy_w" in loaded
         assert "value_w" in loaded
+
+    def test_export_before_train_raises(self, tmp_path: Any) -> None:
+        trainer = ConstitutionalPreTrainer()
+        with pytest.raises(RuntimeError, match="No trained weights"):
+            trainer.export_weights(tmp_path / "weights.npz")
+
+    def test_empty_dataset_violation_rate(self) -> None:
+        ds = ConstitutionalDataset(
+            observations=np.zeros((0, 18)),
+            actions=np.zeros(0, dtype=np.int64),
+            rewards=np.zeros(0),
+            constraint_violations=np.zeros((0, 5)),
+            penalties=np.zeros(0),
+        )
+        assert ds.violation_rate == 0.0

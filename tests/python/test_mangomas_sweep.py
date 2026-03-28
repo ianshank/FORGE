@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from forge.mangomas.config import SweepConfig
 from forge.mangomas.sweep_runner import MCTSSweepRunner, SweepReport, SweepResult
 
@@ -89,3 +90,24 @@ class TestMCTSSweepRunner:
         summary = report.summary()
         assert "1.5" in summary
         assert "10.0" in summary
+
+    def test_summary_no_results(self) -> None:
+        report = SweepReport(results=[])
+        assert report.summary() == "No results"
+
+    def test_export_no_best(self, tmp_path: Any) -> None:
+        runner = MCTSSweepRunner()
+        report = SweepReport(results=[])
+        runner.export_optimal_config(report, tmp_path / "out.json")
+        # Should not crash; file should not exist since no best
+        assert not (tmp_path / "out.json").exists()
+
+    def test_export_unsupported_format(self, tmp_path: Any) -> None:
+        runner = MCTSSweepRunner()
+        result = SweepResult(
+            config={"c_puct": 1.0}, mean_reward=1.0, std_reward=0.1,
+            mean_planning_time_us=50.0, episodes_run=10,
+        )
+        report = SweepReport(results=[result], best=result)
+        with pytest.raises(ValueError, match="Unsupported format"):
+            runner.export_optimal_config(report, tmp_path / "out.yaml", fmt="yaml")

@@ -17,18 +17,6 @@ from forge.mangomas.config import (
 
 logger = logging.getLogger(__name__)
 
-# BDI intention categories (8 classes)
-INTENTION_NAMES = {
-    0: "Navigate",
-    1: "Gather",
-    2: "Plan",
-    3: "Manipulate",
-    4: "Cooperate",
-    5: "Evade",
-    6: "Track",
-    7: "Idle",
-}
-
 
 class ActionSpaceAdapter:
     """Bidirectional continuous↔discrete action space mapping.

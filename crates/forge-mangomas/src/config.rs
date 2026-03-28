@@ -55,6 +55,33 @@ impl Default for ActionAdapterConfig {
 const DEFAULT_GRID_SUMMARY_DIM: usize = 64;
 /// Whether to include raw grid tiles in the flat output.
 const DEFAULT_INCLUDE_RAW_GRID: bool = false;
+/// Default maximum world dimension for position normalization.
+pub const DEFAULT_MAX_WORLD_DIM: f32 = 256.0;
+/// Default maximum day phases (0-3).
+pub const DEFAULT_MAX_DAY_PHASE: f32 = 3.0;
+/// Default maximum altitude for normalization.
+pub const DEFAULT_MAX_ALTITUDE: f32 = 10.0;
+/// Default maximum morphology value.
+pub const DEFAULT_MAX_MORPHOLOGY: f32 = 2.0;
+/// Default maximum heading value.
+pub const DEFAULT_MAX_HEADING: f32 = 3.0;
+/// Default number of terrain types for normalization.
+pub const DEFAULT_MAX_TERRAIN: f32 = 7.0;
+/// Default maximum elevation for normalization.
+pub const DEFAULT_MAX_ELEVATION: f32 = 10.0;
+/// Default maximum object/resource type ID.
+pub const DEFAULT_MAX_TYPE_ID: f32 = 255.0;
+/// Default normalization factor for inventory item count.
+pub const DEFAULT_INVENTORY_NORM: f32 = 100.0;
+
+/// Number of grid summary features (3 counts + 8 terrain proportions).
+pub const GRID_SUMMARY_FEATURES: usize = 11;
+/// Number of scalar features (health, stamina, x, y, day_phase).
+pub const SCALAR_FEATURES: usize = 5;
+/// Number of inventory features (total_items, occupied_ratio).
+pub const INVENTORY_FEATURES: usize = 2;
+/// Number of drone-specific features (altitude, battery, morphology, heading).
+pub const DRONE_FEATURES: usize = 4;
 
 /// Configuration for the observation space adapter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +93,24 @@ pub struct ObservationAdapterConfig {
     pub include_raw_grid: bool,
     /// Target platform determines which drone fields to include.
     pub platform: Platform,
+    /// Maximum world dimension for position normalization.
+    pub max_world_dim: f32,
+    /// Maximum day phase value for normalization.
+    pub max_day_phase: f32,
+    /// Maximum altitude value for normalization.
+    pub max_altitude: f32,
+    /// Maximum morphology value for normalization.
+    pub max_morphology: f32,
+    /// Maximum heading value for normalization.
+    pub max_heading: f32,
+    /// Maximum terrain type for normalization.
+    pub max_terrain: f32,
+    /// Maximum elevation for normalization.
+    pub max_elevation: f32,
+    /// Maximum object/resource type ID for normalization.
+    pub max_type_id: f32,
+    /// Normalization factor for inventory item count.
+    pub inventory_norm: f32,
 }
 
 impl Default for ObservationAdapterConfig {
@@ -74,6 +119,15 @@ impl Default for ObservationAdapterConfig {
             grid_summary_dim: DEFAULT_GRID_SUMMARY_DIM,
             include_raw_grid: DEFAULT_INCLUDE_RAW_GRID,
             platform: Platform::default(),
+            max_world_dim: DEFAULT_MAX_WORLD_DIM,
+            max_day_phase: DEFAULT_MAX_DAY_PHASE,
+            max_altitude: DEFAULT_MAX_ALTITUDE,
+            max_morphology: DEFAULT_MAX_MORPHOLOGY,
+            max_heading: DEFAULT_MAX_HEADING,
+            max_terrain: DEFAULT_MAX_TERRAIN,
+            max_elevation: DEFAULT_MAX_ELEVATION,
+            max_type_id: DEFAULT_MAX_TYPE_ID,
+            inventory_norm: DEFAULT_INVENTORY_NORM,
         }
     }
 }
@@ -205,6 +259,35 @@ impl Default for SurpriseValidatorConfig {
 
 /// Default number of BDI intention classes matching MangoMAS.
 const DEFAULT_NUM_BDI_INTENTIONS: u8 = 8;
+/// Default battery floor threshold for constitutional constraint.
+pub const DEFAULT_BATTERY_THRESHOLD: f32 = 0.2;
+/// Default altitude ceiling threshold (normalized).
+pub const DEFAULT_ALTITUDE_THRESHOLD: f32 = 0.9;
+/// Default speed ceiling threshold (normalized stamina usage).
+pub const DEFAULT_SPEED_THRESHOLD: f32 = 0.8;
+/// Default geofence proximity threshold (fraction of world edge).
+pub const DEFAULT_GEOFENCE_THRESHOLD: f32 = 0.1;
+/// Default threat exclusion proximity threshold.
+pub const DEFAULT_THREAT_THRESHOLD: f32 = 0.3;
+/// Default unknown constraint threshold.
+pub const DEFAULT_UNKNOWN_CONSTRAINT_THRESHOLD: f32 = 0.5;
+/// Default nearby-agent count above which threat is detected.
+pub const DEFAULT_THREAT_AGENT_COUNT: usize = 1;
+/// Default threat proximity value when threat is close.
+pub const DEFAULT_THREAT_CLOSE_VALUE: f32 = 0.1;
+/// Default threat proximity value when no threat is detected.
+pub const DEFAULT_THREAT_SAFE_VALUE: f32 = 0.8;
+
+/// A constraint threshold definition for constitutional mapping.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConstraintThreshold {
+    /// Constraint name (must match a constitutional constraint name).
+    pub name: String,
+    /// Violation threshold value.
+    pub threshold: f32,
+    /// Whether this is a lower bound (true) or upper bound (false).
+    pub is_lower_bound: bool,
+}
 
 /// Configuration for weight transfer and pre-training.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,6 +308,16 @@ pub struct TransferConfig {
     pub constitutional_constraints: Vec<String>,
     /// Initial curiosity channel weights: [social, epistemic, perceptual, metacognitive].
     pub curiosity_weights: [f32; 4],
+    /// Constraint thresholds for constitutional mapping. If empty, defaults are used.
+    pub constraint_thresholds: Vec<ConstraintThreshold>,
+    /// Maximum world dimension for geofence normalization.
+    pub max_world_dim: f32,
+    /// Minimum nearby agent count to trigger threat detection.
+    pub threat_agent_count: usize,
+    /// Proximity value returned when threat is close.
+    pub threat_close_value: f32,
+    /// Proximity value returned when no threat is detected.
+    pub threat_safe_value: f32,
 }
 
 impl Default for TransferConfig {
@@ -243,6 +336,37 @@ impl Default for TransferConfig {
                 "threat_exclusion".to_string(),
             ],
             curiosity_weights: [0.4, 0.3, 0.2, 0.1],
+            constraint_thresholds: vec![
+                ConstraintThreshold {
+                    name: "battery_minimum".to_string(),
+                    threshold: DEFAULT_BATTERY_THRESHOLD,
+                    is_lower_bound: true,
+                },
+                ConstraintThreshold {
+                    name: "altitude_ceiling".to_string(),
+                    threshold: DEFAULT_ALTITUDE_THRESHOLD,
+                    is_lower_bound: false,
+                },
+                ConstraintThreshold {
+                    name: "speed_ceiling".to_string(),
+                    threshold: DEFAULT_SPEED_THRESHOLD,
+                    is_lower_bound: false,
+                },
+                ConstraintThreshold {
+                    name: "geofence".to_string(),
+                    threshold: DEFAULT_GEOFENCE_THRESHOLD,
+                    is_lower_bound: true,
+                },
+                ConstraintThreshold {
+                    name: "threat_exclusion".to_string(),
+                    threshold: DEFAULT_THREAT_THRESHOLD,
+                    is_lower_bound: true,
+                },
+            ],
+            max_world_dim: DEFAULT_MAX_WORLD_DIM,
+            threat_agent_count: DEFAULT_THREAT_AGENT_COUNT,
+            threat_close_value: DEFAULT_THREAT_CLOSE_VALUE,
+            threat_safe_value: DEFAULT_THREAT_SAFE_VALUE,
         }
     }
 }

@@ -8,7 +8,7 @@ use forge_types::observation::Observation;
 use serde::{Deserialize, Serialize};
 use tracing::{instrument, warn};
 
-use crate::config::TransferConfig;
+use crate::config::{TransferConfig, DEFAULT_UNKNOWN_CONSTRAINT_THRESHOLD};
 
 /// A constitutional constraint definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +44,7 @@ pub struct ConstraintViolation {
 /// - `threat_exclusion` → FORGE enemy proximity distance
 pub struct ConstitutionalConstraintMapper {
     constraints: Vec<ConstraintDef>,
+    config: TransferConfig,
 }
 
 impl ConstitutionalConstraintMapper {
@@ -51,7 +52,10 @@ impl ConstitutionalConstraintMapper {
     #[instrument(skip_all)]
     pub fn new(config: &TransferConfig) -> Self {
         let constraints = Self::build_constraints(config);
-        Self { constraints }
+        Self {
+            constraints,
+            config: config.clone(),
+        }
     }
 
     /// Returns the list of active constraints.
@@ -102,41 +106,30 @@ impl ConstitutionalConstraintMapper {
     }
 
     /// Builds constraint definitions from configuration.
+    ///
+    /// Uses thresholds from `config.constraint_thresholds` if available,
+    /// falling back to `DEFAULT_UNKNOWN_CONSTRAINT_THRESHOLD` for unrecognized names.
     fn build_constraints(config: &TransferConfig) -> Vec<ConstraintDef> {
         let mut constraints = Vec::new();
 
         for name in &config.constitutional_constraints {
-            let def = match name.as_str() {
-                "battery_minimum" => ConstraintDef {
+            // Look up threshold from config
+            let def = if let Some(ct) = config
+                .constraint_thresholds
+                .iter()
+                .find(|ct| ct.name == *name)
+            {
+                ConstraintDef {
                     name: name.clone(),
-                    threshold: 0.2, // 20% battery floor
+                    threshold: ct.threshold,
+                    is_lower_bound: ct.is_lower_bound,
+                }
+            } else {
+                ConstraintDef {
+                    name: name.clone(),
+                    threshold: DEFAULT_UNKNOWN_CONSTRAINT_THRESHOLD,
                     is_lower_bound: true,
-                },
-                "altitude_ceiling" => ConstraintDef {
-                    name: name.clone(),
-                    threshold: 0.9, // 90% of max altitude (normalized)
-                    is_lower_bound: false,
-                },
-                "speed_ceiling" => ConstraintDef {
-                    name: name.clone(),
-                    threshold: 0.8, // 80% of max stamina usage
-                    is_lower_bound: false,
-                },
-                "geofence" => ConstraintDef {
-                    name: name.clone(),
-                    threshold: 0.1, // 10% of world edge proximity
-                    is_lower_bound: true,
-                },
-                "threat_exclusion" => ConstraintDef {
-                    name: name.clone(),
-                    threshold: 0.3, // 30% proximity threshold
-                    is_lower_bound: true,
-                },
-                _ => ConstraintDef {
-                    name: name.clone(),
-                    threshold: 0.5,
-                    is_lower_bound: true,
-                },
+                }
             };
             constraints.push(def);
         }
@@ -146,31 +139,33 @@ impl ConstitutionalConstraintMapper {
 
     /// Extract the observation value for a named constraint field.
     fn extract_value(&self, obs: &Observation, constraint_name: &str) -> f32 {
+        let max_alt = self.config.max_world_dim.max(1.0); // reuse world dim for altitude norm
         match constraint_name {
             "battery_minimum" => obs.battery,
-            "altitude_ceiling" => obs.altitude as f32 / 10.0,
+            "altitude_ceiling" => obs.altitude as f32 / max_alt,
             "speed_ceiling" => 1.0 - obs.stamina, // Inverse stamina as proxy for speed
             "geofence" => {
-                // Distance to nearest world boundary (normalized)
-                let x_dist = (obs.position.0 as f32).min(256.0 - obs.position.0 as f32) / 256.0;
-                let y_dist = (obs.position.1 as f32).min(256.0 - obs.position.1 as f32) / 256.0;
+                let world_dim = self.config.max_world_dim;
+                let x_dist =
+                    (obs.position.0 as f32).min(world_dim - obs.position.0 as f32) / world_dim;
+                let y_dist =
+                    (obs.position.1 as f32).min(world_dim - obs.position.1 as f32) / world_dim;
                 x_dist.min(y_dist)
             }
             "threat_exclusion" => {
-                // Approximate: check grid view for nearby agents
                 let nearby_agents = obs.grid_view.iter().filter(|t| t.has_agent).count();
-                if nearby_agents > 1 {
-                    0.1 // Close threat
+                if nearby_agents > self.config.threat_agent_count {
+                    self.config.threat_close_value
                 } else {
-                    0.8 // No threat
+                    self.config.threat_safe_value
                 }
             }
             _ => {
                 warn!(
                     field = constraint_name,
-                    "Unknown constraint field, using default value 0.5"
+                    "Unknown constraint field, using default value"
                 );
-                0.5
+                DEFAULT_UNKNOWN_CONSTRAINT_THRESHOLD
             }
         }
     }
