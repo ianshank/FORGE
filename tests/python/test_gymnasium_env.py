@@ -19,8 +19,8 @@ if TYPE_CHECKING:
 def env() -> Generator[ForgeGymnasiumEnv]:
     """Create a ForgeGymnasiumEnv with the real native backend."""
     gymnasium = pytest.importorskip("gymnasium")  # noqa: F841
-    from forge_env import gymnasium_env
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv
+    from forge_env import gymnasium_env  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
 
     if gymnasium_env._NativeEnv is None:
         pytest.skip("forge_env running in pure-Python mode (no native backend)")
