@@ -132,7 +132,9 @@ Shows the major containers (deployable units) within FORGE.
 | **forge-wasm** | Rust crate (wasm-bindgen) | WebAssembly bindings with JSON-string I/O for browser environments. |
 | **forge-bench** | Rust crate (Criterion) | Performance benchmarks: step throughput, world creation, serialization. |
 | **Python wrappers** | Python package (forge_env) | Gymnasium, PettingZoo, JAX wrappers, observation/reward transforms. |
-| **Python framework** | Python package (forge) | Training pipeline, agent implementations, policy networks, decision traces, TOML config loader, utility modules. |
+| **Python framework** | Python package (forge) | Training pipeline, agent implementations, policy networks, MangoMAS bridge modules, decision traces, TOML config loader, utility modules. |
+
+The current PR surface also expands the Python control plane with a MangoMAS bridge layer inside `python/forge/mangomas/`. That layer sits above `forge_env` and below experiment code, providing curriculum progression, constitutional safety shaping, curiosity-weight search, batch episode collection, and repeatable MCTS sweep orchestration without changing the deterministic Rust core.
 
 ---
 
@@ -577,6 +579,57 @@ The core engine executes a deterministic pipeline of systems every tick.
   │    └── to_debug_grid()      │──▶ ASCII rendering
   └─────────────────────────────┘
 ```
+
+### 3.8 MangoMAS Bridge — Training Control Plane
+
+```
+     Experiment Script / Notebook
+                              │
+                              │ load TOML / build dataclass config
+                              ▼
+     ┌──────────────────────────────┐
+     │ python/forge/mangomas        │
+     │                              │
+     │ config.py                    │
+     │   └── Shared defaults for    │
+     │       curriculum, sweeps,    │
+     │       constitutional rules,  │
+     │       curiosity channels     │
+     │                              │
+     │ curriculum_controller.py     │
+     │   └── Tier unlock / demote   │
+     │                              │
+     │ constitutional_trainer.py    │
+     │   └── Constraint penalties   │
+     │                              │
+     │ curiosity_optimizer.py       │
+     │   └── Evolutionary search    │
+     │                              │
+     │ batch.py / sweep_runner.py   │
+     │   └── Episode collection /   │
+     │       MCTS grid evaluation   │
+     └──────────────┬───────────────┘
+                                         │
+                                         │ uses
+                                         ▼
+     ┌──────────────────────────────┐
+     │ forge_env wrappers           │
+     │                              │
+     │ Optional-native Python API   │
+     │ for Gymnasium / PettingZoo / │
+     │ vectorized rollout flows     │
+     └──────────────┬───────────────┘
+                                         │
+                                         ▼
+     ┌──────────────────────────────┐
+     │ forge-python / forge-core    │
+     │                              │
+     │ Deterministic Rust simulator │
+     │ and MCTS planning engine     │
+     └──────────────────────────────┘
+```
+
+This control-plane split is intentional: branch-specific coverage work focuses on keeping config resolution, optional imports, and fallback behavior stable even when native extensions or heavyweight ML packages are unavailable.
 
 ---
 

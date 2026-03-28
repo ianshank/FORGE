@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### MangoMAS Bridge Coverage And Training Surface
+
+- Added targeted Python coverage for the MangoMAS bridge components: constitutional pre-training, adaptive curriculum control, curiosity-weight optimization, and MCTS sweep reporting
+- Added a config-driven discrete SAC training preset in `configs/training/sac_default.toml` and expanded `examples/train_sac_cleanrl.py` to honor TOML-backed model and feature-extractor settings
+- Added branch-specific regression tests for vectorized env wrappers, feature extractors, and pure-Python `forge_env` import/fallback behavior
+
 #### Python Coverage Expansion
 
 - Added `tests/python/test_device.py` to cover accelerator detection paths in `forge.utils.device`
@@ -18,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded `tests/python/test_forge_env.py` to exercise `forge_env.__init__`, `forge_env.utils`, wrapper edge cases, and pure-Python fallback branches
 
 ### Changed
+
+#### MangoMAS Configuration Hardening
+
+- Consolidated MangoMAS bridge defaults into `python/forge/mangomas/config.py` so curriculum tiers, constitutional constraints, curiosity weights, sweep bounds, and batch collection settings all flow from configuration objects
+- Updated the constitutional trainer, curiosity optimizer, curriculum controller, batch collector, and sweep runner to consume shared config defaults instead of duplicating literals in module code
+- Expanded `python/forge_env/__init__.py`, `feature_extractors.py`, and `vecenv.py` to better tolerate optional native or ML dependencies while keeping the package importable for pure-Python validation
+
+#### Rust Coverage Hardening
+
+- Added targeted Rust coverage for MCTS terminal-search and short-priors fallback behavior in `forge-agent`
+- Expanded predicate, validation, and terrain edge-case coverage across `forge-task`, `forge-types`, and `forge-worldgen`
 
 #### Python Gap Analysis Cleanup
 

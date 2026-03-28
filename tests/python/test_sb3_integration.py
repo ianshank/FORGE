@@ -10,14 +10,12 @@ import pytest
 # ---------------------------------------------------------------------------
 # Skip if SB3 not installed
 # ---------------------------------------------------------------------------
-pytest.importorskip("stable_baselines3", reason="SB3 required")
+_sb3_callbacks = pytest.importorskip("forge_env.sb3_callbacks", reason="SB3 required")
 
-from forge_env.sb3_callbacks import (
-    _EPISODE_KEY,
-    _TASK_SUCCESS_KEY,
-    ForgeCurriculumCallback,
-    ForgeMetricsCallback,
-)
+_EPISODE_KEY = _sb3_callbacks._EPISODE_KEY
+_TASK_SUCCESS_KEY = _sb3_callbacks._TASK_SUCCESS_KEY
+ForgeCurriculumCallback = _sb3_callbacks.ForgeCurriculumCallback
+ForgeMetricsCallback = _sb3_callbacks.ForgeMetricsCallback
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -309,7 +307,7 @@ class TestForgeMetricsCallback:
 
 
 def test_require_sb3_raises_without_sb3(monkeypatch: pytest.MonkeyPatch) -> None:
-    import forge_env.sb3_callbacks as cb_mod  # noqa: PLC0415
+    import forge_env.sb3_callbacks as cb_mod
 
     monkeypatch.setattr(cb_mod, "HAS_SB3", False)
     with pytest.raises(ImportError, match="Stable Baselines"):

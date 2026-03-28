@@ -20,6 +20,8 @@ build/
 *.whl
 .venv/
 venv/
+.mypy_cache/
+.ruff_cache/
 
 # IDE
 .vscode/
@@ -83,6 +85,9 @@ pytest_out.txt
 maturin_out.txt
 maturin_err.txt
 coverage.json
+runs/
+wandb/
+mlruns/
 
 # Copilot memory workspace state
 /memories/

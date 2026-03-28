@@ -47,7 +47,7 @@ try:
     HAS_SB3 = True
 except ImportError:
     HAS_SB3 = False
-    BaseFeaturesExtractor = object  # type: ignore[assignment,misc]
+    BaseFeaturesExtractor = object
 
 if TYPE_CHECKING:
     import gymnasium as gym
@@ -95,6 +95,15 @@ def _build_cnn(
     Returns:
         A :class:`torch.nn.Sequential` CNN ending with a :class:`Flatten`.
     """
+    if len(kernel_sizes) == 1 and len(cnn_channels) > 1:
+        kernel_sizes = kernel_sizes * len(cnn_channels)
+    if len(strides) == 1 and len(cnn_channels) > 1:
+        strides = strides * len(cnn_channels)
+    if len(cnn_channels) != len(kernel_sizes) or len(cnn_channels) != len(strides):
+        raise ValueError(
+            "cnn_channels, kernel_sizes, and strides must have matching lengths"
+        )
+
     layers: list[nn.Module] = []
     current_channels = in_channels
     for out_ch, k, s in zip(cnn_channels, kernel_sizes, strides):
@@ -152,7 +161,7 @@ def _scalar_obs_dim(observation_space: gym.spaces.Dict) -> int:
 # ---------------------------------------------------------------------------
 
 
-class ForgeGridCnnExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
+class ForgeGridCnnExtractor(BaseFeaturesExtractor):
     """CNN feature extractor for the FORGE ``grid_view`` observation.
 
     Processes only the ``grid_view`` key of the Dict observation space.
@@ -229,7 +238,7 @@ class ForgeGridCnnExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
 # ---------------------------------------------------------------------------
 
 
-class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
+class ForgeObsExtractor(BaseFeaturesExtractor):
     """Combined CNN + MLP feature extractor for FORGE Dict observations.
 
     Two branches:
@@ -271,8 +280,10 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
         scalar_in = _scalar_obs_dim(observation_space)
         mlp_out = mlp_hidden_sizes[-1] if mlp_hidden_sizes else scalar_in
         total_features_dim = cnn_out_dim + mlp_out
+        declared_features_dim = max(total_features_dim, 1)
 
-        super().__init__(observation_space, features_dim=total_features_dim)
+        super().__init__(observation_space, features_dim=declared_features_dim)
+        self._features_dim = total_features_dim
 
         self._scalar_keys: list[str] = sorted(
             k
@@ -300,8 +311,6 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             self._has_grid = True
         else:
             self._has_grid = False
-            # Adjust features_dim when there is no grid key.
-            self._features_dim = mlp_out
 
         # MLP branch
         mlp_layers: list[nn.Module] = []
