@@ -10,12 +10,14 @@ import pytest
 # ---------------------------------------------------------------------------
 # Skip if SB3 not installed
 # ---------------------------------------------------------------------------
-_sb3_callbacks = pytest.importorskip("forge_env.sb3_callbacks", reason="SB3 required")
+pytest.importorskip("stable_baselines3", reason="SB3 required")
 
-_EPISODE_KEY = _sb3_callbacks._EPISODE_KEY
-_TASK_SUCCESS_KEY = _sb3_callbacks._TASK_SUCCESS_KEY
-ForgeCurriculumCallback = _sb3_callbacks.ForgeCurriculumCallback
-ForgeMetricsCallback = _sb3_callbacks.ForgeMetricsCallback
+from forge_env.sb3_callbacks import (
+    _EPISODE_KEY,
+    _TASK_SUCCESS_KEY,
+    ForgeCurriculumCallback,
+    ForgeMetricsCallback,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers

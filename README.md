@@ -44,7 +44,7 @@ A high-performance simulation platform for training and evaluating AI agents, bu
 
 ### Prerequisites
 
-- Rust 1.85+ (`rustup`)
+- Rust 1.75+ (`rustup`)
 - Python 3.9+
 - [maturin](https://github.com/PyO3/maturin) (`pip install maturin`)
 - numpy (`pip install numpy`)

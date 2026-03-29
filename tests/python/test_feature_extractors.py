@@ -335,7 +335,8 @@ class TestForgeObsExtractor:
         )
         obs = _make_obs_batch(space, batch_size=3)
         out = extractor(obs)
-        assert out.shape == (3, 0)
+        assert out.shape == (3, 1)
+        assert torch.equal(out, torch.zeros((3, 1)))
 
     def test_grid_extractor_preserves_batch_size_for_multiple_batches(self) -> None:
         extractor = ForgeGridCnnExtractor(_make_dict_space(), features_dim=32)

@@ -279,11 +279,11 @@ class ForgeObsExtractor(BaseFeaturesExtractor):
         # Compute total features_dim dynamically before calling super().__init__
         scalar_in = _scalar_obs_dim(observation_space)
         mlp_out = mlp_hidden_sizes[-1] if mlp_hidden_sizes else scalar_in
-        total_features_dim = cnn_out_dim + mlp_out
+        effective_cnn_out_dim = cnn_out_dim if "grid_view" in observation_space.spaces else 0
+        total_features_dim = effective_cnn_out_dim + mlp_out
         declared_features_dim = max(total_features_dim, 1)
 
         super().__init__(observation_space, features_dim=declared_features_dim)
-        self._features_dim = total_features_dim
 
         self._scalar_keys: list[str] = sorted(
             k
