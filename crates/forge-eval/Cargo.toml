@@ -1,0 +1,27 @@
+[package]
+name = "forge-eval"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Agent-agnostic evaluation harness and benchmark suite for FORGE"
+
+[dependencies]
+forge-types = { workspace = true }
+forge-core = { path = "../forge-core" }
+forge-replay = { path = "../forge-replay" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+rayon = "1"
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = { workspace = true }
+rand_pcg = { workspace = true }

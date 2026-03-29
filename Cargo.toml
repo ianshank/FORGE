@@ -15,6 +15,9 @@ members = [
     "crates/forge-cognitive",
     "crates/forge-integration",
     "crates/forge-mangomas",
+    "crates/forge-replay",
+    "crates/forge-eval",
+    "crates/forge-scenario",
 ]
 resolver = "2"
 
@@ -67,6 +70,8 @@ forge-memory = { path = "crates/forge-memory" }
 forge-social = { path = "crates/forge-social" }
 forge-cognitive = { path = "crates/forge-cognitive" }
 forge-integration-layer = { path = "crates/forge-integration" }
+forge-replay = { path = "crates/forge-replay" }
+forge-eval = { path = "crates/forge-eval" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -84,6 +89,9 @@ rand_pcg = "0.3"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Timestamps
+chrono = "0.4"
 
 # Error handling
 thiserror = "2"

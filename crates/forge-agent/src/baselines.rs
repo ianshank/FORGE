@@ -4,6 +4,7 @@
 //! with learned policies or MCTS-based planners.
 
 use forge_core::WorldState;
+use forge_types::agent_interface::{AgentInterface, AgentResponse};
 use forge_types::Action;
 use rand::Rng;
 use tracing::{instrument, trace};
@@ -206,6 +207,103 @@ pub fn run_episode(
     }
 
     total_rewards
+}
+
+/// Result of an evaluation episode run through [`AgentInterface`].
+///
+/// Contains per-agent rewards plus per-step action responses for
+/// trajectory logging and scorecard generation.
+#[derive(Debug, Clone)]
+pub struct EvalEpisodeResult {
+    /// Total per-agent rewards accumulated over the episode.
+    pub total_rewards: Vec<f32>,
+    /// Per-step: all agent responses (for trajectory/replay storage).
+    pub step_responses: Vec<Vec<AgentResponse>>,
+    /// Number of ticks the episode ran.
+    pub ticks: u64,
+    /// Whether the episode terminated naturally (goal reached or death).
+    pub terminated: bool,
+    /// Whether the episode was truncated (max steps).
+    pub truncated: bool,
+}
+
+/// Runs an episode using [`AgentInterface`] agents, returning detailed results.
+///
+/// Unlike [`run_episode`], this function:
+/// - Operates on `AgentInterface` (observation-based) rather than `Agent` (world-state-based)
+/// - Records per-step `AgentResponse` data (action, reasoning, timing)
+/// - Returns structured [`EvalEpisodeResult`] for use by the evaluation harness
+///
+/// Agents receive observations generated from the world state each tick.
+#[instrument(skip_all)]
+pub fn run_episode_eval(
+    state: &mut WorldState,
+    agents: &mut [Box<dyn AgentInterface>],
+    max_steps: u64,
+) -> EvalEpisodeResult {
+    let num_agents = state.agents.len();
+    let mut total_rewards = vec![0.0_f32; num_agents];
+    let mut step_responses = Vec::with_capacity(max_steps as usize);
+
+    // Reset all agents at episode start
+    for agent in agents.iter_mut() {
+        agent.reset();
+    }
+
+    // Get initial observations
+    let initial_result = state.reset(Some(state.config.world.seed));
+    let mut current_obs = initial_result.observations;
+
+    for _step in 0..max_steps {
+        if state.terminated || state.truncated {
+            break;
+        }
+
+        // Collect responses from each agent
+        let mut tick_responses = Vec::with_capacity(num_agents);
+        let mut actions = Vec::with_capacity(num_agents);
+
+        for (i, agent) in agents.iter_mut().enumerate() {
+            let response = if i < current_obs.len() {
+                agent.select_action(&current_obs[i], i)
+            } else {
+                AgentResponse::from_action(0) // Noop for missing obs
+            };
+
+            let comm_vocab = state.config.agents.comm_vocab_size;
+            let drone_enabled = state.config.drone.enabled;
+            let action = Action::from_discrete(response.action_id, comm_vocab, drone_enabled)
+                .unwrap_or(Action::Noop);
+
+            actions.push(action);
+            tick_responses.push(response);
+        }
+
+        // Pad actions if fewer agents than world expects
+        while actions.len() < num_agents {
+            actions.push(Action::Noop);
+        }
+
+        step_responses.push(tick_responses);
+
+        let result = state.step(&actions);
+
+        for (i, reward) in result.rewards.iter().enumerate() {
+            if i < total_rewards.len() {
+                total_rewards[i] += reward;
+            }
+        }
+
+        current_obs = result.observations;
+    }
+
+    EvalEpisodeResult {
+        total_rewards,
+        step_responses,
+        ticks: state.tick,
+        terminated: state.terminated,
+        truncated: state.truncated,
+    }
 }
 
 #[cfg(test)]
@@ -570,5 +668,110 @@ mod tests {
         let rng2 = Pcg64Mcg::seed_from_u64(42);
         let heuristic = HeuristicAgent::new(rng2, 0);
         assert_eq!(heuristic.name(), "HeuristicAgent");
+    }
+
+    // --- run_episode_eval tests ---
+
+    #[test]
+    fn test_run_episode_eval_noop() {
+        let mut state = make_test_world();
+        let mut agents: Vec<Box<dyn AgentInterface>> =
+            vec![Box::new(crate::adapter::NoopInterface)];
+
+        let result = run_episode_eval(&mut state, &mut agents, 10);
+
+        assert_eq!(result.total_rewards.len(), 1);
+        assert!(result.ticks > 0);
+        assert!(!result.step_responses.is_empty());
+        // Each tick should have 1 agent response
+        for tick_responses in &result.step_responses {
+            assert_eq!(tick_responses.len(), 1);
+            assert_eq!(tick_responses[0].action_id, 0); // Noop
+        }
+    }
+
+    #[test]
+    fn test_run_episode_eval_random() {
+        let mut state = make_test_world();
+        let action_space = Action::space_size(0, false);
+        let mut agents: Vec<Box<dyn AgentInterface>> = vec![Box::new(
+            crate::adapter::RandomInterface::new(action_space, 42),
+        )];
+
+        let result = run_episode_eval(&mut state, &mut agents, 20);
+
+        assert_eq!(result.total_rewards.len(), 1);
+        assert!(result.ticks > 0);
+        assert!(!result.step_responses.is_empty());
+    }
+
+    #[test]
+    fn test_run_episode_eval_truncation() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 8;
+        config.world.height = 8;
+        config.agents.num_agents = 1;
+        config.agents.default_vision_radius = 3;
+        config.agents.comm_vocab_size = 0;
+        config.task.max_episode_length = 5;
+        let mut state = WorldState::new(config).unwrap();
+
+        let mut agents: Vec<Box<dyn AgentInterface>> =
+            vec![Box::new(crate::adapter::NoopInterface)];
+        let result = run_episode_eval(&mut state, &mut agents, 1000);
+
+        assert!(result.truncated);
+        assert_eq!(result.ticks, 5);
+    }
+
+    #[test]
+    fn test_run_episode_eval_max_steps_zero() {
+        let mut state = make_test_world();
+        let mut agents: Vec<Box<dyn AgentInterface>> =
+            vec![Box::new(crate::adapter::NoopInterface)];
+
+        let result = run_episode_eval(&mut state, &mut agents, 0);
+
+        assert_eq!(result.total_rewards.len(), 1);
+        assert!(result.step_responses.is_empty());
+    }
+
+    #[test]
+    fn test_run_episode_eval_multi_agent() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.seed = 42;
+        config.agents.num_agents = 2;
+        config.agents.comm_vocab_size = 0;
+        config.task.max_episode_length = 50;
+        let mut state = WorldState::new(config).unwrap();
+
+        let action_space = Action::space_size(0, false);
+        let mut agents: Vec<Box<dyn AgentInterface>> = vec![
+            Box::new(crate::adapter::NoopInterface),
+            Box::new(crate::adapter::RandomInterface::new(action_space, 99)),
+        ];
+
+        let result = run_episode_eval(&mut state, &mut agents, 10);
+        assert_eq!(result.total_rewards.len(), 2);
+        for tick_responses in &result.step_responses {
+            assert_eq!(tick_responses.len(), 2);
+        }
+    }
+
+    #[test]
+    fn test_eval_episode_result_fields() {
+        let result = EvalEpisodeResult {
+            total_rewards: vec![1.0, 2.0],
+            step_responses: vec![],
+            ticks: 42,
+            terminated: true,
+            truncated: false,
+        };
+        assert_eq!(result.ticks, 42);
+        assert!(result.terminated);
+        assert!(!result.truncated);
+        assert_eq!(result.total_rewards.len(), 2);
     }
 }

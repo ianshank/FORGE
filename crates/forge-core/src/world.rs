@@ -237,7 +237,12 @@ impl WorldState {
     }
 
     /// Generates an observation for a single agent.
-    fn generate_observation(&self, agent: &Agent) -> Observation {
+    ///
+    /// This constructs an ego-centric grid view and gathers inventory,
+    /// health, stamina, messages, and task progress into an [`Observation`].
+    /// Useful for adapters that need to bridge `WorldState`-based agents
+    /// with the `AgentInterface` trait.
+    pub fn generate_observation(&self, agent: &Agent) -> Observation {
         let vr = agent.vision_radius as i32;
         let view_side = (2 * vr + 1) as u16;
         let mut grid_view = Vec::with_capacity((view_side as usize) * (view_side as usize));

@@ -11,6 +11,7 @@
 //! - **MCTS** (`mcts`): Monte Carlo Tree Search with PUCT selection
 //! - **Baselines** (`baselines`): Random, heuristic, and greedy baseline agents
 
+pub mod adapter;
 pub mod baselines;
 pub mod forward_model;
 pub mod mcts;
