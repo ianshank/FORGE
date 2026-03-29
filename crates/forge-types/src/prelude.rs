@@ -5,6 +5,7 @@
 //! ```
 
 pub use crate::action::Action;
+pub use crate::agent_interface::{AgentInterface, AgentMetadata, AgentResponse};
 pub use crate::config::ForgeConfig;
 pub use crate::entity::{Agent, AgentId, Object, ObjectId};
 pub use crate::error::{ForgeError, ForgeResult};

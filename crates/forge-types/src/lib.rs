@@ -16,6 +16,7 @@
 //! - Default constants
 
 pub mod action;
+pub mod agent_interface;
 pub mod config;
 pub mod constants;
 #[macro_use]
@@ -32,6 +33,7 @@ pub mod validation;
 
 // Re-export commonly used types at crate root
 pub use action::Action;
+pub use agent_interface::{AgentInterface, AgentMetadata, AgentResponse};
 pub use config::ForgeConfig;
 pub use entity::{Agent, AgentId, AgentMorphology, Object, ObjectId};
 pub use error::{ForgeError, ForgeResult};
