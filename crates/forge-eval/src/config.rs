@@ -1,5 +1,7 @@
 //! Configuration for the evaluation harness.
 
+use std::path::PathBuf;
+
 use forge_types::config::ForgeConfig;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
@@ -17,14 +19,22 @@ pub struct EvalConfig {
     pub max_steps_per_episode: u64,
     /// Base seed for reproducibility. Episode seeds are derived as `base_seed + episode_idx`.
     pub base_seed: u64,
-    /// Which difficulty tiers to evaluate (empty = all 6).
+    /// Requested difficulty tiers for registry-backed multi-scenario evaluation.
+    ///
+    /// When `scenario_registry_path` is not set, non-empty values are logged and ignored.
     pub tiers: Vec<u8>,
     /// Number of parallel evaluation threads (0 = use rayon default).
     pub parallelism: u32,
-    /// Whether to record compact replays for each episode.
+    /// Whether to record compact replays for each episode in detailed eval results.
     pub record_replays: bool,
-    /// Whether to record full trajectories for each episode.
+    /// Whether to record full trajectories for each episode in detailed eval results.
     pub record_trajectories: bool,
+    /// Optional path to a scenario registry directory.
+    ///
+    /// When set, evaluation runs every scenario discovered in the directory,
+    /// filtered by `tiers` when non-empty. Files may be native executable
+    /// manifests or higher-level scenario documents derivable by `forge-scenario`.
+    pub scenario_registry_path: Option<PathBuf>,
     /// Base FORGE config to use for scenarios that don't specify their own.
     pub base_forge_config: ForgeConfig,
 }
@@ -45,6 +55,7 @@ impl Default for EvalConfig {
             parallelism: 0,
             record_replays: false,
             record_trajectories: false,
+            scenario_registry_path: None,
             base_forge_config: forge_config,
         }
     }
@@ -67,6 +78,14 @@ impl EvalConfig {
         for &tier in &self.tiers {
             if tier == 0 || tier > 6 {
                 errors.push(format!("tier {tier} is out of valid range 1-6"));
+            }
+        }
+        if let Some(path) = &self.scenario_registry_path {
+            if !path.is_dir() {
+                errors.push(format!(
+                    "scenario_registry_path must point to an existing directory: {}",
+                    path.display()
+                ));
             }
         }
         if self.base_forge_config.world.width == 0 || self.base_forge_config.world.height == 0 {
@@ -98,6 +117,7 @@ mod tests {
         assert!(config.tiers.is_empty());
         assert!(!config.record_replays);
         assert!(!config.record_trajectories);
+        assert!(config.scenario_registry_path.is_none());
     }
 
     #[test]
@@ -110,6 +130,7 @@ mod tests {
             parallelism: 4,
             record_replays: true,
             record_trajectories: true,
+            scenario_registry_path: Some(PathBuf::from("configs/eval_registry")),
             ..Default::default()
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -118,6 +139,10 @@ mod tests {
         assert_eq!(deser.base_seed, 42);
         assert_eq!(deser.tiers, vec![1, 2, 3]);
         assert!(deser.record_replays);
+        assert_eq!(
+            deser.scenario_registry_path,
+            Some(PathBuf::from("configs/eval_registry"))
+        );
     }
 
     #[test]
@@ -176,6 +201,16 @@ mod tests {
     fn test_validate_zero_agents() {
         let mut config = EvalConfig::default();
         config.base_forge_config.agents.num_agents = 0;
+        assert!(!config.is_valid());
+    }
+
+    #[test]
+    fn test_validate_nonexistent_registry_path() {
+        let config = EvalConfig {
+            scenario_registry_path: Some(PathBuf::from("configs/does-not-exist")),
+            ..EvalConfig::default()
+        };
+
         assert!(!config.is_valid());
     }
 }

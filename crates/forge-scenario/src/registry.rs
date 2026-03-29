@@ -58,6 +58,10 @@ impl ScenarioRegistry {
     }
 
     /// Loads all `.toml` files from a directory into the registry.
+    ///
+    /// Supports both native executable scenario manifests and higher-level
+    /// scenario documents that can be deterministically derived into
+    /// [`ScenarioConfig`] values.
     #[instrument(skip_all, fields(path = %path.as_ref().display()))]
     pub fn from_directory(path: impl AsRef<Path>) -> Result<Self, String> {
         let mut registry = Self::new();
@@ -100,8 +104,11 @@ impl ScenarioRegistry {
     /// If a scenario with the same ID already exists, it is replaced.
     #[instrument(skip(self, config), fields(id = %config.scenario.id))]
     pub fn register(&mut self, config: ScenarioConfig) {
+        let scenario_id = config.scenario.id.clone();
+        self.index.retain(|entry| entry.id != scenario_id);
+
         let entry = IndexEntry {
-            id: config.scenario.id.clone(),
+            id: scenario_id.clone(),
             tags: config.scenario.tags.clone(),
             tier: config.scenario.difficulty_tier,
             min_agents: config.scenario.min_agents,
@@ -109,7 +116,7 @@ impl ScenarioRegistry {
             desc_lower: config.scenario.description.to_lowercase(),
         };
         self.index.push(entry);
-        self.scenarios.insert(config.scenario.id.clone(), config);
+        self.scenarios.insert(scenario_id, config);
     }
 
     /// Returns the number of scenarios in the registry.
@@ -137,6 +144,25 @@ impl ScenarioRegistry {
         self.index
             .iter()
             .filter(|e| e.tier == tier)
+            .filter_map(|e| self.scenarios.get(&e.id))
+            .collect()
+    }
+
+    /// Returns scenarios matching any of the given tiers.
+    ///
+    /// An empty `tiers` slice returns all scenarios.
+    pub fn by_tiers(&self, tiers: &[u8]) -> Vec<&ScenarioConfig> {
+        if tiers.is_empty() {
+            return self
+                .index
+                .iter()
+                .filter_map(|e| self.scenarios.get(&e.id))
+                .collect();
+        }
+
+        self.index
+            .iter()
+            .filter(|e| tiers.contains(&e.tier))
             .filter_map(|e| self.scenarios.get(&e.id))
             .collect()
     }
@@ -226,6 +252,7 @@ mod tests {
                 version: "1.0".into(),
             },
             forge: ForgeConfig::default(),
+            derivation: None,
         }
     }
 
@@ -278,6 +305,23 @@ mod tests {
 
         let tier2 = reg.by_tier(2);
         assert_eq!(tier2.len(), 2);
+    }
+
+    #[test]
+    fn test_by_tiers() {
+        let reg = make_populated_registry();
+        let tiers = reg.by_tiers(&[1, 3]);
+
+        assert_eq!(tiers.len(), 2);
+        assert!(tiers.iter().any(|scenario| scenario.scenario.id == "patrol"));
+        assert!(tiers.iter().any(|scenario| scenario.scenario.id == "combat"));
+    }
+
+    #[test]
+    fn test_by_tiers_empty_returns_all() {
+        let reg = make_populated_registry();
+
+        assert_eq!(reg.by_tiers(&[]).len(), 4);
     }
 
     #[test]
@@ -403,6 +447,37 @@ difficulty_tier = 1
     }
 
     #[test]
+    fn test_from_directory_with_high_level_scenario_docs() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/scenarios");
+
+        let reg = ScenarioRegistry::from_directory(&dir).unwrap();
+
+        assert!(reg.len() >= 5);
+
+        let patrol = reg.get("patrol").unwrap();
+        assert_eq!(patrol.scenario.difficulty_tier, 2);
+        assert_eq!(patrol.forge.world.width, 64);
+        assert!(patrol.scenario.tags.iter().any(|tag| tag == "sequence"));
+        assert!(patrol.derivation_diagnostics().is_some());
+        assert!(patrol
+            .derivation_diagnostics()
+            .unwrap()
+            .metadata_only_fields
+            .iter()
+            .any(|field| field.source == "scenario.map.num_waypoints"));
+
+        let escort = reg.get("escort").unwrap();
+        assert_eq!(escort.scenario.difficulty_tier, 4);
+        assert_eq!(escort.forge.task.max_episode_length, 4000);
+        assert!(escort
+            .derivation_diagnostics()
+            .unwrap()
+            .metadata_only_fields
+            .iter()
+            .any(|field| field.source == "scenario.objectives.vip_health_threshold"));
+    }
+
+    #[test]
     fn test_case_insensitive_tag_search() {
         let reg = make_populated_registry();
         let results = reg.by_tag("Navigation");
@@ -415,11 +490,13 @@ difficulty_tier = 1
         reg.register(make_scenario("dup", "First", 1, vec!["a"]));
         reg.register(make_scenario("dup", "Second", 2, vec!["b"]));
 
-        // HashMap replaces, so get returns the latest
         assert_eq!(reg.get("dup").unwrap().scenario.name, "Second");
-        // But index has both entries — by_tier finds updated one
+        assert!(reg.by_tier(1).is_empty());
         let tier2 = reg.by_tier(2);
-        assert!(tier2.iter().any(|s| s.scenario.id == "dup"));
+        assert_eq!(tier2.len(), 1);
+        assert_eq!(tier2[0].scenario.id, "dup");
+        assert!(reg.by_tag("a").is_empty());
+        assert_eq!(reg.by_tag("b").len(), 1);
     }
 
     #[test]

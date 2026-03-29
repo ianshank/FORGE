@@ -1,0 +1,24 @@
+[scenario]
+id = "escort_coordination"
+name = "Escort Coordination"
+description = "Tier-2 coordination fixture for registry-backed eval"
+tags = ["eval", "coordination"]
+difficulty_tier = 2
+min_agents = 1
+max_agents = 1
+author = "FORGE"
+version = "1.0"
+
+[forge.world]
+width = 20
+height = 20
+seed = 202
+
+[forge.agents]
+num_agents = 1
+comm_vocab_size = 0
+
+[forge.task]
+enabled = true
+max_tier = 2
+max_episode_length = 12

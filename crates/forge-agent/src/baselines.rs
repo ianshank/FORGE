@@ -271,6 +271,8 @@ pub fn run_episode_eval(
         let mut actions = Vec::with_capacity(num_agents);
 
         for (i, agent) in agents.iter_mut().enumerate() {
+            agent.update_context(state);
+
             let response = if i < current_obs.len() {
                 agent.select_action(&current_obs[i], i)
             } else {

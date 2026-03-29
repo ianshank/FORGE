@@ -72,6 +72,7 @@ forge-cognitive = { path = "crates/forge-cognitive" }
 forge-integration-layer = { path = "crates/forge-integration" }
 forge-replay = { path = "crates/forge-replay" }
 forge-eval = { path = "crates/forge-eval" }
+forge-scenario = { path = "crates/forge-scenario" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

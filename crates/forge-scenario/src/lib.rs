@@ -6,7 +6,7 @@
 //! Scenario registry, composition, and marketplace for the FORGE platform.
 //!
 //! This crate provides:
-//! - **Config** ([`config`]): Scenario configuration with metadata (tags, tier, author)
+//! - **Config** ([`config`]): Scenario configuration with metadata (tags, tier, author) plus derivation diagnostics for higher-level scenario docs
 //! - **Registry** ([`registry`]): Index, search, and retrieve scenarios
 //! - **Compose** ([`compose`]): Merge multiple TOML configs for scenario layering
 

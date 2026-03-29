@@ -10,8 +10,10 @@ use crate::config::ScenarioConfig;
 
 /// Merges a base ForgeConfig with overrides from another ForgeConfig.
 ///
-/// Fields in `overrides` that differ from the default replace the corresponding
-/// fields in `base`. This uses a JSON-based merge strategy.
+/// Values from `overrides` replace the corresponding values in `base`.
+///
+/// When both values are JSON objects, the merge is recursive. Scalars, arrays,
+/// and `null` values from `overrides` replace the value from `base` outright.
 #[instrument(skip_all)]
 pub fn merge_forge_configs(base: &ForgeConfig, overrides: &ForgeConfig) -> ForgeConfig {
     // Serialize both to JSON, merge, deserialize
@@ -67,6 +69,7 @@ pub fn compose_scenarios(configs: &[ScenarioConfig]) -> Option<ScenarioConfig> {
     for config in &configs[1..] {
         result.forge = merge_forge_configs(&result.forge, &config.forge);
         result.scenario = config.scenario.clone();
+        result.derivation = config.derivation.clone();
     }
 
     Some(result)
@@ -96,6 +99,7 @@ mod tests {
                 version: "1.0".into(),
             },
             forge,
+            derivation: None,
         }
     }
 
@@ -116,6 +120,7 @@ mod tests {
                 version: "2.0".into(),
             },
             forge,
+            derivation: None,
         }
     }
 
@@ -131,8 +136,8 @@ mod tests {
 
         let merged = merge_forge_configs(&base, &overrides);
         assert_eq!(merged.world.width, 64);
-        // Height comes from override (which has default value)
-        // since the merge replaces all override fields
+        assert_eq!(merged.world.height, overrides.world.height);
+        assert_eq!(merged.agents.num_agents, overrides.agents.num_agents);
     }
 
     #[test]
@@ -210,6 +215,7 @@ mod tests {
                 version: "3.0".into(),
             },
             forge: forge3,
+            derivation: None,
         };
 
         let result = compose_scenarios(&[base, override1, third]).unwrap();

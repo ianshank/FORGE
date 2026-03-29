@@ -15,6 +15,7 @@
 //! Adapters in `forge-agent` bridge each of these to `AgentInterface`,
 //! preserving full backward compatibility with existing code.
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Instant;
@@ -229,6 +230,15 @@ pub trait AgentInterface: Send {
     /// state (e.g., memory buffers, conversation history).
     #[instrument(skip_all)]
     fn reset(&mut self) {}
+
+    /// Updates implementation-specific context before `select_action`.
+    ///
+    /// The context is intentionally type-erased so `AgentInterface` remains
+    /// independent of any particular runtime crate. Implementations that need
+    /// privileged context can downcast to a concrete type and ignore any
+    /// unsupported values.
+    #[instrument(skip_all)]
+    fn update_context(&mut self, _context: &dyn Any) {}
 }
 
 /// Blanket implementation: a boxed `AgentInterface` is itself an `AgentInterface`.
@@ -248,11 +258,18 @@ impl AgentInterface for Box<dyn AgentInterface> {
     fn reset(&mut self) {
         (**self).reset()
     }
+
+    fn update_context(&mut self, context: &dyn Any) {
+        (**self).update_context(context)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+
     use crate::constants;
     use crate::observation::{InventoryObservation, TileObservation};
 
@@ -308,6 +325,26 @@ mod tests {
 
         fn reset(&mut self) {
             self.call_count = 0;
+        }
+    }
+
+    struct ContextAwareAgent {
+        seen: Arc<AtomicU32>,
+    }
+
+    impl AgentInterface for ContextAwareAgent {
+        fn select_action(&mut self, _obs: &Observation, _agent_idx: usize) -> AgentResponse {
+            AgentResponse::from_action(0)
+        }
+
+        fn name(&self) -> &str {
+            "ContextAwareAgent"
+        }
+
+        fn update_context(&mut self, context: &dyn Any) {
+            if let Some(value) = context.downcast_ref::<u32>() {
+                self.seen.store(*value, Ordering::Relaxed);
+            }
         }
     }
 
@@ -399,12 +436,36 @@ mod tests {
     }
 
     #[test]
+    fn test_agent_interface_update_context_default_noop() {
+        let mut agent = TestAgent::new(1);
+        agent.update_context(&123_u32);
+
+        let obs = make_test_observation();
+        let resp = agent.select_action(&obs, 0);
+
+        assert_eq!(resp.action_id, 1);
+        assert_eq!(agent.call_count, 1);
+    }
+
+    #[test]
     fn test_boxed_agent_interface() {
         let mut agent: Box<dyn AgentInterface> = Box::new(TestAgent::new(3));
         let obs = make_test_observation();
         let resp = agent.select_action(&obs, 0);
         assert_eq!(resp.action_id, 3);
         assert_eq!(agent.name(), "TestAgent");
+    }
+
+    #[test]
+    fn test_boxed_agent_interface_update_context() {
+        let seen = Arc::new(AtomicU32::new(0));
+        let mut agent: Box<dyn AgentInterface> = Box::new(ContextAwareAgent {
+            seen: Arc::clone(&seen),
+        });
+
+        agent.update_context(&123_u32);
+
+        assert_eq!(seen.load(Ordering::Relaxed), 123);
     }
 
     #[test]

@@ -127,7 +127,18 @@ impl CompactReplay {
             return None;
         }
 
-        let world = match WorldState::new(self.config.clone()) {
+        if self.config.world.seed != self.seed {
+            warn!(
+                config_seed = self.config.world.seed,
+                replay_seed = self.seed,
+                "Compact replay stored mismatched config and replay seed; replay will use replay seed"
+            );
+        }
+
+        let mut replay_config = self.config.clone();
+        replay_config.world.seed = self.seed;
+
+        let world = match WorldState::new(replay_config) {
             Ok(w) => w,
             Err(e) => {
                 warn!(error = %e, "Failed to create world for replay");
@@ -209,7 +220,9 @@ pub struct CompactReplayBuilder {
 
 impl CompactReplayBuilder {
     /// Creates a new builder.
-    fn new(config: ForgeConfig, seed: u64) -> Self {
+    fn new(mut config: ForgeConfig, seed: u64) -> Self {
+        config.world.seed = seed;
+
         Self {
             config,
             seed,
@@ -307,6 +320,7 @@ mod tests {
 
         assert_eq!(replay.format_version, FORMAT_VERSION);
         assert_eq!(replay.seed, 42);
+    assert_eq!(replay.config.world.seed, 42);
         assert_eq!(replay.actions.len(), 2);
         assert_eq!(replay.metadata.total_ticks, 2);
         assert_eq!(replay.metadata.agent_names, vec!["TestAgent"]);
@@ -359,6 +373,30 @@ mod tests {
 
         assert_eq!(deserialized.seed, replay.seed);
         assert_eq!(deserialized.actions, replay.actions);
+    }
+
+    #[test]
+    fn test_builder_normalizes_config_seed() {
+        let mut config = test_config();
+        config.world.seed = 7;
+
+        let replay = CompactReplay::builder(config, 42).build();
+
+        assert_eq!(replay.seed, 42);
+        assert_eq!(replay.config.world.seed, 42);
+        assert!(replay.validate_config());
+    }
+
+    #[test]
+    fn test_replay_uses_stored_replay_seed() {
+        let config = test_config();
+        let mut replay = CompactReplay::builder(config, 42).build();
+
+        replay.config.world.seed = 7;
+        replay.config_hash = hash_config(&replay.config);
+
+        let replay_iter = replay.replay().unwrap();
+        assert_eq!(replay_iter.world().config.world.seed, 42);
     }
 
     #[test]

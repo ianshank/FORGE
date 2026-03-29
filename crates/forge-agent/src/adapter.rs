@@ -13,6 +13,7 @@
 //! They are not included here to avoid pulling in `forge-mangomas` and
 //! `forge-cognitive` as dependencies of `forge-agent`.
 
+use std::any::Any;
 use std::time::Instant;
 
 use forge_core::WorldState;
@@ -27,7 +28,7 @@ use crate::baselines::Agent;
 ///
 /// This adapter enables legacy baseline agents (which require full world state)
 /// to participate in the agent-agnostic evaluation pipeline. It stores a
-/// shared reference to the current [`WorldState`] that must be updated
+/// snapshot of the current [`WorldState`] that must be updated
 /// each tick before calling [`select_action`](AgentInterface::select_action).
 ///
 /// # Usage
@@ -82,15 +83,18 @@ impl<A: Agent> AgentInterface for PrivilegedAgentAdapter<A> {
     fn select_action(&mut self, _obs: &Observation, agent_idx: usize) -> AgentResponse {
         let started = Instant::now();
 
-        let action = match &self.world_snapshot {
-            Some(world) => self.inner.select_action(world, agent_idx),
+        let (action, comm_vocab) = match &self.world_snapshot {
+            Some(world) => (
+                self.inner.select_action(world, agent_idx),
+                world.config.agents.comm_vocab_size,
+            ),
             None => {
                 warn!(agent_idx, "No world snapshot available, returning Noop");
-                Action::Noop
+                (Action::Noop, 0)
             }
         };
 
-        AgentResponse::with_timing(action.to_discrete(), started)
+        AgentResponse::with_timing(action.to_discrete_full(comm_vocab), started)
     }
 
     fn name(&self) -> &str {
@@ -99,6 +103,12 @@ impl<A: Agent> AgentInterface for PrivilegedAgentAdapter<A> {
 
     fn metadata(&self) -> AgentMetadata {
         AgentMetadata::heuristic(self.inner.name())
+    }
+
+    fn update_context(&mut self, context: &dyn Any) {
+        if let Some(world) = context.downcast_ref::<WorldState>() {
+            self.update_world(world);
+        }
     }
 }
 
@@ -140,6 +150,8 @@ impl Agent for InterfaceToAgentAdapter {
             );
             return Action::Noop;
         }
+
+        self.inner.update_context(state);
 
         let obs = state.generate_observation(&state.agents[agent_idx]);
         let response = self.inner.select_action(&obs, agent_idx);
@@ -295,6 +307,19 @@ mod tests {
         WorldState::new(config).unwrap()
     }
 
+    fn make_test_drone_world(comm_vocab: u16) -> WorldState {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        config.agents.comm_vocab_size = comm_vocab;
+        config.task.max_episode_length = 100;
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        WorldState::new(config).unwrap()
+    }
+
     fn make_test_observation() -> Observation {
         Observation {
             grid_view: vec![TileObservation::default()],
@@ -363,6 +388,44 @@ mod tests {
         let resp = adapter.select_action(&obs, 0);
         // Should produce some action (not necessarily 0)
         assert!(resp.action_id < Action::space_size(0, false));
+    }
+
+    #[test]
+    fn test_privileged_adapter_update_context() {
+        let mut adapter = PrivilegedAgentAdapter::new(NoopAgent);
+        let world = make_test_world();
+
+        adapter.update_context(&world);
+
+        let obs = make_test_observation();
+        let resp = adapter.select_action(&obs, 0);
+        assert_eq!(resp.action_id, 0);
+    }
+
+    #[derive(Debug)]
+    struct DroneAscendAgent;
+
+    impl Agent for DroneAscendAgent {
+        fn select_action(&mut self, _state: &WorldState, _agent_idx: usize) -> Action {
+            Action::Ascend
+        }
+
+        fn name(&self) -> &str {
+            "DroneAscendAgent"
+        }
+    }
+
+    #[test]
+    fn test_privileged_adapter_uses_full_action_encoding_for_drone_actions() {
+        let comm_vocab = 4;
+        let mut adapter = PrivilegedAgentAdapter::new(DroneAscendAgent);
+        let world = make_test_drone_world(comm_vocab);
+        adapter.update_context(&world);
+
+        let obs = make_test_observation();
+        let resp = adapter.select_action(&obs, 0);
+
+        assert_eq!(resp.action_id, Action::Ascend.to_discrete_full(comm_vocab));
     }
 
     #[test]
@@ -491,7 +554,7 @@ mod tests {
 
         let state = make_test_world();
         let action = roundtrip.select_action(&state, 0);
-        // Without world snapshot, PrivilegedAgentAdapter returns Noop
+        // Context forwarding keeps the wrapped privileged agent usable.
         assert_eq!(action, Action::Noop);
     }
 

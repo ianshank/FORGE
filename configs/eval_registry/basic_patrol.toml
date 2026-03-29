@@ -1,0 +1,24 @@
+[scenario]
+id = "basic_patrol"
+name = "Basic Patrol"
+description = "Single-agent patrol fixture for evaluation harness tests"
+tags = ["eval", "patrol"]
+difficulty_tier = 1
+min_agents = 1
+max_agents = 1
+author = "FORGE"
+version = "1.0"
+
+[forge.world]
+width = 16
+height = 16
+seed = 101
+
+[forge.agents]
+num_agents = 1
+comm_vocab_size = 0
+
+[forge.task]
+enabled = true
+max_tier = 1
+max_episode_length = 12

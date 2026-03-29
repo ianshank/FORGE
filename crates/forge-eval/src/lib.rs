@@ -3,20 +3,23 @@
 
 //! # forge-eval
 //!
-//! Agent-agnostic evaluation harness and benchmark suite for the FORGE platform.
+//! Evaluation harness and benchmark suite for the FORGE platform.
 //!
 //! This crate provides:
-//! - **Harness** ([`harness`]): Runs any [`AgentInterface`](forge_types::AgentInterface)
-//!   against FORGE scenarios, collecting per-episode results.
+//! - **Harness** ([`harness`]): Runs agent-agnostic and privileged agents against
+//!   single scenarios or registry-backed scenario suites, collecting per-episode results.
 //! - **Scorecard** ([`scorecard`]): Aggregated evaluation results across scenarios
 //!   and difficulty tiers, suitable for leaderboards and reports.
 //! - **Config** ([`config`]): Evaluation configuration with sensible defaults.
 //!
 //! # Architecture
 //!
-//! The evaluation harness uses a factory pattern (`Fn() -> Box<dyn AgentInterface>`)
-//! to create fresh agent instances per episode, enabling safe parallel evaluation
-//! via rayon. All constants flow through [`EvalConfig`](config::EvalConfig).
+//! The primary evaluation harness uses a factory pattern
+//! (`Fn() -> Box<dyn AgentInterface>`) to create fresh agent instances per episode,
+//! enabling safe parallel evaluation via rayon. A privileged fast path built on the
+//! legacy `forge_agent::baselines::Agent` trait is also available when clone-free
+//! access to [`forge_core::WorldState`] is required. All constants flow through
+//! [`EvalConfig`](config::EvalConfig).
 
 pub mod config;
 pub mod harness;

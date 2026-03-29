@@ -1,0 +1,24 @@
+[scenario]
+id = "rescue_chain"
+name = "Rescue Chain"
+description = "Second tier-2 fixture to verify deterministic ordering within a tier"
+tags = ["eval", "rescue"]
+difficulty_tier = 2
+min_agents = 1
+max_agents = 1
+author = "FORGE"
+version = "1.0"
+
+[forge.world]
+width = 24
+height = 24
+seed = 303
+
+[forge.agents]
+num_agents = 1
+comm_vocab_size = 0
+
+[forge.task]
+enabled = true
+max_tier = 2
+max_episode_length = 12

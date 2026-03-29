@@ -510,8 +510,10 @@ name = "forge-eval"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "forge-agent",
  "forge-core",
  "forge-replay",
+ "forge-scenario",
  "forge-types",
  "proptest",
  "rand 0.8.5",
