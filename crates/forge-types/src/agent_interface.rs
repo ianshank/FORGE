@@ -16,12 +16,34 @@
 //! preserving full backward compatibility with existing code.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 use crate::observation::Observation;
+
+/// Default confidence value for agent responses (maximum confidence).
+pub const DEFAULT_CONFIDENCE: f32 = 1.0;
+
+/// Minimum valid confidence value.
+pub const MIN_CONFIDENCE: f32 = 0.0;
+
+/// Maximum valid confidence value.
+pub const MAX_CONFIDENCE: f32 = 1.0;
+
+/// Agent type string for heuristic/baseline agents.
+pub const AGENT_TYPE_HEURISTIC: &str = "heuristic";
+
+/// Agent type string for LLM-backed agents.
+pub const AGENT_TYPE_LLM: &str = "llm";
+
+/// Agent type string for reinforcement learning agents.
+pub const AGENT_TYPE_RL: &str = "rl";
+
+/// Agent type string for human players.
+pub const AGENT_TYPE_HUMAN: &str = "human";
 
 /// Response from an agent's action selection.
 ///
@@ -43,12 +65,12 @@ pub struct AgentResponse {
 impl AgentResponse {
     /// Creates a minimal response with just an action ID.
     ///
-    /// Confidence defaults to 1.0, decision_time_ms to 0.
+    /// Confidence defaults to [`DEFAULT_CONFIDENCE`], decision_time_ms to 0.
     pub fn from_action(action_id: u32) -> Self {
         Self {
             action_id,
             reasoning: None,
-            confidence: 1.0,
+            confidence: DEFAULT_CONFIDENCE,
             decision_time_ms: 0,
         }
     }
@@ -58,15 +80,44 @@ impl AgentResponse {
         Self {
             action_id,
             reasoning: None,
-            confidence: 1.0,
+            confidence: DEFAULT_CONFIDENCE,
             decision_time_ms: started.elapsed().as_millis() as u64,
         }
+    }
+
+    /// Clamps confidence to the valid range [`MIN_CONFIDENCE`]–[`MAX_CONFIDENCE`].
+    ///
+    /// NaN values are replaced with 0.0.
+    pub fn clamp_confidence(mut self) -> Self {
+        if self.confidence.is_nan() {
+            self.confidence = MIN_CONFIDENCE;
+        } else {
+            self.confidence = self.confidence.clamp(MIN_CONFIDENCE, MAX_CONFIDENCE);
+        }
+        self
+    }
+
+    /// Returns true if confidence is within the valid range [0.0, 1.0] and not NaN.
+    pub fn is_valid_confidence(&self) -> bool {
+        !self.confidence.is_nan()
+            && self.confidence >= MIN_CONFIDENCE
+            && self.confidence <= MAX_CONFIDENCE
     }
 }
 
 impl Default for AgentResponse {
     fn default() -> Self {
         Self::from_action(0) // Noop
+    }
+}
+
+impl fmt::Display for AgentResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Action({}, conf={:.2}, {}ms)",
+            self.action_id, self.confidence, self.decision_time_ms
+        )
     }
 }
 
@@ -91,7 +142,7 @@ impl AgentMetadata {
     /// Creates metadata for a heuristic/baseline agent.
     pub fn heuristic(name: &str) -> Self {
         Self {
-            agent_type: "heuristic".to_string(),
+            agent_type: AGENT_TYPE_HEURISTIC.to_string(),
             model_name: name.to_string(),
             ..Default::default()
         }
@@ -100,7 +151,7 @@ impl AgentMetadata {
     /// Creates metadata for an LLM-backed agent.
     pub fn llm(model_name: &str, version: &str) -> Self {
         Self {
-            agent_type: "llm".to_string(),
+            agent_type: AGENT_TYPE_LLM.to_string(),
             model_name: model_name.to_string(),
             version: version.to_string(),
             ..Default::default()
@@ -110,9 +161,23 @@ impl AgentMetadata {
     /// Creates metadata for an RL policy agent.
     pub fn rl(checkpoint_name: &str) -> Self {
         Self {
-            agent_type: "rl".to_string(),
+            agent_type: AGENT_TYPE_RL.to_string(),
             model_name: checkpoint_name.to_string(),
             ..Default::default()
+        }
+    }
+}
+
+impl fmt::Display for AgentMetadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.version.is_empty() {
+            write!(f, "{}({})", self.agent_type, self.model_name)
+        } else {
+            write!(
+                f,
+                "{}({} v{})",
+                self.agent_type, self.model_name, self.version
+            )
         }
     }
 }
@@ -387,6 +452,95 @@ mod tests {
         assert_eq!(resp_b.action_id, 2);
         assert_eq!(agent_a.call_count, 1);
         assert_eq!(agent_b.call_count, 1);
+    }
+
+    #[test]
+    fn test_clamp_confidence_normal() {
+        let resp = AgentResponse::from_action(1);
+        let clamped = resp.clamp_confidence();
+        assert_eq!(clamped.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_clamp_confidence_out_of_range_high() {
+        let mut resp = AgentResponse::from_action(1);
+        resp.confidence = 2.5;
+        let clamped = resp.clamp_confidence();
+        assert_eq!(clamped.confidence, MAX_CONFIDENCE);
+    }
+
+    #[test]
+    fn test_clamp_confidence_out_of_range_low() {
+        let mut resp = AgentResponse::from_action(1);
+        resp.confidence = -0.5;
+        let clamped = resp.clamp_confidence();
+        assert_eq!(clamped.confidence, MIN_CONFIDENCE);
+    }
+
+    #[test]
+    fn test_clamp_confidence_nan() {
+        let mut resp = AgentResponse::from_action(1);
+        resp.confidence = f32::NAN;
+        assert!(!resp.is_valid_confidence());
+        let clamped = resp.clamp_confidence();
+        assert_eq!(clamped.confidence, MIN_CONFIDENCE);
+        assert!(clamped.is_valid_confidence());
+    }
+
+    #[test]
+    fn test_is_valid_confidence() {
+        let resp = AgentResponse::from_action(1);
+        assert!(resp.is_valid_confidence());
+
+        let mut bad = AgentResponse::from_action(1);
+        bad.confidence = 1.5;
+        assert!(!bad.is_valid_confidence());
+    }
+
+    #[test]
+    fn test_agent_response_display() {
+        let resp = AgentResponse::from_action(5);
+        let display = format!("{resp}");
+        assert!(display.contains("5"));
+        assert!(display.contains("1.00"));
+    }
+
+    #[test]
+    fn test_agent_metadata_display() {
+        let meta = AgentMetadata::llm("claude-3.5", "2.0");
+        let display = format!("{meta}");
+        assert!(display.contains("llm"));
+        assert!(display.contains("claude-3.5"));
+        assert!(display.contains("v2.0"));
+
+        let meta2 = AgentMetadata::heuristic("NoopAgent");
+        let display2 = format!("{meta2}");
+        assert!(display2.contains("heuristic"));
+        assert!(!display2.contains(" v")); // no version
+    }
+
+    #[test]
+    fn test_boxed_agent_metadata_delegation() {
+        let mut agent: Box<dyn AgentInterface> = Box::new(TestAgent::new(3));
+        let meta = agent.metadata();
+        assert_eq!(meta.agent_type, AGENT_TYPE_HEURISTIC);
+        assert_eq!(meta.model_name, "TestAgent");
+
+        // Test reset delegation
+        let obs = make_test_observation();
+        agent.select_action(&obs, 0);
+        agent.reset();
+        // After reset, call_count should be 0 — verify via another select
+        let resp = agent.select_action(&obs, 0);
+        assert_eq!(resp.action_id, 3);
+    }
+
+    #[test]
+    fn test_agent_type_constants() {
+        assert_eq!(AGENT_TYPE_HEURISTIC, "heuristic");
+        assert_eq!(AGENT_TYPE_LLM, "llm");
+        assert_eq!(AGENT_TYPE_RL, "rl");
+        assert_eq!(AGENT_TYPE_HUMAN, "human");
     }
 }
 

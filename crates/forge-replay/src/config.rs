@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::compact;
+
 /// Configuration for replay recording behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -22,7 +24,7 @@ impl Default for ReplayConfig {
             record_compact: true,
             record_trajectories: false,
             include_reasoning: false,
-            format_version: 1,
+            format_version: compact::FORMAT_VERSION,
         }
     }
 }

@@ -7,7 +7,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 use crate::trajectory::Trajectory;
 
@@ -26,6 +26,8 @@ pub fn export_to_csv(trajectory: &Trajectory, path: &Path) -> Result<(), String>
         "tick,agent_idx,action,reward,terminated,truncated,health,stamina,pos_x,pos_y,confidence,decision_time_ms"
     )
     .map_err(|e| format!("write error: {e}"))?;
+
+    debug!(steps = trajectory.steps.len(), path = %path.display(), "Exporting trajectory to CSV");
 
     for step in &trajectory.steps {
         let num_agents = step.actions.len();
@@ -68,6 +70,8 @@ pub fn export_to_csv(trajectory: &Trajectory, path: &Path) -> Result<(), String>
 pub fn export_to_jsonl(trajectory: &Trajectory, path: &Path) -> Result<(), String> {
     let mut file =
         std::fs::File::create(path).map_err(|e| format!("failed to create file: {e}"))?;
+
+    debug!(steps = trajectory.steps.len(), path = %path.display(), "Exporting trajectory to JSONL");
 
     for step in &trajectory.steps {
         let json = serde_json::to_string(step).map_err(|e| format!("serialization error: {e}"))?;

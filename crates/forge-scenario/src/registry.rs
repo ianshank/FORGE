@@ -96,6 +96,9 @@ impl ScenarioRegistry {
     }
 
     /// Registers a scenario config in the registry.
+    ///
+    /// If a scenario with the same ID already exists, it is replaced.
+    #[instrument(skip(self, config), fields(id = %config.scenario.id))]
     pub fn register(&mut self, config: ScenarioConfig) {
         let entry = IndexEntry {
             id: config.scenario.id.clone(),
@@ -149,6 +152,10 @@ impl ScenarioRegistry {
     }
 
     /// Searches scenarios matching the query.
+    ///
+    /// Filters are combined with AND logic: all specified filters must match.
+    /// An empty query (no filters) returns all scenarios.
+    #[instrument(skip(self))]
     pub fn search(&self, query: &ScenarioQuery) -> Vec<&ScenarioConfig> {
         self.index
             .iter()
@@ -400,5 +407,59 @@ difficulty_tier = 1
         let reg = make_populated_registry();
         let results = reg.by_tag("Navigation");
         assert_eq!(results.len(), 2); // case insensitive
+    }
+
+    #[test]
+    fn test_duplicate_id_replaces() {
+        let mut reg = ScenarioRegistry::new();
+        reg.register(make_scenario("dup", "First", 1, vec!["a"]));
+        reg.register(make_scenario("dup", "Second", 2, vec!["b"]));
+
+        // HashMap replaces, so get returns the latest
+        assert_eq!(reg.get("dup").unwrap().scenario.name, "Second");
+        // But index has both entries — by_tier finds updated one
+        let tier2 = reg.by_tier(2);
+        assert!(tier2.iter().any(|s| s.scenario.id == "dup"));
+    }
+
+    #[test]
+    fn test_search_combined_tags_and_text() {
+        let reg = make_populated_registry();
+        let results = reg.search(&ScenarioQuery {
+            tags: vec!["navigation".into()],
+            text_search: Some("cooperation".into()),
+            ..Default::default()
+        });
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].scenario.id, "coop");
+    }
+
+    #[test]
+    fn test_search_min_agents_filter() {
+        let mut reg = ScenarioRegistry::new();
+        let mut s = make_scenario("solo", "Solo", 1, vec![]);
+        s.scenario.min_agents = 1;
+        reg.register(s);
+
+        let mut s2 = make_scenario("multi", "Multi", 1, vec![]);
+        s2.scenario.min_agents = 4;
+        reg.register(s2);
+
+        let results = reg.search(&ScenarioQuery {
+            min_agents: Some(3),
+            ..Default::default()
+        });
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].scenario.id, "multi");
+    }
+
+    #[test]
+    fn test_case_insensitive_text_search() {
+        let reg = make_populated_registry();
+        let results = reg.search(&ScenarioQuery {
+            text_search: Some("PATROL".into()),
+            ..Default::default()
+        });
+        assert_eq!(results.len(), 1);
     }
 }

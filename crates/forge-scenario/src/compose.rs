@@ -4,7 +4,7 @@
 //! This enables patterns like: base scenario + difficulty modifier + agent count modifier.
 
 use forge_types::config::ForgeConfig;
-use tracing::instrument;
+use tracing::{instrument, warn};
 
 use crate::config::ScenarioConfig;
 
@@ -15,12 +15,27 @@ use crate::config::ScenarioConfig;
 #[instrument(skip_all)]
 pub fn merge_forge_configs(base: &ForgeConfig, overrides: &ForgeConfig) -> ForgeConfig {
     // Serialize both to JSON, merge, deserialize
-    let base_json: serde_json::Value = serde_json::to_value(base).unwrap_or_default();
-    let override_json: serde_json::Value = serde_json::to_value(overrides).unwrap_or_default();
+    let base_json: serde_json::Value = match serde_json::to_value(base) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(error = %e, "Failed to serialize base config, returning base unchanged");
+            return base.clone();
+        }
+    };
+    let override_json: serde_json::Value = match serde_json::to_value(overrides) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(error = %e, "Failed to serialize override config, returning base unchanged");
+            return base.clone();
+        }
+    };
 
     let merged = merge_json_values(base_json, override_json);
 
-    serde_json::from_value(merged).unwrap_or_else(|_| base.clone())
+    serde_json::from_value(merged).unwrap_or_else(|e| {
+        warn!(error = %e, "Failed to deserialize merged config, returning base unchanged");
+        base.clone()
+    })
 }
 
 /// Deep-merges two JSON values. Override values replace base values.
@@ -173,5 +188,54 @@ mod tests {
         let overrides = serde_json::json!({"x": 99});
         let merged = merge_json_values(base, overrides);
         assert_eq!(merged["x"], 99);
+    }
+
+    #[test]
+    fn test_compose_three_scenarios() {
+        let base = make_base_scenario();
+        let override1 = make_override_scenario();
+
+        let mut forge3 = ForgeConfig::default();
+        forge3.agents.num_agents = 8;
+        let third = ScenarioConfig {
+            scenario: ScenarioMeta {
+                id: "third".into(),
+                name: "Third".into(),
+                description: "Third scenario".into(),
+                tags: vec!["final".into()],
+                difficulty_tier: 5,
+                min_agents: 4,
+                max_agents: 8,
+                author: "test".into(),
+                version: "3.0".into(),
+            },
+            forge: forge3,
+        };
+
+        let result = compose_scenarios(&[base, override1, third]).unwrap();
+
+        // Metadata from last
+        assert_eq!(result.scenario.id, "third");
+        assert_eq!(result.scenario.difficulty_tier, 5);
+        // Third overrides num_agents
+        assert_eq!(result.forge.agents.num_agents, 8);
+    }
+
+    #[test]
+    fn test_merge_json_values_array_override() {
+        let base = serde_json::json!({"arr": [1, 2, 3]});
+        let overrides = serde_json::json!({"arr": [4, 5]});
+        let merged = merge_json_values(base, overrides);
+        // Arrays are replaced entirely (not merged element-wise)
+        assert_eq!(merged["arr"], serde_json::json!([4, 5]));
+    }
+
+    #[test]
+    fn test_merge_json_values_null_override() {
+        let base = serde_json::json!({"x": 1, "y": 2});
+        let overrides = serde_json::json!({"x": null});
+        let merged = merge_json_values(base, overrides);
+        assert!(merged["x"].is_null());
+        assert_eq!(merged["y"], 2);
     }
 }

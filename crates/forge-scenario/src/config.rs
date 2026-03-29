@@ -3,8 +3,17 @@
 //! A [`ScenarioConfig`] wraps a [`ForgeConfig`] with additional metadata
 //! (tags, difficulty tier, author, description) for the scenario marketplace.
 
+use std::fmt;
+
 use forge_types::config::ForgeConfig;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
+
+/// Minimum valid difficulty tier.
+pub const MIN_DIFFICULTY_TIER: u8 = 1;
+
+/// Maximum valid difficulty tier.
+pub const MAX_DIFFICULTY_TIER: u8 = 6;
 
 /// A scenario configuration loaded from TOML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,11 +70,13 @@ fn default_version() -> String {
 
 impl ScenarioConfig {
     /// Parses a scenario config from a TOML string.
+    #[instrument(skip_all)]
     pub fn from_toml(toml_str: &str) -> Result<Self, String> {
         toml::from_str(toml_str).map_err(|e| format!("TOML parse error: {e}"))
     }
 
     /// Serializes to a TOML string.
+    #[instrument(skip_all)]
     pub fn to_toml(&self) -> Result<String, String> {
         toml::to_string_pretty(self).map_err(|e| format!("TOML serialization error: {e}"))
     }
@@ -73,6 +84,74 @@ impl ScenarioConfig {
     /// Returns the effective ForgeConfig with scenario overrides applied.
     pub fn effective_config(&self) -> &ForgeConfig {
         &self.forge
+    }
+
+    /// Validates the scenario config, returning a list of issues.
+    ///
+    /// An empty list means the config is valid.
+    #[instrument(skip_all)]
+    pub fn validate(&self) -> Vec<String> {
+        self.scenario.validate()
+    }
+
+    /// Returns true if the scenario config passes all validation checks.
+    pub fn is_valid(&self) -> bool {
+        self.validate().is_empty()
+    }
+}
+
+impl ScenarioMeta {
+    /// Validates the scenario metadata, returning a list of issues.
+    pub fn validate(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        if self.id.is_empty() {
+            errors.push("scenario id must not be empty".to_string());
+        }
+        if self.name.is_empty() {
+            errors.push("scenario name must not be empty".to_string());
+        }
+        if self.difficulty_tier < MIN_DIFFICULTY_TIER || self.difficulty_tier > MAX_DIFFICULTY_TIER
+        {
+            errors.push(format!(
+                "difficulty_tier {} is outside valid range {}-{}",
+                self.difficulty_tier, MIN_DIFFICULTY_TIER, MAX_DIFFICULTY_TIER
+            ));
+        }
+        if self.min_agents > self.max_agents {
+            errors.push(format!(
+                "min_agents ({}) > max_agents ({})",
+                self.min_agents, self.max_agents
+            ));
+        }
+        if self.min_agents == 0 {
+            errors.push("min_agents must be > 0".to_string());
+        }
+
+        errors
+    }
+}
+
+impl fmt::Display for ScenarioConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} (tier {}, {}-{} agents)",
+            self.scenario.name,
+            self.scenario.difficulty_tier,
+            self.scenario.min_agents,
+            self.scenario.max_agents,
+        )
+    }
+}
+
+impl fmt::Display for ScenarioMeta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[{}] {} (tier {})",
+            self.id, self.name, self.difficulty_tier
+        )
     }
 }
 
@@ -163,5 +242,130 @@ width = 64
 "#;
         let config = ScenarioConfig::from_toml(toml).unwrap();
         assert_eq!(config.effective_config().world.width, 64);
+    }
+
+    #[test]
+    fn test_validate_valid_scenario() {
+        let toml = r#"
+[scenario]
+id = "test"
+name = "Test"
+difficulty_tier = 3
+min_agents = 1
+max_agents = 4
+"#;
+        let config = ScenarioConfig::from_toml(toml).unwrap();
+        assert!(config.is_valid());
+    }
+
+    #[test]
+    fn test_validate_tier_out_of_range() {
+        let mut config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = "test"
+name = "Test"
+"#,
+        )
+        .unwrap();
+        config.scenario.difficulty_tier = 0;
+        let errors = config.validate();
+        assert!(!errors.is_empty());
+        assert!(errors[0].contains("difficulty_tier"));
+
+        config.scenario.difficulty_tier = 7;
+        let errors = config.validate();
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_validate_min_greater_than_max_agents() {
+        let mut config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = "test"
+name = "Test"
+"#,
+        )
+        .unwrap();
+        config.scenario.min_agents = 5;
+        config.scenario.max_agents = 2;
+        let errors = config.validate();
+        assert!(errors.iter().any(|e| e.contains("min_agents")));
+    }
+
+    #[test]
+    fn test_validate_empty_id() {
+        let mut config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = ""
+name = "Test"
+"#,
+        )
+        .unwrap();
+        config.scenario.id = String::new();
+        assert!(!config.is_valid());
+    }
+
+    #[test]
+    fn test_validate_zero_min_agents() {
+        let mut config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = "test"
+name = "Test"
+"#,
+        )
+        .unwrap();
+        config.scenario.min_agents = 0;
+        assert!(!config.is_valid());
+    }
+
+    #[test]
+    fn test_scenario_display() {
+        let config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = "test"
+name = "Test Scenario"
+difficulty_tier = 3
+min_agents = 1
+max_agents = 4
+"#,
+        )
+        .unwrap();
+        let display = format!("{config}");
+        assert!(display.contains("Test Scenario"));
+        assert!(display.contains("tier 3"));
+    }
+
+    #[test]
+    fn test_scenario_meta_display() {
+        let meta = ScenarioMeta {
+            id: "patrol".into(),
+            name: "Patrol".into(),
+            difficulty_tier: 2,
+            ..ScenarioMeta {
+                id: String::new(),
+                name: String::new(),
+                description: String::new(),
+                tags: vec![],
+                difficulty_tier: 1,
+                min_agents: 1,
+                max_agents: 1,
+                author: String::new(),
+                version: "1.0".into(),
+            }
+        };
+        let display = format!("{meta}");
+        assert!(display.contains("patrol"));
+        assert!(display.contains("Patrol"));
+    }
+
+    #[test]
+    fn test_tier_range_constants() {
+        assert_eq!(MIN_DIFFICULTY_TIER, 1);
+        assert_eq!(MAX_DIFFICULTY_TIER, 6);
     }
 }

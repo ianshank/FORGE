@@ -7,7 +7,7 @@ use forge_core::WorldState;
 use forge_types::agent_interface::{AgentInterface, AgentResponse};
 use forge_types::Action;
 use rand::Rng;
-use tracing::{instrument, trace};
+use tracing::{debug, instrument, trace};
 
 /// Trait for agents that can select actions given a world state.
 pub trait Agent: Send {
@@ -254,6 +254,13 @@ pub fn run_episode_eval(
     let initial_result = state.reset(Some(state.config.world.seed));
     let mut current_obs = initial_result.observations;
 
+    debug!(
+        num_agents,
+        max_steps,
+        initial_obs = current_obs.len(),
+        "Starting eval episode"
+    );
+
     for _step in 0..max_steps {
         if state.terminated || state.truncated {
             break;
@@ -267,6 +274,7 @@ pub fn run_episode_eval(
             let response = if i < current_obs.len() {
                 agent.select_action(&current_obs[i], i)
             } else {
+                trace!(agent_idx = i, "No observation for agent, using Noop");
                 AgentResponse::from_action(0) // Noop for missing obs
             };
 
@@ -296,6 +304,14 @@ pub fn run_episode_eval(
 
         current_obs = result.observations;
     }
+
+    debug!(
+        ticks = state.tick,
+        terminated = state.terminated,
+        truncated = state.truncated,
+        steps = step_responses.len(),
+        "Eval episode complete"
+    );
 
     EvalEpisodeResult {
         total_rewards,

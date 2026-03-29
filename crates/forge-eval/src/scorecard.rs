@@ -6,6 +6,7 @@
 
 use forge_types::agent_interface::AgentMetadata;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 /// Aggregated evaluation results for a single agent across all scenarios.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +95,7 @@ impl Scorecard {
     /// Computes the overall score as a weighted average of tier success rates.
     ///
     /// Higher tiers are weighted more heavily (tier weight = tier number).
+    #[instrument(skip_all)]
     pub fn compute_overall_score(tier_scores: &[TierScore]) -> f64 {
         if tier_scores.is_empty() {
             return 0.0;
@@ -110,16 +112,22 @@ impl Scorecard {
     }
 
     /// Serializes the scorecard to pretty-printed JSON.
-    pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).expect("Scorecard JSON serialization should not fail")
+    ///
+    /// Returns an error if serialization fails.
+    #[instrument(skip_all)]
+    pub fn to_json(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(self)
+            .map_err(|e| format!("Scorecard JSON serialization failed: {e}"))
     }
 
     /// Deserializes a scorecard from JSON.
+    #[instrument(skip_all)]
     pub fn from_json(json: &str) -> Result<Self, String> {
         serde_json::from_str(json).map_err(|e| format!("JSON deserialization failed: {e}"))
     }
 
     /// Generates a Markdown summary of the scorecard.
+    #[instrument(skip_all)]
     pub fn to_markdown(&self) -> String {
         let mut md = String::new();
         md.push_str(&format!(
@@ -158,6 +166,7 @@ impl Scorecard {
 
 impl ScenarioResult {
     /// Computes aggregated metrics from episode results.
+    #[instrument(skip(episodes))]
     pub fn from_episodes(scenario_id: String, tier: u8, episodes: Vec<EpisodeResult>) -> Self {
         let count = episodes.len() as f64;
         let success_rate = if count > 0.0 {
@@ -286,11 +295,17 @@ mod tests {
             },
         };
 
-        let json = scorecard.to_json();
+        let json = scorecard.to_json().unwrap();
         let deser = Scorecard::from_json(&json).unwrap();
         assert_eq!(deser.overall_score, 0.42);
         assert_eq!(deser.tier_scores[0].tier, 1);
         assert_eq!(deser.summary.total_episodes, 10);
+    }
+
+    #[test]
+    fn test_scorecard_from_json_invalid() {
+        let result = Scorecard::from_json("not valid json");
+        assert!(result.is_err());
     }
 
     #[test]

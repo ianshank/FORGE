@@ -19,7 +19,7 @@ use forge_core::WorldState;
 use forge_types::agent_interface::{AgentInterface, AgentMetadata, AgentResponse};
 use forge_types::observation::Observation;
 use forge_types::Action;
-use tracing::{instrument, trace};
+use tracing::{debug, instrument, warn};
 
 use crate::baselines::Agent;
 
@@ -62,6 +62,7 @@ impl<A: Agent> PrivilegedAgentAdapter<A> {
     ///
     /// The evaluation harness calls this automatically when running privileged
     /// agents through the `AgentInterface` pipeline.
+    #[instrument(skip_all)]
     pub fn update_world(&mut self, world: &WorldState) {
         self.world_snapshot = Some(world.clone());
     }
@@ -84,7 +85,7 @@ impl<A: Agent> AgentInterface for PrivilegedAgentAdapter<A> {
         let action = match &self.world_snapshot {
             Some(world) => self.inner.select_action(world, agent_idx),
             None => {
-                trace!("No world snapshot available, returning Noop");
+                warn!(agent_idx, "No world snapshot available, returning Noop");
                 Action::Noop
             }
         };
@@ -132,6 +133,11 @@ impl InterfaceToAgentAdapter {
 impl Agent for InterfaceToAgentAdapter {
     fn select_action(&mut self, state: &WorldState, agent_idx: usize) -> Action {
         if agent_idx >= state.agents.len() {
+            debug!(
+                agent_idx,
+                num_agents = state.agents.len(),
+                "Agent index out of bounds, returning Noop"
+            );
             return Action::Noop;
         }
 
@@ -141,7 +147,13 @@ impl Agent for InterfaceToAgentAdapter {
         let comm_vocab = state.config.agents.comm_vocab_size;
         let drone_enabled = state.config.drone.enabled;
 
-        Action::from_discrete(response.action_id, comm_vocab, drone_enabled).unwrap_or(Action::Noop)
+        Action::from_discrete(response.action_id, comm_vocab, drone_enabled).unwrap_or_else(|| {
+            debug!(
+                action_id = response.action_id,
+                "Invalid action ID, falling back to Noop"
+            );
+            Action::Noop
+        })
     }
 
     fn name(&self) -> &str {
@@ -229,7 +241,15 @@ pub struct RandomInterface {
 
 impl RandomInterface {
     /// Creates a new random interface agent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `action_space_size` is 0 (no valid actions to select).
     pub fn new(action_space_size: u32, seed: u64) -> Self {
+        assert!(
+            action_space_size > 0,
+            "action_space_size must be > 0, got {action_space_size}"
+        );
         use rand::SeedableRng;
         Self {
             action_space_size,
@@ -484,5 +504,52 @@ mod tests {
         let mut agents: Vec<Box<dyn Agent>> = vec![Box::new(adapted)];
         let rewards = crate::baselines::run_episode(&mut state, &mut agents, 10);
         assert_eq!(rewards.len(), 1);
+    }
+
+    #[test]
+    fn test_random_interface_action_space_size_one() {
+        let mut agent = RandomInterface::new(1, 42);
+        let obs = make_test_observation();
+        for _ in 0..20 {
+            let resp = agent.select_action(&obs, 0);
+            assert_eq!(resp.action_id, 0); // Only one valid action
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "action_space_size must be > 0")]
+    fn test_random_interface_zero_action_space() {
+        RandomInterface::new(0, 42);
+    }
+
+    #[test]
+    fn test_privileged_adapter_update_world_multiple_times() {
+        let mut adapter = PrivilegedAgentAdapter::new(NoopAgent);
+        let world = make_test_world();
+
+        adapter.update_world(&world);
+        let obs = make_test_observation();
+        let r1 = adapter.select_action(&obs, 0);
+
+        adapter.update_world(&world);
+        let r2 = adapter.select_action(&obs, 0);
+
+        assert_eq!(r1.action_id, r2.action_id);
+    }
+
+    #[test]
+    fn test_noop_interface_metadata() {
+        let agent = NoopInterface;
+        let meta = agent.metadata();
+        assert_eq!(meta.agent_type, "heuristic");
+        assert_eq!(meta.model_name, "NoopInterface");
+    }
+
+    #[test]
+    fn test_closure_agent_default_metadata() {
+        let agent = ClosureAgent::new("test_closure", |_obs, _idx| AgentResponse::from_action(0));
+        let meta = agent.metadata();
+        // Default metadata — empty fields
+        assert!(meta.agent_type.is_empty());
     }
 }

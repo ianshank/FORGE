@@ -21,7 +21,10 @@ use forge_types::config::ForgeConfig;
 use forge_types::observation::StepResult;
 use forge_types::Action;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, instrument};
+use tracing::{debug, info, instrument, warn};
+
+/// Current compact replay format version.
+pub const FORMAT_VERSION: u32 = 1;
 
 /// Compact deterministic replay.
 ///
@@ -64,34 +67,52 @@ pub struct ReplayMetadata {
 
 impl CompactReplay {
     /// Creates a new compact replay builder.
+    #[instrument(skip_all)]
     pub fn builder(config: ForgeConfig, seed: u64) -> CompactReplayBuilder {
         CompactReplayBuilder::new(config, seed)
     }
 
     /// Serializes to bincode bytes.
+    ///
+    /// Returns an error if serialization fails (e.g., extremely large replays).
     #[instrument(skip_all)]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::serialize(self).expect("CompactReplay serialization should not fail")
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        bincode::serialize(self).map_err(|e| {
+            warn!(error = %e, "Bincode serialization failed");
+            format!("serialization failed: {e}")
+        })
     }
 
     /// Deserializes from bincode bytes.
     #[instrument(skip_all)]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        bincode::deserialize(bytes).map_err(|e| format!("deserialization failed: {e}"))
+        let replay: Self =
+            bincode::deserialize(bytes).map_err(|e| format!("deserialization failed: {e}"))?;
+        debug!(
+            format_version = replay.format_version,
+            ticks = replay.metadata.total_ticks,
+            "Deserialized compact replay"
+        );
+        Ok(replay)
     }
 
-    /// Serializes to JSON string.
-    pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self)
-            .expect("CompactReplay JSON serialization should not fail")
+    /// Serializes to pretty-printed JSON string.
+    #[instrument(skip_all)]
+    pub fn to_json(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(self).map_err(|e| {
+            warn!(error = %e, "JSON serialization failed");
+            format!("JSON serialization failed: {e}")
+        })
     }
 
     /// Deserializes from JSON string.
+    #[instrument(skip_all)]
     pub fn from_json(json: &str) -> Result<Self, String> {
         serde_json::from_str(json).map_err(|e| format!("JSON deserialization failed: {e}"))
     }
 
     /// Validates that the config hash matches the stored config.
+    #[instrument(skip_all)]
     pub fn validate_config(&self) -> bool {
         hash_config(&self.config) == self.config_hash
     }
@@ -102,11 +123,24 @@ impl CompactReplay {
     #[instrument(skip_all)]
     pub fn replay(&self) -> Option<ReplayIterator<'_>> {
         if !self.validate_config() {
-            debug!("Config hash mismatch during replay");
+            warn!("Config hash mismatch during replay");
             return None;
         }
 
-        let world = WorldState::new(self.config.clone()).ok()?;
+        let world = match WorldState::new(self.config.clone()) {
+            Ok(w) => w,
+            Err(e) => {
+                warn!(error = %e, "Failed to create world for replay");
+                return None;
+            }
+        };
+
+        info!(
+            ticks = self.actions.len(),
+            seed = self.seed,
+            "Starting replay"
+        );
+
         Some(ReplayIterator {
             world,
             actions: &self.actions,
@@ -219,8 +253,14 @@ impl CompactReplayBuilder {
         self.metadata.total_ticks = self.actions.len() as u64;
         self.metadata.timestamp = chrono::Utc::now().to_rfc3339();
 
+        debug!(
+            ticks = self.metadata.total_ticks,
+            agents = self.metadata.agent_names.len(),
+            "Building compact replay"
+        );
+
         CompactReplay {
-            format_version: 1,
+            format_version: FORMAT_VERSION,
             config_hash: hash_config(&self.config),
             config: self.config,
             seed: self.seed,
@@ -265,7 +305,7 @@ mod tests {
             .final_rewards(vec![1.5])
             .build();
 
-        assert_eq!(replay.format_version, 1);
+        assert_eq!(replay.format_version, FORMAT_VERSION);
         assert_eq!(replay.seed, 42);
         assert_eq!(replay.actions.len(), 2);
         assert_eq!(replay.metadata.total_ticks, 2);
@@ -298,7 +338,7 @@ mod tests {
         builder.record_tick(vec![1]);
         let replay = builder.build();
 
-        let bytes = replay.to_bytes();
+        let bytes = replay.to_bytes().unwrap();
         let deserialized = CompactReplay::from_bytes(&bytes).unwrap();
 
         assert_eq!(deserialized.seed, 42);
@@ -314,7 +354,7 @@ mod tests {
         builder.record_tick(vec![0, 1]);
         let replay = builder.build();
 
-        let json = replay.to_json();
+        let json = replay.to_json().unwrap();
         let deserialized = CompactReplay::from_json(&json).unwrap();
 
         assert_eq!(deserialized.seed, replay.seed);
@@ -417,10 +457,10 @@ mod tests {
         }
 
         let replay = builder.build();
-        let bytes = replay.to_bytes();
+        let bytes = replay.to_bytes().unwrap();
 
         // Bincode should be much smaller than JSON
-        let json = replay.to_json();
+        let json = replay.to_json().unwrap();
         assert!(
             bytes.len() < json.len(),
             "Bincode ({} bytes) should be smaller than JSON ({} bytes)",
@@ -439,5 +479,48 @@ mod tests {
     fn test_invalid_json() {
         let result = CompactReplay::from_json("not json");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_format_version_constant() {
+        let config = test_config();
+        let replay = CompactReplay::builder(config, 42).build();
+        assert_eq!(replay.format_version, FORMAT_VERSION);
+    }
+
+    #[test]
+    fn test_multi_agent_replay() {
+        let mut config = test_config();
+        config.agents.num_agents = 2;
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0, 1]);
+        builder.record_tick(vec![1, 0]);
+
+        let replay = builder
+            .agent_names(vec!["Agent1".into(), "Agent2".into()])
+            .build();
+
+        assert_eq!(replay.actions.len(), 2);
+        assert_eq!(replay.actions[0].len(), 2);
+        assert_eq!(replay.metadata.agent_names.len(), 2);
+    }
+
+    #[test]
+    fn test_replay_config_hash_determinism() {
+        let c1 = test_config();
+        let c2 = test_config();
+        assert_eq!(hash_config(&c1), hash_config(&c2));
+    }
+
+    #[test]
+    fn test_replay_iterator_world_access() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0]);
+        let replay = builder.build();
+
+        let iter = replay.replay().unwrap();
+        assert_eq!(iter.current_tick(), 0);
+        assert!(!iter.world().terminated);
     }
 }

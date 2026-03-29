@@ -8,7 +8,7 @@
 use forge_types::agent_interface::{AgentMetadata, AgentResponse};
 use forge_types::observation::Observation;
 use serde::{Deserialize, Serialize};
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 /// A single step in a trajectory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,6 +170,12 @@ impl TrajectoryBuilder {
         self.metadata.total_steps = self.steps.len() as u64;
         self.metadata.final_rewards = final_rewards;
         self.metadata.timestamp = chrono::Utc::now().to_rfc3339();
+
+        debug!(
+            steps = self.metadata.total_steps,
+            agents = self.metadata.agent_names.len(),
+            "Built trajectory"
+        );
 
         Trajectory {
             steps: self.steps,

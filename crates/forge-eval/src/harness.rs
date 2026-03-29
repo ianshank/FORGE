@@ -12,7 +12,7 @@ use forge_types::agent_interface::AgentInterface;
 use forge_types::config::ForgeConfig;
 use forge_types::Action;
 use rayon::prelude::*;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 use crate::config::EvalConfig;
 use crate::scorecard::{EpisodeResult, ScenarioResult, Scorecard, SummaryStats, TierScore};
@@ -123,7 +123,8 @@ impl EvalHarness {
 
         let world = match WorldState::new(config.clone()) {
             Ok(w) => w,
-            Err(_) => {
+            Err(e) => {
+                warn!(seed, error = %e, "Failed to create WorldState for episode");
                 return EpisodeResult {
                     seed,
                     total_reward: 0.0,
@@ -359,7 +360,7 @@ mod tests {
         let harness = EvalHarness::new(config);
         let scorecard = harness.evaluate(&|| Box::new(NoopEvalAgent));
 
-        let json = scorecard.to_json();
+        let json = scorecard.to_json().unwrap();
         let deser = Scorecard::from_json(&json).unwrap();
         assert_eq!(
             deser.summary.total_episodes,
