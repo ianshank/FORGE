@@ -600,6 +600,29 @@ def test_forge_env_init_feature_extractors_import_failure() -> None:
         importlib.reload(fe_mod)
 
 
+def test_forge_env_init_feature_extractors_dependency_unavailable() -> None:
+    """forge_env.__init__ hides extractors when torch or SB3 is unavailable."""
+    import importlib  # noqa: PLC0415
+
+    import forge_env as fe_mod  # noqa: PLC0415
+    import forge_env.feature_extractors as feature_extractors_mod  # noqa: PLC0415
+
+    original_has_torch = feature_extractors_mod.HAS_TORCH
+    original_has_sb3 = feature_extractors_mod.HAS_SB3
+
+    try:
+        feature_extractors_mod.HAS_TORCH = False
+        feature_extractors_mod.HAS_SB3 = True
+        importlib.reload(fe_mod)
+        assert fe_mod._HAS_EXTRACTORS is False
+        assert fe_mod.ForgeGridCnnExtractor is None
+        assert fe_mod.ForgeObsExtractor is None
+    finally:
+        feature_extractors_mod.HAS_TORCH = original_has_torch
+        feature_extractors_mod.HAS_SB3 = original_has_sb3
+        importlib.reload(fe_mod)
+
+
 def test_forge_env_init_sb3_callbacks_import_failure() -> None:
     """forge_env.__init__ remains importable when SB3 callbacks are unavailable."""
     import importlib  # noqa: PLC0415
@@ -621,6 +644,26 @@ def test_forge_env_init_sb3_callbacks_import_failure() -> None:
             sys.modules.pop("forge_env.sb3_callbacks", None)
         else:
             sys.modules["forge_env.sb3_callbacks"] = original_callbacks  # type: ignore[assignment]
+        importlib.reload(fe_mod)
+
+
+def test_forge_env_init_sb3_callbacks_dependency_unavailable() -> None:
+    """forge_env.__init__ hides callbacks when Stable Baselines 3 is unavailable."""
+    import importlib  # noqa: PLC0415
+
+    import forge_env as fe_mod  # noqa: PLC0415
+    import forge_env.sb3_callbacks as sb3_callbacks_mod  # noqa: PLC0415
+
+    original_has_sb3 = sb3_callbacks_mod.HAS_SB3
+
+    try:
+        sb3_callbacks_mod.HAS_SB3 = False
+        importlib.reload(fe_mod)
+        assert fe_mod._HAS_CALLBACKS is False
+        assert fe_mod.ForgeCurriculumCallback is None
+        assert fe_mod.ForgeMetricsCallback is None
+    finally:
+        sb3_callbacks_mod.HAS_SB3 = original_has_sb3
         importlib.reload(fe_mod)
 
 

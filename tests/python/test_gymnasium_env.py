@@ -108,8 +108,11 @@ class TestPurePythonBranches:
     def test_init_raises_without_native_backend(self) -> None:
         from forge_env import gymnasium_env  # noqa: PLC0415
 
-        with patch.object(gymnasium_env, "_NativeEnv", None), pytest.raises(ImportError, match="native module not found"):
-                gymnasium_env.ForgeGymnasiumEnv()
+        with (
+            patch.object(gymnasium_env, "_NativeEnv", None),
+            pytest.raises(ImportError, match="native module not found"),
+        ):
+            gymnasium_env.ForgeGymnasiumEnv()
 
     def test_init_raises_without_gymnasium(self) -> None:
         from forge_env import gymnasium_env  # noqa: PLC0415

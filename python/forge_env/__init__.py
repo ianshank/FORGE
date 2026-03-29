@@ -36,24 +36,26 @@ from forge_env.vecenv import ForgeAsyncVecEnv, ForgeSyncVecEnv, make_forge_vec_e
 ForgeGridCnnExtractor = None
 ForgeObsExtractor = None
 try:
-    from forge_env.feature_extractors import (  # type: ignore[assignment]
-        ForgeGridCnnExtractor,
-        ForgeObsExtractor,
-    )
-    _HAS_EXTRACTORS = True
+    import forge_env.feature_extractors as _feature_extractors
 except ImportError:
     _HAS_EXTRACTORS = False
+else:
+    _HAS_EXTRACTORS = _feature_extractors.HAS_TORCH and _feature_extractors.HAS_SB3
+    if _HAS_EXTRACTORS:
+        ForgeGridCnnExtractor = _feature_extractors.ForgeGridCnnExtractor
+        ForgeObsExtractor = _feature_extractors.ForgeObsExtractor
 
 ForgeCurriculumCallback = None
 ForgeMetricsCallback = None
 try:
-    from forge_env.sb3_callbacks import (  # type: ignore[assignment]
-        ForgeCurriculumCallback,
-        ForgeMetricsCallback,
-    )
-    _HAS_CALLBACKS = True
+    import forge_env.sb3_callbacks as _sb3_callbacks
 except ImportError:
     _HAS_CALLBACKS = False
+else:
+    _HAS_CALLBACKS = _sb3_callbacks.HAS_SB3
+    if _HAS_CALLBACKS:
+        ForgeCurriculumCallback = _sb3_callbacks.ForgeCurriculumCallback
+        ForgeMetricsCallback = _sb3_callbacks.ForgeMetricsCallback
 
 __all__ = [
     "ForgeAsyncVecEnv",
