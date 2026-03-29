@@ -47,7 +47,7 @@ try:
     HAS_SB3 = True
 except ImportError:
     HAS_SB3 = False
-    BaseFeaturesExtractor = object  # type: ignore[assignment,misc]
+    BaseFeaturesExtractor = object
 
 if TYPE_CHECKING:
     import gymnasium as gym
@@ -95,6 +95,15 @@ def _build_cnn(
     Returns:
         A :class:`torch.nn.Sequential` CNN ending with a :class:`Flatten`.
     """
+    if len(kernel_sizes) == 1 and len(cnn_channels) > 1:
+        kernel_sizes = kernel_sizes * len(cnn_channels)
+    if len(strides) == 1 and len(cnn_channels) > 1:
+        strides = strides * len(cnn_channels)
+    if len(cnn_channels) != len(kernel_sizes) or len(cnn_channels) != len(strides):
+        raise ValueError(
+            "cnn_channels, kernel_sizes, and strides must have matching lengths"
+        )
+
     layers: list[nn.Module] = []
     current_channels = in_channels
     for out_ch, k, s in zip(cnn_channels, kernel_sizes, strides):
@@ -152,7 +161,7 @@ def _scalar_obs_dim(observation_space: gym.spaces.Dict) -> int:
 # ---------------------------------------------------------------------------
 
 
-class ForgeGridCnnExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
+class ForgeGridCnnExtractor(BaseFeaturesExtractor):
     """CNN feature extractor for the FORGE ``grid_view`` observation.
 
     Processes only the ``grid_view`` key of the Dict observation space.
@@ -229,7 +238,7 @@ class ForgeGridCnnExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
 # ---------------------------------------------------------------------------
 
 
-class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
+class ForgeObsExtractor(BaseFeaturesExtractor):
     """Combined CNN + MLP feature extractor for FORGE Dict observations.
 
     Two branches:
@@ -270,15 +279,23 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
         # Compute total features_dim dynamically before calling super().__init__
         scalar_in = _scalar_obs_dim(observation_space)
         mlp_out = mlp_hidden_sizes[-1] if mlp_hidden_sizes else scalar_in
-        total_features_dim = cnn_out_dim + mlp_out
+        effective_cnn_out_dim = cnn_out_dim if "grid_view" in observation_space.spaces else 0
+        total_features_dim = effective_cnn_out_dim + mlp_out
+        declared_features_dim = max(total_features_dim, 1)
 
-        super().__init__(observation_space, features_dim=total_features_dim)
+        super().__init__(observation_space, features_dim=declared_features_dim)
 
         self._scalar_keys: list[str] = sorted(
             k
             for k in observation_space.spaces
             if k not in _GRID_KEYS and k not in _SKIP_KEYS
         )
+        self._scalar_dims: dict[str, int] = {
+            key: int(math.prod(observation_space.spaces[key].shape))
+            if observation_space.spaces[key].shape
+            else 1
+            for key in self._scalar_keys
+        }
 
         # CNN branch
         if "grid_view" in observation_space.spaces:
@@ -294,8 +311,6 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             self._has_grid = True
         else:
             self._has_grid = False
-            # Adjust features_dim when there is no grid key.
-            self._features_dim = mlp_out
 
         # MLP branch
         mlp_layers: list[nn.Module] = []
@@ -321,6 +336,9 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             Feature tensor of shape ``(batch, features_dim)``.
         """
         parts: list[torch.Tensor] = []
+        batch_source = next(iter(observations.values()))
+        batch_size = batch_source.shape[0]
+        batch_device = batch_source.device
 
         # CNN branch
         if self._has_grid:
@@ -330,11 +348,18 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             parts.append(cnn_feat)
 
         # MLP branch — concatenate all scalar keys
-        scalar_parts = [
-            observations[k].float().reshape(observations[k].shape[0], -1)
-            for k in self._scalar_keys
-            if k in observations
-        ]
+        scalar_parts: list[torch.Tensor] = []
+        for key in self._scalar_keys:
+            if key in observations:
+                scalar_parts.append(observations[key].float().reshape(batch_size, -1))
+            else:
+                scalar_parts.append(
+                    torch.zeros(
+                        batch_size,
+                        self._scalar_dims[key],
+                        device=batch_device,
+                    )
+                )
         if scalar_parts:
             scalar_cat = torch.cat(scalar_parts, dim=-1)
             mlp_feat = self._mlp(scalar_cat)
@@ -344,8 +369,7 @@ class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
             # Observation space has neither a grid nor any scalar fields.
             # Return a zero tensor of the declared features_dim so callers
             # always receive a consistently-shaped output.
-            some_tensor = next(iter(observations.values()))
             return torch.zeros(
-                some_tensor.shape[0], self._features_dim, device=some_tensor.device
+                batch_size, self._features_dim, device=batch_device
             )
         return torch.cat(parts, dim=-1)

@@ -232,9 +232,11 @@ mod tests {
     use crate::config::BatchRunnerConfig;
 
     fn test_config() -> BatchRunnerConfig {
-        let mut config = BatchRunnerConfig::default();
-        config.max_episode_steps = 10;
-        config.num_envs = 2;
+        let mut config = BatchRunnerConfig {
+            max_episode_steps: 10,
+            num_envs: 2,
+            ..BatchRunnerConfig::default()
+        };
         config.forge_config.world.width = 8;
         config.forge_config.world.height = 8;
         config.forge_config.agents.num_agents = 1;
@@ -279,10 +281,6 @@ mod tests {
         let mut config = test_config();
         config.seed = 42;
         let runner = BatchRunner::new(config);
-        let action_space = Action::space_size(
-            runner.config().forge_config.agents.comm_vocab_size,
-            runner.config().forge_config.drone.enabled,
-        );
 
         // Use noop policy for determinism
         struct NoopPolicy;

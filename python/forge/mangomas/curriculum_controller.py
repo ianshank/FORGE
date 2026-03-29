@@ -14,26 +14,17 @@ from typing import Any
 
 import numpy as np
 
-from forge.mangomas.config import CurriculumConfig
+from forge.mangomas.config import (
+    DEFAULT_CAR_TIERS,
+    DEFAULT_DRONE_TIERS,
+    CurriculumConfig,
+)
 
 logger = logging.getLogger(__name__)
 
-# Default tier definitions
-CAR_TIERS = [
-    {"tier": 1, "name": "Straight Line", "forge_scenario": "patrol", "success_threshold": 0.8},
-    {"tier": 2, "name": "Obstacle Avoidance", "forge_scenario": "patrol", "success_threshold": 0.7},
-    {"tier": 3, "name": "Multi-Waypoint", "forge_scenario": "patrol", "success_threshold": 0.6},
-    {"tier": 4, "name": "Dynamic Traffic", "forge_scenario": "escort", "success_threshold": 0.5},
-    {"tier": 5, "name": "Full Mission", "forge_scenario": "search_and_rescue", "success_threshold": 0.4},
-]
-
-DRONE_TIERS = [
-    {"tier": 1, "name": "Hover and Altitude", "forge_scenario": "patrol", "success_threshold": 0.7},
-    {"tier": 2, "name": "Waypoint Navigation", "forge_scenario": "patrol", "success_threshold": 0.6},
-    {"tier": 3, "name": "Patrol Pattern", "forge_scenario": "patrol", "success_threshold": 0.5},
-    {"tier": 4, "name": "Search and Rescue", "forge_scenario": "search_and_rescue", "success_threshold": 0.4},
-    {"tier": 5, "name": "Multi-Drone Escort", "forge_scenario": "escort", "success_threshold": 0.3},
-]
+# Backward-compatible aliases — canonical source is config module
+CAR_TIERS = DEFAULT_CAR_TIERS
+DRONE_TIERS = DEFAULT_DRONE_TIERS
 
 
 @dataclass
@@ -56,18 +47,16 @@ class PlatformCurriculumController:
 
     def __init__(
         self,
-        platform: str = "drone",
+        platform: str | None = None,
         config: CurriculumConfig | None = None,
         tiers: list[dict[str, Any]] | None = None,
     ) -> None:
-        self.platform = platform
         self.config = config or CurriculumConfig()
+        self.platform = platform or self.config.platform
         if tiers:
             self._tiers = tiers
-        elif self.config.tiers:
-            self._tiers = self.config.tiers
         else:
-            self._tiers = DRONE_TIERS if platform == "drone" else CAR_TIERS
+            self._tiers = self.config.resolved_tiers(platform=self.platform)
         self._current_tier = 1
         self._max_unlocked_tier = 1
         self._rng = np.random.default_rng(self.config.seed)
@@ -81,7 +70,7 @@ class PlatformCurriculumController:
 
         logger.info(
             "PlatformCurriculumController: platform=%s, %d tiers",
-            platform,
+            self.platform,
             len(self._tiers),
         )
 

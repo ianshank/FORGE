@@ -358,6 +358,24 @@ mod tests {
     }
 
     #[test]
+    fn test_agent_near_exact_max_distance_satisfied() {
+        let agents = vec![make_agent(0, 0, 0), make_agent(1, 2, 1)];
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::AgentNear(0, 1, 3), &ctx);
+        assert!(result.satisfied);
+        assert_eq!(result.progress, 1.0);
+    }
+
+    #[test]
+    fn test_agent_near_far_distance_progress_clamps_to_zero() {
+        let agents = vec![make_agent(0, 0, 0), make_agent(1, 200, 200)];
+        let ctx = make_ctx(&agents, 0);
+        let result = evaluate_predicate(&Predicate::AgentNear(0, 1, 1), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
     fn test_time_elapsed() {
         let agents = vec![];
         let ctx = make_ctx(&agents, 100);
@@ -502,6 +520,21 @@ mod tests {
         };
         // terrain_id 255 is invalid
         let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 255), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
+    }
+
+    #[test]
+    fn test_agent_on_terrain_next_after_last_valid_id_is_unsatisfied() {
+        let agents = vec![make_agent(0, 3, 3)];
+        let grid = Grid::new(16, 16);
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: Some(&grid),
+            objects: None,
+        };
+        let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 8), &ctx);
         assert!(!result.satisfied);
         assert_eq!(result.progress, 0.0);
     }
@@ -839,6 +872,29 @@ mod tests {
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "active".to_string()), &ctx);
         assert!(result.satisfied);
+    }
+
+    #[test]
+    fn test_object_in_state_uppercase_name_is_rejected() {
+        use forge_types::entity::ObjectType;
+        let agents = vec![];
+        let objects = vec![Object {
+            id: 0,
+            position: Position::new(0, 0),
+            object_type: ObjectType::Boulder,
+            mass: 65536,
+            durability: 655360,
+            state: ObjectState::Active,
+        }];
+        let ctx = EvalContext {
+            agents: &agents,
+            tick: 0,
+            grid: None,
+            objects: Some(&objects),
+        };
+        let result = evaluate_predicate(&Predicate::ObjectInState(0, "ACTIVE".to_string()), &ctx);
+        assert!(!result.satisfied);
+        assert_eq!(result.progress, 0.0);
     }
 
     // ---- Coverage gap tests: drone predicate wildcard branch ----

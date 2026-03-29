@@ -15,6 +15,17 @@ from forge.mangomas.curriculum_controller import (
 class TestPlatformCurriculumController:
     """Tests for PlatformCurriculumController."""
 
+    def test_curriculum_config_resolves_platform_defaults(self) -> None:
+        drone_config = CurriculumConfig(platform="drone")
+        car_config = CurriculumConfig(platform="car")
+
+        assert drone_config.resolved_tiers()[0]["name"] == "Hover and Altitude"
+        assert car_config.resolved_tiers()[0]["name"] == "Straight Line"
+
+    def test_controller_uses_platform_specific_config_defaults(self) -> None:
+        ctrl = PlatformCurriculumController(config=CurriculumConfig(platform="car"))
+        assert ctrl.tier_info(1)["name"] == "Straight Line"
+
     def test_initial_state_drone(self) -> None:
         ctrl = PlatformCurriculumController(platform="drone")
         assert ctrl.current_tier == 1

@@ -107,6 +107,62 @@ class TestConstitutionalDataset:
 class TestConstitutionalPreTrainer:
     """Tests for constitutional RL training."""
 
+    def test_train_uses_config_dimensions_for_empty_dataset(self) -> None:
+        config = ConstitutionalTrainerConfig(
+            num_epochs=1,
+            batch_size=4,
+            state_dim=7,
+            action_dim=3,
+            seed=123,
+        )
+        trainer = ConstitutionalPreTrainer(config=config)
+        ds = ConstitutionalDataset(
+            observations=np.zeros((0, 0), dtype=np.float32),
+            actions=np.zeros(0, dtype=np.int64),
+            rewards=np.zeros(0, dtype=np.float32),
+            constraint_violations=np.zeros((0, 5), dtype=np.float32),
+            penalties=np.zeros(0, dtype=np.float32),
+        )
+
+        trainer.train(ds)
+
+        assert trainer._weights is not None
+        assert trainer._weights["policy_w"].shape == (3, 7)
+        assert trainer._weights["value_w"].shape == (1, 7)
+
+    def test_train_seed_comes_from_config(self) -> None:
+        dataset = ConstitutionalDataset(
+            observations=np.zeros((0, 0), dtype=np.float32),
+            actions=np.zeros(0, dtype=np.int64),
+            rewards=np.zeros(0, dtype=np.float32),
+            constraint_violations=np.zeros((0, 5), dtype=np.float32),
+            penalties=np.zeros(0, dtype=np.float32),
+        )
+        config_a = ConstitutionalTrainerConfig(
+            num_epochs=1,
+            batch_size=4,
+            state_dim=6,
+            action_dim=4,
+            seed=1,
+        )
+        config_b = ConstitutionalTrainerConfig(
+            num_epochs=1,
+            batch_size=4,
+            state_dim=6,
+            action_dim=4,
+            seed=2,
+        )
+
+        trainer_a = ConstitutionalPreTrainer(config=config_a)
+        trainer_b = ConstitutionalPreTrainer(config=config_b)
+
+        trainer_a.train(dataset)
+        trainer_b.train(dataset)
+
+        assert trainer_a._weights is not None
+        assert trainer_b._weights is not None
+        assert not np.allclose(trainer_a._weights["policy_w"], trainer_b._weights["policy_w"])
+
     def test_build_dataset(self) -> None:
         trainer = ConstitutionalPreTrainer()
         obs = np.random.rand(20, 18).astype(np.float32)

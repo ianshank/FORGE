@@ -414,6 +414,18 @@ fn describe_predicate(pred: &Predicate) -> String {
         Predicate::AgentOnTerrain(id, terrain) => {
             format!("agent {} is on terrain {}", id, terrain)
         }
+        Predicate::AgentAtAltitude(id, altitude) => {
+            format!("agent {} reaches altitude {}", id, altitude)
+        }
+        Predicate::BatteryAbove(id, threshold) => {
+            format!("agent {} battery above {:.0}%", id, threshold * 100.0)
+        }
+        Predicate::AgentAirborne(id) => {
+            format!("agent {} is airborne", id)
+        }
+        Predicate::AgentLanded(id) => {
+            format!("agent {} has landed", id)
+        }
 
         _ => {
             warn!("unknown Predicate variant in describe_predicate");
@@ -569,9 +581,8 @@ mod tests {
             ..default_config()
         };
         let mut rng = make_rng(42);
-        // max_tier=0 means the tier clamp range is 1..min(0, 6) = 1..0,
-        // so clamp(1, 0) yields 0 which then goes to the default arm.
-        // The function should not panic; we just verify it produces a valid task.
+        // max_tier is clamped up to 1 before the requested tier is clamped.
+        // The function should not panic and should still produce a valid task.
         let task = generate_task(&mut rng, 1, &config, 0);
         assert!(!task.description.is_empty());
         assert!(task.estimated_steps >= 1);
@@ -728,6 +739,39 @@ mod tests {
         let desc = describe_task(&task);
         assert!(desc.contains("agent 0"));
         assert!(desc.contains("terrain"));
+    }
+
+    #[test]
+    fn test_describe_predicate_agent_at_altitude() {
+        let task = TaskComposition::Atom(Predicate::AgentAtAltitude(0, 7));
+        let desc = describe_task(&task);
+        assert!(desc.contains("agent 0"));
+        assert!(desc.contains("altitude 7"));
+    }
+
+    #[test]
+    fn test_describe_predicate_battery_above() {
+        let task = TaskComposition::Atom(Predicate::BatteryAbove(1, 0.6));
+        let desc = describe_task(&task);
+        assert!(desc.contains("agent 1"));
+        assert!(desc.contains("battery"));
+        assert!(desc.contains("60"));
+    }
+
+    #[test]
+    fn test_describe_predicate_agent_airborne() {
+        let task = TaskComposition::Atom(Predicate::AgentAirborne(2));
+        let desc = describe_task(&task);
+        assert!(desc.contains("agent 2"));
+        assert!(desc.contains("airborne"));
+    }
+
+    #[test]
+    fn test_describe_predicate_agent_landed() {
+        let task = TaskComposition::Atom(Predicate::AgentLanded(3));
+        let desc = describe_task(&task);
+        assert!(desc.contains("agent 3"));
+        assert!(desc.contains("landed"));
     }
 
     #[test]

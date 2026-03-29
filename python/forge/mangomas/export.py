@@ -49,7 +49,7 @@ class WeightExporter:
         """Export BDI GRU+MLP weights."""
         path = self.output_dir / "bdi_weights.npz"
         self._ensure_dir()
-        np.savez(str(path), **weights)
+        np.savez(str(path), **weights)  # type: ignore[arg-type]
         self._manifest.components.append("bdi")
         self._manifest.metadata["bdi_arrays"] = list(weights.keys())
         logger.info("Exported BDI weights: %s", path)
@@ -59,7 +59,7 @@ class WeightExporter:
         """Export constitutional RL policy/value weights."""
         path = self.output_dir / "constitutional_weights.npz"
         self._ensure_dir()
-        np.savez(str(path), **weights)
+        np.savez(str(path), **weights)  # type: ignore[arg-type]
         self._manifest.components.append("constitutional")
         self._manifest.metadata["constitutional_arrays"] = list(weights.keys())
         logger.info("Exported constitutional weights: %s", path)
@@ -69,7 +69,7 @@ class WeightExporter:
         """Export RSSM world model weights."""
         path = self.output_dir / "rssm_weights.npz"
         self._ensure_dir()
-        np.savez(str(path), **weights)
+        np.savez(str(path), **weights)  # type: ignore[arg-type]
         self._manifest.components.append("rssm")
         self._manifest.metadata["rssm_arrays"] = list(weights.keys())
         logger.info("Exported RSSM weights: %s", path)

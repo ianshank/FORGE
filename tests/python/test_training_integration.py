@@ -282,8 +282,12 @@ def env():
     Skips if the native Rust extension is not built.
     """
     try:
+        from forge_env import gymnasium_env  # noqa: PLC0415
         from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
     except ImportError:
+        pytest.skip("Native Rust extension not built (run `maturin develop` first)")
+
+    if gymnasium_env._NativeEnv is None:
         pytest.skip("Native Rust extension not built (run `maturin develop` first)")
 
     e = ForgeGymnasiumEnv()

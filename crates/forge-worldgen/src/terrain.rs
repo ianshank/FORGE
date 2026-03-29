@@ -316,10 +316,7 @@ mod tests {
         let mut grid = Grid::new(config.width, config.height);
         gen.generate(&mut grid);
 
-        // Should not panic and produce valid terrain
-        for tile in &grid.tiles {
-            assert!(tile.elevation <= 255);
-        }
+        assert_eq!(grid.tiles.len(), usize::from(config.width) * usize::from(config.height));
     }
 
     #[test]
@@ -330,10 +327,23 @@ mod tests {
         let mut grid = Grid::new(config.width, config.height);
         gen.generate(&mut grid);
 
-        // Should not panic
-        for tile in &grid.tiles {
-            assert!(tile.elevation <= 255);
-        }
+        assert_eq!(grid.tiles.len(), usize::from(config.width) * usize::from(config.height));
+    }
+
+    #[test]
+    fn test_octaves_clamp_to_minimum() {
+        let mut config = default_config();
+        config.biome_scale = 0.0;
+        let gen = TerrainGenerator::new(&config, 42);
+        assert_eq!(gen.octaves, constants::TERRAIN_NOISE_OCTAVES_MIN);
+    }
+
+    #[test]
+    fn test_octaves_clamp_to_maximum() {
+        let mut config = default_config();
+        config.biome_scale = 10_000.0;
+        let gen = TerrainGenerator::new(&config, 42);
+        assert_eq!(gen.octaves, constants::TERRAIN_NOISE_OCTAVES_MAX);
     }
 
     #[test]
@@ -372,6 +382,23 @@ mod tests {
     }
 
     #[test]
+    fn test_wrapping_seed_and_edge_coordinates_are_stable() {
+        let config = default_config();
+        let gen1 = TerrainGenerator::new(&config, u64::MAX);
+        let gen2 = TerrainGenerator::new(&config, u64::MAX);
+
+        let elevation1 = gen1.elevation_at(u16::MAX, u16::MAX);
+        let elevation2 = gen2.elevation_at(u16::MAX, u16::MAX);
+        let moisture1 = gen1.moisture_at(u16::MAX, u16::MAX);
+        let moisture2 = gen2.moisture_at(u16::MAX, u16::MAX);
+
+        assert!((0.0..=1.0).contains(&elevation1));
+        assert!((0.0..=1.0).contains(&moisture1));
+        assert_eq!(elevation1, elevation2);
+        assert_eq!(moisture1, moisture2);
+    }
+
+    #[test]
     fn test_rectangular_grid() {
         let mut config = default_config();
         config.width = 32;
@@ -382,9 +409,6 @@ mod tests {
         gen.generate(&mut grid);
 
         assert_eq!(grid.tiles.len(), 32 * 8);
-        for tile in &grid.tiles {
-            assert!(tile.elevation <= 255);
-        }
     }
 
     // ---- Proptest: terrain generation invariants ----

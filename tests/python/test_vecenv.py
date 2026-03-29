@@ -292,6 +292,74 @@ class TestForgeAsyncVecEnv:
         env_fns = [_env_fn_factory(e) for e in envs]
         return ForgeSyncVecEnv(env_fns)
 
+    def _make_async_stub(self) -> ForgeAsyncVecEnv:
+        vec = object.__new__(ForgeAsyncVecEnv)
+        vec.num_envs = 1
+        vec._parent_pipes = []
+        vec._processes = []
+        return vec
+
+    def test_reset_sends_incremented_seeds(self) -> None:
+        vec = self._make_async_stub()
+        pipe_a = MagicMock()
+        pipe_b = MagicMock()
+        pipe_a.recv.return_value = (MOCK_OBS_DICT.copy(), {"seed": 10})
+        pipe_b.recv.return_value = (MOCK_OBS_DICT.copy(), {"seed": 11})
+        vec._parent_pipes = [pipe_a, pipe_b]
+        vec.num_envs = 2
+
+        _obs, infos = ForgeAsyncVecEnv.reset(vec, seed=10, options={"mode": "test"})
+
+        pipe_a.send.assert_any_call(("reset", (10, {"mode": "test"})))
+        pipe_b.send.assert_any_call(("reset", (11, {"mode": "test"})))
+        assert infos[0]["seed"] == 10
+        assert infos[1]["seed"] == 11
+
+    def test_reset_exception_propagates(self) -> None:
+        vec = self._make_async_stub()
+        pipe = MagicMock()
+        pipe.recv.return_value = RuntimeError("boom")
+        vec._parent_pipes = [pipe]
+
+        with pytest.raises(RuntimeError, match="boom"):
+            ForgeAsyncVecEnv.reset(vec)
+
+    def test_step_auto_resets_and_merges_info(self) -> None:
+        vec = self._make_async_stub()
+        pipe = MagicMock()
+        terminal_obs = MOCK_OBS_DICT.copy()
+        reset_obs = MOCK_OBS_DICT.copy()
+        reset_obs["health"] = np.float32(0.1)
+        pipe.recv.side_effect = [
+            (terminal_obs, 1.0, True, False, {"tick": 1}),
+            (reset_obs, {"reset": True}),
+        ]
+        vec._parent_pipes = [pipe]
+
+        obs, rewards, terminated, truncated, infos = ForgeAsyncVecEnv.step(
+            vec, np.array([0], dtype=np.int64)
+        )
+
+        assert rewards.shape == (1,)
+        assert terminated[0]
+        assert not truncated[0]
+        assert infos[0]["reset"] is True
+        assert "terminal_observation" in infos[0]
+        assert obs["health"][0] == pytest.approx(0.1)
+
+    def test_close_terminates_hung_process(self) -> None:
+        vec = self._make_async_stub()
+        pipe = MagicMock()
+        process = MagicMock()
+        process.is_alive.return_value = True
+        vec._parent_pipes = [pipe]
+        vec._processes = [process]
+
+        ForgeAsyncVecEnv.close(vec)
+
+        process.join.assert_called_once_with(timeout=5)
+        process.terminate.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # NumPy unavailability

@@ -7,16 +7,22 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, cast
 
 import numpy as np
 
-from forge.mangomas.config import CuriosityOptimizerConfig
+from forge.mangomas.config import (
+    DEFAULT_CURIOSITY_CHANNELS as CONFIG_DEFAULT_CURIOSITY_CHANNELS,
+)
+from forge.mangomas.config import (
+    DEFAULT_CURIOSITY_WEIGHTS,
+    CuriosityOptimizerConfig,
+)
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CURIOSITY_CHANNELS = ["social", "epistemic", "perceptual", "metacognitive"]
-DEFAULT_INITIAL_WEIGHTS = [0.4, 0.3, 0.2, 0.1]
+DEFAULT_CURIOSITY_CHANNELS = list(CONFIG_DEFAULT_CURIOSITY_CHANNELS)
+DEFAULT_INITIAL_WEIGHTS = list(DEFAULT_CURIOSITY_WEIGHTS)
 
 
 @dataclass
@@ -29,7 +35,7 @@ class CuriosityWeights:
 
     def as_array(self) -> np.ndarray:
         """Return weights as an ordered numpy array."""
-        return np.array(list(self.weights.values()), dtype=np.float32)
+        return cast("np.ndarray", np.array(list(self.weights.values()), dtype=np.float32))
 
     def __repr__(self) -> str:
         parts = [f"{k}={v:.3f}" for k, v in self.weights.items()]
@@ -54,7 +60,7 @@ class CuriosityWeightOptimizer:
         seed: int | None = None,
     ) -> None:
         self._config = config or CuriosityOptimizerConfig()
-        self.channels = channels or self._config.channels
+        self.channels = list(channels or self._config.channels)
         self._initial = np.array(
             initial_weights or self._config.initial_weights, dtype=np.float32
         )
@@ -71,11 +77,11 @@ class CuriosityWeightOptimizer:
 
     def _normalize(self, w: np.ndarray) -> np.ndarray:
         """Ensure weights sum to 1 and are non-negative."""
-        w = np.maximum(w, 0.0)
+        w = cast("np.ndarray", np.maximum(w, 0.0))
         total = w.sum()
         if total < 1e-8:
-            return np.ones_like(w) / len(w)
-        return w / total
+            return cast("np.ndarray", np.ones_like(w) / len(w))
+        return cast("np.ndarray", w / total)
 
     def optimize(
         self,

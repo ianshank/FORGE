@@ -130,7 +130,7 @@ class MCTSSweepRunner:
         if param_grid is None:
             param_grid = self.generate_grid()
 
-        start = time.monotonic()
+        start_ns = time.perf_counter_ns()
         results: list[SweepResult] = []
 
         for i, config in enumerate(param_grid):
@@ -148,7 +148,7 @@ class MCTSSweepRunner:
             if (i + 1) % 10 == 0:
                 logger.debug("Sweep progress: %d/%d", i + 1, len(param_grid))
 
-        elapsed = time.monotonic() - start
+        elapsed = max(time.perf_counter_ns() - start_ns, 1) / 1_000_000_000
         best = max(results, key=lambda r: r.mean_reward) if results else None
 
         report = SweepReport(results=results, best=best, total_time_secs=elapsed)

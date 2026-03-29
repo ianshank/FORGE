@@ -30,7 +30,7 @@ try:
     HAS_SB3 = True
 except ImportError:
     HAS_SB3 = False
-    BaseCallback = object  # type: ignore[assignment,misc]
+    BaseCallback = object
 
 if TYPE_CHECKING:
     from forge.training.loggers import ForgeLogger
@@ -59,7 +59,7 @@ def _require_sb3() -> None:
 # ---------------------------------------------------------------------------
 
 
-class ForgeCurriculumCallback(BaseCallback):  # type: ignore[misc]
+class ForgeCurriculumCallback(BaseCallback):
     """Adaptive curriculum callback for FORGE task tiers.
 
     Monitors episode outcomes (read from ``info["task_success"]``) and
@@ -108,6 +108,18 @@ class ForgeCurriculumCallback(BaseCallback):  # type: ignore[misc]
         self._success_window: deque[bool] = deque(maxlen=window_size)
         self._current_tier: int = 1
         self._num_increments: int = 0
+        self._training_env_override: Any | None = None
+
+    @property
+    def training_env(self) -> Any:
+        """Return the SB3 training env, with optional test override support."""
+        if self._training_env_override is not None:
+            return self._training_env_override
+        return super().training_env
+
+    @training_env.setter
+    def training_env(self, env: Any) -> None:
+        self._training_env_override = env
 
     # -- BaseCallback hooks -------------------------------------------------
 
@@ -143,7 +155,7 @@ class ForgeCurriculumCallback(BaseCallback):  # type: ignore[misc]
 
         # Attempt to update each underlying env.
         try:
-            envs = self.training_env.envs  # type: ignore[attr-defined]
+            envs = self.training_env.envs
         except AttributeError:
             logger.warning(
                 "ForgeCurriculumCallback: training_env does not expose .envs — "
@@ -179,7 +191,7 @@ class ForgeCurriculumCallback(BaseCallback):  # type: ignore[misc]
 # ---------------------------------------------------------------------------
 
 
-class ForgeMetricsCallback(BaseCallback):  # type: ignore[misc]
+class ForgeMetricsCallback(BaseCallback):
     """Episode-metrics logging callback for FORGE training.
 
     At the end of every episode the callback extracts episode return,

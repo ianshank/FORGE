@@ -33,17 +33,18 @@ A high-performance simulation platform for training and evaluating AI agents, bu
 - **Multi-agent**: PettingZoo Parallel API for cooperative/competitive scenarios with communication
 - **Task curriculum**: Composable task DSL with 6 difficulty tiers and adaptive difficulty scaling
 - **MCTS planning**: Built-in Monte Carlo Tree Search agent with configurable PUCT exploration
+- **MangoMAS bridge**: Config-driven curriculum, constitutional pre-training, curiosity-weight search, batch episode collection, and MCTS sweep utilities under `python/forge/mangomas/`
 - **Cross-platform**: Native Python bindings (PyO3/maturin) and WebAssembly bindings (wasm-bindgen)
 - **Zero allocation hot path**: `WorldState::step()` is designed to avoid heap allocation
 - **Structured tracing**: `#[instrument]` on public functions throughout with `tracing` crate
-- **893+ tests**: 614 Rust + 279 Python tests with property-based testing via `proptest`
+- **Coverage-hardened surfaces**: focused regression tests cover Python fallback imports, vector envs, feature extractors, MangoMAS bridge modules, and Rust edge paths in planning/task evaluation
 - **Coverage-gated Python CI**: `pytest` now enforces `--cov-fail-under=85` for the Python package surface
 
 ## Quick Start
 
 ### Prerequisites
 
-- Rust 1.70+ (`rustup`)
+- Rust 1.75+ (`rustup`)
 - Python 3.9+
 - [maturin](https://github.com/PyO3/maturin) (`pip install maturin`)
 - numpy (`pip install numpy`)
@@ -111,6 +112,18 @@ python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765
 - 🟢 **PASS/FAIL badges** — each section badge updates live as output streams in
 - ⚡ **Quick mode toggle** — full or fast (CI-style) execution
 
+## MangoMAS Integration
+
+FORGE now includes a Python-side MangoMAS bridge for training and evaluation workflows that need a configurable control plane on top of the deterministic Rust simulator.
+
+- `python/forge/mangomas/config.py` centralizes bridge defaults for action adaptation, observation shaping, curriculum tiers, constitutional constraints, curiosity channels, batch collection, and MCTS sweep bounds
+- `python/forge/mangomas/constitutional_trainer.py` maps FORGE safety signals into constitutional penalties for offline pre-training
+- `python/forge/mangomas/curriculum_controller.py` manages platform-specific car and drone tier progression using rolling success windows
+- `python/forge/mangomas/curiosity_optimizer.py` runs a lightweight evolutionary search over curiosity-channel weights
+- `python/forge/mangomas/batch.py` and `sweep_runner.py` provide batch episode collection and repeatable MCTS parameter sweeps for transfer experiments
+
+The branch also hardens the Python package surface so `forge_env` remains importable when optional native, SB3, or Torch-backed components are absent, which keeps fast CI and targeted local verification practical.
+
 ## Architecture
 
 FORGE is organized as a multi-crate Rust workspace with Python and WASM frontends:
@@ -130,7 +143,7 @@ FORGE/
 │   └── forge-bench/     # Criterion benchmarks
 ├── python/
 │   ├── forge_env/       # Python wrappers (Gymnasium, PettingZoo, JAX)
-│   └── forge/           # Training, agents, models, traces, config, utils
+│   └── forge/           # Training, MangoMAS bridge, agents, models, traces, config, utils
 ├── configs/             # TOML configs (agents, curriculum, scenarios)
 ├── scripts/             # CLI tools (train, evaluate, demo, replay, export)
 ├── dashboard/           # React/TypeScript real-time simulation dashboard
@@ -326,9 +339,14 @@ cargo bench -p forge-bench
 maturin develop
 pytest tests/python/ -v
 
+# Focused PR validations used on this branch
+cargo test -p forge-task predicate
+cargo test -p forge-agent search
+pytest tests/python/test_forge_env.py tests/python/test_feature_extractors.py tests/python/test_vecenv.py -q
+
 # Python lint + type check
 ruff check python/ tests/python/ scripts/ demo_ui/
-mypy python/forge_env/ tests/python/ --ignore-missing-imports
+mypy python/ scripts/ --config-file pyproject.toml
 ```
 
 ## Performance
@@ -354,6 +372,7 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 | [`multi_agent_coop.py`](examples/multi_agent_coop.py) | PettingZoo multi-agent cooperation |
 | [`mcts_planning.py`](examples/mcts_planning.py) | Monte Carlo Tree Search planning concept |
 | [`train_ppo.py`](examples/train_ppo.py) | PPO training with Stable Baselines3 integration |
+| [`train_sac_cleanrl.py`](examples/train_sac_cleanrl.py) | Config-driven discrete SAC training with CleanRL-style structure |
 
 ## Scripts
 
@@ -424,11 +443,10 @@ docker build -f docker/Dockerfile.demo -t forge-demo .
 
 | | |
 |---|---|
-| Rust source | ~19,500 lines across 10 crates |
-| Python source | ~2,500 lines (wrappers, training, agents, utils) |
-| Examples, tests, scripts | ~4,500 lines |
-| Rust tests | 614 (unit + property-based + integration) |
-| Python tests | 279 (pytest) |
+| Rust workspace | 10 primary crates plus server, bindings, and benchmark surfaces |
+| Python surface | `forge_env` wrappers plus `forge` training, MangoMAS bridge, traces, and utilities |
+| Validation | Rust unit/integration coverage plus Python package, wrapper, and training-surface pytest coverage |
+| Deployment | Local demo UI, dashboard, and simulation server with Docker Compose orchestration |
 | Dependencies | See [`Cargo.toml`](Cargo.toml) for full list |
 
 ## Developed By

@@ -28,11 +28,11 @@ class SequenceDataset:
 
     @property
     def num_sequences(self) -> int:
-        return self.states.shape[0]
+        return int(self.states.shape[0])
 
     @property
     def sequence_length(self) -> int:
-        return self.states.shape[1]
+        return int(self.states.shape[1])
 
 
 @dataclass
@@ -216,5 +216,5 @@ class RSSMPreTrainer:
             raise RuntimeError("No trained weights. Call train() first.")
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(str(path), **self._weights)
+        np.savez(str(path), **self._weights)  # type: ignore[arg-type]
         logger.info("RSSM weights exported to %s (%d arrays)", path, len(self._weights))
