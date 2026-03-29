@@ -128,8 +128,10 @@ mod tests {
 
     #[test]
     fn test_validate_zero_episodes() {
-        let mut config = EvalConfig::default();
-        config.episodes_per_scenario = 0;
+        let config = EvalConfig {
+            episodes_per_scenario: 0,
+            ..EvalConfig::default()
+        };
         let errors = config.validate();
         assert!(!errors.is_empty());
         assert!(errors[0].contains("episodes_per_scenario"));
@@ -137,23 +139,29 @@ mod tests {
 
     #[test]
     fn test_validate_zero_max_steps() {
-        let mut config = EvalConfig::default();
-        config.max_steps_per_episode = 0;
+        let config = EvalConfig {
+            max_steps_per_episode: 0,
+            ..EvalConfig::default()
+        };
         assert!(!config.is_valid());
     }
 
     #[test]
     fn test_validate_invalid_tier() {
-        let mut config = EvalConfig::default();
-        config.tiers = vec![0, 7];
+        let config = EvalConfig {
+            tiers: vec![0, 7],
+            ..EvalConfig::default()
+        };
         let errors = config.validate();
         assert_eq!(errors.len(), 2);
     }
 
     #[test]
     fn test_validate_valid_tiers() {
-        let mut config = EvalConfig::default();
-        config.tiers = vec![1, 3, 6];
+        let config = EvalConfig {
+            tiers: vec![1, 3, 6],
+            ..EvalConfig::default()
+        };
         assert!(config.is_valid());
     }
 

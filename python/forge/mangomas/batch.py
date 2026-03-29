@@ -85,7 +85,7 @@ class BatchCollector:
         Returns:
             BatchResult with all collected episodes.
         """
-        start = time.monotonic()
+        start_ns = time.perf_counter_ns()
         episodes: list[EpisodeData] = []
         total_steps = 0
 
@@ -128,7 +128,7 @@ class BatchCollector:
             if (ep + 1) % self.config.log_interval == 0:
                 logger.debug("Collected %d/%d episodes", ep + 1, num_episodes)
 
-        elapsed = time.monotonic() - start
+        elapsed = max((time.perf_counter_ns() - start_ns) / 1_000_000_000, 1e-9)
         rewards = [e.total_reward for e in episodes]
         lengths = [e.length for e in episodes]
 

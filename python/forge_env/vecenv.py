@@ -38,6 +38,14 @@ try:
 except ImportError:  # pragma: no cover
     HAS_NUMPY = False
 
+ForgeGymnasiumEnv: Any | None
+try:
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv as _ForgeGymnasiumEnv
+except ImportError:  # pragma: no cover
+    ForgeGymnasiumEnv = None
+else:
+    ForgeGymnasiumEnv = _ForgeGymnasiumEnv
+
 __all__ = [
     "ForgeAsyncVecEnv",
     "ForgeSyncVecEnv",
@@ -288,7 +296,7 @@ class ForgeAsyncVecEnv:
             )
             process.start()
             child_conn.close()
-            self._parent_pipes.append(parent_conn)
+            self._parent_pipes.append(parent_conn)  # type: ignore[arg-type]
             self._processes.append(process)
 
         # Retrieve spaces from the first worker.
@@ -462,10 +470,13 @@ def make_forge_vec_env(
         obs, infos = vec_env.reset()
         # obs["grid_view"].shape == (4, 11, 11, 7)
     """
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
-
     if n_envs < 1:
         raise ValueError(f"n_envs must be >= 1, got {n_envs}")
+
+    if ForgeGymnasiumEnv is None:
+        raise ImportError(
+            "ForgeGymnasiumEnv is unavailable. Build/install forge_env before creating vec envs."
+        )
 
     def _make_single(env_seed: int) -> Callable[[], Any]:
         """Return a zero-argument factory that creates one wrapped env."""

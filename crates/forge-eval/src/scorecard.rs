@@ -340,9 +340,9 @@ mod tests {
 
     #[test]
     fn test_episode_result_fields() {
-        let ep = make_episode(42, 3.14, true, 100);
+        let ep = make_episode(42, std::f64::consts::PI, true, 100);
         assert_eq!(ep.seed, 42);
-        assert!((ep.total_reward - 3.14).abs() < f64::EPSILON);
+        assert!((ep.total_reward - std::f64::consts::PI).abs() < f64::EPSILON);
         assert!(ep.success);
         assert_eq!(ep.steps, 100);
         assert!(ep.terminated);

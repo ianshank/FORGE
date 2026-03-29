@@ -198,7 +198,7 @@ mod tests {
         for i in 0..n {
             for j in 0..n {
                 let t = tm.trust(i, j);
-                assert!(t >= 0.0 && t <= 1.0);
+                assert!((0.0..=1.0).contains(&t));
                 if i != j {
                     assert!(t > 0.5, "trust({i},{j}) should have increased");
                 }

@@ -29,7 +29,7 @@ class CuriosityWeights:
 
     def as_array(self) -> np.ndarray:
         """Return weights as an ordered numpy array."""
-        return np.array(list(self.weights.values()), dtype=np.float32)
+        return np.array(list(self.weights.values()), dtype=np.float32)  # type: ignore[no-any-return]
 
     def __repr__(self) -> str:
         parts = [f"{k}={v:.3f}" for k, v in self.weights.items()]
@@ -74,8 +74,8 @@ class CuriosityWeightOptimizer:
         w = np.maximum(w, 0.0)
         total = w.sum()
         if total < 1e-8:
-            return np.ones_like(w) / len(w)
-        return w / total
+            return np.ones_like(w) / len(w)  # type: ignore[no-any-return]
+        return w / total  # type: ignore[no-any-return]
 
     def optimize(
         self,

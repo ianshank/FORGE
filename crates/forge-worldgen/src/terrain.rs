@@ -317,9 +317,7 @@ mod tests {
         gen.generate(&mut grid);
 
         // Should not panic and produce valid terrain
-        for tile in &grid.tiles {
-            assert!(tile.elevation <= 255);
-        }
+        assert_eq!(grid.tiles.len(), usize::from(config.width) * usize::from(config.height));
     }
 
     #[test]
@@ -331,9 +329,7 @@ mod tests {
         gen.generate(&mut grid);
 
         // Should not panic
-        for tile in &grid.tiles {
-            assert!(tile.elevation <= 255);
-        }
+        assert_eq!(grid.tiles.len(), usize::from(config.width) * usize::from(config.height));
     }
 
     #[test]
@@ -382,9 +378,6 @@ mod tests {
         gen.generate(&mut grid);
 
         assert_eq!(grid.tiles.len(), 32 * 8);
-        for tile in &grid.tiles {
-            assert!(tile.elevation <= 255);
-        }
     }
 
     // ---- Proptest: terrain generation invariants ----

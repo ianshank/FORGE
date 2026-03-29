@@ -300,10 +300,12 @@ mod tests {
     }
 
     fn make_eval_config() -> EvalConfig {
-        let mut config = EvalConfig::default();
-        config.episodes_per_scenario = 3;
-        config.max_steps_per_episode = 20;
-        config.base_seed = 42;
+        let mut config = EvalConfig {
+            episodes_per_scenario: 3,
+            max_steps_per_episode: 20,
+            base_seed: 42,
+            ..EvalConfig::default()
+        };
         config.base_forge_config.world.width = 16;
         config.base_forge_config.world.height = 16;
         config.base_forge_config.agents.num_agents = 1;

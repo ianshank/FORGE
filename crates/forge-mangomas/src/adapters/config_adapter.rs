@@ -84,16 +84,20 @@ mod tests {
 
     #[test]
     fn test_drone_config() {
-        let mut mangomas = MangoMasConfig::default();
-        mangomas.platform = Platform::Drone;
+        let mangomas = MangoMasConfig {
+            platform: Platform::Drone,
+            ..MangoMasConfig::default()
+        };
         let forge = ConfigAdapter::to_forge_config(&mangomas).unwrap();
         assert!(forge.drone.enabled);
     }
 
     #[test]
     fn test_car_config() {
-        let mut mangomas = MangoMasConfig::default();
-        mangomas.platform = Platform::Car;
+        let mangomas = MangoMasConfig {
+            platform: Platform::Car,
+            ..MangoMasConfig::default()
+        };
         let forge = ConfigAdapter::to_forge_config(&mangomas).unwrap();
         assert!(!forge.drone.enabled);
     }

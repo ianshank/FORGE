@@ -52,9 +52,9 @@ mod tests {
         };
         let json = serde_json::to_string(&config).unwrap();
         let deser: ReplayConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deser.record_compact, false);
-        assert_eq!(deser.record_trajectories, true);
-        assert_eq!(deser.include_reasoning, true);
+        assert!(!deser.record_compact);
+        assert!(deser.record_trajectories);
+        assert!(deser.include_reasoning);
         assert_eq!(deser.format_version, 2);
     }
 }

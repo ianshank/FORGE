@@ -47,7 +47,7 @@ try:
     HAS_SB3 = True
 except ImportError:
     HAS_SB3 = False
-    BaseFeaturesExtractor = object  # type: ignore[assignment,misc]
+    BaseFeaturesExtractor = object
 
 if TYPE_CHECKING:
     import gymnasium as gym
@@ -152,7 +152,7 @@ def _scalar_obs_dim(observation_space: gym.spaces.Dict) -> int:
 # ---------------------------------------------------------------------------
 
 
-class ForgeGridCnnExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
+class ForgeGridCnnExtractor(BaseFeaturesExtractor):
     """CNN feature extractor for the FORGE ``grid_view`` observation.
 
     Processes only the ``grid_view`` key of the Dict observation space.
@@ -229,7 +229,7 @@ class ForgeGridCnnExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
 # ---------------------------------------------------------------------------
 
 
-class ForgeObsExtractor(BaseFeaturesExtractor):  # type: ignore[misc]
+class ForgeObsExtractor(BaseFeaturesExtractor):
     """Combined CNN + MLP feature extractor for FORGE Dict observations.
 
     Two branches:

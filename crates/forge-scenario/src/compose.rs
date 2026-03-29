@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn test_compose_single() {
         let base = make_base_scenario();
-        let result = compose_scenarios(&[base.clone()]).unwrap();
+        let result = compose_scenarios(std::slice::from_ref(&base)).unwrap();
         assert_eq!(result.scenario.id, "base");
         assert_eq!(result.forge.world.width, 32);
     }

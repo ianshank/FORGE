@@ -210,10 +210,9 @@ mod tests {
         let config = IntegrationConfig {
             enabled: true,
             memory_write_interval: 1,
-            memory: {
-                let mut m = forge_memory::config::MemoryConfig::default();
-                m.enabled = true;
-                m
+            memory: forge_memory::config::MemoryConfig {
+                enabled: true,
+                ..forge_memory::config::MemoryConfig::default()
             },
             ..IntegrationConfig::default()
         };

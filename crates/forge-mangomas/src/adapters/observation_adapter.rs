@@ -230,7 +230,7 @@ mod tests {
         let state = adapter.adapt(&obs).unwrap();
         for (i, &val) in state.iter().enumerate() {
             assert!(
-                val >= 0.0 && val <= 1.1,
+                (0.0..=1.1).contains(&val),
                 "value at index {} is {} (out of normalized range)",
                 i,
                 val
