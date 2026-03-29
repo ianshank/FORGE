@@ -176,7 +176,7 @@ class BDIPreTrainer:
                 batch_loss = -np.mean(
                     np.log(probs[np.arange(len(y)), y] + 1e-8)
                 )
-                epoch_loss += batch_loss * len(y)
+                epoch_loss += float(batch_loss) * len(y)
                 epoch_correct += np.sum(np.argmax(probs, axis=1) == y)
 
                 # Gradient step on output layer
@@ -227,5 +227,5 @@ class BDIPreTrainer:
             raise RuntimeError("No trained weights to export. Call train() first.")
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(str(path), **self._weights)
+        np.savez(str(path), **self._weights)  # type: ignore[arg-type]
         logger.info("BDI weights exported to %s", path)

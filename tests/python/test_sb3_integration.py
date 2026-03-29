@@ -307,7 +307,7 @@ class TestForgeMetricsCallback:
 
 
 def test_require_sb3_raises_without_sb3(monkeypatch: pytest.MonkeyPatch) -> None:
-    import forge_env.sb3_callbacks as cb_mod
+    import forge_env.sb3_callbacks as cb_mod  # noqa: PLC0415
 
     monkeypatch.setattr(cb_mod, "HAS_SB3", False)
     with pytest.raises(ImportError, match="Stable Baselines"):

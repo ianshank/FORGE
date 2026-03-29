@@ -133,7 +133,7 @@ class IntegratedTrainer:
             if len(window) > self.config.domain_reward_window:
                 self._domain_rewards[domain] = window[-self.config.domain_reward_window :]
 
-        metrics = {
+        metrics: dict[str, float | str] = {
             "total_reward": total_reward,
             "episode_length": float(steps),
             "domain": domain,

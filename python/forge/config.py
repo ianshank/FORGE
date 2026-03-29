@@ -276,7 +276,7 @@ def _build_section(cls: type, data: dict[str, Any]) -> Any:
         default: Any
         if f.default is not MISSING:
             default = f.default
-        elif getattr(f, "default_factory", MISSING) is not MISSING:  # type: ignore[attr-defined]
+        elif getattr(f, "default_factory", MISSING) is not MISSING:
             try:
                 default = f.default_factory()  # type: ignore[misc]
             except TypeError:

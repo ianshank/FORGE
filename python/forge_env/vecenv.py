@@ -41,7 +41,7 @@ except ImportError:  # pragma: no cover
 try:
     from forge_env.gymnasium_env import ForgeGymnasiumEnv
 except ImportError:  # pragma: no cover
-    ForgeGymnasiumEnv = None
+    ForgeGymnasiumEnv = None  # type: ignore[misc, assignment]
 
 __all__ = [
     "ForgeAsyncVecEnv",
@@ -293,7 +293,7 @@ class ForgeAsyncVecEnv:
             )
             process.start()
             child_conn.close()
-            self._parent_pipes.append(parent_conn)
+            self._parent_pipes.append(parent_conn)  # type: ignore[arg-type]
             self._processes.append(process)
 
         # Retrieve spaces from the first worker.

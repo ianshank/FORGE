@@ -73,12 +73,12 @@ class TrustTracker:
         rewards = np.zeros(n, dtype=np.float32)
         w = self.config.cooperation_reward_weight
         for i in range(n):
-            mask = np.ones(n, dtype=bool)
+            mask: np.ndarray = np.ones(n, dtype=bool)
             mask[i] = False
             mean_trust = float(self.trust_matrix[mask, i].mean()) if n > 1 else 0.0
             trust_delta = mean_trust - self.config.trust_initial
             rewards[i] = trust_delta * w + self.reputation[i] * (1 - w)
-        return rewards
+        return rewards  # type: ignore[no-any-return]
 
     def _update_reputation(self, agent: int) -> None:
         """Recompute reputation score for an agent based on cooperation ratio.
