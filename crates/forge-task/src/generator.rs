@@ -25,6 +25,7 @@ const RAW_ITEMS: [ItemType; 6] = [
 
 /// Configuration for procedural task generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TaskGenConfig {
     /// Maximum tier to generate (1-6).
     pub max_tier: u8,
@@ -961,5 +962,23 @@ mod tests {
             ]),
         ]);
         assert_eq!(count_atoms(&task), 3);
+    }
+
+    #[test]
+    fn test_task_gen_config_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(TaskGenConfig);
+    }
+
+    #[test]
+    fn test_task_gen_config_partial_json_uses_defaults() {
+        // Verify #[serde(default)] allows missing fields
+        let partial = r#"{"max_tier": 3}"#;
+        let config: TaskGenConfig = serde_json::from_str(partial).unwrap();
+        assert_eq!(config.max_tier, 3);
+        // Non-specified fields fall back to Default
+        let default = TaskGenConfig::default();
+        assert_eq!(config.world_width, default.world_width);
+        assert_eq!(config.num_agents, default.num_agents);
+        assert_eq!(config.base_reward, default.base_reward);
     }
 }

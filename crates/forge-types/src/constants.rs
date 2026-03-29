@@ -95,6 +95,29 @@ pub const DEFAULT_OBJECT_DENSITY_SCALE: f32 = 1.0;
 /// Number of terrain types (for observation encoding).
 pub const NUM_TERRAIN_TYPES: usize = 8;
 
+// ---------- Service port defaults ----------
+
+/// Default port for the forge-server HTTP/WebSocket API.
+pub const DEFAULT_SERVER_PORT: u16 = 8080;
+/// Default port for the React dashboard frontend.
+pub const DEFAULT_DASHBOARD_PORT: u16 = 3000;
+/// Default port for the FastAPI demo UI.
+pub const DEFAULT_DEMO_UI_PORT: u16 = 8765;
+/// Default port for the frontend dev server (Vite).
+pub const DEFAULT_FRONTEND_DEV_PORT: u16 = 5173;
+/// Default bind host for all services (loopback only).
+pub const DEFAULT_BIND_HOST: &str = "127.0.0.1";
+/// Default startup wait in seconds before health-checking services.
+pub const DEFAULT_STARTUP_WAIT_SECS: u64 = 2;
+/// Default healthcheck interval in seconds.
+pub const DEFAULT_HEALTHCHECK_INTERVAL_S: u32 = 15;
+/// Default healthcheck timeout in seconds.
+pub const DEFAULT_HEALTHCHECK_TIMEOUT_S: u32 = 3;
+/// Default healthcheck start period in seconds.
+pub const DEFAULT_HEALTHCHECK_START_PERIOD_S: u32 = 10;
+/// Default healthcheck retry count.
+pub const DEFAULT_HEALTHCHECK_RETRIES: u32 = 3;
+
 /// Default damage dealt by a sword attack per hit.
 pub const DEFAULT_SWORD_DAMAGE: i32 = 196608; // 3.0
 /// Default damage per tick from standing on lava.
@@ -364,6 +387,65 @@ mod tests {
         // Ground cost < FIXED_POINT_ONE means faster than walking
         assert!(DEFAULT_VEHICLE_TERRAIN_COSTS[0] < FIXED_POINT_ONE);
         assert!(DEFAULT_VEHICLE_TERRAIN_COSTS[0] > 0);
+    }
+
+    #[test]
+    fn test_service_port_constants_non_zero() {
+        assert!(DEFAULT_SERVER_PORT > 0);
+        assert!(DEFAULT_DASHBOARD_PORT > 0);
+        assert!(DEFAULT_DEMO_UI_PORT > 0);
+        assert!(DEFAULT_FRONTEND_DEV_PORT > 0);
+    }
+
+    #[test]
+    fn test_service_port_constants_distinct() {
+        // All four service ports should be different from each other
+        let ports = [
+            DEFAULT_SERVER_PORT,
+            DEFAULT_DASHBOARD_PORT,
+            DEFAULT_DEMO_UI_PORT,
+            DEFAULT_FRONTEND_DEV_PORT,
+        ];
+        for i in 0..ports.len() {
+            for j in (i + 1)..ports.len() {
+                assert_ne!(
+                    ports[i], ports[j],
+                    "ports[{i}]={} and ports[{j}]={} should be different",
+                    ports[i], ports[j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_bind_host_is_loopback() {
+        assert_eq!(DEFAULT_BIND_HOST, "127.0.0.1");
+    }
+
+    #[test]
+    fn test_healthcheck_interval_greater_than_timeout() {
+        assert!(DEFAULT_HEALTHCHECK_INTERVAL_S > DEFAULT_HEALTHCHECK_TIMEOUT_S);
+    }
+
+    #[test]
+    fn test_healthcheck_retries_nonzero() {
+        assert!(DEFAULT_HEALTHCHECK_RETRIES > 0);
+    }
+
+    #[test]
+    fn test_service_ports_in_dynamic_range() {
+        // All default ports should be in the user/dynamic port range (1024-65535)
+        for port in [
+            DEFAULT_SERVER_PORT,
+            DEFAULT_DASHBOARD_PORT,
+            DEFAULT_DEMO_UI_PORT,
+            DEFAULT_FRONTEND_DEV_PORT,
+        ] {
+            assert!(
+                port >= 1024,
+                "Port {port} should be in user/dynamic range (>= 1024)"
+            );
+        }
     }
 
     #[test]

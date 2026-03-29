@@ -46,6 +46,7 @@ pub struct TeamSlot {
 
 /// Configuration for team composition generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TeamConfig {
     /// Number of units per team.
     pub team_size: u32,

@@ -44,6 +44,16 @@ mod tests {
 
     #[test]
     fn test_config_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(ReplayConfig);
+    }
+
+    #[test]
+    fn test_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(ReplayConfig);
+    }
+
+    #[test]
+    fn test_config_serde_roundtrip_custom_values() {
         let config = ReplayConfig {
             record_compact: false,
             record_trajectories: true,
@@ -52,9 +62,9 @@ mod tests {
         };
         let json = serde_json::to_string(&config).unwrap();
         let deser: ReplayConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deser.record_compact, false);
-        assert_eq!(deser.record_trajectories, true);
-        assert_eq!(deser.include_reasoning, true);
+        assert!(!deser.record_compact);
+        assert!(deser.record_trajectories);
+        assert!(deser.include_reasoning);
         assert_eq!(deser.format_version, 2);
     }
 }

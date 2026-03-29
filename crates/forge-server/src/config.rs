@@ -1,19 +1,16 @@
 //! Server configuration with sensible defaults and env-var overrides.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+use forge_types::constants::{DEFAULT_FRONTEND_DEV_PORT, DEFAULT_SERVER_PORT};
 use serde::{Deserialize, Serialize};
 
-/// Default bind address for the server.
-const DEFAULT_BIND_ADDR: &str = "0.0.0.0:8080";
 /// Default broadcast channel capacity for WebSocket fan-out.
 const DEFAULT_BROADCAST_CAPACITY: usize = 64;
 /// Default simulation tick interval in milliseconds.
 const DEFAULT_TICK_INTERVAL_MS: u64 = 100;
 /// Default tracing filter for the server.
 const DEFAULT_LOG_FILTER: &str = "forge_server=info,forge_core=info";
-/// Default allowed CORS origins.
-const DEFAULT_ALLOWED_ORIGINS: &str = "http://localhost:5173";
 
 /// Configuration for the FORGE server binary.
 ///
@@ -39,7 +36,11 @@ pub struct ServerConfig {
 }
 
 fn default_bind_addr() -> SocketAddr {
-    DEFAULT_BIND_ADDR.parse().expect("valid default addr")
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), DEFAULT_SERVER_PORT)
+}
+
+fn default_allowed_origins_str() -> String {
+    format!("http://localhost:{DEFAULT_FRONTEND_DEV_PORT}")
 }
 
 fn default_broadcast_capacity() -> usize {
@@ -55,23 +56,17 @@ fn default_log_filter() -> String {
 }
 
 fn default_allowed_origins() -> Vec<String> {
-    DEFAULT_ALLOWED_ORIGINS
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .collect()
+    vec![default_allowed_origins_str()]
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            bind_addr: DEFAULT_BIND_ADDR.parse().expect("valid default addr"),
+            bind_addr: default_bind_addr(),
             broadcast_capacity: DEFAULT_BROADCAST_CAPACITY,
             tick_interval_ms: DEFAULT_TICK_INTERVAL_MS,
             log_filter: DEFAULT_LOG_FILTER.to_string(),
-            allowed_origins: DEFAULT_ALLOWED_ORIGINS
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect(),
+            allowed_origins: default_allowed_origins(),
         }
     }
 }
@@ -148,7 +143,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = ServerConfig::default();
-        assert_eq!(config.bind_addr.port(), 8080);
+        assert_eq!(config.bind_addr.port(), forge_types::constants::DEFAULT_SERVER_PORT);
         assert_eq!(config.broadcast_capacity, DEFAULT_BROADCAST_CAPACITY);
         assert_eq!(config.tick_interval_ms, DEFAULT_TICK_INTERVAL_MS);
         assert!(!config.log_filter.is_empty());
@@ -168,7 +163,7 @@ mod tests {
     fn test_from_env_defaults() {
         // Without env vars set, should use defaults
         let config = ServerConfig::from_env();
-        assert_eq!(config.bind_addr.port(), 8080);
+        assert_eq!(config.bind_addr.port(), forge_types::constants::DEFAULT_SERVER_PORT);
     }
 
     #[test]
@@ -213,7 +208,7 @@ mod tests {
         let config = ServerConfig::default();
         let debug = format!("{:?}", config);
         assert!(debug.contains("ServerConfig"));
-        assert!(debug.contains("8080"));
+        assert!(debug.contains(&forge_types::constants::DEFAULT_SERVER_PORT.to_string()));
     }
 
     #[test]

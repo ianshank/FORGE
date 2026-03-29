@@ -4,7 +4,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${FORGE_SERVER_PORT:-8080}:8080"
     volumes:
       - ../forge.toml:/app/forge.toml:ro
       - ../configs:/app/configs:ro
@@ -13,11 +13,11 @@ services:
       - FORGE_HARDWARE_NUM_WORKERS=4
       - RUST_LOG=info
     healthcheck:
-      test: [ "CMD", "curl", "-sf", "http://localhost:8080/health" ]
-      interval: 15s
-      timeout: 3s
-      start_period: 10s
-      retries: 3
+      test: [ "CMD", "curl", "-sf", "http://localhost:${FORGE_SERVER_PORT:-8080}/health" ]
+      interval: ${FORGE_HEALTHCHECK_INTERVAL:-15s}
+      timeout: ${FORGE_HEALTHCHECK_TIMEOUT:-3s}
+      start_period: ${FORGE_HEALTHCHECK_START_PERIOD:-10s}
+      retries: ${FORGE_HEALTHCHECK_RETRIES:-3}
     networks:
       - forge-net
     restart: unless-stopped
@@ -27,7 +27,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.dashboard
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:${FORGE_DASHBOARD_PORT:-3000}:80"
     depends_on:
       simulation:
         condition: service_healthy
@@ -40,7 +40,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.demo
     ports:
-      - "127.0.0.1:8765:8765"
+      - "127.0.0.1:${FORGE_DEMO_UI_PORT:-8765}:8765"
     volumes:
       - ../forge.toml:/app/forge.toml:ro
     depends_on:

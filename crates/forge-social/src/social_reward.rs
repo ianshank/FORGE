@@ -12,6 +12,7 @@ use crate::trust::TrustMatrix;
 
 /// Configuration for social reward computation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SocialRewardConfig {
     /// Weight of cooperation rewards.
     pub cooperation_weight: f32,
