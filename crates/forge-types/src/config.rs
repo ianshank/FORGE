@@ -42,6 +42,8 @@ pub struct ForgeConfig {
     pub rendering: RenderConfig,
     /// Drone-specific mechanics parameters.
     pub drone: DroneConfig,
+    /// Agricultural simulation parameters.
+    pub agri: AgriConfig,
 }
 
 /// World generation configuration.
@@ -310,7 +312,7 @@ pub struct DroneConfig {
     pub recharge_rate: i32,
     /// Ground vehicle terrain speed multipliers indexed by TerrainType.
     /// Fixed-point values. i32::MAX = impassable.
-    pub vehicle_terrain_costs: [i32; 8],
+    pub vehicle_terrain_costs: [i32; constants::NUM_TERRAIN_TYPES],
     /// Vision radius bonus per altitude level for aerial agents.
     pub altitude_vision_bonus: u8,
     /// Turn radius for ground vehicles (0 = free, 1+ = restricted).
@@ -343,6 +345,85 @@ impl Default for DroneConfig {
             fall_damage_per_level: constants::DEFAULT_FALL_DAMAGE_PER_LEVEL,
             num_aerial: 0,
             num_ground_vehicles: 0,
+        }
+    }
+}
+
+/// Configuration for agricultural drone simulation.
+///
+/// When `enabled` is false (default), all agricultural systems are skipped
+/// and the simulation behaves identically to pre-agriculture versions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AgriConfig {
+    /// Whether agricultural systems are enabled.
+    pub enabled: bool,
+    /// Crop growth increment per tick (fixed-point). Accumulated until a stage threshold.
+    pub crop_growth_rate: i32,
+    /// Disease spread probability per tick per diseased neighbor (fixed-point).
+    pub disease_spread_rate: i32,
+    /// Natural disease decay rate per tick (fixed-point).
+    pub disease_decay_rate: i32,
+    /// Maximum number of crop growth stages.
+    pub max_growth_stages: u8,
+    /// Initial crop health at planting (fixed-point).
+    pub initial_crop_health: i32,
+    /// Per-tick soil moisture drain (fixed-point).
+    pub moisture_drain_rate: i32,
+    /// Per-tick nutrient drain (fixed-point).
+    pub nutrient_drain_rate: i32,
+    /// Radius in tiles affected by a single spray action.
+    pub spray_radius: u8,
+    /// Disease reduction per spray application (fixed-point).
+    pub spray_efficacy: i32,
+    /// Battery cost per spray action (fixed-point).
+    pub spray_battery_cost: i32,
+    /// Multispectral NDVI scan radius in tiles.
+    pub ndvi_scan_radius: u8,
+    /// Thermal scan radius in tiles.
+    pub thermal_scan_radius: u8,
+    /// Range in tiles for soil sensor data relay.
+    pub soil_relay_range: u8,
+    /// Battery cost per agricultural scan action (fixed-point).
+    pub scan_battery_cost: i32,
+    /// Number of ground-deployed soil sensor nodes.
+    pub num_soil_nodes: u16,
+    /// Ticks between soil sensor readings being refreshed.
+    pub soil_reading_interval: u32,
+    /// Battery cost for VLM report generation (fixed-point).
+    pub report_generation_cost: i32,
+    /// Observation radius for report generation.
+    pub report_scan_radius: u8,
+    /// Fraction of Ground tiles converted to Cropland during worldgen.
+    pub cropland_density: f32,
+    /// Fraction of Ground tiles converted to Pasture during worldgen.
+    pub pasture_density: f32,
+}
+
+impl Default for AgriConfig {
+    fn default() -> Self {
+        Self {
+            enabled: constants::DEFAULT_AGRI_ENABLED,
+            crop_growth_rate: constants::DEFAULT_AGRI_CROP_GROWTH_RATE,
+            disease_spread_rate: constants::DEFAULT_AGRI_DISEASE_SPREAD_RATE,
+            disease_decay_rate: constants::DEFAULT_AGRI_DISEASE_DECAY_RATE,
+            max_growth_stages: constants::DEFAULT_AGRI_MAX_GROWTH_STAGES,
+            initial_crop_health: constants::DEFAULT_AGRI_INITIAL_CROP_HEALTH,
+            moisture_drain_rate: constants::DEFAULT_AGRI_MOISTURE_DRAIN_RATE,
+            nutrient_drain_rate: constants::DEFAULT_AGRI_NUTRIENT_DRAIN_RATE,
+            spray_radius: constants::DEFAULT_AGRI_SPRAY_RADIUS,
+            spray_efficacy: constants::DEFAULT_AGRI_SPRAY_EFFICACY,
+            spray_battery_cost: constants::DEFAULT_AGRI_SPRAY_BATTERY_COST,
+            ndvi_scan_radius: constants::DEFAULT_AGRI_NDVI_SCAN_RADIUS,
+            thermal_scan_radius: constants::DEFAULT_AGRI_THERMAL_SCAN_RADIUS,
+            soil_relay_range: constants::DEFAULT_AGRI_SOIL_RELAY_RANGE,
+            scan_battery_cost: constants::DEFAULT_AGRI_SCAN_BATTERY_COST,
+            num_soil_nodes: constants::DEFAULT_AGRI_NUM_SOIL_NODES,
+            soil_reading_interval: constants::DEFAULT_AGRI_SOIL_READING_INTERVAL,
+            report_generation_cost: constants::DEFAULT_AGRI_REPORT_GENERATION_COST,
+            report_scan_radius: constants::DEFAULT_AGRI_REPORT_SCAN_RADIUS,
+            cropland_density: constants::DEFAULT_AGRI_CROPLAND_DENSITY,
+            pasture_density: constants::DEFAULT_AGRI_PASTURE_DENSITY,
         }
     }
 }
@@ -450,6 +531,14 @@ impl ForgeConfig {
         env_override!(rendering.pixel_width, u32);
         env_override!(rendering.pixel_height, u32);
         env_override!(rendering.record_replays, bool);
+
+        // Agricultural overrides
+        env_override!(agri.enabled, bool);
+        env_override!(agri.spray_radius, u8);
+        env_override!(agri.ndvi_scan_radius, u8);
+        env_override!(agri.num_soil_nodes, u16);
+        env_override!(agri.cropland_density, f32);
+        env_override!(agri.pasture_density, f32);
     }
 }
 
@@ -701,6 +790,7 @@ num_agents = 4
         let _task = TaskConfig::default();
         let _curriculum = CurriculumConfig::default();
         let _render = RenderConfig::default();
+        let _agri = AgriConfig::default();
         let _forge = ForgeConfig::default();
         let _team = TeamStructure::default();
 
@@ -775,6 +865,56 @@ num_agents = 4
         let deserialized: DroneConfig = serde_json::from_str(&json).unwrap();
         assert!(deserialized.enabled);
         assert_eq!(deserialized.num_aerial, 3);
+    }
+
+    #[test]
+    fn test_agri_config_default_disabled() {
+        let config = AgriConfig::default();
+        assert!(!config.enabled);
+        assert_eq!(config.num_soil_nodes, 0);
+    }
+
+    #[test]
+    fn test_agri_config_default_values_match_constants() {
+        let config = AgriConfig::default();
+        assert_eq!(
+            config.crop_growth_rate,
+            constants::DEFAULT_AGRI_CROP_GROWTH_RATE
+        );
+        assert_eq!(config.spray_radius, constants::DEFAULT_AGRI_SPRAY_RADIUS);
+        assert_eq!(
+            config.spray_efficacy,
+            constants::DEFAULT_AGRI_SPRAY_EFFICACY
+        );
+        assert_eq!(
+            config.ndvi_scan_radius,
+            constants::DEFAULT_AGRI_NDVI_SCAN_RADIUS
+        );
+        assert_eq!(
+            config.initial_crop_health,
+            constants::DEFAULT_AGRI_INITIAL_CROP_HEALTH
+        );
+    }
+
+    #[test]
+    fn test_agri_config_serde_roundtrip() {
+        let config = AgriConfig {
+            enabled: true,
+            num_soil_nodes: 10,
+            cropland_density: 0.5,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AgriConfig = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.enabled);
+        assert_eq!(deserialized.num_soil_nodes, 10);
+        assert_eq!(deserialized.cropland_density, 0.5);
+    }
+
+    #[test]
+    fn test_forge_config_default_has_agri() {
+        let config = ForgeConfig::default();
+        assert!(!config.agri.enabled);
     }
 
     #[test]

@@ -178,6 +178,10 @@ mod tests {
             battery: 0.75,
             morphology: 2,
             heading: 1,
+            crop_scan_results: vec![],
+            soil_readings: vec![],
+            disease_detections: 0,
+            report_ready: false,
         }
     }
 

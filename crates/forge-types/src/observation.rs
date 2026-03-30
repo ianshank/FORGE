@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::agriculture::{CropScanResult, SoilReading};
 use crate::constants;
 use crate::entity::CommToken;
 use crate::grid::TerrainType;
@@ -91,6 +92,18 @@ pub struct Observation {
     /// Agent's current heading direction (0=Up, 1=Down, 2=Left, 3=Right).
     #[serde(default)]
     pub heading: u8,
+    /// Latest crop scan results (NDVI/thermal readings). Empty when agri disabled.
+    #[serde(default)]
+    pub crop_scan_results: Vec<CropScanResult>,
+    /// Latest soil relay data. Empty when agri disabled.
+    #[serde(default)]
+    pub soil_readings: Vec<SoilReading>,
+    /// Count of diseased tiles detected by this agent.
+    #[serde(default)]
+    pub disease_detections: u16,
+    /// Whether a field report was generated this tick.
+    #[serde(default)]
+    pub report_ready: bool,
 }
 
 impl Observation {
@@ -102,6 +115,26 @@ impl Observation {
         comm_buffer_size: u8,
         num_predicates: u16,
         drone_enabled: bool,
+    ) -> usize {
+        Self::flat_size_full(
+            vision_radius,
+            carry_capacity,
+            comm_buffer_size,
+            num_predicates,
+            drone_enabled,
+            false,
+        )
+    }
+
+    /// Returns the total number of elements when flattened to a 1D array,
+    /// including agricultural observation fields when enabled.
+    pub fn flat_size_full(
+        vision_radius: u8,
+        carry_capacity: u8,
+        comm_buffer_size: u8,
+        num_predicates: u16,
+        drone_enabled: bool,
+        agri_enabled: bool,
     ) -> usize {
         let view_side = 2 * vision_radius as usize + 1;
         let grid_elements = view_side * view_side * constants::OBS_FEATURES_PER_TILE;
@@ -119,6 +152,11 @@ impl Observation {
             + task_elements
             + if drone_enabled {
                 constants::OBS_DRONE_FIELDS_COUNT
+            } else {
+                0
+            }
+            + if agri_enabled {
+                constants::OBS_AGRI_FIELDS_COUNT
             } else {
                 0
             }
@@ -184,7 +222,20 @@ pub struct ActionSpace {
 impl ActionSpace {
     /// Creates an action space with the given communication vocabulary size.
     pub fn new(comm_vocab_size: u16, drone_actions_enabled: bool) -> Self {
-        let n = crate::action::Action::space_size(comm_vocab_size, drone_actions_enabled);
+        Self::new_full(comm_vocab_size, drone_actions_enabled, false)
+    }
+
+    /// Creates an action space with drone and agricultural action support.
+    pub fn new_full(
+        comm_vocab_size: u16,
+        drone_actions_enabled: bool,
+        agri_actions_enabled: bool,
+    ) -> Self {
+        let n = crate::action::Action::space_size_full(
+            comm_vocab_size,
+            drone_actions_enabled,
+            agri_actions_enabled,
+        );
         let mut names = vec![
             "Noop".to_string(),
             "Move Up".to_string(),
@@ -223,6 +274,15 @@ impl ActionSpace {
             for i in 0..10 {
                 names.push(format!("DropPayload Slot {}", i));
             }
+        }
+        if agri_actions_enabled && drone_actions_enabled {
+            for i in 0..10 {
+                names.push(format!("Spray Slot {}", i));
+            }
+            names.push("Scan Multispectral".to_string());
+            names.push("Scan Thermal".to_string());
+            names.push("Relay Soil Data".to_string());
+            names.push("Generate Report".to_string());
         }
         Self {
             n,
@@ -282,6 +342,10 @@ mod tests {
             battery: 1.0,
             morphology: 0,
             heading: 0,
+            crop_scan_results: vec![],
+            soil_readings: vec![],
+            disease_detections: 0,
+            report_ready: false,
         };
 
         let step = StepResult {
@@ -329,6 +393,10 @@ mod tests {
             battery: 1.0,
             morphology: 0,
             heading: 0,
+            crop_scan_results: vec![],
+            soil_readings: vec![],
+            disease_detections: 0,
+            report_ready: false,
         };
         assert_eq!(obs.altitude, 0);
         assert_eq!(obs.battery, 1.0);
@@ -393,6 +461,48 @@ mod tests {
 
         let space16 = ActionSpace::new(16, false);
         assert_eq!(space16.action_names.len() as u32, space16.n);
+    }
+
+    #[test]
+    fn test_observation_flat_size_with_agri() {
+        let size_no_agri = Observation::flat_size_full(5, 10, 8, 4, true, false);
+        let size_agri = Observation::flat_size_full(5, 10, 8, 4, true, true);
+        assert_eq!(
+            size_agri - size_no_agri,
+            constants::OBS_AGRI_FIELDS_COUNT,
+            "agri adds extra observation features"
+        );
+    }
+
+    #[test]
+    fn test_observation_agri_fields_default_via_serde() {
+        // Deserialize without agri fields (backwards compat)
+        let json = r#"{
+            "grid_view": [],
+            "view_width": 0,
+            "view_height": 0,
+            "inventory": {"slots": []},
+            "health": 1.0,
+            "stamina": 1.0,
+            "position": [0, 0],
+            "messages": [],
+            "day_phase": 0,
+            "task_progress": []
+        }"#;
+        let obs: Observation = serde_json::from_str(json).unwrap();
+        assert!(
+            obs.crop_scan_results.is_empty(),
+            "crop_scan_results default should be empty"
+        );
+        assert!(
+            obs.soil_readings.is_empty(),
+            "soil_readings default should be empty"
+        );
+        assert_eq!(
+            obs.disease_detections, 0,
+            "disease_detections default should be 0"
+        );
+        assert!(!obs.report_ready, "report_ready default should be false");
     }
 
     #[test]

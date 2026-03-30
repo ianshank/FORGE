@@ -4,6 +4,7 @@
 //! Each predicate evaluates to a boolean (satisfied or not) and
 //! optionally a progress value in [0.0, 1.0].
 
+use forge_types::agriculture::CropState;
 use forge_types::entity::{Agent, AgentId, ObjectState};
 use forge_types::grid::{Grid, Position, TerrainType};
 use forge_types::resource::ItemType;
@@ -26,6 +27,8 @@ pub struct EvalContext<'a> {
     pub grid: Option<&'a Grid>,
     /// All objects in the simulation (optional — required for object predicates).
     pub objects: Option<&'a [Object]>,
+    /// Per-tile crop states (optional — required for agricultural predicates).
+    pub crop_states: Option<&'a [CropState]>,
 }
 
 /// Result of evaluating a predicate.
@@ -78,6 +81,25 @@ pub fn evaluate_predicate(predicate: &Predicate, ctx: &EvalContext) -> Predicate
             eval_object_in_state(ctx, *obj_id, state_name)
         }
 
+        // Agricultural predicates
+        Predicate::CropHealthBelow(pos, threshold) => eval_crop_health_below(ctx, pos, *threshold),
+        Predicate::DiseaseDetected(_agent_id, count) => {
+            // Counts diseased tiles across all crop states
+            eval_disease_detected(ctx, *count)
+        }
+        Predicate::FieldSurveyed(threshold) => eval_field_surveyed(ctx, *threshold),
+        Predicate::SoilDataCollected(_agent_id, _count) => {
+            // Not evaluatable without soil node state — falls through to wildcard
+            warn!("SoilDataCollected predicate requires runtime tracking");
+            PredicateResult::unsatisfied(0.0)
+        }
+        Predicate::FieldReportGenerated(_agent_id) => {
+            // Requires runtime report tracking — falls through
+            warn!("FieldReportGenerated predicate requires runtime tracking");
+            PredicateResult::unsatisfied(0.0)
+        }
+        Predicate::IrrigationMapped(threshold) => eval_irrigation_mapped(ctx, *threshold),
+        Predicate::AreaSprayed(threshold) => eval_area_sprayed(ctx, *threshold),
         _ => {
             warn!("unknown predicate variant encountered — treating as unsatisfied");
             PredicateResult::unsatisfied(0.0)
@@ -212,16 +234,9 @@ fn eval_agent_on_terrain(ctx: &EvalContext, agent_id: AgentId, terrain_id: u8) -
         Some(a) => a,
         None => return PredicateResult::unsatisfied(0.0),
     };
-    let expected_terrain = match terrain_id {
-        0 => TerrainType::Ground,
-        1 => TerrainType::Water,
-        2 => TerrainType::Wall,
-        3 => TerrainType::Lava,
-        4 => TerrainType::Ice,
-        5 => TerrainType::Sand,
-        6 => TerrainType::Forest,
-        7 => TerrainType::Mountain,
-        _ => return PredicateResult::unsatisfied(0.0),
+    let expected_terrain = match TerrainType::from_u8(terrain_id) {
+        Some(t) => t,
+        None => return PredicateResult::unsatisfied(0.0),
     };
     if let Some(tile) = grid.get(agent.position.x, agent.position.y) {
         if tile.terrain == expected_terrain {
@@ -286,6 +301,129 @@ fn eval_object_in_state(ctx: &EvalContext, obj_id: u32, state_name: &str) -> Pre
     }
 }
 
+// ---- Agricultural predicate evaluators ----
+
+/// Checks if crop at the given position has health below threshold.
+fn eval_crop_health_below(ctx: &EvalContext, pos: &Position, threshold: f32) -> PredicateResult {
+    let grid = match ctx.grid {
+        Some(g) => g,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+    let crop_states = match ctx.crop_states {
+        Some(cs) => cs,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+
+    let idx = pos.y as usize * grid.width as usize + pos.x as usize;
+    if idx >= crop_states.len() {
+        return PredicateResult::unsatisfied(0.0);
+    }
+
+    let health_normalized =
+        crop_states[idx].health as f32 / forge_types::constants::FIXED_POINT_ONE as f32;
+    if health_normalized < threshold {
+        PredicateResult::satisfied()
+    } else {
+        let progress = if threshold > 0.0 {
+            (1.0 - health_normalized / threshold).max(0.0)
+        } else {
+            0.0
+        };
+        PredicateResult::unsatisfied(progress)
+    }
+}
+
+/// Counts diseased tiles and checks if total meets threshold.
+fn eval_disease_detected(ctx: &EvalContext, count: u32) -> PredicateResult {
+    let crop_states = match ctx.crop_states {
+        Some(cs) => cs,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+
+    let diseased = crop_states.iter().filter(|c| c.is_diseased()).count() as u32;
+    if diseased >= count {
+        PredicateResult::satisfied()
+    } else if count > 0 {
+        PredicateResult::unsatisfied(diseased as f32 / count as f32)
+    } else {
+        PredicateResult::satisfied()
+    }
+}
+
+/// Checks if the fraction of cropland tiles surveyed meets threshold.
+fn eval_field_surveyed(ctx: &EvalContext, threshold: f32) -> PredicateResult {
+    let grid = match ctx.grid {
+        Some(g) => g,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+    let crop_states = match ctx.crop_states {
+        Some(cs) => cs,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+
+    let mut total_crop = 0u32;
+    let mut surveyed = 0u32;
+
+    for (i, tile) in grid.tiles.iter().enumerate() {
+        if tile.terrain == TerrainType::Cropland || tile.terrain == TerrainType::Orchard {
+            total_crop += 1;
+            if i < crop_states.len() && crop_states[i].is_surveyed() {
+                surveyed += 1;
+            }
+        }
+    }
+
+    if total_crop == 0 {
+        return PredicateResult::unsatisfied(0.0);
+    }
+
+    let fraction = surveyed as f32 / total_crop as f32;
+    if fraction >= threshold {
+        PredicateResult::satisfied()
+    } else {
+        PredicateResult::unsatisfied(fraction / threshold.max(0.001))
+    }
+}
+
+/// Checks if the fraction of field thermally mapped meets threshold.
+/// Uses surveyed_tick as proxy (thermal scan also marks surveyed).
+fn eval_irrigation_mapped(ctx: &EvalContext, threshold: f32) -> PredicateResult {
+    // Reuses same logic as field_surveyed
+    eval_field_surveyed(ctx, threshold)
+}
+
+/// Checks if the fraction of diseased tiles that have been sprayed meets threshold.
+fn eval_area_sprayed(ctx: &EvalContext, threshold: f32) -> PredicateResult {
+    let crop_states = match ctx.crop_states {
+        Some(cs) => cs,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+
+    let mut diseased = 0u32;
+    let mut sprayed_diseased = 0u32;
+
+    for crop in crop_states {
+        if crop.is_diseased() || crop.sprayed {
+            diseased += 1;
+            if crop.sprayed {
+                sprayed_diseased += 1;
+            }
+        }
+    }
+
+    if diseased == 0 {
+        // No disease to spray — consider satisfied
+        return PredicateResult::satisfied();
+    }
+
+    let fraction = sprayed_diseased as f32 / diseased as f32;
+    if fraction >= threshold {
+        PredicateResult::satisfied()
+    } else {
+        PredicateResult::unsatisfied(fraction / threshold.max(0.001))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,6 +439,7 @@ mod tests {
             tick,
             grid: None,
             objects: None,
+            crop_states: None,
         }
     }
 
@@ -517,6 +656,7 @@ mod tests {
             tick: 0,
             grid: Some(&grid),
             objects: None,
+            crop_states: None,
         };
         // terrain_id 255 is invalid
         let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 255), &ctx);
@@ -533,6 +673,7 @@ mod tests {
             tick: 0,
             grid: Some(&grid),
             objects: None,
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 8), &ctx);
         assert!(!result.satisfied);
@@ -548,6 +689,7 @@ mod tests {
             tick: 0,
             grid: Some(&grid),
             objects: None,
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::AgentOnTerrain(99, 0), &ctx);
         assert!(!result.satisfied);
@@ -563,6 +705,7 @@ mod tests {
             tick: 0,
             grid: Some(&grid),
             objects: None,
+            crop_states: None,
         };
         // Test all valid terrain IDs (0-7) don't panic
         for terrain_id in 0..=7 {
@@ -592,6 +735,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         // Object 99 doesn't exist
         let result = evaluate_predicate(&Predicate::ObjectAt(99, Position::new(5, 5)), &ctx);
@@ -606,6 +750,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: None,
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "Active".to_string()), &ctx);
         assert!(!result.satisfied);
@@ -628,6 +773,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         let result = evaluate_predicate(
             &Predicate::ObjectInState(0, "InvalidState".to_string()),
@@ -653,6 +799,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(99, "Active".to_string()), &ctx);
         assert!(!result.satisfied);
@@ -675,6 +822,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         // Test all valid state names
         for state_name in &[
@@ -720,6 +868,7 @@ mod tests {
             tick: 0,
             grid: Some(&grid),
             objects: None,
+            crop_states: None,
         };
         // Forest = terrain_id 6
         let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
@@ -735,6 +884,7 @@ mod tests {
             tick: 0,
             grid: Some(&grid),
             objects: None,
+            crop_states: None,
         };
         // Forest = terrain_id 6, but agent is on Ground
         let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
@@ -769,6 +919,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
         assert!(result.satisfied);
@@ -791,6 +942,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
         assert!(!result.satisfied);
@@ -825,6 +977,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
         assert!(result.satisfied);
@@ -847,6 +1000,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
         assert!(!result.satisfied);
@@ -869,6 +1023,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "active".to_string()), &ctx);
         assert!(result.satisfied);
@@ -891,6 +1046,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: Some(&objects),
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::ObjectInState(0, "ACTIVE".to_string()), &ctx);
         assert!(!result.satisfied);
@@ -946,6 +1102,7 @@ mod tests {
             tick: 0,
             grid: Some(&grid),
             objects: None,
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 0), &ctx);
         assert!(!result.satisfied);
@@ -959,6 +1116,7 @@ mod tests {
             tick: 0,
             grid: None,
             objects: None,
+            crop_states: None,
         };
         let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
         assert!(!result.satisfied);

@@ -1,0 +1,39 @@
+# Precision spraying scenario: detect disease then spray affected areas.
+[scenario]
+name = "spray_mission"
+description = "Drone detects crop disease via scanning, then precision-sprays affected tiles"
+min_agents = 1
+max_agents = 2
+
+[scenario.map]
+grid_size = 48
+terrain_type = "agricultural"
+cropland_density = 0.5
+pasture_density = 0.0
+
+[scenario.drone]
+enabled = true
+num_aerial = 1
+max_altitude = 10
+starting_battery = 65536
+
+[scenario.agri]
+enabled = true
+ndvi_scan_radius = 3
+spray_radius = 2
+spray_efficacy = 32768
+spray_battery_cost = 1000
+disease_spread_rate = 100
+initial_disease_tiles = 10
+
+[scenario.objectives]
+type = "sequence"
+steps = ["survey", "spray"]
+spray_threshold = 0.8
+time_limit = 2000
+reward_per_spray = 0.5
+completion_bonus = 10.0
+
+[scenario.difficulty]
+base_tier = 2
+disease_spread_rate = 200

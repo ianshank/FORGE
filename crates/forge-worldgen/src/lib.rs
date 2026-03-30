@@ -22,6 +22,7 @@
 //! let (grid, resources, objects, spawn_points) = generator.generate(&mut rng);
 //! ```
 
+pub mod agriculture;
 pub mod biome;
 pub mod entities;
 pub mod noise;

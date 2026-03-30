@@ -9,6 +9,7 @@
 //! physics, and all game systems. The step function is designed for
 //! <1µs per environment step on a single CPU core.
 
+pub mod agriculture;
 pub mod combat;
 pub mod communication;
 pub mod crafting;

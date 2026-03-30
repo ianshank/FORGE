@@ -316,7 +316,10 @@ mod tests {
         let mut grid = Grid::new(config.width, config.height);
         gen.generate(&mut grid);
 
-        assert_eq!(grid.tiles.len(), usize::from(config.width) * usize::from(config.height));
+        assert_eq!(
+            grid.tiles.len(),
+            usize::from(config.width) * usize::from(config.height)
+        );
     }
 
     #[test]
@@ -327,7 +330,10 @@ mod tests {
         let mut grid = Grid::new(config.width, config.height);
         gen.generate(&mut grid);
 
-        assert_eq!(grid.tiles.len(), usize::from(config.width) * usize::from(config.height));
+        assert_eq!(
+            grid.tiles.len(),
+            usize::from(config.width) * usize::from(config.height)
+        );
     }
 
     #[test]

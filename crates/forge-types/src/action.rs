@@ -44,6 +44,16 @@ pub enum Action {
     Scan(Direction),
     /// Drop payload from inventory slot to ground tile below (Aerial only).
     DropPayload(u8),
+    /// Spray pesticide from inventory slot over target area (Aerial only, airborne).
+    Spray(u8),
+    /// Perform multispectral NDVI scan of nearby crop tiles (Aerial only, airborne).
+    ScanMultispectral,
+    /// Perform thermal scan for irrigation stress mapping (Aerial only, airborne).
+    ScanThermal,
+    /// Relay data from nearby ground-deployed soil sensor nodes.
+    RelaySoilData,
+    /// Generate an agronomic field report from collected scan data.
+    GenerateReport,
 }
 
 impl Action {
@@ -60,6 +70,7 @@ impl Action {
     ///   39: Interact
     ///   40..40+comm_vocab_size: Communication tokens
     ///   40+comm_vocab_size..: Drone actions (when `drone_actions_enabled`)
+    ///   40+comm_vocab_size+19..: Agricultural actions (when `agri_actions_enabled`)
     ///
     /// Returns `None` if `action_id` is out of range for the given configuration.
     pub fn from_discrete(
@@ -67,8 +78,22 @@ impl Action {
         comm_vocab_size: u16,
         drone_actions_enabled: bool,
     ) -> Option<Action> {
+        Self::from_discrete_full(action_id, comm_vocab_size, drone_actions_enabled, false)
+    }
+
+    /// Converts a flat integer action index to an Action, with agricultural action support.
+    ///
+    /// Agricultural actions are encoded after drone actions when `agri_actions_enabled` is true.
+    pub fn from_discrete_full(
+        action_id: u32,
+        comm_vocab_size: u16,
+        drone_actions_enabled: bool,
+        agri_actions_enabled: bool,
+    ) -> Option<Action> {
         // Early bounds check
-        if action_id >= Self::space_size(comm_vocab_size, drone_actions_enabled) {
+        if action_id
+            >= Self::space_size_full(comm_vocab_size, drone_actions_enabled, agri_actions_enabled)
+        {
             return None;
         }
         match action_id {
@@ -90,19 +115,34 @@ impl Action {
                 Some(Action::Communicate((n - 40) as CommToken))
             }
             n if drone_actions_enabled && n >= 40 + comm_vocab_size as u32 => {
-                let drone_offset = n - 40 - comm_vocab_size as u32;
-                match drone_offset {
-                    0 => Some(Action::Ascend),
-                    1 => Some(Action::Descend),
-                    2 => Some(Action::Hover),
-                    3 => Some(Action::TakeOff),
-                    4 => Some(Action::Land),
-                    5 => Some(Action::Scan(Direction::Up)),
-                    6 => Some(Action::Scan(Direction::Down)),
-                    7 => Some(Action::Scan(Direction::Left)),
-                    8 => Some(Action::Scan(Direction::Right)),
-                    d @ 9..=18 => Some(Action::DropPayload((d - 9) as u8)),
-                    _ => None,
+                let drone_base = 40 + comm_vocab_size as u32;
+                let drone_offset = n - drone_base;
+                if drone_offset < crate::constants::DRONE_ACTION_COUNT {
+                    match drone_offset {
+                        0 => Some(Action::Ascend),
+                        1 => Some(Action::Descend),
+                        2 => Some(Action::Hover),
+                        3 => Some(Action::TakeOff),
+                        4 => Some(Action::Land),
+                        5 => Some(Action::Scan(Direction::Up)),
+                        6 => Some(Action::Scan(Direction::Down)),
+                        7 => Some(Action::Scan(Direction::Left)),
+                        8 => Some(Action::Scan(Direction::Right)),
+                        d @ 9..=18 => Some(Action::DropPayload((d - 9) as u8)),
+                        _ => None,
+                    }
+                } else if agri_actions_enabled {
+                    let agri_offset = drone_offset - crate::constants::DRONE_ACTION_COUNT;
+                    match agri_offset {
+                        d @ 0..=9 => Some(Action::Spray(d as u8)),
+                        10 => Some(Action::ScanMultispectral),
+                        11 => Some(Action::ScanThermal),
+                        12 => Some(Action::RelaySoilData),
+                        13 => Some(Action::GenerateReport),
+                        _ => None,
+                    }
+                } else {
+                    None
                 }
             }
             _ => None,
@@ -145,6 +185,13 @@ impl Action {
             | Action::DropPayload(_) => {
                 panic!("drone actions require to_discrete_full(comm_vocab_size)")
             }
+            Action::Spray(_)
+            | Action::ScanMultispectral
+            | Action::ScanThermal
+            | Action::RelaySoilData
+            | Action::GenerateReport => {
+                panic!("agricultural actions require to_discrete_full(comm_vocab_size)")
+            }
         }
     }
 
@@ -181,6 +228,12 @@ impl Action {
             Action::Scan(Direction::Left) => drone_base + 7,
             Action::Scan(Direction::Right) => drone_base + 8,
             Action::DropPayload(slot) => drone_base + 9 + *slot as u32,
+            // Agricultural actions: after drone actions
+            Action::Spray(slot) => drone_base + crate::constants::DRONE_ACTION_COUNT + *slot as u32,
+            Action::ScanMultispectral => drone_base + crate::constants::DRONE_ACTION_COUNT + 10,
+            Action::ScanThermal => drone_base + crate::constants::DRONE_ACTION_COUNT + 11,
+            Action::RelaySoilData => drone_base + crate::constants::DRONE_ACTION_COUNT + 12,
+            Action::GenerateReport => drone_base + crate::constants::DRONE_ACTION_COUNT + 13,
         }
     }
 
@@ -189,12 +242,30 @@ impl Action {
     /// When `drone_actions_enabled` is true, includes 19 additional actions
     /// for drone control (Ascend, Descend, Hover, TakeOff, Land, 4 Scan, 10 DropPayload).
     pub fn space_size(comm_vocab_size: u16, drone_actions_enabled: bool) -> u32 {
+        Self::space_size_full(comm_vocab_size, drone_actions_enabled, false)
+    }
+
+    /// Returns the total size of the discrete action space with agricultural actions.
+    ///
+    /// Agricultural actions are appended after drone actions and require
+    /// `drone_actions_enabled` to be true (they depend on drone infrastructure).
+    pub fn space_size_full(
+        comm_vocab_size: u16,
+        drone_actions_enabled: bool,
+        agri_actions_enabled: bool,
+    ) -> u32 {
         let base = 40 + comm_vocab_size as u32;
-        if drone_actions_enabled {
-            base + crate::constants::DRONE_ACTION_COUNT
+        let drone = if drone_actions_enabled {
+            crate::constants::DRONE_ACTION_COUNT
         } else {
-            base
-        }
+            0
+        };
+        let agri = if agri_actions_enabled && drone_actions_enabled {
+            crate::constants::AGRI_ACTION_COUNT
+        } else {
+            0
+        };
+        base + drone + agri
     }
 }
 

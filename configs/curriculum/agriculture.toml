@@ -1,0 +1,30 @@
+# Agricultural drone curriculum: progressive training from basic scanning to full field management.
+[curriculum]
+name = "agriculture"
+description = "5-tier curriculum for agricultural drone operations"
+
+[curriculum.params]
+grid_size = 48
+num_agents = 1
+fog_of_war = false
+terrain_complexity = 0.3
+cropland_density = 0.4
+pasture_density = 0.05
+
+[curriculum.advancement]
+target_success_rate = 0.6
+window_size = 50
+warmup_episodes = 20
+advance_threshold = 0.7
+retreat_threshold = 0.3
+
+[curriculum.tiers]
+min_tier = 1
+max_tier = 5
+starting_tier = 1
+
+# Tier 1: Hover + Scan single tile
+# Tier 2: Waypoint survey pattern across field
+# Tier 3: Disease detect + precision spray loop
+# Tier 4: Soil relay + thermal irrigation mapping
+# Tier 5: Full autonomous scouting with VLM report

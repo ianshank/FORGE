@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use forge_types::agriculture::{AgriScratch, CropState, SoilSensorNode};
 use forge_types::config::ForgeConfig;
 use forge_types::constants::{OBS_EMPTY_SLOT_ITEM, OBS_NO_OBJECT, OBS_NO_RESOURCE};
 use forge_types::entity::{Agent, Object};
@@ -58,6 +59,12 @@ pub struct WorldState {
     /// Pre-allocated scratch buffers for the physics system, avoiding
     /// per-tick heap allocations on the hot path.
     pub(crate) physics_scratch: PhysicsScratch,
+    /// Per-tile crop state, parallel to `grid.tiles`. Only populated when `agri.enabled`.
+    pub crop_states: Vec<CropState>,
+    /// Ground-deployed IoT soil sensor nodes. Only populated when `agri.enabled`.
+    pub soil_nodes: Vec<SoilSensorNode>,
+    /// Pre-allocated scratch buffers for agricultural systems.
+    pub(crate) agri_scratch: AgriScratch,
 }
 
 impl WorldState {
@@ -124,6 +131,23 @@ impl WorldState {
         let mut physics_scratch = PhysicsScratch::default();
         physics_scratch.ensure_capacity(agents.len());
 
+        // Initialize agricultural state when enabled
+        let (crop_states, soil_nodes, agri_scratch) = if config.agri.enabled {
+            let crops = forge_worldgen::agriculture::generate_crop_states(&grid, &config.agri);
+            let nodes = forge_worldgen::agriculture::spawn_soil_nodes(
+                &grid,
+                &config.agri,
+                &mut Pcg64Mcg::seed_from_u64(config.world.seed.wrapping_add(0xA681)),
+            );
+            let scratch = AgriScratch::with_capacity(
+                (config.agri.ndvi_scan_radius as usize * 2 + 1).pow(2),
+                config.agri.num_soil_nodes as usize,
+            );
+            (crops, nodes, scratch)
+        } else {
+            (Vec::new(), Vec::new(), AgriScratch::default())
+        };
+
         let mut state = Self {
             tick: 0,
             grid,
@@ -139,6 +163,9 @@ impl WorldState {
             truncated: false,
             last_task_rewards: None,
             physics_scratch,
+            crop_states,
+            soil_nodes,
+            agri_scratch,
         };
 
         // Place agents on the grid
@@ -216,6 +243,9 @@ impl WorldState {
         self.terminated = false;
         self.truncated = false;
         self.last_task_rewards = None;
+        self.crop_states = new_state.crop_states;
+        self.soil_nodes = new_state.soil_nodes;
+        self.agri_scratch.clear();
 
         self.make_step_result()
     }
@@ -338,6 +368,10 @@ impl WorldState {
             },
             morphology: agent.morphology as u8,
             heading: agent.heading as u8,
+            crop_scan_results: vec![],
+            soil_readings: vec![],
+            disease_detections: 0,
+            report_ready: false,
         }
     }
 
@@ -486,6 +520,9 @@ impl WorldState {
             truncated: deserialized.truncated,
             last_task_rewards: None,
             physics_scratch,
+            crop_states: Vec::new(),
+            soil_nodes: Vec::new(),
+            agri_scratch: AgriScratch::default(),
         })
     }
 
@@ -532,6 +569,9 @@ impl WorldState {
             truncated: deserialized.truncated,
             last_task_rewards: None,
             physics_scratch,
+            crop_states: Vec::new(),
+            soil_nodes: Vec::new(),
+            agri_scratch: AgriScratch::default(),
         })
     }
 }
