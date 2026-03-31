@@ -175,6 +175,7 @@ mod tests {
             tick,
             grid: None,
             objects: None,
+            crop_states: None,
         }
     }
 

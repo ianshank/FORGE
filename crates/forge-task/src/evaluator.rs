@@ -45,6 +45,7 @@ pub fn evaluate_tasks(
         tick,
         grid,
         objects,
+        crop_states: None,
     };
     let mut rewards = vec![0.0_f32; agents.len()];
     let mut completed_tasks = Vec::new();

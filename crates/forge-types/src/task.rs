@@ -41,6 +41,20 @@ pub enum Predicate {
     AgentAirborne(AgentId),
     /// Agent has landed (altitude == 0).
     AgentLanded(AgentId),
+    /// Crop at position has health below threshold (fixed-point normalized to f32).
+    CropHealthBelow(Position, f32),
+    /// Agent has detected at least N diseased tiles via scanning.
+    DiseaseDetected(AgentId, u32),
+    /// Fraction of cropland tiles surveyed is at or above threshold (0.0-1.0).
+    FieldSurveyed(f32),
+    /// Agent has collected soil data from at least N sensor nodes.
+    SoilDataCollected(AgentId, u16),
+    /// Agent has generated a field report.
+    FieldReportGenerated(AgentId),
+    /// Fraction of field thermally mapped is at or above threshold (0.0-1.0).
+    IrrigationMapped(f32),
+    /// Fraction of diseased area that has been sprayed is at or above threshold (0.0-1.0).
+    AreaSprayed(f32),
 }
 
 /// Composition operators for building complex tasks from predicates.
@@ -282,6 +296,38 @@ mod tests {
             }
             _ => panic!("expected Without variant"),
         }
+    }
+
+    #[test]
+    fn test_agri_predicate_serde_roundtrip() {
+        let preds = vec![
+            Predicate::CropHealthBelow(Position::new(5, 5), 0.3),
+            Predicate::DiseaseDetected(0, 10),
+            Predicate::FieldSurveyed(0.8),
+            Predicate::SoilDataCollected(0, 5),
+            Predicate::FieldReportGenerated(0),
+            Predicate::IrrigationMapped(0.9),
+            Predicate::AreaSprayed(0.75),
+        ];
+        for pred in &preds {
+            let json = serde_json::to_string(pred).unwrap();
+            let deserialized: Predicate = serde_json::from_str(&json).unwrap();
+            assert_eq!(pred, &deserialized);
+        }
+    }
+
+    #[test]
+    fn test_agri_task_composition() {
+        // Survey → Detect disease → Spray → Report sequence
+        let task = TaskComposition::Sequence(vec![
+            TaskComposition::Atom(Predicate::FieldSurveyed(0.5)),
+            TaskComposition::Atom(Predicate::DiseaseDetected(0, 3)),
+            TaskComposition::Atom(Predicate::AreaSprayed(0.8)),
+            TaskComposition::Atom(Predicate::FieldReportGenerated(0)),
+        ]);
+        let json = serde_json::to_string(&task).unwrap();
+        let recovered: TaskComposition = serde_json::from_str(&json).unwrap();
+        assert_eq!(task, recovered);
     }
 
     #[test]

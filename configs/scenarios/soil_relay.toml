@@ -1,0 +1,35 @@
+# Soil sensor relay scenario: drone acts as IoT data mule.
+[scenario]
+name = "soil_relay"
+description = "Drone collects data from ground-deployed soil sensor nodes across cropland"
+min_agents = 1
+max_agents = 2
+
+[scenario.map]
+grid_size = 64
+terrain_type = "agricultural"
+cropland_density = 0.4
+pasture_density = 0.05
+
+[scenario.drone]
+enabled = true
+num_aerial = 1
+max_altitude = 10
+starting_battery = 65536
+
+[scenario.agri]
+enabled = true
+num_soil_nodes = 12
+soil_relay_range = 3
+soil_reading_interval = 50
+
+[scenario.objectives]
+type = "collect"
+collect_threshold = 10
+time_limit = 2000
+reward_per_node = 0.5
+completion_bonus = 5.0
+
+[scenario.difficulty]
+base_tier = 2
+node_spacing = "sparse"

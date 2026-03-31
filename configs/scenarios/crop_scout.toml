@@ -1,0 +1,34 @@
+# Crop scouting scenario: aerial drone surveys cropland via multispectral scan.
+[scenario]
+name = "crop_scout"
+description = "Drone surveys cropland tiles using NDVI multispectral scanning"
+min_agents = 1
+max_agents = 2
+
+[scenario.map]
+grid_size = 48
+terrain_type = "agricultural"
+cropland_density = 0.4
+pasture_density = 0.05
+
+[scenario.drone]
+enabled = true
+num_aerial = 1
+max_altitude = 10
+starting_battery = 65536
+
+[scenario.agri]
+enabled = true
+ndvi_scan_radius = 3
+scan_battery_cost = 500
+
+[scenario.objectives]
+type = "survey"
+survey_threshold = 0.8
+time_limit = 1500
+reward_per_scan = 0.1
+completion_bonus = 5.0
+
+[scenario.difficulty]
+base_tier = 1
+disease_spread_rate = 0

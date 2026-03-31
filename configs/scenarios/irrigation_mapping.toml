@@ -1,0 +1,35 @@
+# Irrigation stress mapping: thermal scan to identify water-stressed crops.
+[scenario]
+name = "irrigation_mapping"
+description = "Drone performs thermal CWSI mapping to identify irrigation stress zones"
+min_agents = 1
+max_agents = 2
+
+[scenario.map]
+grid_size = 48
+terrain_type = "agricultural"
+cropland_density = 0.5
+pasture_density = 0.0
+
+[scenario.drone]
+enabled = true
+num_aerial = 1
+max_altitude = 10
+starting_battery = 65536
+
+[scenario.agri]
+enabled = true
+thermal_scan_radius = 3
+scan_battery_cost = 500
+moisture_drain_rate = 100
+
+[scenario.objectives]
+type = "survey"
+survey_threshold = 0.9
+time_limit = 1500
+reward_per_scan = 0.1
+completion_bonus = 5.0
+
+[scenario.difficulty]
+base_tier = 2
+moisture_variability = "high"

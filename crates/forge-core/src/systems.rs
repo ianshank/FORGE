@@ -113,6 +113,61 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
         );
     }
 
+    // 6c. Agricultural systems — only when enabled
+    if state.config.agri.enabled {
+        crate::agriculture::process_crop_growth(
+            &mut state.crop_states,
+            &state.grid,
+            &state.config.agri,
+            state.tick,
+            &mut state.agri_scratch.disease_spread_candidates,
+        );
+        crate::agriculture::process_spraying(
+            &mut state.agents,
+            &mut state.crop_states,
+            &state.grid,
+            &validated_actions,
+            &state.config.agri,
+        );
+        crate::agriculture::process_multispectral_scan(
+            &mut state.agents,
+            &mut state.crop_states,
+            &state.grid,
+            &validated_actions,
+            &state.config.agri,
+            state.tick,
+            &mut state.agri_scratch.scan_results,
+        );
+        crate::agriculture::process_thermal_scan(
+            &mut state.agents,
+            &state.crop_states,
+            &state.grid,
+            &validated_actions,
+            &state.config.agri,
+            &mut state.agri_scratch.scan_results,
+        );
+        crate::agriculture::process_soil_relay(
+            &state.agents,
+            &mut state.soil_nodes,
+            &validated_actions,
+            &state.config.agri,
+            state.tick,
+            &mut state.agri_scratch.soil_readings,
+        );
+
+        // Report generation (uses a temporary flags vec in the scratch space)
+        let mut report_flags: Vec<bool> = Vec::new();
+        crate::agriculture::process_report_generation(
+            &mut state.agents,
+            &validated_actions,
+            &state.config.agri,
+            &mut report_flags,
+        );
+
+        // TODO: populate observation agri fields from scratch buffers
+        // This will be done in generate_observation when we build observations
+    }
+
     // 7. Communication system
     communication::process_communication(
         &mut state.agents,
@@ -291,6 +346,44 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
                 // Scan: any morphology can scan when drone enabled
                 Action::Scan(_) => {
                     if !state.config.drone.enabled {
+                        Action::Noop
+                    } else {
+                        action.clone()
+                    }
+                }
+                // Agricultural actions: require agri + drone enabled, aerial morphology, airborne
+                Action::Spray(slot) => {
+                    if !state.config.agri.enabled
+                        || !state.config.drone.enabled
+                        || agent.morphology != forge_types::entity::AgentMorphology::Aerial
+                        || agent.altitude == 0
+                        || (*slot as usize) >= agent.inventory.capacity()
+                    {
+                        Action::Noop
+                    } else {
+                        Action::Spray(*slot)
+                    }
+                }
+                Action::ScanMultispectral | Action::ScanThermal => {
+                    if !state.config.agri.enabled
+                        || !state.config.drone.enabled
+                        || agent.morphology != forge_types::entity::AgentMorphology::Aerial
+                        || agent.altitude == 0
+                    {
+                        Action::Noop
+                    } else {
+                        action.clone()
+                    }
+                }
+                Action::RelaySoilData => {
+                    if !state.config.agri.enabled {
+                        Action::Noop
+                    } else {
+                        action.clone()
+                    }
+                }
+                Action::GenerateReport => {
+                    if !state.config.agri.enabled {
                         Action::Noop
                     } else {
                         action.clone()

@@ -1,0 +1,38 @@
+# Field report scenario: full autonomous scouting with VLM report generation.
+[scenario]
+name = "field_report"
+description = "Drone surveys field, collects sensor data, and generates agronomic report"
+min_agents = 1
+max_agents = 2
+
+[scenario.map]
+grid_size = 64
+terrain_type = "agricultural"
+cropland_density = 0.5
+pasture_density = 0.0
+
+[scenario.drone]
+enabled = true
+num_aerial = 1
+max_altitude = 10
+starting_battery = 65536
+
+[scenario.agri]
+enabled = true
+ndvi_scan_radius = 3
+thermal_scan_radius = 3
+num_soil_nodes = 8
+soil_relay_range = 3
+report_generation_cost = 2000
+report_scan_radius = 5
+
+[scenario.objectives]
+type = "sequence"
+steps = ["survey", "relay_soil", "generate_report"]
+survey_threshold = 0.6
+time_limit = 3000
+completion_bonus = 15.0
+
+[scenario.difficulty]
+base_tier = 4
+disease_spread_rate = 150

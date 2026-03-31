@@ -50,6 +50,17 @@ pub enum ItemType {
     CookedFish = 30,
     /// Bread food item.
     Bread = 31,
+
+    /// Agricultural pesticide for disease treatment.
+    Pesticide = 40,
+    /// Fertilizer for nutrient replenishment.
+    Fertilizer = 41,
+    /// Seed pod for aerial seeding.
+    SeedPod = 42,
+    /// Collected soil sample data.
+    SoilSample = 43,
+    /// Generated agronomic field report.
+    FieldReport = 44,
 }
 
 impl ItemType {
@@ -73,6 +84,12 @@ impl ItemType {
         )
     }
 
+    /// Whether this is an agricultural item.
+    pub fn is_agricultural(&self) -> bool {
+        let val = *self as u8;
+        (crate::constants::ITEM_TYPE_AGRI_MIN..crate::constants::ITEM_TYPE_AGRI_MAX).contains(&val)
+    }
+
     /// Converts from u8.
     pub fn from_u8(val: u8) -> Option<ItemType> {
         match val {
@@ -94,6 +111,11 @@ impl ItemType {
             19 => Some(ItemType::Torch),
             30 => Some(ItemType::CookedFish),
             31 => Some(ItemType::Bread),
+            40 => Some(ItemType::Pesticide),
+            41 => Some(ItemType::Fertilizer),
+            42 => Some(ItemType::SeedPod),
+            43 => Some(ItemType::SoilSample),
+            44 => Some(ItemType::FieldReport),
             _ => None,
         }
     }
@@ -385,12 +407,20 @@ mod tests {
         assert_eq!(ItemType::from_u8(30), Some(ItemType::CookedFish));
         assert_eq!(ItemType::from_u8(31), Some(ItemType::Bread));
 
+        // Agricultural items: 40-44
+        assert_eq!(ItemType::from_u8(40), Some(ItemType::Pesticide));
+        assert_eq!(ItemType::from_u8(41), Some(ItemType::Fertilizer));
+        assert_eq!(ItemType::from_u8(42), Some(ItemType::SeedPod));
+        assert_eq!(ItemType::from_u8(43), Some(ItemType::SoilSample));
+        assert_eq!(ItemType::from_u8(44), Some(ItemType::FieldReport));
+
         // Invalid values in the gaps should return None.
         assert_eq!(ItemType::from_u8(6), None);
         assert_eq!(ItemType::from_u8(9), None);
         assert_eq!(ItemType::from_u8(20), None);
         assert_eq!(ItemType::from_u8(29), None);
         assert_eq!(ItemType::from_u8(32), None);
+        assert_eq!(ItemType::from_u8(45), None);
     }
 
     #[test]
@@ -407,5 +437,18 @@ mod tests {
         // Verify that actual crafted items are classified correctly.
         assert!(ItemType::Axe.is_crafted());
         assert!(ItemType::Torch.is_crafted());
+    }
+
+    #[test]
+    fn test_agricultural_item_classification() {
+        assert!(ItemType::Pesticide.is_agricultural());
+        assert!(ItemType::Fertilizer.is_agricultural());
+        assert!(ItemType::SeedPod.is_agricultural());
+        assert!(ItemType::SoilSample.is_agricultural());
+        assert!(ItemType::FieldReport.is_agricultural());
+
+        assert!(!ItemType::Wood.is_agricultural());
+        assert!(!ItemType::Axe.is_agricultural());
+        assert!(!ItemType::CookedFish.is_agricultural());
     }
 }

@@ -93,7 +93,7 @@ pub const DEFAULT_RESOURCE_MAX_QUANTITY: u16 = 5;
 pub const DEFAULT_OBJECT_DENSITY_SCALE: f32 = 1.0;
 
 /// Number of terrain types (for observation encoding).
-pub const NUM_TERRAIN_TYPES: usize = 8;
+pub const NUM_TERRAIN_TYPES: usize = 11;
 
 /// Default damage dealt by a sword attack per hit.
 pub const DEFAULT_SWORD_DAMAGE: i32 = 196608; // 3.0
@@ -229,9 +229,9 @@ pub const DEFAULT_ALTITUDE_VISION_BONUS: u8 = 2;
 pub const DEFAULT_VEHICLE_TURN_RADIUS: u8 = 1;
 /// Number of discrete drone action slots in the action space.
 pub const DRONE_ACTION_COUNT: u32 = 19;
-/// Default ground vehicle terrain costs [Ground, Water, Wall, Lava, Ice, Sand, Forest, Mountain].
+/// Default ground vehicle terrain costs indexed by TerrainType discriminant.
 /// Fixed-point values. i32::MAX = impassable.
-pub const DEFAULT_VEHICLE_TERRAIN_COSTS: [i32; 8] = [
+pub const DEFAULT_VEHICLE_TERRAIN_COSTS: [i32; NUM_TERRAIN_TYPES] = [
     32768,    // Ground: 0.5x (faster)
     i32::MAX, // Water: impassable
     i32::MAX, // Wall: impassable
@@ -240,9 +240,12 @@ pub const DEFAULT_VEHICLE_TERRAIN_COSTS: [i32; 8] = [
     45875,    // Sand: 0.7x
     i32::MAX, // Forest: impassable
     i32::MAX, // Mountain: impassable
+    32768,    // Cropland: 0.5x (flat fields, fast)
+    32768,    // Pasture: 0.5x (open grazing land)
+    i32::MAX, // Orchard: impassable (tree rows)
 ];
 /// Number of terrain types used for vehicle terrain cost array sizing.
-pub const NUM_VEHICLE_TERRAIN_TYPES: usize = 8;
+pub const NUM_VEHICLE_TERRAIN_TYPES: usize = NUM_TERRAIN_TYPES;
 
 // ---------- MCTS defaults ----------
 
@@ -264,6 +267,67 @@ pub const DEFAULT_MCTS_TEMPERATURE: f32 = 1.0;
 pub const DEFAULT_MCTS_ACTION_SPACE: u32 = 32;
 /// Default fall damage per altitude level during emergency landing (fixed-point 1.0).
 pub const DEFAULT_FALL_DAMAGE_PER_LEVEL: i32 = FIXED_POINT_ONE;
+
+// ---------- Agricultural defaults ----------
+
+/// Whether agricultural systems are enabled by default.
+pub const DEFAULT_AGRI_ENABLED: bool = false;
+/// Default crop growth rate in ticks per growth stage advance (fixed-point ~0.01).
+pub const DEFAULT_AGRI_CROP_GROWTH_RATE: i32 = 655; // ~0.01 per tick
+/// Default disease spread probability per tick (fixed-point ~0.005).
+pub const DEFAULT_AGRI_DISEASE_SPREAD_RATE: i32 = 328;
+/// Default natural disease decay rate (fixed-point ~0.002).
+pub const DEFAULT_AGRI_DISEASE_DECAY_RATE: i32 = 131;
+/// Default maximum crop growth stages.
+pub const DEFAULT_AGRI_MAX_GROWTH_STAGES: u8 = 5;
+/// Default initial crop health (fixed-point 1.0).
+pub const DEFAULT_AGRI_INITIAL_CROP_HEALTH: i32 = FIXED_POINT_ONE;
+/// Default per-tick moisture drain (fixed-point ~0.003).
+pub const DEFAULT_AGRI_MOISTURE_DRAIN_RATE: i32 = 197;
+/// Default per-tick nutrient drain (fixed-point ~0.002).
+pub const DEFAULT_AGRI_NUTRIENT_DRAIN_RATE: i32 = 131;
+/// Default spray radius in tiles.
+pub const DEFAULT_AGRI_SPRAY_RADIUS: u8 = 3;
+/// Default spray disease reduction efficacy (fixed-point ~0.5).
+pub const DEFAULT_AGRI_SPRAY_EFFICACY: i32 = FIXED_POINT_ONE / 2;
+/// Default battery cost to spray (fixed-point ~0.15).
+pub const DEFAULT_AGRI_SPRAY_BATTERY_COST: i32 = 9830;
+/// Default NDVI multispectral scan radius in tiles.
+pub const DEFAULT_AGRI_NDVI_SCAN_RADIUS: u8 = 8;
+/// Default thermal scan radius in tiles.
+pub const DEFAULT_AGRI_THERMAL_SCAN_RADIUS: u8 = 6;
+/// Default soil sensor relay range in tiles.
+pub const DEFAULT_AGRI_SOIL_RELAY_RANGE: u8 = 10;
+/// Default battery cost per agricultural scan (fixed-point ~0.1).
+pub const DEFAULT_AGRI_SCAN_BATTERY_COST: i32 = 6554;
+/// Default number of ground-deployed soil sensor nodes.
+pub const DEFAULT_AGRI_NUM_SOIL_NODES: u16 = 0;
+/// Default ticks between soil sensor readings.
+pub const DEFAULT_AGRI_SOIL_READING_INTERVAL: u32 = 50;
+/// Default battery cost for VLM report generation (fixed-point ~0.2).
+pub const DEFAULT_AGRI_REPORT_GENERATION_COST: i32 = 13107;
+/// Default observation radius for VLM report generation.
+pub const DEFAULT_AGRI_REPORT_SCAN_RADIUS: u8 = 10;
+/// Default fraction of Ground tiles converted to Cropland.
+pub const DEFAULT_AGRI_CROPLAND_DENSITY: f32 = 0.3;
+/// Default fraction of Ground tiles converted to Pasture.
+pub const DEFAULT_AGRI_PASTURE_DENSITY: f32 = 0.1;
+/// Number of discrete agricultural action slots in the action space.
+/// Spray(10 slots) + ScanMultispectral + ScanThermal + RelaySoilData + GenerateReport = 14.
+pub const AGRI_ACTION_COUNT: u32 = 14;
+/// Number of additional observation fields when agriculture is enabled.
+/// (disease_detections, area_surveyed_frac, soil_nodes_collected, report_ready).
+pub const OBS_AGRI_FIELDS_COUNT: usize = 4;
+/// Movement cost for Cropland terrain (1.2x — slightly slower).
+pub const TERRAIN_COST_CROPLAND: i32 = FIXED_POINT_ONE + FIXED_POINT_ONE / 5;
+/// Movement cost for Pasture terrain (1.0x — normal speed).
+pub const TERRAIN_COST_PASTURE: i32 = FIXED_POINT_ONE;
+/// Movement cost for Orchard terrain (1.5x — tree rows).
+pub const TERRAIN_COST_ORCHARD: i32 = FIXED_POINT_ONE + FIXED_POINT_ONE / 2;
+/// Upper exclusive bound for agricultural item discriminants.
+pub const ITEM_TYPE_AGRI_MIN: u8 = 40;
+/// Upper exclusive bound for agricultural item discriminants.
+pub const ITEM_TYPE_AGRI_MAX: u8 = 50;
 
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
@@ -351,12 +415,13 @@ mod tests {
 
     #[test]
     fn test_vehicle_terrain_costs_has_impassable() {
-        // Water, Wall, Lava, Forest, Mountain should be impassable
+        // Water, Wall, Lava, Forest, Mountain, Orchard should be impassable
         assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[1], i32::MAX); // Water
         assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[2], i32::MAX); // Wall
         assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[3], i32::MAX); // Lava
         assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[6], i32::MAX); // Forest
         assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[7], i32::MAX); // Mountain
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS[10], i32::MAX); // Orchard
     }
 
     #[test]
@@ -386,5 +451,39 @@ mod tests {
     fn test_item_type_boundaries_consistent() {
         assert_eq!(ITEM_TYPE_RAW_MAX, ITEM_TYPE_CRAFTED_MIN);
         assert!(ITEM_TYPE_CRAFTED_MIN < ITEM_TYPE_CRAFTED_MAX);
+        assert!(ITEM_TYPE_CRAFTED_MAX <= ITEM_TYPE_AGRI_MIN);
+        assert!(ITEM_TYPE_AGRI_MIN < ITEM_TYPE_AGRI_MAX);
+    }
+
+    #[test]
+    fn test_agri_constants_are_positive() {
+        assert!(DEFAULT_AGRI_CROP_GROWTH_RATE > 0);
+        assert!(DEFAULT_AGRI_DISEASE_SPREAD_RATE > 0);
+        assert!(DEFAULT_AGRI_DISEASE_DECAY_RATE > 0);
+        assert!(DEFAULT_AGRI_MOISTURE_DRAIN_RATE > 0);
+        assert!(DEFAULT_AGRI_NUTRIENT_DRAIN_RATE > 0);
+        assert!(DEFAULT_AGRI_SPRAY_EFFICACY > 0);
+        assert!(DEFAULT_AGRI_SPRAY_BATTERY_COST > 0);
+        assert!(DEFAULT_AGRI_SCAN_BATTERY_COST > 0);
+        assert!(DEFAULT_AGRI_REPORT_GENERATION_COST > 0);
+    }
+
+    #[test]
+    fn test_agri_terrain_costs_derived_from_fixed_point() {
+        assert_eq!(TERRAIN_COST_CROPLAND, FIXED_POINT_ONE + FIXED_POINT_ONE / 5);
+        assert_eq!(TERRAIN_COST_PASTURE, FIXED_POINT_ONE);
+        assert_eq!(TERRAIN_COST_ORCHARD, FIXED_POINT_ONE + FIXED_POINT_ONE / 2);
+    }
+
+    #[test]
+    fn test_num_terrain_types_matches_vehicle_costs() {
+        assert_eq!(NUM_TERRAIN_TYPES, NUM_VEHICLE_TERRAIN_TYPES);
+        assert_eq!(DEFAULT_VEHICLE_TERRAIN_COSTS.len(), NUM_TERRAIN_TYPES);
+    }
+
+    #[test]
+    fn test_agri_action_count() {
+        // 10 Spray slots + ScanMultispectral + ScanThermal + RelaySoilData + GenerateReport
+        assert_eq!(AGRI_ACTION_COUNT, 14);
     }
 }

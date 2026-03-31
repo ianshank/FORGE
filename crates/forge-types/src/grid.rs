@@ -108,6 +108,12 @@ pub enum TerrainType {
     Forest = 6,
     /// Impassable mountain (blocks vision).
     Mountain = 7,
+    /// Agricultural cropland (slightly slower ground movement).
+    Cropland = 8,
+    /// Open pasture / grazing land (normal speed).
+    Pasture = 9,
+    /// Orchard with tree rows (slow, like forest).
+    Orchard = 10,
 }
 
 impl TerrainType {
@@ -115,7 +121,13 @@ impl TerrainType {
     pub fn is_walkable(&self) -> bool {
         matches!(
             self,
-            TerrainType::Ground | TerrainType::Ice | TerrainType::Sand | TerrainType::Forest
+            TerrainType::Ground
+                | TerrainType::Ice
+                | TerrainType::Sand
+                | TerrainType::Forest
+                | TerrainType::Cropland
+                | TerrainType::Pasture
+                | TerrainType::Orchard
         )
     }
 
@@ -128,6 +140,9 @@ impl TerrainType {
             TerrainType::Ice => constants::TERRAIN_COST_ICE,
             TerrainType::Sand => constants::TERRAIN_COST_SAND,
             TerrainType::Forest => constants::TERRAIN_COST_FOREST,
+            TerrainType::Cropland => constants::TERRAIN_COST_CROPLAND,
+            TerrainType::Pasture => constants::TERRAIN_COST_PASTURE,
+            TerrainType::Orchard => constants::TERRAIN_COST_ORCHARD,
             // Non-walkable terrains return max cost
             _ => i32::MAX,
         }
@@ -149,6 +164,9 @@ impl TerrainType {
             5 => Some(TerrainType::Sand),
             6 => Some(TerrainType::Forest),
             7 => Some(TerrainType::Mountain),
+            8 => Some(TerrainType::Cropland),
+            9 => Some(TerrainType::Pasture),
+            10 => Some(TerrainType::Orchard),
             _ => None,
         }
     }
@@ -236,6 +254,16 @@ impl TerrainProperties {
                 blocks_los: true,
                 passable: false,
                 defense_bonus: 0.3,
+                ..Self::default()
+            },
+            TerrainType::Cropland => Self {
+                movement_cost: 1.2,
+                ..Self::default()
+            },
+            TerrainType::Pasture => Self::default(),
+            TerrainType::Orchard => Self {
+                movement_cost: 1.5,
+                concealment_bonus: 0.2,
                 ..Self::default()
             },
         }
@@ -395,6 +423,9 @@ mod tests {
     fn test_terrain_walkable() {
         assert!(TerrainType::Ground.is_walkable());
         assert!(TerrainType::Forest.is_walkable());
+        assert!(TerrainType::Cropland.is_walkable());
+        assert!(TerrainType::Pasture.is_walkable());
+        assert!(TerrainType::Orchard.is_walkable());
         assert!(!TerrainType::Water.is_walkable());
         assert!(!TerrainType::Wall.is_walkable());
         assert!(!TerrainType::Lava.is_walkable());
@@ -451,10 +482,14 @@ mod tests {
 
     #[test]
     fn test_terrain_from_u8() {
-        for i in 0..8u8 {
-            assert!(TerrainType::from_u8(i).is_some());
+        for i in 0..11u8 {
+            assert!(
+                TerrainType::from_u8(i).is_some(),
+                "terrain {} should exist",
+                i
+            );
         }
-        assert!(TerrainType::from_u8(8).is_none());
+        assert!(TerrainType::from_u8(11).is_none());
     }
 
     #[test]
@@ -489,6 +524,20 @@ mod tests {
         assert_eq!(
             TerrainType::Forest.movement_cost(),
             constants::TERRAIN_COST_FOREST
+        );
+
+        // Agricultural terrains have specific costs.
+        assert_eq!(
+            TerrainType::Cropland.movement_cost(),
+            constants::TERRAIN_COST_CROPLAND
+        );
+        assert_eq!(
+            TerrainType::Pasture.movement_cost(),
+            constants::TERRAIN_COST_PASTURE
+        );
+        assert_eq!(
+            TerrainType::Orchard.movement_cost(),
+            constants::TERRAIN_COST_ORCHARD
         );
 
         // Non-walkable terrains return i32::MAX.
@@ -589,7 +638,7 @@ mod tests {
 
             /// TerrainType from_u8 roundtrips for valid values.
             #[test]
-            fn terrain_from_u8_valid(i in 0u8..8) {
+            fn terrain_from_u8_valid(i in 0u8..11) {
                 let terrain = TerrainType::from_u8(i).unwrap();
                 prop_assert_eq!(terrain as u8, i);
             }

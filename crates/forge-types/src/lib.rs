@@ -17,6 +17,7 @@
 
 pub mod action;
 pub mod agent_interface;
+pub mod agriculture;
 pub mod config;
 pub mod constants;
 #[macro_use]
