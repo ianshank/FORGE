@@ -443,4 +443,94 @@ mod tests {
         let ds = loader.load(f.path().to_str().unwrap()).unwrap();
         assert_eq!(ds.len(), 1);
     }
+
+    #[test]
+    fn test_source_name() {
+        let loader = MazeLoader::default();
+        assert_eq!(loader.source_name(), "StrategicGameMaze");
+    }
+
+    #[test]
+    fn test_maze_loader_new_fields() {
+        let loader = MazeLoader::new(10, 50);
+        assert_eq!(loader.max_mazes, 10);
+        assert_eq!(loader.max_solution_length, 50);
+    }
+
+    #[test]
+    fn test_empty_maze_dimensions() {
+        let r = MazeRecord {
+            maze: String::new(),
+            solution: String::new(),
+            start: None,
+            end: None,
+        };
+        assert_eq!(r.dimensions(), (0, 0));
+    }
+
+    #[test]
+    fn test_walkable_grid_all_walls() {
+        let r = MazeRecord {
+            maze: "###\n###\n###".to_string(),
+            solution: String::new(),
+            start: None,
+            end: None,
+        };
+        let grid = r.walkable_grid();
+        assert!(!grid.iter().any(|&v| v));
+    }
+
+    #[test]
+    fn test_solution_directions_unknown_char_skipped() {
+        let r = MazeRecord {
+            maze: String::new(),
+            solution: "RXRZ".to_string(),
+            start: None,
+            end: None,
+        };
+        let dirs = r.solution_directions();
+        // 'X' and 'Z' are skipped; only 'R', 'R' remain
+        assert_eq!(dirs.len(), 2);
+    }
+
+    #[test]
+    fn test_build_trajectory_no_start_defaults_to_origin() {
+        let r = MazeRecord {
+            maze: "   ".to_string(),
+            solution: "R".to_string(),
+            start: None,
+            end: None,
+        };
+        let traj = MazeLoader::build_trajectory(&r, 0);
+        assert_eq!(traj.steps[0].observations[0].position, (0, 0));
+    }
+
+    #[test]
+    fn test_load_missing_file_returns_error() {
+        let loader = MazeLoader::default();
+        let result = loader.load("/nonexistent/path/file.jsonl");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_empty_solution_produces_no_steps() {
+        let r = MazeRecord {
+            maze: "###".to_string(),
+            solution: String::new(),
+            start: Some([1, 0]),
+            end: Some([1, 0]),
+        };
+        let traj = MazeLoader::build_trajectory(&r, 0);
+        assert_eq!(traj.len(), 0);
+    }
+
+    #[test]
+    fn test_convert_to_forge_config_seed_from_content() {
+        let r1 = simple_maze_record();
+        let mut r2 = simple_maze_record();
+        r2.maze = "XXXXX\nX   X\nX X X\nX   X\nXXXXX".to_string();
+        let cfg1 = MazeToForgeConfig::convert(&r1);
+        let cfg2 = MazeToForgeConfig::convert(&r2);
+        assert_ne!(cfg1.world.seed, cfg2.world.seed);
+    }
 }

@@ -335,4 +335,63 @@ mod tests {
         // (not guaranteed, but extremely likely with a 40-action space).
         let _ = (t0, t1); // At minimum, both should succeed.
     }
+
+    #[test]
+    fn test_config_getter() {
+        let cfg = small_config();
+        let gen = ExpertDemoGenerator::new(cfg.clone());
+        assert_eq!(gen.config().max_steps, cfg.max_steps);
+        assert_eq!(gen.config().parallel, cfg.parallel);
+    }
+
+    #[test]
+    fn test_dataset_loader_source_name() {
+        use crate::loader::DatasetLoader;
+        let gen = ExpertDemoGenerator::new(small_config());
+        assert_eq!(gen.source_name(), "ExpertDemoGenerator");
+    }
+
+    #[test]
+    fn test_generate_corpus_empty_range() {
+        let gen = ExpertDemoGenerator::new(small_config());
+        let ds = gen.generate_corpus(0..0);
+        assert_eq!(ds.len(), 0);
+        assert_eq!(ds.total_steps(), 0);
+    }
+
+    #[test]
+    fn test_corpus_metadata_fields() {
+        let gen = ExpertDemoGenerator::new(small_config());
+        let ds = gen.generate_corpus(0..1);
+        assert!(ds.metadata.source_url.is_some());
+        assert!(ds.metadata.license.is_some());
+    }
+
+    #[test]
+    fn test_generate_corpus_parallel() {
+        let mut cfg = small_config();
+        cfg.parallel = true;
+        let gen = ExpertDemoGenerator::new(cfg);
+        let ds = gen.generate_corpus(0..3);
+        assert_eq!(ds.len(), 3);
+    }
+
+    #[test]
+    fn test_max_steps_respected() {
+        let mut cfg = small_config();
+        cfg.max_steps = 3;
+        let gen = ExpertDemoGenerator::new(cfg);
+        let traj = gen.generate_episode(0).unwrap();
+        assert!(traj.len() <= 3);
+    }
+
+    #[test]
+    fn test_expert_demo_config_default_fields() {
+        let cfg = ExpertDemoConfig::default();
+        assert_eq!(cfg.forge_config.world.width, 32);
+        assert_eq!(cfg.forge_config.world.height, 32);
+        assert_eq!(cfg.forge_config.agents.num_agents, 1);
+        assert!(cfg.parallel);
+        assert!(cfg.max_steps > 0);
+    }
 }

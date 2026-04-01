@@ -371,4 +371,56 @@ mod tests {
         let loader = MinariLoader::default();
         assert!(loader.load("/nonexistent/path/file.jsonl").is_err());
     }
+
+    #[test]
+    fn test_source_name() {
+        let loader = MinariLoader::default();
+        assert_eq!(loader.source_name(), "Minari");
+    }
+
+    #[test]
+    fn test_loader_new_fields() {
+        let loader = MinariLoader::new(50, 5);
+        assert_eq!(loader.max_steps_per_episode, 50);
+        assert_eq!(loader.max_episodes, 5);
+    }
+
+    #[test]
+    fn test_load_empty_file() {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let loader = MinariLoader::default();
+        let ds = loader.load(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(ds.len(), 0);
+    }
+
+    #[test]
+    fn test_blank_lines_skipped() {
+        let step = r#"{"actions":[1],"rewards":[1.0],"terminated":true}"#;
+        let f = write_jsonl(&["", step, "", ""]);
+        let loader = MinariLoader::default();
+        let ds = loader.load(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(ds.len(), 1);
+    }
+
+    #[test]
+    fn test_truncated_episode_boundary() {
+        let step_a = r#"{"actions":[0],"rewards":[0.0],"terminated":false,"truncated":false}"#;
+        let step_b = r#"{"actions":[1],"rewards":[0.5],"terminated":false,"truncated":true}"#;
+        let f = write_jsonl(&[step_a, step_b]);
+
+        let loader = MinariLoader::default();
+        let ds = loader.load(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(ds.len(), 1);
+        assert_eq!(ds.trajectories[0].len(), 2);
+    }
+
+    #[test]
+    fn test_metadata_source_name_set() {
+        let step = r#"{"actions":[0],"rewards":[0.0],"terminated":true}"#;
+        let f = write_jsonl(&[step]);
+        let loader = MinariLoader::default();
+        let ds = loader.load(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(ds.metadata.source, "Minari");
+        assert!(ds.metadata.source_url.is_some());
+    }
 }

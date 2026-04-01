@@ -507,4 +507,71 @@ mod tests {
             let _id = forge.to_discrete(); // must not panic
         }
     }
+
+    #[test]
+    fn test_source_name() {
+        let loader = MinerlLoader::default();
+        assert_eq!(loader.source_name(), "MineRL");
+    }
+
+    #[test]
+    fn test_loader_new_limits() {
+        let loader = MinerlLoader::new(100, 5);
+        assert_eq!(loader.max_steps_per_episode, 100);
+        assert_eq!(loader.max_episodes, 5);
+    }
+
+    #[test]
+    fn test_load_empty_file() {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let loader = MinerlLoader::default();
+        let ds = loader.load(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(ds.len(), 0);
+    }
+
+    #[test]
+    fn test_load_missing_file_returns_error() {
+        let loader = MinerlLoader::default();
+        let result = loader.load("/nonexistent/path/file.jsonl");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_map_left() {
+        let a = MinerlAction { left: 1, ..Default::default() };
+        assert_eq!(mapper().map(&a), Action::Move(Direction::Left));
+    }
+
+    #[test]
+    fn test_map_right() {
+        let a = MinerlAction { right: 1, ..Default::default() };
+        assert_eq!(mapper().map(&a), Action::Move(Direction::Right));
+    }
+
+    #[test]
+    fn test_all_craft_map_entries_via_mapper() {
+        let m = MinerlActionMapper;
+        for (name, expected_idx) in CRAFT_MAP {
+            let a = MinerlAction {
+                craft: Some(name.to_string()),
+                ..Default::default()
+            };
+            assert_eq!(m.map(&a), Action::Craft(*expected_idx),
+                "CRAFT_MAP entry '{}' → expected Craft({})", name, expected_idx);
+        }
+    }
+
+    #[test]
+    fn test_max_episodes_limit() {
+        use std::io::Write as _;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        for _ in 0..3 {
+            writeln!(f, r#"{{"action":{{"forward":1}},"reward":0.0,"terminated":false}}"#).unwrap();
+            writeln!(f, r#"{{"action":{{}},"reward":1.0,"terminated":true}}"#).unwrap();
+        }
+        // new(max_steps_per_episode, max_episodes): limit to 2 episodes
+        let loader = MinerlLoader::new(0, 2);
+        let ds = loader.load(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(ds.len(), 2);
+    }
 }

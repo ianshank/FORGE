@@ -202,4 +202,75 @@ mod tests {
         let content = std::fs::read_to_string(&meta).unwrap();
         assert!(content.contains("unit-test"));
     }
+
+    #[test]
+    fn test_dataset_error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err = DatasetError::from(io_err);
+        assert!(matches!(err, DatasetError::Io(_)));
+        assert!(err.to_string().contains("I/O"));
+    }
+
+    #[test]
+    fn test_dataset_error_from_serde() {
+        let serde_err = serde_json::from_str::<serde_json::Value>("{bad json}").unwrap_err();
+        let err = DatasetError::from(serde_err);
+        assert!(matches!(err, DatasetError::Deserialize(_)));
+    }
+
+    #[test]
+    fn test_dataset_error_display_variants() {
+        assert!(DatasetError::Io("oops".to_string()).to_string().contains("oops"));
+        assert!(DatasetError::Deserialize("bad".to_string()).to_string().contains("bad"));
+        assert!(DatasetError::UnsupportedVersion("v99".to_string()).to_string().contains("v99"));
+        assert!(DatasetError::UnmappableAction("X".to_string()).to_string().contains("X"));
+    }
+
+    #[test]
+    fn test_total_steps_after_push() {
+        let mut ds = OfflineDataset::new("test");
+        // Push empty trajectory — step count stays 0.
+        ds.push(Trajectory::new());
+        assert_eq!(ds.total_steps(), 0);
+    }
+
+    #[test]
+    fn test_is_empty_after_push() {
+        let mut ds = OfflineDataset::new("test");
+        assert!(ds.is_empty());
+        ds.push(Trajectory::new());
+        assert!(!ds.is_empty());
+    }
+
+    #[test]
+    fn test_merge_with_empty() {
+        let mut a = OfflineDataset::new("a");
+        a.push(Trajectory::new());
+        let empty = OfflineDataset::new("empty");
+        a.merge(empty);
+        assert_eq!(a.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_preserves_source() {
+        let mut a = OfflineDataset::new("source-a");
+        a.merge(OfflineDataset::new("source-b"));
+        assert_eq!(a.metadata.source, "source-a");
+    }
+
+    #[test]
+    fn test_export_jsonl_invalid_path() {
+        let ds = OfflineDataset::new("x");
+        let err = ds.export_jsonl("/nonexistent/dir/file.jsonl");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_metadata_source_url_and_license() {
+        let mut ds = OfflineDataset::new("x");
+        ds.metadata.source_url = Some("https://example.com".to_string());
+        ds.metadata.license = Some("Apache-2.0".to_string());
+        assert_eq!(ds.metadata.source_url.as_deref(), Some("https://example.com"));
+        assert_eq!(ds.metadata.license.as_deref(), Some("Apache-2.0"));
+    }
 }

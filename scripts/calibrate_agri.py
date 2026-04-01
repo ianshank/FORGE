@@ -37,12 +37,40 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
-import os
 import sys
-from dataclasses import dataclass, asdict
+from collections import Counter
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
+
+# ---------------------------------------------------------------------------
+# Optional heavy dependencies (lazy-loaded at module level so callers that
+# don't need them don't pay for the import at startup)
+# ---------------------------------------------------------------------------
+try:
+    from datasets import load_dataset as _load_dataset  # type: ignore[import-untyped,unused-ignore]
+
+    _DATASETS_AVAILABLE = True
+except ImportError:
+    _load_dataset = None
+    _DATASETS_AVAILABLE = False
+
+try:
+    from huggingface_hub import (
+        hf_hub_download as _hf_hub_download,  # type: ignore[import-untyped,unused-ignore]
+    )
+
+    _HF_HUB_AVAILABLE = True
+except ImportError:
+    _hf_hub_download = None
+    _HF_HUB_AVAILABLE = False
+
+try:
+    import tomli_w as _tomli_w  # type: ignore[import-untyped,unused-ignore]
+
+    _TOMLI_W_AVAILABLE = True
+except ImportError:
+    _tomli_w = None
+    _TOMLI_W_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +82,7 @@ FIXED_SCALE = 65536
 
 def to_fixed(value: float) -> int:
     """Convert a floating-point value to FORGE fixed-point representation."""
-    return int(round(value * FIXED_SCALE))
+    return round(value * FIXED_SCALE)
 
 
 # ---------------------------------------------------------------------------
@@ -136,12 +164,12 @@ def analyse_plantvillage(cache_dir: Path, dry_run: bool) -> dict:
         }
 
     try:
-        from datasets import load_dataset
-        from collections import Counter
+        if not _DATASETS_AVAILABLE:
+            raise ImportError("datasets package not installed")
 
         logger.info("Loading PlantVillage from HuggingFace...")
         # The standard HuggingFace mirror; falls back to Kaggle if unavailable.
-        ds = load_dataset(
+        ds = _load_dataset(
             "plantvillage/plantvillage",
             split="train",
             cache_dir=str(cache_dir / "plantvillage"),
@@ -197,7 +225,7 @@ def analyse_cropnet(cache_dir: Path, dry_run: bool) -> dict:
     """Calibrate ndvi_scan_radius from CropNet Sentinel-2 spatial resolution.
 
     CropNet imagery is at 9 km / pixel spatial resolution (Sentinel-2 bands).
-    FORGE tiles default to ~1 m resolution on a 64×64 grid. We compute how many
+    FORGE tiles default to ~1 m resolution on a 64x64 grid. We compute how many
     FORGE tiles correspond to the Sentinel-2 footprint and use that as the scan
     radius.
 
@@ -209,18 +237,19 @@ def analyse_cropnet(cache_dir: Path, dry_run: bool) -> dict:
 
     try:
         # We only need metadata, not the full imagery.
-        from huggingface_hub import hf_hub_download
+        if not _HF_HUB_AVAILABLE:
+            raise ImportError("huggingface_hub package not installed")
 
         logger.info("Checking CropNet metadata...")
-        info_file = hf_hub_download(
+        _hf_hub_download(
             repo_id="CropNet/CropNet",
             filename="README.md",
             repo_type="dataset",
             cache_dir=str(cache_dir / "cropnet"),
         )
         # The README mentions: "224x224 RGB images at 9x9 km spatial resolution"
-        # Sentinel-2 pixel footprint at 9 km, FORGE tile ~1 m → scan covers ~9000 tiles
-        # But FORGE grid is 64×64, so effective scan radius ~ 8 tiles (8/64 = 12.5%).
+        # Sentinel-2 pixel footprint at 9 km, FORGE tile ~1 m -> scan covers ~9000 tiles
+        # But FORGE grid is 64x64, so effective scan radius ~ 8 tiles (8/64 = 12.5%).
         ndvi_scan_radius = 8
         thermal_scan_radius = 6  # thermal has slightly lower resolution
         counties = 2200  # documented in dataset card
@@ -255,10 +284,11 @@ def analyse_karaagroai(cache_dir: Path, dry_run: bool) -> dict:
         return {"spray_radius": 3, "spray_efficacy": to_fixed(0.6), "images": 0}
 
     try:
-        from huggingface_hub import hf_hub_download
+        if not _HF_HUB_AVAILABLE:
+            raise ImportError("huggingface_hub package not installed")
 
         logger.info("Checking KaraAgroAI dataset card...")
-        hf_hub_download(
+        _hf_hub_download(
             repo_id="KaraAgroAI/Drone-based-Agricultural-Dataset-for-Crop-Yield-Estimation",
             filename="README.md",
             repo_type="dataset",
@@ -310,16 +340,14 @@ def build_config(
 
 def export_toml(cfg: CalibratedAgriConfig, output_path: Path) -> None:
     """Write AgriConfig as a TOML file (subset fields only, no private attrs)."""
-    try:
-        import tomli_w
-    except ImportError:
+    if not _TOMLI_W_AVAILABLE:
         logger.error("tomli-w not installed. Run: pip install tomli-w")
         sys.exit(1)
 
     data = {k: v for k, v in asdict(cfg).items() if not k.startswith("_")}
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "wb") as f:
-        tomli_w.dump({"agri": data}, f)
+    with output_path.open("wb") as f:
+        _tomli_w.dump({"agri": data}, f)
     logger.info("Wrote TOML config to %s", output_path)
 
 
@@ -333,7 +361,7 @@ def export_json(cfg: CalibratedAgriConfig, output_path: Path) -> None:
         "karaagroai_images": cfg._karaagroai_images,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
+    with output_path.open("w") as f:
         json.dump({"agri": data, "_provenance": provenance}, f, indent=2)
     logger.info("Wrote JSON config to %s", output_path)
 
