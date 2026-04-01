@@ -256,6 +256,7 @@ pub struct MinerlLoader {
 
 impl MinerlLoader {
     /// Creates a loader with optional limits.
+    #[instrument]
     pub fn new(max_steps_per_episode: u64, max_episodes: usize) -> Self {
         Self {
             max_steps_per_episode,
@@ -281,7 +282,7 @@ impl MinerlLoader {
             position,
             health,
             1.0, // MineRL has no stamina concept
-            11,
+            crate::DEFAULT_VIEW_SIZE,
             1,
             vec![],
         )

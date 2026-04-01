@@ -180,6 +180,7 @@ pub struct MazeLoader {
 
 impl MazeLoader {
     /// Creates a loader with optional limits.
+    #[instrument]
     pub fn new(max_mazes: usize, max_solution_length: usize) -> Self {
         Self {
             max_mazes,
@@ -189,7 +190,7 @@ impl MazeLoader {
 
     fn make_obs(position: (u16, u16)) -> Observation {
         // BFS path is always optimal → task_progress starts at 1.0
-        crate::build_default_obs(position, 1.0, 1.0, 11, 1, vec![1.0])
+        crate::build_default_obs(position, 1.0, 1.0, crate::DEFAULT_VIEW_SIZE, 1, vec![1.0])
     }
 
     /// Builds a [`Trajectory`] from a single [`MazeRecord`].

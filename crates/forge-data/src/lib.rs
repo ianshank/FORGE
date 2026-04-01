@@ -54,6 +54,13 @@ pub mod minari;
 use forge_types::constants::OBS_EMPTY_SLOT_ITEM;
 use forge_types::observation::{InventoryObservation, Observation, TileObservation};
 
+/// Default observation grid view side length (tiles).
+///
+/// Matches `ForgeGymnasiumEnv`'s `_DEFAULT_VIEW_SIDE` and is used by all
+/// loaders that produce placeholder observations for data sources that do not
+/// provide a full grid view (MineRL, Minari, Strategic Game Maze).
+pub(crate) const DEFAULT_VIEW_SIZE: u16 = 11;
+
 /// Constructs an [`Observation`] filled with safe defaults for every field
 /// that the external dataset does not provide.
 ///

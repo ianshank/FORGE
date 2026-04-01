@@ -64,6 +64,7 @@ pub struct MinariLoader {
 
 impl MinariLoader {
     /// Creates a loader with optional limits.
+    #[instrument]
     pub fn new(max_steps_per_episode: u64, max_episodes: usize) -> Self {
         Self {
             max_steps_per_episode,
@@ -163,7 +164,7 @@ impl DatasetLoader for MinariLoader {
             })?;
 
             let tick = raw.tick.unwrap_or(step_in_episode);
-            let obs = minari_obs_to_forge(&raw.observations, 11);
+            let obs = minari_obs_to_forge(&raw.observations, crate::DEFAULT_VIEW_SIZE);
             let num_agents = raw.actions.len().max(1);
 
             // Grow reward accumulator if this episode introduced more agents.
@@ -223,15 +224,6 @@ impl DatasetLoader for MinariLoader {
                     break;
                 }
             }
-        }
-
-        // Flush an incomplete final episode if the file doesn't end with a terminal.
-        // (Some exports omit the final terminated flag.)
-        {
-            // Temporarily build with an empty builder to check if it has steps.
-            // We build a dummy to see if the current builder is non-empty.
-            let dummy = TrajectoryBuilder::new().build(vec![]);
-            let _ = dummy; // just to suppress unused warning
         }
 
         Ok(dataset)

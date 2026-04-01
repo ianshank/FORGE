@@ -95,6 +95,7 @@ pub struct ExpertDemoGenerator {
 
 impl ExpertDemoGenerator {
     /// Creates a new generator with the given configuration.
+    #[instrument(skip_all)]
     pub fn new(config: ExpertDemoConfig) -> Self {
         Self { config }
     }
