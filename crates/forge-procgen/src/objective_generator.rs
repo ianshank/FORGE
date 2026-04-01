@@ -11,6 +11,7 @@ use tracing::instrument;
 
 /// Configuration for random objective generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ObjectiveGenConfig {
     /// Maximum depth of the objective tree.
     pub max_depth: u32,

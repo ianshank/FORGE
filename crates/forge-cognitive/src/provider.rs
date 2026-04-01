@@ -6,11 +6,15 @@
 
 use std::collections::HashMap;
 
+use forge_types::constants::{
+    DEFAULT_COGNITIVE_MAX_TOKENS, DEFAULT_COGNITIVE_MODEL, DEFAULT_COGNITIVE_TEMPERATURE,
+};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 /// Configuration for a completion request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CompletionConfig {
     /// Model to use.
     pub model: String,
@@ -18,6 +22,16 @@ pub struct CompletionConfig {
     pub temperature: f32,
     /// Maximum tokens to generate.
     pub max_tokens: u32,
+}
+
+impl Default for CompletionConfig {
+    fn default() -> Self {
+        Self {
+            model: DEFAULT_COGNITIVE_MODEL.to_string(),
+            temperature: DEFAULT_COGNITIVE_TEMPERATURE,
+            max_tokens: DEFAULT_COGNITIVE_MAX_TOKENS,
+        }
+    }
 }
 
 /// Response from a cognitive provider.
@@ -244,5 +258,28 @@ mod tests {
         assert_eq!(response.input_tokens, prompt.len() as u32);
         assert_eq!(response.output_tokens, 10);
         assert_eq!(response.text, "action: 1");
+    }
+
+    #[test]
+    fn test_completion_config_default() {
+        let config = CompletionConfig::default();
+        assert!(!config.model.is_empty(), "default model must not be empty");
+        assert!(config.temperature >= 0.0 && config.temperature <= 2.0);
+        assert!(config.max_tokens > 0);
+    }
+
+    #[test]
+    fn test_completion_config_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(CompletionConfig);
+    }
+
+    #[test]
+    fn test_completion_config_default_serde_roundtrip() {
+        let config = CompletionConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: CompletionConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.model, config.model);
+        assert_eq!(deser.temperature, config.temperature);
+        assert_eq!(deser.max_tokens, config.max_tokens);
     }
 }

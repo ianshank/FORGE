@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -27,12 +28,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-DEFAULT_DEMO_PORT = 8765
-DEFAULT_SERVER_PORT = 8080
-DEFAULT_HOST = "127.0.0.1"
-_STARTUP_WAIT_S = 2
+_logger = logging.getLogger("forge.demo")
+
+
+def _get_int_env(name: str, default: int) -> int:
+    """Read an integer from an environment variable with a safe fallback."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        _logger.warning("Invalid value for %s=%r, using default %d", name, raw, default)
+        return default
+
+
+DEFAULT_DEMO_PORT: int = _get_int_env("FORGE_DEMO_UI_PORT", 8765)
+DEFAULT_SERVER_PORT: int = _get_int_env("FORGE_SERVER_PORT", 8080)
+DEFAULT_HOST: str = os.getenv("FORGE_BIND_HOST", "127.0.0.1")
+_STARTUP_WAIT_S: int = _get_int_env("FORGE_STARTUP_WAIT_SECS", 2)
 _MODE_CHOICES = ("demo-ui", "dashboard")
-_TRAINING_EPISODES = "1000"
+_TRAINING_EPISODES: str = os.getenv("FORGE_TRAINING_EPISODES", "1000")
 
 
 def parse_args() -> argparse.Namespace:

@@ -83,6 +83,9 @@ jobs:
   demo-ui:
     name: Demo UI Tests
     runs-on: ubuntu-latest
+    env:
+      FORGE_DEMO_UI_PORT: "8765"
+      FORGE_STARTUP_WAIT_SECS: "3"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -96,8 +99,8 @@ jobs:
         run: pytest demo_ui/tests/ -v --tb=short
       - name: Smoke-test server health endpoint
         run: |
-          python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765 &
+          python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port ${FORGE_DEMO_UI_PORT} &
           SERVER_PID=$!
-          sleep 3
-          python -c "import httpx; r = httpx.get('http://127.0.0.1:8765/health'); assert r.status_code == 200, f'Health check failed: {r.status_code}'; print('Health check passed:', r.json())"
+          sleep ${FORGE_STARTUP_WAIT_SECS}
+          python -c "import httpx, os; port = os.environ['FORGE_DEMO_UI_PORT']; r = httpx.get(f'http://127.0.0.1:{port}/health'); assert r.status_code == 200, f'Health check failed: {r.status_code}'; print('Health check passed:', r.json())"
           kill $SERVER_PID

@@ -102,6 +102,16 @@ mod tests {
 
     #[test]
     fn test_config_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(EvalConfig);
+    }
+
+    #[test]
+    fn test_defaults_valid_macro() {
+        forge_types::assert_config_defaults_valid!(EvalConfig);
+    }
+
+    #[test]
+    fn test_config_serde_roundtrip_custom_values() {
         let config = EvalConfig {
             episodes_per_scenario: 50,
             max_steps_per_episode: 1000,

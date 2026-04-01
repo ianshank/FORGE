@@ -13,6 +13,7 @@ pub type NodeId = usize;
 
 /// Configuration for the MCTS tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MctsConfig {
     /// PUCT exploration constant (c_puct). Higher = more exploration.
     pub c_puct: f32,
@@ -373,6 +374,50 @@ mod tests {
         tree.add_child(0, 2, 0.3);
 
         assert_eq!(tree.node(0).num_children(), 2);
+    }
+
+    #[test]
+    fn test_mcts_config_default_uses_constants() {
+        let config = MctsConfig::default();
+        assert_eq!(config.c_puct, constants::DEFAULT_MCTS_C_PUCT);
+        assert_eq!(
+            config.num_simulations,
+            constants::DEFAULT_MCTS_NUM_SIMULATIONS
+        );
+        assert_eq!(config.max_depth, constants::DEFAULT_MCTS_MAX_DEPTH);
+        assert_eq!(config.discount, constants::DEFAULT_MCTS_DISCOUNT);
+        assert_eq!(config.temperature, constants::DEFAULT_MCTS_TEMPERATURE);
+        assert_eq!(config.action_space, constants::DEFAULT_MCTS_ACTION_SPACE);
+    }
+
+    #[test]
+    fn test_mcts_config_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(MctsConfig);
+    }
+
+    #[test]
+    fn test_mcts_config_serde_default_roundtrip() {
+        let config = MctsConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: MctsConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.c_puct, config.c_puct);
+        assert_eq!(deser.num_simulations, config.num_simulations);
+        assert_eq!(deser.max_depth, config.max_depth);
+    }
+
+    #[test]
+    fn test_mcts_config_partial_json_uses_defaults() {
+        // When deserializing a JSON with missing fields, #[serde(default)] ensures
+        // missing fields fall back to Default::default()
+        let partial_json = r#"{"c_puct": 2.5}"#;
+        let config: MctsConfig = serde_json::from_str(partial_json).unwrap();
+        assert_eq!(config.c_puct, 2.5);
+        // Other fields should use defaults
+        assert_eq!(
+            config.num_simulations,
+            constants::DEFAULT_MCTS_NUM_SIMULATIONS
+        );
+        assert_eq!(config.max_depth, constants::DEFAULT_MCTS_MAX_DEPTH);
     }
 
     // ---- Proptest: MCTS tree invariants ----
