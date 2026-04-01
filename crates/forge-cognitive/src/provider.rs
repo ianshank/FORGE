@@ -6,6 +6,9 @@
 
 use std::collections::HashMap;
 
+use forge_types::constants::{
+    DEFAULT_COGNITIVE_MAX_TOKENS, DEFAULT_COGNITIVE_MODEL, DEFAULT_COGNITIVE_TEMPERATURE,
+};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -24,9 +27,9 @@ pub struct CompletionConfig {
 impl Default for CompletionConfig {
     fn default() -> Self {
         Self {
-            model: "claude-haiku-4-5-20251001".to_string(),
-            temperature: 0.7,
-            max_tokens: 512,
+            model: DEFAULT_COGNITIVE_MODEL.to_string(),
+            temperature: DEFAULT_COGNITIVE_TEMPERATURE,
+            max_tokens: DEFAULT_COGNITIVE_MAX_TOKENS,
         }
     }
 }

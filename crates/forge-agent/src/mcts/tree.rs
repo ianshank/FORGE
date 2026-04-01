@@ -380,7 +380,10 @@ mod tests {
     fn test_mcts_config_default_uses_constants() {
         let config = MctsConfig::default();
         assert_eq!(config.c_puct, constants::DEFAULT_MCTS_C_PUCT);
-        assert_eq!(config.num_simulations, constants::DEFAULT_MCTS_NUM_SIMULATIONS);
+        assert_eq!(
+            config.num_simulations,
+            constants::DEFAULT_MCTS_NUM_SIMULATIONS
+        );
         assert_eq!(config.max_depth, constants::DEFAULT_MCTS_MAX_DEPTH);
         assert_eq!(config.discount, constants::DEFAULT_MCTS_DISCOUNT);
         assert_eq!(config.temperature, constants::DEFAULT_MCTS_TEMPERATURE);
@@ -410,7 +413,10 @@ mod tests {
         let config: MctsConfig = serde_json::from_str(partial_json).unwrap();
         assert_eq!(config.c_puct, 2.5);
         // Other fields should use defaults
-        assert_eq!(config.num_simulations, constants::DEFAULT_MCTS_NUM_SIMULATIONS);
+        assert_eq!(
+            config.num_simulations,
+            constants::DEFAULT_MCTS_NUM_SIMULATIONS
+        );
         assert_eq!(config.max_depth, constants::DEFAULT_MCTS_MAX_DEPTH);
     }
 

@@ -76,6 +76,7 @@ impl ServerConfig {
     ///
     /// Reads:
     /// - `FORGE_SERVER_BIND` — bind address (default `0.0.0.0:8080`)
+    /// - `FORGE_SERVER_PORT` — port only override (default `8080`); ignored if `FORGE_SERVER_BIND` is set
     /// - `FORGE_SERVER_TICK_MS` — tick interval in ms (default `100`)
     /// - `FORGE_SERVER_BROADCAST_CAPACITY` — WS channel size (default `64`)
     /// - `FORGE_SERVER_LOG_FILTER` — tracing filter (default `forge_server=info,forge_core=info`)
@@ -92,6 +93,17 @@ impl ServerConfig {
                         value = %val,
                         error = %e,
                         "Invalid FORGE_SERVER_BIND, using default"
+                    );
+                }
+            }
+        } else if let Ok(val) = std::env::var("FORGE_SERVER_PORT") {
+            match val.parse::<u16>() {
+                Ok(port) => config.bind_addr.set_port(port),
+                Err(e) => {
+                    tracing::warn!(
+                        value = %val,
+                        error = %e,
+                        "Invalid FORGE_SERVER_PORT, using default"
                     );
                 }
             }
@@ -143,7 +155,10 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = ServerConfig::default();
-        assert_eq!(config.bind_addr.port(), forge_types::constants::DEFAULT_SERVER_PORT);
+        assert_eq!(
+            config.bind_addr.port(),
+            forge_types::constants::DEFAULT_SERVER_PORT
+        );
         assert_eq!(config.broadcast_capacity, DEFAULT_BROADCAST_CAPACITY);
         assert_eq!(config.tick_interval_ms, DEFAULT_TICK_INTERVAL_MS);
         assert!(!config.log_filter.is_empty());
@@ -163,7 +178,10 @@ mod tests {
     fn test_from_env_defaults() {
         // Without env vars set, should use defaults
         let config = ServerConfig::from_env();
-        assert_eq!(config.bind_addr.port(), forge_types::constants::DEFAULT_SERVER_PORT);
+        assert_eq!(
+            config.bind_addr.port(),
+            forge_types::constants::DEFAULT_SERVER_PORT
+        );
     }
 
     #[test]

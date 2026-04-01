@@ -105,10 +105,19 @@ pub const DEFAULT_DASHBOARD_PORT: u16 = 3000;
 pub const DEFAULT_DEMO_UI_PORT: u16 = 8765;
 /// Default port for the frontend dev server (Vite).
 pub const DEFAULT_FRONTEND_DEV_PORT: u16 = 5173;
-/// Default bind host for all services (loopback only).
+/// Default bind host used by services unless overridden.
 pub const DEFAULT_BIND_HOST: &str = "127.0.0.1";
 /// Default startup wait in seconds before health-checking services.
 pub const DEFAULT_STARTUP_WAIT_SECS: u64 = 2;
+
+// ---------- Cognitive defaults ----------
+
+/// Default model for cognitive completion requests.
+pub const DEFAULT_COGNITIVE_MODEL: &str = "claude-haiku-4-5-20251001";
+/// Default sampling temperature for cognitive completion.
+pub const DEFAULT_COGNITIVE_TEMPERATURE: f32 = 0.7;
+/// Default maximum tokens for cognitive completion.
+pub const DEFAULT_COGNITIVE_MAX_TOKENS: u32 = 512;
 /// Default healthcheck interval in seconds.
 pub const DEFAULT_HEALTHCHECK_INTERVAL_S: u32 = 15;
 /// Default healthcheck timeout in seconds.
@@ -433,8 +442,8 @@ mod tests {
     }
 
     #[test]
-    fn test_service_ports_in_dynamic_range() {
-        // All default ports should be in the user/dynamic port range (1024-65535)
+    fn test_service_ports_non_privileged() {
+        // All default ports should be non-privileged (>= 1024)
         for port in [
             DEFAULT_SERVER_PORT,
             DEFAULT_DASHBOARD_PORT,
@@ -443,9 +452,16 @@ mod tests {
         ] {
             assert!(
                 port >= 1024,
-                "Port {port} should be in user/dynamic range (>= 1024)"
+                "Port {port} should be non-privileged (>= 1024)"
             );
         }
+    }
+
+    #[test]
+    fn test_cognitive_defaults_valid() {
+        assert!(!DEFAULT_COGNITIVE_MODEL.is_empty());
+        assert!(DEFAULT_COGNITIVE_TEMPERATURE >= 0.0 && DEFAULT_COGNITIVE_TEMPERATURE <= 2.0);
+        assert!(DEFAULT_COGNITIVE_MAX_TOKENS > 0);
     }
 
     #[test]
