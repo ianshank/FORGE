@@ -44,8 +44,7 @@ use std::io::{BufRead, BufReader};
 
 use forge_replay::trajectory::TrajectoryBuilder;
 use forge_types::agent_interface::AgentResponse;
-use forge_types::constants::OBS_EMPTY_SLOT_ITEM;
-use forge_types::observation::{InventoryObservation, Observation, TileObservation};
+use forge_types::observation::Observation;
 use serde::Deserialize;
 use tracing::{debug, instrument, warn};
 
@@ -118,32 +117,14 @@ struct MinariObs {
 // ---------------------------------------------------------------------------
 
 fn minari_obs_to_forge(obs: &MinariObs, view_size: u16) -> Observation {
-    let num_tiles = (view_size as usize) * (view_size as usize);
-    Observation {
-        grid_view: vec![TileObservation::default(); num_tiles],
-        view_width: view_size,
-        view_height: view_size,
-        inventory: InventoryObservation {
-            slots: vec![(OBS_EMPTY_SLOT_ITEM, 0); 10],
-        },
-        health: obs.health.unwrap_or(1.0).clamp(0.0, 1.0),
-        stamina: obs.stamina.unwrap_or(1.0).clamp(0.0, 1.0),
-        position: obs
-            .position
-            .map(|p| (p[0], p[1]))
-            .unwrap_or((0, 0)),
-        messages: vec![],
-        day_phase: obs.day_phase.unwrap_or(1),
-        task_progress: obs.task_progress.clone().unwrap_or_default(),
-        altitude: 0,
-        battery: 1.0,
-        morphology: 0,
-        heading: 0,
-        crop_scan_results: vec![],
-        soil_readings: vec![],
-        disease_detections: 0,
-        report_ready: false,
-    }
+    crate::build_default_obs(
+        obs.position.map(|p| (p[0], p[1])).unwrap_or((0, 0)),
+        obs.health.unwrap_or(1.0).clamp(0.0, 1.0),
+        obs.stamina.unwrap_or(1.0).clamp(0.0, 1.0),
+        view_size,
+        obs.day_phase.unwrap_or(1),
+        obs.task_progress.clone().unwrap_or_default(),
+    )
 }
 
 // ---------------------------------------------------------------------------

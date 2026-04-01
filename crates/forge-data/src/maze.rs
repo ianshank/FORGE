@@ -47,9 +47,8 @@ use std::io::BufRead;
 use forge_replay::trajectory::TrajectoryBuilder;
 use forge_types::agent_interface::AgentResponse;
 use forge_types::config::ForgeConfig;
-use forge_types::constants::OBS_EMPTY_SLOT_ITEM;
 use forge_types::grid::Direction;
-use forge_types::observation::{InventoryObservation, Observation, TileObservation};
+use forge_types::observation::Observation;
 use forge_types::Action;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument, warn};
@@ -189,28 +188,8 @@ impl MazeLoader {
     }
 
     fn make_obs(position: (u16, u16)) -> Observation {
-        Observation {
-            grid_view: vec![TileObservation::default(); 121],
-            view_width: 11,
-            view_height: 11,
-            inventory: InventoryObservation {
-                slots: vec![(OBS_EMPTY_SLOT_ITEM, 0); 10],
-            },
-            health: 1.0,
-            stamina: 1.0,
-            position,
-            messages: vec![],
-            day_phase: 1,
-            task_progress: vec![1.0], // BFS path is optimal, always progressing
-            altitude: 0,
-            battery: 1.0,
-            morphology: 0,
-            heading: 0,
-            crop_scan_results: vec![],
-            soil_readings: vec![],
-            disease_detections: 0,
-            report_ready: false,
-        }
+        // BFS path is always optimal → task_progress starts at 1.0
+        crate::build_default_obs(position, 1.0, 1.0, 11, 1, vec![1.0])
     }
 
     /// Builds a [`Trajectory`] from a single [`MazeRecord`].

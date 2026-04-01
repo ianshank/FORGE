@@ -46,3 +46,49 @@ pub mod loader;
 pub mod maze;
 pub mod minerl;
 pub mod minari;
+
+// ---------------------------------------------------------------------------
+// Internal helpers shared by loaders
+// ---------------------------------------------------------------------------
+
+use forge_types::constants::OBS_EMPTY_SLOT_ITEM;
+use forge_types::observation::{InventoryObservation, Observation, TileObservation};
+
+/// Constructs an [`Observation`] filled with safe defaults for every field
+/// that the external dataset does not provide.
+///
+/// All agent/drone fields (`altitude`, `battery`, `heading`, etc.) are zeroed
+/// or set to neutral values; the caller supplies only the fields that the
+/// source dataset actually contains.
+pub(crate) fn build_default_obs(
+    position: (u16, u16),
+    health: f32,
+    stamina: f32,
+    view_size: u16,
+    day_phase: u8,
+    task_progress: Vec<f32>,
+) -> Observation {
+    let num_tiles = (view_size as usize) * (view_size as usize);
+    Observation {
+        grid_view: vec![TileObservation::default(); num_tiles],
+        view_width: view_size,
+        view_height: view_size,
+        inventory: InventoryObservation {
+            slots: vec![(OBS_EMPTY_SLOT_ITEM, 0); 10],
+        },
+        health,
+        stamina,
+        position,
+        messages: vec![],
+        day_phase,
+        task_progress,
+        altitude: 0,
+        battery: 1.0,
+        morphology: 0,
+        heading: 0,
+        crop_scan_results: vec![],
+        soil_readings: vec![],
+        disease_detections: 0,
+        report_ready: false,
+    }
+}

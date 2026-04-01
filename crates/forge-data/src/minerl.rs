@@ -53,9 +53,8 @@
 
 use forge_replay::trajectory::TrajectoryBuilder;
 use forge_types::agent_interface::AgentResponse;
-use forge_types::constants::OBS_EMPTY_SLOT_ITEM;
 use forge_types::grid::Direction;
-use forge_types::observation::{InventoryObservation, Observation, TileObservation};
+use forge_types::observation::Observation;
 use forge_types::Action;
 use serde::Deserialize;
 use tracing::{instrument, warn};
@@ -271,7 +270,6 @@ impl MinerlLoader {
             .and_then(|o| o.health)
             .unwrap_or(1.0)
             .clamp(0.0, 1.0);
-
         let position = step
             .obs
             .as_ref()
@@ -279,28 +277,14 @@ impl MinerlLoader {
             .map(|p| (p[0] as u16, p[2] as u16)) // MineRL is (x, y, z); map x,z → FORGE (x,y)
             .unwrap_or((0, 0));
 
-        Observation {
-            grid_view: vec![TileObservation::default(); 121], // 11×11 default
-            view_width: 11,
-            view_height: 11,
-            inventory: InventoryObservation {
-                slots: vec![(OBS_EMPTY_SLOT_ITEM, 0); 10],
-            },
-            health,
-            stamina: 1.0, // MineRL has no stamina concept
+        crate::build_default_obs(
             position,
-            messages: vec![],
-            day_phase: 1,
-            task_progress: vec![],
-            altitude: 0,
-            battery: 1.0,
-            morphology: 0,
-            heading: 0,
-            crop_scan_results: vec![],
-            soil_readings: vec![],
-            disease_detections: 0,
-            report_ready: false,
-        }
+            health,
+            1.0, // MineRL has no stamina concept
+            11,
+            1,
+            vec![],
+        )
     }
 }
 
