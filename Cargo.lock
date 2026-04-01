@@ -506,6 +506,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-data"
+version = "0.1.0"
+dependencies = [
+ "forge-agent",
+ "forge-core",
+ "forge-replay",
+ "forge-task",
+ "forge-types",
+ "forge-worldgen",
+ "proptest",
+ "rand 0.8.5",
+ "rand_pcg",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-eval"
 version = "0.1.0"
 dependencies = [
