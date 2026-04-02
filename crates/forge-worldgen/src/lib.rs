@@ -327,7 +327,7 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
-    use forge_types::constants::{MAX_WORLD_DIMENSION, MIN_WORLD_DIMENSION};
+    use forge_types::constants::MIN_WORLD_DIMENSION;
     use proptest::prelude::*;
     use rand::SeedableRng;
 
@@ -368,11 +368,11 @@ mod proptests {
             prop_assert_eq!(spawns1.len(),    spawns2.len());
 
             // Terrain must be tile-for-tile identical.
-            for i in 0..grid1.tiles.len() {
+            for (i, (t1, t2)) in grid1.tiles.iter().zip(grid2.tiles.iter()).enumerate() {
                 prop_assert_eq!(
-                    grid1.tiles[i].terrain,
-                    grid2.tiles[i].terrain,
-                    "terrain mismatch at tile {i}"
+                    t1.terrain, t2.terrain,
+                    "terrain mismatch at tile {}",
+                    i
                 );
             }
         }

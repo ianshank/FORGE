@@ -820,11 +820,14 @@ num_agents = 4
 
             /// A `ForgeConfig` serialized to TOML and deserialized must produce
             /// identical `world.width`, `world.height`, and `world.seed` values.
+            ///
+            /// Seeds are restricted to `[0, i64::MAX]` because the `toml` v0.8 crate
+            /// serializes `u64` values via `i64` and rejects values that would overflow.
             #[test]
             fn prop_config_toml_roundtrip(
                 width  in valid_dimension(),
                 height in valid_dimension(),
-                seed   in 0u64..=u64::MAX,
+                seed   in 0u64..=(i64::MAX as u64),
             ) {
                 let mut config = ForgeConfig::default();
                 config.world.width  = width;

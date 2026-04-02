@@ -513,11 +513,12 @@ mod proptests {
             let action_id = 40 + token;
             let action = Action::from_discrete(action_id, vocab_size)
                 .expect("valid comm action_id must produce Some(Action)");
+            let discrete = action.to_discrete();
             match action {
                 Action::Communicate(t) => prop_assert_eq!(t as u32, token),
-                other => prop_assert!(false, "expected Communicate, got {:?}", other),
+                ref other => prop_assert!(false, "expected Communicate, got {:?}", other),
             }
-            prop_assert_eq!(action.to_discrete(), action_id);
+            prop_assert_eq!(discrete, action_id);
         }
 
         /// Action IDs that exceed the action space should return `None`.
