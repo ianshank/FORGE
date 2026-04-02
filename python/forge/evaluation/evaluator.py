@@ -110,7 +110,10 @@ class Evaluator:
         t_start = time.perf_counter()
 
         for ep in range(cfg.num_episodes):
-            ep_reward, ep_length, ep_tier_successes = self._run_episode(env, agent)
+            ep_seed = cfg.seed + ep
+            ep_reward, ep_length, ep_tier_successes = self._run_episode(
+                env, agent, seed=ep_seed
+            )
             episode_rewards.append(ep_reward)
             episode_lengths.append(ep_length)
             total_steps += ep_length
@@ -171,15 +174,26 @@ class Evaluator:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _run_episode(self, env: Any, agent: Any) -> tuple[float, int, dict[int, bool]]:
+    def _run_episode(
+        self, env: Any, agent: Any, *, seed: int | None = None
+    ) -> tuple[float, int, dict[int, bool]]:
         """Run a single episode.
+
+        Parameters
+        ----------
+        seed:
+            If given, passed to ``env.reset(seed=...)`` for reproducibility.
 
         Returns
         -------
         tuple[float, int, dict[int, bool]]
             ``(total_reward, step_count, tier_successes)``
         """
-        obs, info = env.reset()
+        try:
+            obs, info = env.reset(seed=seed)
+        except TypeError:
+            # Fallback for envs that don't accept seed kwarg.
+            obs, info = env.reset()
         total_reward = 0.0
         steps = 0
         tier_successes: dict[int, bool] = {}
@@ -191,9 +205,11 @@ class Evaluator:
             steps += 1
 
             # Collect tier success if reported in info dict.
+            # Accept both "tier"/"success" and "task_tier"/"task_success" keys
+            # for compatibility across FORGE env variants.
             if isinstance(info, dict):
-                tier = info.get("tier")
-                success = info.get("success")
+                tier = info.get("tier", info.get("task_tier"))
+                success = info.get("success", info.get("task_success"))
                 if tier is not None and success is not None:
                     tier_successes[int(tier)] = bool(success)
 
@@ -203,13 +219,15 @@ class Evaluator:
         return total_reward, steps, tier_successes
 
     def _check_determinism(self, env: Any, agent: Any, expected_reward: float) -> bool:
-        """Re-run one episode and verify the reward matches *expected_reward*.
+        """Re-run episode 0 with the same seed and verify reward matches.
 
         Returns ``True`` if the rewards are identical (within floating-point
         tolerance), ``False`` otherwise.
         """
         try:
-            reward, _length, _tiers = self._run_episode(env, agent)
+            reward, _length, _tiers = self._run_episode(
+                env, agent, seed=self.config.seed
+            )
             passed = abs(reward - expected_reward) < 1e-6
             if not passed:
                 logger.warning(

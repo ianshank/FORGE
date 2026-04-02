@@ -15,16 +15,18 @@ from typing import Any
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# Attempt to import the native environment.  Failure is silently swallowed so
-# that the module can be used in environments where the Rust extension is not
-# compiled.
+# Detect whether the native Rust extension is actually compiled and loadable.
+# The ``forge_env`` Python package is always importable, but the native
+# ``_NativeEnv`` inside it may be ``None`` when ``maturin develop`` has not
+# been run.
 # ---------------------------------------------------------------------------
+NATIVE_AVAILABLE = False
 try:
-    import forge_env  # noqa: F401
+    from forge_env.gymnasium_env import _NativeEnv
 
-    NATIVE_AVAILABLE = True
-except ImportError:
-    NATIVE_AVAILABLE = False
+    NATIVE_AVAILABLE = _NativeEnv is not None
+except (ImportError, AttributeError):
+    pass
 
 
 # ---------------------------------------------------------------------------

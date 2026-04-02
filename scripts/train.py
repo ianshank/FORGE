@@ -285,6 +285,10 @@ def main(argv: list[str] | None = None) -> None:
         logger.error("Failed to load config from '%s': %s", args.config, exc)
         sys.exit(1)
 
+    if args.dry_run:
+        config.dry_run.enabled = True
+        logger.info("Dry-run mode enabled — using effective_simulation() overrides")
+
     set_all_seeds(args.seed)
 
     logger.info(

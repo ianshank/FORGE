@@ -71,12 +71,25 @@ class ForgeGameAdapter:
     @property
     def action_space_size(self) -> int:
         """Return the number of discrete actions in the environment."""
-        return int(self._env.action_space["n"])
+        space = self._env.action_space
+        # Prefer attribute access (Gymnasium spaces.Discrete, SimpleNamespace),
+        # fall back to mapping access for backwards compatibility.
+        n = getattr(space, "n", None)
+        if n is None:
+            try:
+                n = space["n"]
+            except (TypeError, KeyError) as exc:
+                msg = (
+                    "Unsupported action_space type: expected an object with "
+                    "an 'n' attribute or a mapping with key 'n'."
+                )
+                raise TypeError(msg) from exc
+        return int(n)
 
     def initial_state(self) -> ForgeGameState:
         """Reset the environment and return the initial ``ForgeGameState``."""
         obs, info = self._env.reset()
-        observation = np.asarray(obs, dtype=np.float32) if not isinstance(obs, np.ndarray) else obs
+        observation = np.asarray(obs, dtype=np.float32)
         return ForgeGameState(
             observation=observation,
             done=False,
@@ -88,6 +101,14 @@ class ForgeGameAdapter:
     def apply_action(self, state: ForgeGameState, action: int) -> ForgeGameState:
         """Apply *action* to the environment and return a new ``ForgeGameState``.
 
+        .. warning::
+
+            This method mutates the underlying Gymnasium environment.  It is
+            **not** suitable for MCTS-style tree search where multiple branches
+            must be explored from the same state.  A future version should
+            snapshot/clone the environment before stepping to support true
+            functional semantics.
+
         Parameters
         ----------
         state:
@@ -97,7 +118,7 @@ class ForgeGameAdapter:
         """
         obs, reward, terminated, truncated, info = self._env.step(action)
         done = bool(terminated or truncated)
-        observation = np.asarray(obs, dtype=np.float32) if not isinstance(obs, np.ndarray) else obs
+        observation = np.asarray(obs, dtype=np.float32)
         return ForgeGameState(
             observation=observation,
             done=done,

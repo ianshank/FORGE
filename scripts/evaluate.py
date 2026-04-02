@@ -17,12 +17,12 @@ import json
 import logging
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 from forge.config import ForgeConfig
 from forge.evaluation import EvalConfig, Evaluator
+from forge.testing.env_factory import FakeEnvConfig, create_env
 
 
 def parse_args() -> argparse.Namespace:
@@ -109,36 +109,6 @@ def _make_mcts_agent() -> object:
 
 
 # ---------------------------------------------------------------------------
-# Environment factory
-# ---------------------------------------------------------------------------
-
-
-def _make_mock_env(max_episode_length: int = 100, num_actions: int = 8) -> object:
-    """Create a lightweight mock environment for use when native env is unavailable.
-
-    The mock runs episodes of exactly *max_episode_length* steps returning
-    a fixed reward of 1.0 per step.
-    """
-    env = MagicMock()
-    obs = MagicMock(name="obs")
-    env.reset.return_value = (obs, {})
-    env.observation_space = {"n": num_actions}
-    env.action_space = {"n": num_actions}
-
-    step_count = [0]
-
-    def _step(_action: object) -> tuple[object, float, bool, bool, dict[str, object]]:
-        step_count[0] += 1
-        terminated = step_count[0] >= max_episode_length
-        if terminated:
-            step_count[0] = 0
-        return obs, 1.0, terminated, False, {"tier": 1, "success": terminated}
-
-    env.step.side_effect = _step
-    return env
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -191,19 +161,14 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Build environment
     # ------------------------------------------------------------------
-    env: object
-    try:
-        import forge  # noqa: F401,PLC0415
-
-        logger.debug("Native forge extension available — using real environment")
-        # When native bindings are present, construct the real env here.
-        # For now fall through to the mock until bindings are wired.
-        raise ImportError("real env wiring not yet implemented")
-    except ImportError:
-        logger.info("Native env unavailable — using mock environment")
-        env = _make_mock_env(
-            max_episode_length=sim.max_episode_length,
-        )
+    fake_cfg = FakeEnvConfig(
+        max_episode_length=sim.max_episode_length,
+        seed=seed,
+    )
+    env = create_env(config=fake_cfg)
+    logger.info(
+        "Environment created: type=%s", type(env).__name__
+    )
 
     # ------------------------------------------------------------------
     # Build agent
