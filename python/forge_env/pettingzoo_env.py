@@ -89,7 +89,8 @@ class ForgeParallelEnv:
         return observations, infos
 
     def step(
-        self, actions: dict[str, int],
+        self,
+        actions: dict[str, int],
     ) -> tuple[dict[str, Any], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]]:
         """Step the environment with simultaneous actions from all agents.
 

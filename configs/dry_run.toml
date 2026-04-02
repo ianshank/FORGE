@@ -1,0 +1,18 @@
+[dry_run]
+enabled = true
+grid_size = 8
+max_episode_length = 50
+max_episodes = 5
+max_agents = 2
+curriculum_max_tier = 2
+seed = 42
+
+[hardware]
+device = "cpu"
+num_workers = 1
+
+[training]
+batch_size = 16
+rollout_length = 32
+epochs = 1
+checkpoint_interval = 2

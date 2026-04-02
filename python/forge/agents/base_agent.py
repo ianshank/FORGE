@@ -1,4 +1,5 @@
 """Base agent ABC and configuration."""
+
 from __future__ import annotations
 
 import json
@@ -46,9 +47,7 @@ class BaseAgent(ABC):
         """Save agent state to disk."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with Path(path).open("w") as f:
-            json.dump(
-                {"config": self.config.__dict__, "step_count": self._step_count}, f
-            )
+            json.dump({"config": self.config.__dict__, "step_count": self._step_count}, f)
         logger.info("Saved agent to %s", path)
 
     def load(self, path: str) -> None:

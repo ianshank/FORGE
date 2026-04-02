@@ -781,6 +781,79 @@ num_agents = 4
         );
     }
 
+    #[cfg(test)]
+    mod proptests {
+        use super::*;
+        use crate::constants::{MAX_WORLD_DIMENSION, MIN_WORLD_DIMENSION};
+        use crate::validation::validate_config;
+        use proptest::prelude::*;
+
+        /// Strategy that generates world dimensions within the valid range
+        /// [MIN_WORLD_DIMENSION, MAX_WORLD_DIMENSION].
+        fn valid_dimension() -> impl Strategy<Value = u16> {
+            MIN_WORLD_DIMENSION..=MAX_WORLD_DIMENSION
+        }
+
+        proptest! {
+            /// Any config built from valid dimensions and a positive reward scale
+            /// must pass `validate_config`.
+            #[test]
+            fn prop_valid_config_passes_validation(
+                width  in valid_dimension(),
+                height in valid_dimension(),
+                seed   in 0u64..=u64::MAX,
+            ) {
+                let mut config = ForgeConfig::default();
+                config.world.width  = width;
+                config.world.height = height;
+                config.world.seed   = seed;
+                // Default vision radius is 5; ensure it fits both dimensions.
+                let max_radius = ((width.min(height) - 1) / 2) as u8;
+                config.agents.default_vision_radius =
+                    config.agents.default_vision_radius.min(max_radius);
+                prop_assert!(
+                    validate_config(&config).is_ok(),
+                    "config should be valid: {:?}",
+                    validate_config(&config)
+                );
+            }
+
+            /// A `ForgeConfig` serialized to TOML and deserialized must produce
+            /// identical `world.width`, `world.height`, and `world.seed` values.
+            ///
+            /// Seeds are restricted to `[0, i64::MAX]` because the `toml` v0.8 crate
+            /// serializes `u64` values via `i64` and rejects values that would overflow.
+            #[test]
+            fn prop_config_toml_roundtrip(
+                width  in valid_dimension(),
+                height in valid_dimension(),
+                seed   in 0u64..=(i64::MAX as u64),
+            ) {
+                let mut config = ForgeConfig::default();
+                config.world.width  = width;
+                config.world.height = height;
+                config.world.seed   = seed;
+
+                let toml_str = toml::to_string(&config)
+                    .expect("serialization must not fail");
+                let restored: ForgeConfig = toml::from_str(&toml_str)
+                    .expect("deserialization must not fail");
+
+                prop_assert_eq!(restored.world.width,  config.world.width);
+                prop_assert_eq!(restored.world.height, config.world.height);
+                prop_assert_eq!(restored.world.seed,   config.world.seed);
+                prop_assert_eq!(
+                    restored.physics.collision_enabled,
+                    config.physics.collision_enabled
+                );
+                prop_assert_eq!(
+                    restored.agents.num_agents,
+                    config.agents.num_agents
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_all_configs_implement_default() {
         let _world = WorldConfig::default();

@@ -15,13 +15,9 @@ import logging
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Export FORGE model to ONNX")
-    parser.add_argument(
-        "--checkpoint", type=str, required=True, help="Checkpoint to export"
-    )
+    parser.add_argument("--checkpoint", type=str, required=True, help="Checkpoint to export")
     parser.add_argument("--output", type=str, default="model.onnx", help="Output path")
-    parser.add_argument(
-        "--opset", type=int, default=17, help="ONNX opset version"
-    )
+    parser.add_argument("--opset", type=int, default=17, help="ONNX opset version")
     return parser.parse_args()
 
 
@@ -39,9 +35,7 @@ def main() -> None:
     )
 
     # ONNX export requires torch — stub implementation
-    logger.warning(
-        "ONNX export is a stub. Install torch and implement model export."
-    )
+    logger.warning("ONNX export is a stub. Install torch and implement model export.")
     logger.info("Export complete (stub)")
 
 

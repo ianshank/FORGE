@@ -161,6 +161,19 @@ class TrainingConfig:
 
 
 @dataclass
+class DryRunConfig:
+    """Dry-run mode overrides for fast validation."""
+
+    enabled: bool = False
+    grid_size: int = 8
+    max_episode_length: int = 50
+    max_episodes: int = 5
+    max_agents: int = 2
+    curriculum_max_tier: int = 2
+    seed: int = 42
+
+
+@dataclass
 class ForgeConfig:
     """Top-level FORGE configuration.
 
@@ -171,6 +184,21 @@ class ForgeConfig:
     hardware: HardwareConfig = field(default_factory=HardwareConfig)
     simulation: SimulationConfig = field(default_factory=SimulationConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    dry_run: DryRunConfig = field(default_factory=DryRunConfig)
+
+    def effective_simulation(self) -> SimulationConfig:
+        """Return simulation config, overridden by dry_run if enabled."""
+        if not self.dry_run.enabled:
+            return self.simulation
+        from dataclasses import replace  # noqa: PLC0415
+
+        return replace(
+            self.simulation,
+            grid_size=self.dry_run.grid_size,
+            max_episode_length=self.dry_run.max_episode_length,
+            max_agents_per_team=self.dry_run.max_agents,
+            seed=self.dry_run.seed,
+        )
 
     @classmethod
     def from_file(cls, path: str | Path | None = None) -> ForgeConfig:
@@ -211,12 +239,14 @@ class ForgeConfig:
         hw = _build_section(HardwareConfig, data.get("hardware", {}))
         sim = _build_section(SimulationConfig, data.get("simulation", {}))
         train = _build_section(TrainingConfig, data.get("training", {}))
+        dry = _build_section(DryRunConfig, data.get("dry_run", {}))
 
         _apply_env_overrides(hw, "HARDWARE")
         _apply_env_overrides(sim, "SIMULATION")
         _apply_env_overrides(train, "TRAINING")
+        _apply_env_overrides(dry, "DRY_RUN")
 
-        return cls(hardware=hw, simulation=sim, training=train)
+        return cls(hardware=hw, simulation=sim, training=train, dry_run=dry)
 
     @staticmethod
     def _resolve_path(path: str | Path | None) -> Path | None:

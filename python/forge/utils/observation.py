@@ -4,6 +4,7 @@ Provides a single, reusable implementation for converting dict observations
 (as returned by ForgeGymnasiumEnv) into flat numpy arrays suitable for
 neural network input.
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,10 +40,7 @@ def flatten_obs(obs: dict[str, Any]) -> np.ndarray:
         msg = "Cannot flatten empty observation dict"
         raise ValueError(msg)
 
-    parts = [
-        np.asarray(obs[key], dtype=np.float32).ravel()
-        for key in sorted(obs.keys())
-    ]
+    parts = [np.asarray(obs[key], dtype=np.float32).ravel() for key in sorted(obs.keys())]
     result: np.ndarray = np.concatenate(parts)
     logger.debug("Flattened obs: %d keys -> %d dims", len(obs), result.shape[0])
     return result

@@ -1,4 +1,5 @@
 """JSONL trace logger with optional compression and size limits."""
+
 from __future__ import annotations
 
 import gzip

@@ -1,4 +1,5 @@
 """Process reward model interface and stub implementations."""
+
 from __future__ import annotations
 
 import logging

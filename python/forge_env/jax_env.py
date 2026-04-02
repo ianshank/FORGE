@@ -77,8 +77,7 @@ class ForgeJaxEnv:
     ) -> None:
         if not HAS_JAX:
             raise RuntimeError(
-                "JAX is required but not installed. "
-                "Install it with: pip install jax jaxlib"
+                "JAX is required but not installed. Install it with: pip install jax jaxlib"
             )
         if _NativeEnv is None:
             raise RuntimeError(
@@ -87,8 +86,7 @@ class ForgeJaxEnv:
             )
         if not HAS_NUMPY:
             raise RuntimeError(
-                "NumPy is required but not installed. "
-                "Install it with: pip install numpy"
+                "NumPy is required but not installed. Install it with: pip install numpy"
             )
 
         self.n_envs: int = n_envs
@@ -305,7 +303,8 @@ class ForgeJaxEnv:
         )
 
     def jax_step(
-        self, actions: Any,
+        self,
+        actions: Any,
     ) -> tuple[dict[str, Any], Any, Any, Any]:
         """Step environments via ``jax.experimental.io_callback``.
 

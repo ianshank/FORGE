@@ -3,6 +3,7 @@
 Uses an ActorCriticNetwork with PPO clipped surrogate objective
 and GAE advantage estimation. All hyperparameters flow through config.
 """
+
 from __future__ import annotations
 
 import json
@@ -198,9 +199,7 @@ class MAPPOAgent(BaseAgent):
 
         obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=device)
         actions = torch.as_tensor(batch["actions"], dtype=torch.long, device=device)
-        old_log_probs = torch.as_tensor(
-            batch["old_log_probs"], dtype=torch.float32, device=device
-        )
+        old_log_probs = torch.as_tensor(batch["old_log_probs"], dtype=torch.float32, device=device)
         advantages = torch.as_tensor(batch["advantages"], dtype=torch.float32, device=device)
         returns = torch.as_tensor(batch["returns"], dtype=torch.float32, device=device)
 
@@ -249,17 +248,11 @@ class MAPPOAgent(BaseAgent):
                 entropy_loss = entropy.mean()
 
                 # Combined loss
-                loss = (
-                    policy_loss
-                    + cfg.value_coeff * value_loss
-                    - cfg.entropy_coeff * entropy_loss
-                )
+                loss = policy_loss + cfg.value_coeff * value_loss - cfg.entropy_coeff * entropy_loss
 
                 self.network.optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(
-                    self.network.parameters(), cfg.max_grad_norm
-                )
+                torch.nn.utils.clip_grad_norm_(self.network.parameters(), cfg.max_grad_norm)
                 self.network.optimizer.step()
 
                 # Track metrics

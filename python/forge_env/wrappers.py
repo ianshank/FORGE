@@ -95,8 +95,7 @@ class FlattenObservationWrapper(_BaseWrapper):
     def __init__(self, env: Any) -> None:
         if not HAS_NUMPY:
             raise ImportError(
-                "numpy is required for FlattenObservationWrapper. "
-                "Install with: pip install numpy"
+                "numpy is required for FlattenObservationWrapper. Install with: pip install numpy"
             )
         super().__init__(env)
 
@@ -119,8 +118,7 @@ class FlattenObservationWrapper(_BaseWrapper):
             return _flatten_obs(obs_dict)
         # Inline fallback for standalone forge_env usage without forge package
         parts = [
-            np.asarray(obs_dict[key], dtype=np.float32).ravel()
-            for key in sorted(obs_dict.keys())
+            np.asarray(obs_dict[key], dtype=np.float32).ravel() for key in sorted(obs_dict.keys())
         ]
         return np.concatenate(parts)  # type: ignore[no-any-return]
 

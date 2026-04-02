@@ -93,8 +93,7 @@ def make_env(
     """
     if _NativeEnv is None:
         raise ImportError(
-            "forge_env native module not found. "
-            "Install with: pip install -e . (requires maturin)"
+            "forge_env native module not found. Install with: pip install -e . (requires maturin)"
         )
 
     env: Any = _NativeEnv(config=config)
@@ -154,12 +153,8 @@ def check_env(env: Any) -> bool:
     )
     _step_obs, _reward, terminated, truncated, _step_info = step_result
 
-    assert isinstance(terminated, bool), (
-        f"terminated must be bool, got {type(terminated).__name__}"
-    )
-    assert isinstance(truncated, bool), (
-        f"truncated must be bool, got {type(truncated).__name__}"
-    )
+    assert isinstance(terminated, bool), f"terminated must be bool, got {type(terminated).__name__}"
+    assert isinstance(truncated, bool), f"truncated must be bool, got {type(truncated).__name__}"
 
     return True
 

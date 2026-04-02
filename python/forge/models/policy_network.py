@@ -6,6 +6,7 @@ Provides an abstract PolicyNetwork base class and a concrete implementation:
 Also defines:
 - ActorCriticNetwork: PyTorch actor-critic for PPO/MAPPO training (does not implement PolicyNetwork)
 """
+
 from __future__ import annotations
 
 import logging
@@ -227,10 +228,7 @@ class ActorCriticNetwork:
         saved_obs = checkpoint.get("obs_dim")
         saved_act = checkpoint.get("action_dim")
         if saved_obs is not None and saved_obs != self.obs_dim:
-            msg = (
-                f"Checkpoint obs_dim={saved_obs} does not match "
-                f"network obs_dim={self.obs_dim}"
-            )
+            msg = f"Checkpoint obs_dim={saved_obs} does not match network obs_dim={self.obs_dim}"
             raise ValueError(msg)
         if saved_act is not None and saved_act != self.action_dim:
             msg = (

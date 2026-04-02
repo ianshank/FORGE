@@ -45,9 +45,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         Parsed arguments namespace.
     """
     parser = argparse.ArgumentParser(description="Train a FORGE agent")
-    parser.add_argument(
-        "--config", type=str, default="forge.toml", help="Path to config file"
-    )
+    parser.add_argument("--config", type=str, default="forge.toml", help="Path to config file")
     parser.add_argument(
         "--agent",
         type=str,
@@ -90,6 +88,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         default=_DEFAULT_DASHBOARD_URL,
         help="URL of forge-server for live dashboard metrics (e.g. http://localhost:8080)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Use dry-run config (small grid, short episodes)",
     )
     return parser.parse_args(argv)
 
@@ -177,9 +181,7 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
             )
 
     if all_metrics:
-        checkpoint_mgr.save(
-            agent, episode=trainer.episode_count, metrics=all_metrics[-1]
-        )
+        checkpoint_mgr.save(agent, episode=trainer.episode_count, metrics=all_metrics[-1])
         logger.info("Final checkpoint saved to %s", args.checkpoint_dir)
 
     if dashboard is not None:
@@ -282,6 +284,10 @@ def main(argv: list[str] | None = None) -> None:
     except Exception as exc:
         logger.error("Failed to load config from '%s': %s", args.config, exc)
         sys.exit(1)
+
+    if args.dry_run:
+        config.dry_run.enabled = True
+        logger.info("Dry-run mode enabled — using effective_simulation() overrides")
 
     set_all_seeds(args.seed)
 

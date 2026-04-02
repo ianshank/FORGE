@@ -85,6 +85,7 @@ pytest_out.txt
 maturin_out.txt
 maturin_err.txt
 coverage.json
+e2e_results.json
 runs/
 wandb/
 mlruns/

@@ -1,4 +1,5 @@
 """Device detection utilities for compute backend selection."""
+
 from __future__ import annotations
 
 import logging
