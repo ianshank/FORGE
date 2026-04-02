@@ -91,3 +91,44 @@ class TestMetricsTracker:
     def test_latest_missing_metric(self, tracker: MetricsTracker) -> None:
         """latest() on nonexistent metric returns 0.0."""
         assert tracker.latest("missing") == 0.0
+
+
+class TestMetricsExtended:
+    def test_std(self) -> None:
+        from forge.utils.metrics import MetricsTracker
+        tracker = MetricsTracker()
+        for v in [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]:
+            tracker.record("reward", v)
+        assert abs(tracker.std("reward") - 2.0) < 0.01
+
+    def test_min_max(self) -> None:
+        from forge.utils.metrics import MetricsTracker
+        tracker = MetricsTracker()
+        for v in [3.0, 1.0, 4.0, 1.0, 5.0]:
+            tracker.record("ep_len", v)
+        assert tracker.min("ep_len") == 1.0
+        assert tracker.max("ep_len") == 5.0
+
+    def test_summary(self) -> None:
+        from forge.utils.metrics import MetricsTracker
+        tracker = MetricsTracker()
+        for v in [10.0, 20.0, 30.0]:
+            tracker.record("reward", v)
+        s = tracker.summary("reward")
+        assert s["mean"] == 20.0
+        assert s["min"] == 10.0
+        assert s["max"] == 30.0
+        assert s["count"] == 3
+        assert "std" in s
+
+    def test_empty_std_returns_zero(self) -> None:
+        from forge.utils.metrics import MetricsTracker
+        tracker = MetricsTracker()
+        assert tracker.std("missing") == 0.0
+
+    def test_summary_per_tier(self) -> None:
+        from forge.utils.metrics import MetricsTracker
+        tracker = MetricsTracker()
+        tracker.record("tier_1/success", 1.0)
+        tracker.record("tier_1/success", 0.0)
+        assert tracker.mean("tier_1/success") == 0.5

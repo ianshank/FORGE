@@ -183,3 +183,48 @@ def test_build_section_filters_unknown() -> None:
 def test_build_section_empty() -> None:
     result = _build_section(SimulationConfig, {})
     assert result.grid_size == 64
+
+
+# ---------------------------------------------------------------------------
+# DryRunConfig
+# ---------------------------------------------------------------------------
+
+
+class TestDryRunConfig:
+    def test_dry_run_defaults(self) -> None:
+        from forge.config import DryRunConfig
+
+        cfg = DryRunConfig()
+        assert cfg.enabled is False
+        assert cfg.grid_size == 8
+        assert cfg.max_episode_length == 50
+        assert cfg.max_episodes == 5
+        assert cfg.max_agents == 2
+        assert cfg.curriculum_max_tier == 2
+
+    def test_effective_simulation_uses_dry_run(self) -> None:
+        from forge.config import DryRunConfig, ForgeConfig
+
+        config = ForgeConfig(dry_run=DryRunConfig(enabled=True))
+        effective = config.effective_simulation()
+        assert effective.grid_size == 8
+        assert effective.max_episode_length == 50
+
+    def test_effective_simulation_normal_mode(self) -> None:
+        from forge.config import ForgeConfig
+
+        config = ForgeConfig()
+        effective = config.effective_simulation()
+        assert effective.grid_size == 64
+
+    def test_dry_run_env_override(self) -> None:
+        import os
+
+        os.environ["FORGE_DRY_RUN_ENABLED"] = "true"
+        try:
+            from forge.config import ForgeConfig
+
+            config = ForgeConfig.from_dict({})
+            assert config.dry_run.enabled is True
+        finally:
+            del os.environ["FORGE_DRY_RUN_ENABLED"]
