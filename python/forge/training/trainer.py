@@ -149,7 +149,12 @@ class PPOTrainer:
         self._total_steps: int = 0
         self._episode_count: int = 0
         self._episode_rewards: list[float] = []
+        self._stop_requested: bool = False
         logger.info("PPOTrainer initialized: %s", config)
+
+    def request_stop(self) -> None:
+        """Request early termination of the training loop."""
+        self._stop_requested = True
 
     def collect_rollout(
         self,
@@ -242,6 +247,7 @@ class PPOTrainer:
         reset_fn: Callable[[], np.ndarray],
         step_fn: Callable[[int], tuple[np.ndarray, float, bool, bool, dict[str, Any]]],
         num_updates: int,
+        eval_callback: Callable[[int, Any], None] | None = None,
     ) -> list[dict[str, float]]:
         """Run the full PPO training loop.
 
@@ -249,6 +255,9 @@ class PPOTrainer:
             reset_fn: Environment reset function returning initial observation.
             step_fn: Environment step function.
             num_updates: Number of PPO update iterations to perform.
+            eval_callback: Optional callback invoked every ``eval_interval``
+                updates with ``(update_number, agent)``.  Default ``None``
+                preserves backwards compatibility.
 
         Returns:
             List of per-update metric dicts.
@@ -276,6 +285,17 @@ class PPOTrainer:
                     num_updates,
                     {k: f"{v:.4f}" for k, v in metrics.items()},
                 )
+
+            if (
+                eval_callback is not None
+                and self.config.eval_interval > 0
+                and update % self.config.eval_interval == 0
+            ):
+                eval_callback(update, self.agent)
+
+            if self._stop_requested:
+                logger.info("Stop requested — ending training at update %d", update)
+                break
 
         return all_metrics
 

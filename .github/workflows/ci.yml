@@ -50,6 +50,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo bench --no-run -p forge-bench
 
+  coverage:
+    name: Rust Coverage (tarpaulin)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache tarpaulin binary
+        id: cache-tarpaulin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tarpaulin
+          key: tarpaulin-v0.31.0-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-tarpaulin
+        if: steps.cache-tarpaulin.outputs.cache-hit != 'true'
+        run: cargo install cargo-tarpaulin --version 0.31.0 --locked
+      - name: Run coverage
+        run: |
+          cargo tarpaulin \
+            --workspace \
+            --exclude forge-python \
+            --exclude forge-wasm \
+            --skip-clean \
+            --fail-under 85 \
+            --out xml \
+            --output-dir coverage/
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/cobertura.xml
+
   python:
     name: Python Lint & Tests
     runs-on: ubuntu-latest

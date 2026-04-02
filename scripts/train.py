@@ -32,6 +32,9 @@ _DEFAULT_CHECKPOINT_DIR = "checkpoints"
 _DEFAULT_LOG_LEVEL = "INFO"
 _DEFAULT_MAX_EPISODE_STEPS = 1000
 _DEFAULT_DASHBOARD_URL = ""
+_DEFAULT_EVAL_INTERVAL = 0
+_DEFAULT_EVAL_EPISODES = 10
+_DEFAULT_EARLY_STOP_PATIENCE = 0
 _AGENT_CHOICES = ("random", "mcts", "mappo")
 
 
@@ -90,12 +93,39 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="URL of forge-server for live dashboard metrics (e.g. http://localhost:8080)",
     )
     parser.add_argument(
+        "--eval-interval",
+        type=int,
+        default=_DEFAULT_EVAL_INTERVAL,
+        help="Evaluate every N episodes (0=disabled)",
+    )
+    parser.add_argument(
+        "--eval-episodes",
+        type=int,
+        default=_DEFAULT_EVAL_EPISODES,
+        help="Number of episodes per evaluation",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
         help="Use dry-run config (small grid, short episodes)",
     )
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=_DEFAULT_EARLY_STOP_PATIENCE,
+        help="Stop training if reward doesn't improve for N evals (0=disabled)",
+    )
+    args = parser.parse_args(argv)
+
+    if args.eval_interval < 0:
+        parser.error("--eval-interval must be non-negative")
+    if args.eval_episodes < 1:
+        parser.error("--eval-episodes must be at least 1")
+    if args.early_stopping_patience < 0:
+        parser.error("--early-stopping-patience must be non-negative")
+
+    return args
 
 
 def _create_env(config: Any) -> Any:
@@ -123,6 +153,27 @@ def _create_env(config: Any) -> Any:
     return env
 
 
+def _make_early_stopping(args: argparse.Namespace) -> Any:
+    """Create an EarlyStopping instance if enabled via CLI args.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        An ``EarlyStopping`` instance, or ``None`` if disabled.
+    """
+    if args.early_stopping_patience > 0 and args.eval_interval > 0:
+        from forge.training.stability import (  # noqa: PLC0415
+            EarlyStopping,
+            EarlyStoppingConfig,
+        )
+
+        return EarlyStopping(
+            EarlyStoppingConfig(patience=args.early_stopping_patience),
+        )
+    return None
+
+
 def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
     """Train a MAPPO agent with PPO rollout collection and updates.
 
@@ -137,8 +188,7 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
     from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
     from forge.utils.observation import compute_obs_dim, flatten_obs  # noqa: PLC0415
 
-    obs_dim = compute_obs_dim(env)
-    action_dim: int = env.action_space.n
+    obs_dim, action_dim = compute_obs_dim(env), int(env.action_space.n)
     logger.info("Env obs_dim=%d, action_dim=%d", obs_dim, action_dim)
 
     mappo_config = MAPPOConfig.from_forge_config(config)
@@ -165,8 +215,44 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
 
         dashboard = DashboardClient(args.dashboard_url)
 
+    early_stopping = _make_early_stopping(args)
+
+    # Build eval callback if --eval-interval is set
+    eval_cb = None
+    if args.eval_interval > 0:
+        trainer_config.eval_interval = args.eval_interval
+
+        def _mappo_eval_callback(update: int, _agent: Any) -> None:
+            from forge.evaluation.evaluator import EvalConfig, Evaluator  # noqa: PLC0415
+
+            evaluator = Evaluator(EvalConfig(num_episodes=args.eval_episodes, seed=args.seed))
+            result = evaluator.evaluate(env, agent)
+            logger.info(
+                "Eval at update %d: reward_mean=%.3f\u00b1%.3f",
+                update,
+                result.reward_mean,
+                result.reward_std,
+            )
+            if dashboard is not None:
+                dashboard.post_training_metrics(
+                    episode=trainer.episode_count,
+                    total_steps=trainer.total_steps,
+                    mean_reward=result.reward_mean,
+                )
+            if early_stopping is not None and early_stopping.step(result.reward_mean):
+                logger.info(
+                    "Early stopping at update %d (best=%.3f)",
+                    update,
+                    early_stopping.best_metric,
+                )
+                trainer.request_stop()
+
+        eval_cb = _mappo_eval_callback
+
     logger.info("Starting MAPPO training: %d updates", args.num_updates)
-    all_metrics = trainer.train(reset_fn, step_fn, num_updates=args.num_updates)
+    all_metrics = trainer.train(
+        reset_fn, step_fn, num_updates=args.num_updates, eval_callback=eval_cb,
+    )
 
     # Post each update's metrics to the dashboard
     for metrics in all_metrics:
@@ -217,6 +303,8 @@ def _train_basic(
     """
     from forge.utils.observation import flatten_obs  # noqa: PLC0415
 
+    early_stopping = _make_early_stopping(args)
+
     dashboard = None
     if getattr(args, "dashboard_url", ""):
         from forge.utils.dashboard_client import DashboardClient  # noqa: PLC0415
@@ -242,6 +330,31 @@ def _train_basic(
             steps += 1
 
         total_steps += steps
+
+        if args.eval_interval > 0 and episode % args.eval_interval == 0:
+            from forge.evaluation.evaluator import EvalConfig, Evaluator  # noqa: PLC0415
+
+            evaluator = Evaluator(EvalConfig(num_episodes=args.eval_episodes, seed=args.seed))
+            result = evaluator.evaluate(env, agent)
+            logger.info(
+                "Eval at episode %d: reward_mean=%.3f\u00b1%.3f",
+                episode,
+                result.reward_mean,
+                result.reward_std,
+            )
+            if dashboard is not None:
+                dashboard.post_training_metrics(
+                    episode=episode,
+                    total_steps=total_steps,
+                    mean_reward=result.reward_mean,
+                )
+            if early_stopping is not None and early_stopping.step(result.reward_mean):
+                logger.info(
+                    "Early stopping at episode %d (best=%.3f)",
+                    episode,
+                    early_stopping.best_metric,
+                )
+                break
 
         if episode % log_interval == 0:
             logger.info(

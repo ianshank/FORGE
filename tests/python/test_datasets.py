@@ -9,30 +9,30 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
+from pathlib import Path  # noqa: TC003
 
 import numpy as np
 import pytest
 
 from forge_env.datasets import (
-    ForgeDataset,
-    ForgeStep,
+    _DEFAULT_INV_SLOTS,
+    _DEFAULT_VIEW_SIZE,
     _FORGE_CRAFT_BASE,
+    _MAX_STACK_SIZE,
     _MAZE_DIR_TO_ACTION,
     _MAZE_GOAL_REWARD,
     _MAZE_STEP_REWARD,
+    _MINECRAFT_MAX_HEALTH,
     _MINERL_BOOL_ACTIONS,
     _MINERL_CRAFT_MAP,
-    _parse_forge_jsonl_step,
+    ForgeDataset,
+    ForgeStep,
     _minerl_action_to_discrete,
+    _parse_forge_jsonl_step,
     load_forge_jsonl,
     load_maze_jsonl,
-    load_minerl,
     load_minari,
-    _DEFAULT_INV_SLOTS,
-    _DEFAULT_VIEW_SIZE,
-    _MAX_STACK_SIZE,
-    _MINECRAFT_MAX_HEALTH,
+    load_minerl,
 )
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ def test_dataset_to_arrays_values() -> None:
         _make_step(action=3, reward=0.5, truncated=True),
     ]
     ds = ForgeDataset(steps)
-    obs, acts, rews, dones = ds.to_arrays()
+    _obs, acts, rews, dones = ds.to_arrays()
     assert acts[0] == 7
     assert acts[1] == 3
     assert rews[0] == pytest.approx(3.0)
@@ -199,7 +199,7 @@ def test_dataset_to_arrays_values() -> None:
 
 def test_dataset_to_arrays_obs_dtype() -> None:
     ds = ForgeDataset([_make_step()])
-    obs, acts, rews, dones = ds.to_arrays()
+    obs, acts, rews, _dones = ds.to_arrays()
     assert obs.dtype == np.float32
     assert acts.dtype == np.int32
     assert rews.dtype == np.float32
@@ -269,7 +269,7 @@ def test_parse_step_grid_view_dict_tiles() -> None:
 
 def test_parse_step_grid_view_list_tiles() -> None:
     # Each tile is a 7-element list (all uint8-safe values 0-6)
-    tiles = [[j for j in range(7)] for _ in range(121)]
+    tiles = [list(range(7)) for _ in range(121)]
     raw = {"observations": [{"grid_view": tiles, "view_width": 11, "view_height": 11}]}
     step = _parse_forge_jsonl_step(raw, tick=0)
     assert step is not None
@@ -578,7 +578,7 @@ def test_load_maze_blank_lines_skipped(tmp_path: Path) -> None:
 
 
 def test_load_minari_raises_without_package(monkeypatch: pytest.MonkeyPatch) -> None:
-    import forge_env.datasets as _mod
+    import forge_env.datasets as _mod  # noqa: PLC0415
     original = _mod._minari
     monkeypatch.setattr(_mod, "_minari", None)
     with pytest.raises(ImportError, match="minari"):

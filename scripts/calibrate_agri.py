@@ -69,7 +69,7 @@ try:
 
     _TOMLI_W_AVAILABLE = True
 except ImportError:
-    _tomli_w = None
+    _tomli_w = None  # type: ignore[assignment]
     _TOMLI_W_AVAILABLE = False
 
 logger = logging.getLogger(__name__)

@@ -186,6 +186,66 @@ class TestCheckpointManager:
             assert len(checkpoints) == 1
 
 
+class TestRandomAgentDeterminism:
+    """Tests for RandomAgent seed determinism."""
+
+    def test_same_seed_same_actions(self) -> None:
+        """Two RandomAgents with the same seed should produce identical action sequences."""
+        num_steps = 20
+        obs = np.zeros(10, dtype=np.float32)
+
+        agent_a = RandomAgent(AgentConfig(), action_space_size=4, seed=99)
+        agent_b = RandomAgent(AgentConfig(), action_space_size=4, seed=99)
+
+        actions_a = [agent_a.act(obs)[0] for _ in range(num_steps)]
+        actions_b = [agent_b.act(obs)[0] for _ in range(num_steps)]
+        assert actions_a == actions_b
+
+    def test_different_seed_different_actions(self) -> None:
+        """Two RandomAgents with different seeds should (very likely) differ."""
+        num_steps = 50
+        obs = np.zeros(10, dtype=np.float32)
+
+        agent_a = RandomAgent(AgentConfig(), action_space_size=8, seed=1)
+        agent_b = RandomAgent(AgentConfig(), action_space_size=8, seed=2)
+
+        actions_a = [agent_a.act(obs)[0] for _ in range(num_steps)]
+        actions_b = [agent_b.act(obs)[0] for _ in range(num_steps)]
+        # With 8 actions over 50 steps, identical sequences are astronomically unlikely.
+        assert actions_a != actions_b
+
+
+class TestMCTSAgentEdgeCases:
+    """Edge-case tests for MCTSAgent."""
+
+    def test_zero_simulations(self) -> None:
+        """With 0 simulations the agent should still return a valid action (random fallback)."""
+        config = MCTSConfig(num_simulations=0, max_depth=5)
+        agent = MCTSAgent(config, action_space_size=4, seed=42)
+        obs = np.zeros(10, dtype=np.float32)
+        action, trace = agent.act(obs)
+        assert 0 <= action < 4
+        # With 0 simulations, visit_counts should be empty (random fallback).
+        assert trace["visit_counts"] == {}
+
+    def test_single_action_space(self) -> None:
+        """With action_space_size=1 the agent has no real choice."""
+        config = MCTSConfig(num_simulations=10, max_depth=5)
+        agent = MCTSAgent(config, action_space_size=1, seed=42)
+        obs = np.zeros(10, dtype=np.float32)
+        action, _trace = agent.act(obs)
+        assert action == 0
+
+    def test_single_simulation(self) -> None:
+        """With num_simulations=1 the agent should still function."""
+        config = MCTSConfig(num_simulations=1, max_depth=5)
+        agent = MCTSAgent(config, action_space_size=4, seed=42)
+        obs = np.zeros(10, dtype=np.float32)
+        action, trace = agent.act(obs)
+        assert 0 <= action < 4
+        assert trace["search_depth"] >= 0
+
+
 class TestDevice:
     """Tests for device detection."""
 
