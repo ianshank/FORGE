@@ -116,7 +116,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=_DEFAULT_EARLY_STOP_PATIENCE,
         help="Stop training if reward doesn't improve for N evals (0=disabled)",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+
+    if args.eval_interval < 0:
+        parser.error("--eval-interval must be non-negative")
+    if args.eval_episodes < 1:
+        parser.error("--eval-episodes must be at least 1")
+    if args.early_stopping_patience < 0:
+        parser.error("--early-stopping-patience must be non-negative")
+
+    return args
 
 
 def _create_env(config: Any) -> Any:

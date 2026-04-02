@@ -62,10 +62,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/cargo-tarpaulin
-          key: tarpaulin-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: tarpaulin-v0.31.0-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - name: Install cargo-tarpaulin
         if: steps.cache-tarpaulin.outputs.cache-hit != 'true'
-        run: cargo install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --version 0.31.0 --locked
       - name: Run coverage
         run: |
           cargo tarpaulin \

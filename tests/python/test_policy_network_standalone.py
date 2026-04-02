@@ -10,6 +10,8 @@ and the RandomPolicyNetwork which is not covered there.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 from forge.config import DEFAULT_ACTION_SIZE
@@ -61,7 +63,7 @@ class TestRandomPolicyNetworkStandalone:
         result = net.train_step({"obs": np.zeros((4, 8), dtype=np.float32)})
         assert result == {}
 
-    def test_save_load_roundtrip(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_save_load_roundtrip(self, tmp_path: Path) -> None:
         """save/load should not raise (both are no-ops)."""
         net = RandomPolicyNetwork(action_size=CUSTOM_ACTION_SIZE)
         path = str(tmp_path / "random_model.bin")
@@ -89,7 +91,7 @@ class TestActorCriticNetworkStandalone:
     def _skip_without_torch(self) -> None:
         pytest.importorskip("torch")
 
-    def test_save_load_roundtrip_via_tmp_path(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_save_load_roundtrip_via_tmp_path(self, tmp_path: Path) -> None:
         """Save and load through a tmp_path directory."""
         import torch  # noqa: PLC0415
         from forge.models.policy_network import ActorCriticNetwork  # noqa: PLC0415
@@ -112,7 +114,7 @@ class TestActorCriticNetworkStandalone:
         assert torch.allclose(logits1, logits2, atol=1e-6)
         assert torch.allclose(val1, val2, atol=1e-6)
 
-    def test_load_dimension_mismatch_obs(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_load_dimension_mismatch_obs(self, tmp_path: Path) -> None:
         """Loading a checkpoint with wrong obs_dim should raise ValueError."""
         from forge.models.policy_network import ActorCriticNetwork  # noqa: PLC0415
 
@@ -127,7 +129,7 @@ class TestActorCriticNetworkStandalone:
         with pytest.raises(ValueError, match="obs_dim"):
             net2.load(path)
 
-    def test_load_dimension_mismatch_action(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_load_dimension_mismatch_action(self, tmp_path: Path) -> None:
         """Loading a checkpoint with wrong action_dim should raise ValueError."""
         from forge.models.policy_network import ActorCriticNetwork  # noqa: PLC0415
 

@@ -219,9 +219,13 @@ class MCTSAgent(BaseAgent):
         """
         root = MCTSNode()
 
-        # For PUCT with evaluator, initialise root priors
-        if self.mcts_config.use_puct and self.evaluator is not None:
-            priors, _ = self.evaluator.evaluate(observation)
+        # For PUCT, initialise root priors from evaluator or uniform fallback
+        if self.mcts_config.use_puct:
+            if self.evaluator is not None:
+                priors, _ = self.evaluator.evaluate(observation)
+            else:
+                # Uniform priors when no evaluator — equal exploration across actions
+                priors = np.ones(self.action_space_size) / self.action_space_size
             for a in range(self.action_space_size):
                 root.children[a] = MCTSNode(parent=root, action=a, prior_prob=float(priors[a]))
             self._apply_dirichlet_noise(root)
@@ -256,9 +260,11 @@ class MCTSAgent(BaseAgent):
         max_depth = self._compute_tree_depth(root)
         self._step_count += 1
 
+        score_key = "puct_scores" if self.mcts_config.use_puct else "ucb1_scores"
         trace = {
             "search_depth": max_depth,
-            "ucb1_scores": scores,
+            score_key: scores,
+            "score_type": "puct" if self.mcts_config.use_puct else "ucb1",
             "visit_counts": visit_counts,
         }
         return action, trace

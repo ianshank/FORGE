@@ -113,6 +113,7 @@ class TestBackwardsCompat:
         assert 0 <= action < 4
         assert "search_depth" in trace
         assert "ucb1_scores" in trace
+        assert trace["score_type"] == "ucb1"
         assert "visit_counts" in trace
 
 
@@ -128,6 +129,20 @@ class TestMCTSWithEvaluator:
         action, trace = agent.act(obs)
         assert 0 <= action < 4
         assert trace["visit_counts"]  # should have visits
+        assert trace["score_type"] == "puct"
+        assert "puct_scores" in trace
+
+    def test_puct_without_evaluator_uses_uniform_priors(self) -> None:
+        """PUCT mode without evaluator should use uniform priors, not degenerate to greedy."""
+        config = MCTSConfig(use_puct=True, num_simulations=20, max_depth=5)
+        agent = MCTSAgent(config, action_space_size=4, seed=42)  # no evaluator
+        obs = np.zeros(10, dtype=np.float32)
+        action, trace = agent.act(obs)
+        assert 0 <= action < 4
+        assert trace["score_type"] == "puct"
+        # With uniform priors, exploration should spread visits across actions
+        visit_counts = trace["visit_counts"]
+        assert len(visit_counts) > 1, "Uniform priors should explore multiple actions"
 
     def test_evaluator_protocol_conformance(self) -> None:
         """Mock evaluators should satisfy the MCTSEvaluator protocol."""
