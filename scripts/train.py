@@ -34,6 +34,7 @@ _DEFAULT_MAX_EPISODE_STEPS = 1000
 _DEFAULT_DASHBOARD_URL = ""
 _DEFAULT_EVAL_INTERVAL = 0
 _DEFAULT_EVAL_EPISODES = 10
+_DEFAULT_EARLY_STOP_PATIENCE = 0
 _AGENT_CHOICES = ("random", "mcts", "mappo")
 
 
@@ -109,6 +110,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=False,
         help="Use dry-run config (small grid, short episodes)",
     )
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=_DEFAULT_EARLY_STOP_PATIENCE,
+        help="Stop training if reward doesn't improve for N evals (0=disabled)",
+    )
     return parser.parse_args(argv)
 
 
@@ -137,6 +144,27 @@ def _create_env(config: Any) -> Any:
     return env
 
 
+def _make_early_stopping(args: argparse.Namespace) -> Any:
+    """Create an EarlyStopping instance if enabled via CLI args.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        An ``EarlyStopping`` instance, or ``None`` if disabled.
+    """
+    if args.early_stopping_patience > 0 and args.eval_interval > 0:
+        from forge.training.stability import (  # noqa: PLC0415
+            EarlyStopping,
+            EarlyStoppingConfig,
+        )
+
+        return EarlyStopping(
+            EarlyStoppingConfig(patience=args.early_stopping_patience),
+        )
+    return None
+
+
 def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
     """Train a MAPPO agent with PPO rollout collection and updates.
 
@@ -151,8 +179,7 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
     from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
     from forge.utils.observation import compute_obs_dim, flatten_obs  # noqa: PLC0415
 
-    obs_dim = compute_obs_dim(env)
-    action_dim: int = env.action_space.n
+    obs_dim, action_dim = compute_obs_dim(env), int(env.action_space.n)
     logger.info("Env obs_dim=%d, action_dim=%d", obs_dim, action_dim)
 
     mappo_config = MAPPOConfig.from_forge_config(config)
@@ -179,6 +206,8 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
 
         dashboard = DashboardClient(args.dashboard_url)
 
+    early_stopping = _make_early_stopping(args)
+
     # Build eval callback if --eval-interval is set
     eval_cb = None
     if args.eval_interval > 0:
@@ -201,6 +230,13 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
                     total_steps=trainer.total_steps,
                     mean_reward=result.reward_mean,
                 )
+            if early_stopping is not None and early_stopping.step(result.reward_mean):
+                logger.info(
+                    "Early stopping at update %d (best=%.3f)",
+                    update,
+                    early_stopping.best_metric,
+                )
+                trainer.request_stop()
 
         eval_cb = _mappo_eval_callback
 
@@ -258,6 +294,8 @@ def _train_basic(
     """
     from forge.utils.observation import flatten_obs  # noqa: PLC0415
 
+    early_stopping = _make_early_stopping(args)
+
     dashboard = None
     if getattr(args, "dashboard_url", ""):
         from forge.utils.dashboard_client import DashboardClient  # noqa: PLC0415
@@ -301,6 +339,13 @@ def _train_basic(
                     total_steps=total_steps,
                     mean_reward=result.reward_mean,
                 )
+            if early_stopping is not None and early_stopping.step(result.reward_mean):
+                logger.info(
+                    "Early stopping at episode %d (best=%.3f)",
+                    episode,
+                    early_stopping.best_metric,
+                )
+                break
 
         if episode % log_interval == 0:
             logger.info(

@@ -149,7 +149,12 @@ class PPOTrainer:
         self._total_steps: int = 0
         self._episode_count: int = 0
         self._episode_rewards: list[float] = []
+        self._stop_requested: bool = False
         logger.info("PPOTrainer initialized: %s", config)
+
+    def request_stop(self) -> None:
+        """Request early termination of the training loop."""
+        self._stop_requested = True
 
     def collect_rollout(
         self,
@@ -287,6 +292,10 @@ class PPOTrainer:
                 and update % self.config.eval_interval == 0
             ):
                 eval_callback(update, self.agent)
+
+            if self._stop_requested:
+                logger.info("Stop requested — ending training at update %d", update)
+                break
 
         return all_metrics
 
