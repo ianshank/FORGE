@@ -166,7 +166,8 @@ class TestMCTSInternals:
         agent = self._make_agent()
         root = MCTSNode()
         root.visit_count = 1  # Must be visited to expand
-        expanded = agent._expand(root)
+        obs = np.zeros(10, dtype=np.float32)
+        expanded = agent._expand(root, obs)
         assert len(root.children) == 4  # action_space_size
         assert expanded in root.children.values()
 
@@ -174,15 +175,17 @@ class TestMCTSInternals:
         """_expand on unvisited root still expands (parent is None)."""
         agent = self._make_agent()
         root = MCTSNode()
-        agent._expand(root)
+        obs = np.zeros(10, dtype=np.float32)
+        agent._expand(root, obs)
         assert len(root.children) == 4
 
     def test_simulate_returns_float(self) -> None:
         """_simulate returns a value in [0, 1)."""
         agent = self._make_agent()
         node = MCTSNode()
+        obs = np.zeros(10, dtype=np.float32)
         for _ in range(20):
-            value = agent._simulate(node)
+            value = agent._simulate(node, obs)
             assert isinstance(value, float)
             assert 0.0 <= value < 1.0
 
