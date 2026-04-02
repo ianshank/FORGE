@@ -89,6 +89,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=_DEFAULT_DASHBOARD_URL,
         help="URL of forge-server for live dashboard metrics (e.g. http://localhost:8080)",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Use dry-run config (small grid, short episodes)",
+    )
     return parser.parse_args(argv)
 
 

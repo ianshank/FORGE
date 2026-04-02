@@ -323,3 +323,98 @@ mod tests {
         assert_eq!(gen.seed(), 999);
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use forge_types::constants::{MAX_WORLD_DIMENSION, MIN_WORLD_DIMENSION};
+    use proptest::prelude::*;
+    use rand::SeedableRng;
+
+    /// Strategy for valid world dimensions in a range that keeps tests fast.
+    fn small_dimension() -> impl Strategy<Value = u16> {
+        // Use a capped range so tests run quickly while still exercising real variation.
+        MIN_WORLD_DIMENSION..=(MIN_WORLD_DIMENSION + 24)
+    }
+
+    proptest! {
+        /// Generating a world twice with the same seed must produce identical
+        /// terrain, resource counts, and spawn point counts.
+        #[test]
+        fn prop_generation_is_deterministic(
+            width  in small_dimension(),
+            height in small_dimension(),
+            seed   in 0u64..=u64::MAX,
+        ) {
+            let config = WorldConfig {
+                width,
+                height,
+                seed,
+                ..WorldConfig::default()
+            };
+
+            let gen = WorldGenerator::new(&config);
+
+            let mut rng1 = Pcg64Mcg::seed_from_u64(seed);
+            let (grid1, resources1, _objects1, spawns1) = gen.generate(&mut rng1);
+
+            let mut rng2 = Pcg64Mcg::seed_from_u64(seed);
+            let (grid2, resources2, _objects2, spawns2) = gen.generate(&mut rng2);
+
+            prop_assert_eq!(grid1.width,  grid2.width);
+            prop_assert_eq!(grid1.height, grid2.height);
+            prop_assert_eq!(grid1.len(),  grid2.len());
+            prop_assert_eq!(resources1.len(), resources2.len());
+            prop_assert_eq!(spawns1.len(),    spawns2.len());
+
+            // Terrain must be tile-for-tile identical.
+            for i in 0..grid1.tiles.len() {
+                prop_assert_eq!(
+                    grid1.tiles[i].terrain,
+                    grid2.tiles[i].terrain,
+                    "terrain mismatch at tile {i}"
+                );
+            }
+        }
+
+        /// The generated grid must have exactly `width * height` tiles and
+        /// each resource/spawn position must lie within the grid bounds.
+        #[test]
+        fn prop_generated_positions_in_bounds(
+            width  in small_dimension(),
+            height in small_dimension(),
+            seed   in 0u64..=u64::MAX,
+        ) {
+            let config = WorldConfig {
+                width,
+                height,
+                seed,
+                ..WorldConfig::default()
+            };
+            let gen = WorldGenerator::new(&config);
+            let mut rng = Pcg64Mcg::seed_from_u64(seed);
+            let (grid, resources, objects, spawns) = gen.generate(&mut rng);
+
+            prop_assert_eq!(grid.len(), width as usize * height as usize);
+
+            for node in &resources {
+                prop_assert!(node.position.x < width,
+                    "resource x={} out of bounds (width={})", node.position.x, width);
+                prop_assert!(node.position.y < height,
+                    "resource y={} out of bounds (height={})", node.position.y, height);
+            }
+            for obj in &objects {
+                prop_assert!(obj.position.x < width,
+                    "object x={} out of bounds (width={})", obj.position.x, width);
+                prop_assert!(obj.position.y < height,
+                    "object y={} out of bounds (height={})", obj.position.y, height);
+            }
+            for pos in &spawns {
+                prop_assert!(pos.x < width,
+                    "spawn x={} out of bounds (width={})", pos.x, width);
+                prop_assert!(pos.y < height,
+                    "spawn y={} out of bounds (height={})", pos.y, height);
+            }
+        }
+    }
+}

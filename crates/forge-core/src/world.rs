@@ -1124,3 +1124,101 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use forge_types::Action;
+    use forge_types::grid::Direction;
+    use proptest::prelude::*;
+
+    /// Build a minimal, valid `ForgeConfig` suitable for fast proptest runs.
+    /// Width and height are kept small (8–16) so world creation is cheap.
+    fn small_config(width: u16, height: u16, seed: u64, num_agents: u32) -> ForgeConfig {
+        let mut config = ForgeConfig::default();
+        config.world.width  = width;
+        config.world.height = height;
+        config.world.seed   = seed;
+        config.agents.num_agents = num_agents;
+        // Vision radius must fit: 2*r+1 <= min(width, height)
+        let max_radius = ((width.min(height) - 1) / 2) as u8;
+        config.agents.default_vision_radius =
+            config.agents.default_vision_radius.min(max_radius);
+        config.task.max_episode_length = 1000;
+        config
+    }
+
+    /// Strategy for valid small world dimensions [8, 20].
+    fn small_dim() -> impl Strategy<Value = u16> {
+        8u16..=20u16
+    }
+
+    proptest! {
+        /// After `n` calls to `step`, `world.tick` must equal `n`.
+        #[test]
+        fn prop_tick_increments_per_step(
+            seed       in 0u64..=u64::MAX,
+            num_steps  in 1usize..=8usize,
+        ) {
+            let config = small_config(8, 8, seed, 1);
+            let mut world = WorldState::new(config).unwrap();
+            prop_assert_eq!(world.tick, 0);
+
+            for i in 1..=(num_steps as u64) {
+                world.step(&[Action::Noop]);
+                prop_assert_eq!(world.tick, i);
+            }
+        }
+
+        /// `step` must return one observation and one reward per agent,
+        /// regardless of the action slice length (pad/truncate rule).
+        #[test]
+        fn prop_step_result_length_matches_agents(
+            seed       in 0u64..=u64::MAX,
+            num_agents in 1u32..=4u32,
+            width      in small_dim(),
+            height     in small_dim(),
+        ) {
+            let config = small_config(width, height, seed, num_agents);
+            let mut world = WorldState::new(config).unwrap();
+
+            // Test with no actions (all padded to Noop)
+            let result = world.step(&[]);
+            prop_assert_eq!(result.observations.len(), num_agents as usize);
+            prop_assert_eq!(result.rewards.len(),      num_agents as usize);
+            prop_assert_eq!(result.info.agents_alive.len(), num_agents as usize);
+        }
+
+        /// Two worlds created with the same seed must produce identical agent
+        /// positions after the same sequence of actions (determinism invariant).
+        #[test]
+        fn prop_same_seed_same_outcome(
+            seed in 0u64..=u64::MAX,
+        ) {
+            let config1 = small_config(8, 8, seed, 1);
+            let config2 = config1.clone();
+
+            let mut world1 = WorldState::new(config1).unwrap();
+            let mut world2 = WorldState::new(config2).unwrap();
+
+            let actions = [
+                Action::Move(Direction::Right),
+                Action::Move(Direction::Down),
+                Action::Noop,
+                Action::Move(Direction::Left),
+            ];
+
+            for action in &actions {
+                world1.step(&[action.clone()]);
+                world2.step(&[action.clone()]);
+            }
+
+            prop_assert_eq!(world1.tick, world2.tick);
+            prop_assert_eq!(
+                world1.agents[0].position,
+                world2.agents[0].position,
+                "positions diverged after identical action sequences"
+            );
+        }
+    }
+}
