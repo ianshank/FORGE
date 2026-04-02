@@ -1,4 +1,5 @@
 """Metrics tracking with windowed statistics."""
+
 from __future__ import annotations
 
 import builtins
@@ -16,9 +17,7 @@ class MetricsTracker:
 
     def __init__(self, window_size: int = DEFAULT_WINDOW_SIZE) -> None:
         self.window_size = window_size
-        self._data: dict[str, deque[float]] = defaultdict(
-            lambda: deque(maxlen=window_size)
-        )
+        self._data: dict[str, deque[float]] = defaultdict(lambda: deque(maxlen=window_size))
 
     def record(self, name: str, value: float) -> None:
         """Record a single metric value."""

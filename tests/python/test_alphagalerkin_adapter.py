@@ -3,14 +3,14 @@
 All AlphaGalerkin model interactions are replaced with ``MagicMock`` objects so
 the test suite does not require AlphaGalerkin to be installed.
 """
+
 from __future__ import annotations
 
-from typing import Any
+import contextlib
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-
 from forge.adapters.alphagalerkin_adapter import (
     ALPHAGALERKIN_AVAILABLE,
     AlphaGalerkinAgent,
@@ -18,7 +18,6 @@ from forge.adapters.alphagalerkin_adapter import (
     ForgeGameState,
 )
 from forge.agents.base_agent import AgentConfig
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -54,12 +53,14 @@ class TestModuleImport:
 
     def test_import_without_alphagalerkin(self) -> None:
         """Simulating a missing AlphaGalerkin package does not raise."""
-        with patch.dict("sys.modules", {"src": None, "src.games": None, "src.games.interface": None}):
+        with (
+            patch.dict(
+                "sys.modules", {"src": None, "src.games": None, "src.games.interface": None}
+            ),
+            contextlib.suppress(ImportError, TypeError),
+        ):
             # Re-executing the conditional import block should not crash.
-            try:
-                from src.games.interface import GameInterface  # noqa: F401
-            except (ImportError, TypeError):
-                pass  # expected
+            from src.games.interface import GameInterface  # noqa: F401,PLC0415
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +239,7 @@ class TestForgeGameAdapterToTensor:
 
 def _make_mock_torch_model(action_n: int = 4) -> MagicMock:
     """Return a mock AG model that produces fake logits via torch tensors."""
-    import torch
+    import torch  # noqa: PLC0415
 
     logits = torch.zeros(1, action_n)
     model = MagicMock()
@@ -250,7 +251,7 @@ class TestAlphaGalerkinAgent:
     """Tests for AlphaGalerkinAgent."""
 
     def test_is_base_agent_subclass(self) -> None:
-        from forge.agents.base_agent import BaseAgent
+        from forge.agents.base_agent import BaseAgent  # noqa: PLC0415
 
         assert issubclass(AlphaGalerkinAgent, BaseAgent)
 

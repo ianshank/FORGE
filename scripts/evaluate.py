@@ -79,15 +79,15 @@ def parse_args() -> argparse.Namespace:
 
 def _make_random_agent(num_actions: int = 8) -> object:
     """Return a simple random-action agent backed by a mock."""
-    import random
+    import random  # noqa: PLC0415
 
     class _RandomAgent:
         """Uniform-random action agent."""
 
-        def act(self, observation: object) -> tuple[int, dict]:  # noqa: ARG002
+        def act(self, observation: object) -> tuple[int, dict]:
             return random.randint(0, num_actions - 1), {}
 
-        def learn(self, batch: dict) -> dict:  # noqa: ARG002
+        def learn(self, batch: dict) -> dict:
             return {}
 
     return _RandomAgent()
@@ -99,10 +99,10 @@ def _make_mcts_agent() -> object:
     class _MctsAgent:
         """MCTS stub — falls back to action 0 until native bindings are ready."""
 
-        def act(self, observation: object) -> tuple[int, dict]:  # noqa: ARG002
+        def act(self, observation: object) -> tuple[int, dict]:
             return 0, {"mcts_stub": True}
 
-        def learn(self, batch: dict) -> dict:  # noqa: ARG002
+        def learn(self, batch: dict) -> dict:
             return {}
 
     return _MctsAgent()
@@ -127,7 +127,7 @@ def _make_mock_env(max_episode_length: int = 100, num_actions: int = 8) -> objec
 
     step_count = [0]
 
-    def _step(_action):
+    def _step(_action: object) -> tuple[object, float, bool, bool, dict[str, object]]:
         step_count[0] += 1
         terminated = step_count[0] >= max_episode_length
         if terminated:
@@ -193,7 +193,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     env: object
     try:
-        import forge  # type: ignore[import-untyped]  # noqa: F401
+        import forge  # noqa: F401,PLC0415
 
         logger.debug("Native forge extension available — using real environment")
         # When native bindings are present, construct the real env here.

@@ -5,11 +5,12 @@ environment that generates physically plausible observations without
 relying on MagicMock — and :func:`create_env`, a factory that returns
 the real native FORGE env when available or the fake otherwise.
 """
+
 from __future__ import annotations
 
 import types
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -124,7 +125,7 @@ def _build_grid_obs(
     attenuated = raw * attenuation[:, :, np.newaxis]
     # Scale channel 0 (terrain type proxy) by health to simulate awareness.
     attenuated[:, :, 0] *= float(health)
-    return attenuated.reshape(-1).astype(np.float32)
+    return attenuated.reshape(-1).astype(np.float32)  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +146,7 @@ class RealisticFakeEnv:
         :class:`FakeEnvConfig` instance controlling all parameters.
     """
 
-    def __init__(self, config: Optional[FakeEnvConfig] = None) -> None:
+    def __init__(self, config: FakeEnvConfig | None = None) -> None:
         self._cfg = config or FakeEnvConfig()
         self.action_space = types.SimpleNamespace(n=self._cfg.action_space_n)
         self._obs_size = _observation_size(self._cfg)
@@ -156,9 +157,7 @@ class RealisticFakeEnv:
         self._health: float = 1.0
         self._stamina: float = 1.0
         self._position: list[int] = [0, 0]
-        self._inventory: np.ndarray = np.zeros(
-            (self._cfg.inventory_slots, 2), dtype=np.float32
-        )
+        self._inventory: np.ndarray = np.zeros((self._cfg.inventory_slots, 2), dtype=np.float32)
         self._task_tier: int = 0
 
     # ------------------------------------------------------------------
@@ -171,7 +170,7 @@ class RealisticFakeEnv:
 
         grid_part = _build_grid_obs(self._rng, cfg, self._health)
 
-        inventory_part = self._inventory.reshape(-1).astype(np.float32)
+        inventory_part: np.ndarray = self._inventory.reshape(-1).astype(np.float32)
 
         scalar_part = np.array(
             [
@@ -184,7 +183,7 @@ class RealisticFakeEnv:
             dtype=np.float32,
         )
 
-        return np.concatenate([grid_part, inventory_part, scalar_part]).astype(
+        return np.concatenate([grid_part, inventory_part, scalar_part]).astype(  # type: ignore[no-any-return]
             np.float32
         )
 
@@ -204,8 +203,8 @@ class RealisticFakeEnv:
     def reset(
         self,
         *,
-        seed: Optional[int] = None,
-        options: Optional[dict] = None,
+        seed: int | None = None,
+        options: dict | None = None,
     ) -> tuple[np.ndarray, dict]:
         """Reset the environment and return the initial observation and info.
 
@@ -223,16 +222,12 @@ class RealisticFakeEnv:
         self._health = 1.0
         self._stamina = 1.0
         self._position = [0, 0]
-        self._inventory = np.zeros(
-            (self._cfg.inventory_slots, 2), dtype=np.float32
-        )
+        self._inventory = np.zeros((self._cfg.inventory_slots, 2), dtype=np.float32)
         self._task_tier = int(self._rng.integers(0, self._cfg.num_tiers))
 
         return self._make_obs(), self._make_info()
 
-    def step(
-        self, action: int
-    ) -> tuple[np.ndarray, float, bool, bool, dict]:
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         """Advance the environment by one step.
 
         Parameters
@@ -256,15 +251,14 @@ class RealisticFakeEnv:
             self._stamina = min(1.0, self._stamina + 0.01)
             reward = 0.0
 
-        elif action in (_ACTION_MOVE_UP, _ACTION_MOVE_DOWN,
-                        _ACTION_MOVE_LEFT, _ACTION_MOVE_RIGHT):
+        elif action in (_ACTION_MOVE_UP, _ACTION_MOVE_DOWN, _ACTION_MOVE_LEFT, _ACTION_MOVE_RIGHT):
             # Movement: drains a little stamina, grants exploration reward.
             self._stamina = max(0.0, self._stamina - 0.02)
             dx, dy = {
-                _ACTION_MOVE_UP:    (0, -1),
-                _ACTION_MOVE_DOWN:  (0,  1),
-                _ACTION_MOVE_LEFT:  (-1, 0),
-                _ACTION_MOVE_RIGHT: (1,  0),
+                _ACTION_MOVE_UP: (0, -1),
+                _ACTION_MOVE_DOWN: (0, 1),
+                _ACTION_MOVE_LEFT: (-1, 0),
+                _ACTION_MOVE_RIGHT: (1, 0),
             }[action]
             self._position[0] += dx
             self._position[1] += dy
@@ -275,9 +269,7 @@ class RealisticFakeEnv:
             self._stamina = max(0.0, self._stamina - 0.05)
             slot = int(self._rng.integers(0, cfg.inventory_slots))
             self._inventory[slot, 0] = float(self._rng.integers(1, 8))  # item id
-            self._inventory[slot, 1] = min(
-                self._inventory[slot, 1] + 1.0, 99.0
-            )
+            self._inventory[slot, 1] = min(self._inventory[slot, 1] + 1.0, 99.0)
             reward = cfg.resource_gather_reward
 
         elif action == _ACTION_COMBAT:
@@ -308,7 +300,7 @@ class RealisticFakeEnv:
 def create_env(
     *,
     force_fake: bool = False,
-    config: Optional[FakeEnvConfig] = None,
+    config: FakeEnvConfig | None = None,
     native_config: Any = None,
 ) -> Any:
     """Return a FORGE environment instance.
@@ -329,7 +321,9 @@ def create_env(
         Passed through to ``ForgeGymnasiumEnv`` when the native env is used.
     """
     if NATIVE_AVAILABLE and not force_fake:
-        from forge_env.gymnasium_env import ForgeGymnasiumEnv  # type: ignore[import]
+        from forge_env.gymnasium_env import (  # noqa: PLC0415
+            ForgeGymnasiumEnv,
+        )
 
         return ForgeGymnasiumEnv(config=native_config)
     return RealisticFakeEnv(config or FakeEnvConfig())

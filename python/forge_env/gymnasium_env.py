@@ -63,9 +63,7 @@ class ForgeGymnasiumEnv:
                 "Install with: pip install -e . (requires maturin)"
             )
         if not HAS_GYMNASIUM:
-            raise ImportError(
-                "gymnasium not installed. Install with: pip install gymnasium"
-            )
+            raise ImportError("gymnasium not installed. Install with: pip install gymnasium")
 
         self._env = _NativeEnv(config=config)
         self.render_mode = render_mode

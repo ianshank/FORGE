@@ -1,6 +1,7 @@
 """Integration tests that run the full training pipeline in dry-run mode.
 These tests use REAL environments (or RealisticFakeEnv) — no MagicMock.
 """
+
 from __future__ import annotations
 
 import json
@@ -8,15 +9,14 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
 
-from forge.agents.random_agent import RandomAgent
 from forge.agents.base_agent import AgentConfig
-from forge.config import ForgeConfig, DryRunConfig
-from forge.evaluation.evaluator import Evaluator, EvalConfig
-from forge.testing.env_factory import create_env, FakeEnvConfig, NATIVE_AVAILABLE
+from forge.agents.random_agent import RandomAgent
+from forge.config import DryRunConfig, ForgeConfig
+from forge.evaluation.evaluator import EvalConfig, Evaluator
+from forge.testing.env_factory import FakeEnvConfig, create_env
 from forge.utils.metrics import MetricsTracker
 
 
@@ -46,10 +46,12 @@ class TestDryRunPipeline:
             AgentConfig(name="dry_run_random"),
             action_space_size=env.action_space.n,
         )
-        evaluator = Evaluator(EvalConfig(
-            num_episodes=config.dry_run.max_episodes,
-            seed=config.dry_run.seed,
-        ))
+        evaluator = Evaluator(
+            EvalConfig(
+                num_episodes=config.dry_run.max_episodes,
+                seed=config.dry_run.seed,
+            )
+        )
         result = evaluator.evaluate(env, agent)
         assert result.num_episodes == config.dry_run.max_episodes
         assert result.total_steps > 0
@@ -63,13 +65,13 @@ class TestDryRunPipeline:
             AgentConfig(name="metrics_test"),
             action_space_size=env.action_space.n,
         )
-        for ep in range(config.dry_run.max_episodes):
-            obs, info = env.reset()
+        for _ep in range(config.dry_run.max_episodes):
+            obs, _ = env.reset()
             ep_reward = 0.0
             done = False
             while not done:
                 action, _ = agent.act(obs)
-                obs, reward, terminated, truncated, info = env.step(action)
+                obs, reward, terminated, truncated, _info = env.step(action)
                 ep_reward += reward
                 done = terminated or truncated
             tracker.record("episode_reward", ep_reward)
@@ -117,7 +119,9 @@ class TestDryRunPipeline:
     def test_reward_distribution(self) -> None:
         env = self._make_env(max_steps=20, seed=7)
         agent = RandomAgent(
-            AgentConfig(name="dist"), action_space_size=env.action_space.n, seed=7,
+            AgentConfig(name="dist"),
+            action_space_size=env.action_space.n,
+            seed=7,
         )
         rewards = []
         for _ in range(10):
@@ -130,4 +134,4 @@ class TestDryRunPipeline:
                 ep_r += r
                 done = t or tr
             rewards.append(ep_r)
-        assert len(set(round(r, 2) for r in rewards)) > 1
+        assert len({round(r, 2) for r in rewards}) > 1

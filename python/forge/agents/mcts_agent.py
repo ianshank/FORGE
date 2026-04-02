@@ -1,4 +1,5 @@
 """MCTS agent with UCB1 tree search."""
+
 from __future__ import annotations
 
 import logging
@@ -43,25 +44,19 @@ class MCTSNode:
         self.parent: MCTSNode | None = parent
         self.action: int | None = action
 
-    def ucb1_score(
-        self, parent_visits: int, exploration_constant: float
-    ) -> float:
+    def ucb1_score(self, parent_visits: int, exploration_constant: float) -> float:
         """Compute the UCB1 score for this node."""
         if self.visit_count == 0:
             return float("inf")
         exploitation = self.total_value / self.visit_count
-        exploration = exploration_constant * math.sqrt(
-            math.log(parent_visits) / self.visit_count
-        )
+        exploration = exploration_constant * math.sqrt(math.log(parent_visits) / self.visit_count)
         return exploitation + exploration
 
     def is_leaf(self) -> bool:
         """Return True if this node has no children."""
         return len(self.children) == 0
 
-    def best_child(
-        self, exploration_constant: float
-    ) -> tuple[int, MCTSNode]:
+    def best_child(self, exploration_constant: float) -> tuple[int, MCTSNode]:
         """Return the child with the highest UCB1 score."""
         best_action = -1
         best_node: MCTSNode | None = None
@@ -107,9 +102,7 @@ class MCTSAgent(BaseAgent):
             action: child.visit_count for action, child in root.children.items()
         }
         ucb1_scores: dict[int, float] = {
-            action: child.ucb1_score(
-                root.visit_count, self.mcts_config.exploration_constant
-            )
+            action: child.ucb1_score(root.visit_count, self.mcts_config.exploration_constant)
             for action, child in root.children.items()
         }
 
@@ -168,6 +161,4 @@ class MCTSAgent(BaseAgent):
         """Compute the maximum depth of the search tree."""
         if node.is_leaf():
             return 0
-        return 1 + max(
-            self._compute_tree_depth(child) for child in node.children.values()
-        )
+        return 1 + max(self._compute_tree_depth(child) for child in node.children.values())

@@ -45,9 +45,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         Parsed arguments namespace.
     """
     parser = argparse.ArgumentParser(description="Train a FORGE agent")
-    parser.add_argument(
-        "--config", type=str, default="forge.toml", help="Path to config file"
-    )
+    parser.add_argument("--config", type=str, default="forge.toml", help="Path to config file")
     parser.add_argument(
         "--agent",
         type=str,
@@ -177,9 +175,7 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
             )
 
     if all_metrics:
-        checkpoint_mgr.save(
-            agent, episode=trainer.episode_count, metrics=all_metrics[-1]
-        )
+        checkpoint_mgr.save(agent, episode=trainer.episode_count, metrics=all_metrics[-1])
         logger.info("Final checkpoint saved to %s", args.checkpoint_dir)
 
     if dashboard is not None:

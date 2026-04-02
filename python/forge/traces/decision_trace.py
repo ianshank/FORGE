@@ -1,4 +1,5 @@
 """Decision trace dataclass for structured agent decision logging."""
+
 from __future__ import annotations
 
 import logging

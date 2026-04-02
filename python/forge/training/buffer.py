@@ -1,4 +1,5 @@
 """Rollout buffer for collecting and sampling training data."""
+
 from __future__ import annotations
 
 import logging
@@ -30,9 +31,7 @@ class RolloutBuffer:
         self._infos: list[dict[str, Any]] = []
         self._size: int = 0
         self._pos: int = 0
-        logger.info(
-            "RolloutBuffer created: capacity=%d, obs_shape=%s", capacity, obs_shape
-        )
+        logger.info("RolloutBuffer created: capacity=%d, obs_shape=%s", capacity, obs_shape)
 
     def add(
         self,

@@ -1,4 +1,5 @@
 """Checkpoint management for saving and loading agent state."""
+
 from __future__ import annotations
 
 import json
@@ -105,7 +106,9 @@ class CheckpointManager:
         if isinstance(version, int) and version < 1:
             metadata.setdefault("schema_version", CHECKPOINT_SCHEMA_VERSION)
             metadata.setdefault("step_count", 0)
-            logger.debug("Migrated checkpoint metadata from v%s to v%d", version, CHECKPOINT_SCHEMA_VERSION)
+            logger.debug(
+                "Migrated checkpoint metadata from v%s to v%d", version, CHECKPOINT_SCHEMA_VERSION
+            )
         return metadata
 
     def _rotate_checkpoints(self) -> None:

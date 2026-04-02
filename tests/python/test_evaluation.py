@@ -7,12 +7,11 @@ isolated from the native Rust extension and exercise only the
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+import json
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 from forge.evaluation import EvalConfig, EvalResult, Evaluator
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -86,19 +85,19 @@ class TestEvalResult:
     """EvalResult construction and serialisation."""
 
     def _make_result(self, **kwargs) -> EvalResult:
-        defaults = dict(
-            num_episodes=5,
-            reward_mean=3.0,
-            reward_std=0.5,
-            reward_min=2.0,
-            reward_max=4.0,
-            episode_length_mean=10.0,
-            episode_length_std=1.0,
-            tier_success_rates={1: 0.8},
-            steps_per_second=100.0,
-            determinism_passed=True,
-            total_steps=50,
-        )
+        defaults = {
+            "num_episodes": 5,
+            "reward_mean": 3.0,
+            "reward_std": 0.5,
+            "reward_min": 2.0,
+            "reward_max": 4.0,
+            "episode_length_mean": 10.0,
+            "episode_length_std": 1.0,
+            "tier_success_rates": {1: 0.8},
+            "steps_per_second": 100.0,
+            "determinism_passed": True,
+            "total_steps": 50,
+        }
         defaults.update(kwargs)
         return EvalResult(**defaults)
 
@@ -152,7 +151,7 @@ class TestRewardStats:
     """Reward statistics are computed correctly."""
 
     def test_reward_mean(self) -> None:
-        # Each episode: 5 steps × 1.0 reward = 5.0
+        # Each episode: 5 steps x 1.0 reward = 5.0
         env = _make_env(reward_per_step=1.0, episode_steps=5)
         agent = _make_agent()
         cfg = EvalConfig(num_episodes=4, determinism_check=False)
@@ -264,8 +263,8 @@ class TestDeterminism:
         obs = MagicMock()
         env.reset.return_value = (obs, {})
 
-        # First episode: reward = 5.0 (5 steps × 1.0)
-        # Determinism re-run (episode index 0 again): reward = 10.0 (10 steps × 1.0)
+        # First episode: reward = 5.0 (5 steps x 1.0)
+        # Determinism re-run (episode index 0 again): reward = 10.0 (10 steps x 1.0)
         call_count = [0]
 
         def _step(_action):
@@ -303,8 +302,6 @@ class TestToDict:
     """EvalResult.to_dict round-trip and JSON-serialisability."""
 
     def test_to_dict_is_json_serialisable(self) -> None:
-        import json
-
         env = _make_env(episode_steps=3, tier=1, success=True)
         agent = _make_agent()
         cfg = EvalConfig(num_episodes=2, determinism_check=False)

@@ -61,30 +61,18 @@ def parse_args() -> argparse.Namespace:
         choices=list(_MODE_CHOICES),
         help="Which UI to launch",
     )
-    parser.add_argument(
-        "--port", type=int, default=DEFAULT_DEMO_PORT, help="Demo UI port"
-    )
+    parser.add_argument("--port", type=int, default=DEFAULT_DEMO_PORT, help="Demo UI port")
     parser.add_argument(
         "--server-port", type=int, default=DEFAULT_SERVER_PORT, help="forge-server port"
     )
-    parser.add_argument(
-        "--host", type=str, default=DEFAULT_HOST, help="Bind host"
-    )
-    parser.add_argument(
-        "--with-training", action="store_true", help="Also start a training loop"
-    )
-    parser.add_argument(
-        "--agent", type=str, default="random", help="Agent type for training"
-    )
-    parser.add_argument(
-        "--no-browser", action="store_true", help="Don't auto-open browser"
-    )
+    parser.add_argument("--host", type=str, default=DEFAULT_HOST, help="Bind host")
+    parser.add_argument("--with-training", action="store_true", help="Also start a training loop")
+    parser.add_argument("--agent", type=str, default="random", help="Agent type for training")
+    parser.add_argument("--no-browser", action="store_true", help="Don't auto-open browser")
     return parser.parse_args()
 
 
-def _start_process(
-    cmd: list[str], label: str, logger: logging.Logger
-) -> subprocess.Popen[bytes]:
+def _start_process(cmd: list[str], label: str, logger: logging.Logger) -> subprocess.Popen[bytes]:
     """Start a subprocess and register cleanup."""
     logger.info("Starting %s: %s", label, " ".join(cmd))
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -92,9 +80,7 @@ def _start_process(
     return proc
 
 
-def _cleanup(
-    proc: subprocess.Popen[bytes], label: str, logger: logging.Logger
-) -> None:
+def _cleanup(proc: subprocess.Popen[bytes], label: str, logger: logging.Logger) -> None:
     """Terminate a subprocess if still running."""
     if proc.poll() is None:
         logger.info("Shutting down %s (PID %d)", label, proc.pid)
@@ -114,18 +100,14 @@ def _find_server_binary() -> Path | None:
     return None
 
 
-def _start_forge_server(
-    binary: Path, logger: logging.Logger
-) -> subprocess.Popen[bytes]:
+def _start_forge_server(binary: Path, logger: logging.Logger) -> subprocess.Popen[bytes]:
     """Start the Rust forge-server binary."""
     proc = _start_process([str(binary)], "forge-server", logger)
     time.sleep(_STARTUP_WAIT_S)
     return proc
 
 
-def _start_ui(
-    mode: str, host: str, port: int, logger: logging.Logger
-) -> subprocess.Popen[bytes]:
+def _start_ui(mode: str, host: str, port: int, logger: logging.Logger) -> subprocess.Popen[bytes]:
     """Start the chosen UI server (demo-ui or dashboard)."""
     if mode == "dashboard":
         dashboard_dir = Path(__file__).parent.parent / "dashboard"
@@ -136,16 +118,22 @@ def _start_ui(
         atexit.register(_cleanup, proc, "dashboard", logger)
         return proc
     return _start_process(
-        [sys.executable, "-m", "uvicorn", "demo_ui.backend.main:app",
-         "--host", host, "--port", str(port)],
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "demo_ui.backend.main:app",
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ],
         "demo-ui",
         logger,
     )
 
 
-def _wait_for_processes(
-    procs: list[subprocess.Popen[bytes]], logger: logging.Logger
-) -> None:
+def _wait_for_processes(procs: list[subprocess.Popen[bytes]], logger: logging.Logger) -> None:
     """Block until Ctrl+C, logging any process exits."""
     while True:
         for proc in procs:
@@ -185,8 +173,14 @@ def main() -> None:
 
     # Step 3: Optional training loop
     if args.with_training:
-        train_cmd = [sys.executable, "scripts/train.py", "--agent", args.agent,
-                     "--episodes", _TRAINING_EPISODES]
+        train_cmd = [
+            sys.executable,
+            "scripts/train.py",
+            "--agent",
+            args.agent,
+            "--episodes",
+            _TRAINING_EPISODES,
+        ]
         if server_bin is not None:
             train_cmd.extend(["--dashboard-url", server_url])
         procs.append(_start_process(train_cmd, "training", logger))

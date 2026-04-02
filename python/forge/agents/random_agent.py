@@ -1,4 +1,5 @@
 """Random agent implementation for baseline comparisons."""
+
 from __future__ import annotations
 
 import logging

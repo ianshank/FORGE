@@ -3,18 +3,16 @@
 AlphaGalerkin is an optional dependency; all imports are guarded behind a
 try/except so FORGE continues to function when it is not installed.
 """
+
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +180,7 @@ class AlphaGalerkinAgent(BaseAgent):
             ``(action_id, info)`` where *info* contains the raw logits and
             computed probabilities.
         """
-        import torch  # lazy import — torch is optional at module level
+        import torch  # lazy import — torch is optional at module level  # noqa: PLC0415
 
         obs_tensor = torch.tensor(observation, dtype=torch.float32).unsqueeze(0)
         with torch.no_grad():

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
@@ -139,8 +139,7 @@ class Evaluator:
         lengths_arr = np.array(episode_lengths, dtype=float)
 
         tier_success_rates: dict[int, float] = {
-            tier: float(np.mean(successes))
-            for tier, successes in tier_successes.items()
+            tier: float(np.mean(successes)) for tier, successes in tier_successes.items()
         }
 
         result = EvalResult(
@@ -172,9 +171,7 @@ class Evaluator:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _run_episode(
-        self, env: Any, agent: Any
-    ) -> tuple[float, int, dict[int, bool]]:
+    def _run_episode(self, env: Any, agent: Any) -> tuple[float, int, dict[int, bool]]:
         """Run a single episode.
 
         Returns
@@ -205,9 +202,7 @@ class Evaluator:
 
         return total_reward, steps, tier_successes
 
-    def _check_determinism(
-        self, env: Any, agent: Any, expected_reward: float
-    ) -> bool:
+    def _check_determinism(self, env: Any, agent: Any, expected_reward: float) -> bool:
         """Re-run one episode and verify the reward matches *expected_reward*.
 
         Returns ``True`` if the rewards are identical (within floating-point

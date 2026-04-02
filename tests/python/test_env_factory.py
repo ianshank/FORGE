@@ -3,18 +3,16 @@
 All tests use the fake env directly (force_fake=True) so that no native
 Rust extension is required.
 """
+
 from __future__ import annotations
 
 import numpy as np
-import pytest
-
 from forge.testing.env_factory import (
     FakeEnvConfig,
     RealisticFakeEnv,
     _observation_size,
     create_env,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -156,7 +154,6 @@ class TestTruncation:
 
     def test_terminated_when_health_depleted(self):
         """Combat actions drain health; repeated combat should eventually terminate."""
-        cfg = FakeEnvConfig(max_episode_length=200)
         env = _make_env(FakeEnvConfig(max_episode_length=200, seed=0))
         env.reset(seed=0)
         # Force health to near-zero directly for a deterministic test.
@@ -180,9 +177,7 @@ class TestRewards:
             env.reset(seed=cfg.seed)
             _, reward, *_ = env.step(action)
             rewards.add(reward)
-        assert len(rewards) > 1, (
-            "Rewards should differ across action types, got: %s" % rewards
-        )
+        assert len(rewards) > 1, f"Rewards should differ across action types, got: {rewards}"
 
     def test_gather_reward_matches_config(self):
         cfg = FakeEnvConfig(resource_gather_reward=0.75, seed=1)
