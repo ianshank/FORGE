@@ -44,11 +44,66 @@ jobs:
   bench:
     name: Benchmarks
     runs-on: ubuntu-latest
+    # Performance regression threshold: flag any benchmark that regresses >5%.
+    # The comparison step uses continue-on-error so the first run (no baseline)
+    # does not fail the build.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo bench --no-run -p forge-bench
+
+      # Fast compile-only check (catches build errors without running benchmarks)
+      - name: Compile benchmarks
+        run: cargo bench --no-run -p forge-bench
+
+      # Run benchmarks and capture output in Criterion's bencher format
+      - name: Run benchmarks
+        run: cargo bench -p forge-bench -- --output-format bencher 2>&1 | tee benchmark_results.txt
+
+      # Upload raw benchmark results as a CI artifact for manual inspection
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark_results.txt
+          retention-days: 90
+
+      # Compare against stored baseline and flag >5% regressions.
+      # Uses gh-pages branch to persist historical benchmark data as JSON.
+      # continue-on-error: the first run has no baseline and would otherwise fail.
+      - name: Benchmark regression check (>5% threshold)
+        uses: benchmark-action/github-action-benchmark@v1.20.4
+        with:
+          tool: cargo
+          output-file-path: benchmark_results.txt
+          # Store baseline JSON in gh-pages branch under dev/bench
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
+          # Fail the step if any benchmark regresses by more than 105% of baseline
+          alert-threshold: "105%"
+          fail-on-alert: true
+          # Post a comment on PRs when regression is detected
+          comment-on-alert: true
+          # Auto-push updated baseline on pushes to main/develop (not on PRs)
+          auto-push: ${{ github.event_name == 'push' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      # Install critcmp for local baseline comparison (useful for developers)
+      - name: Install critcmp
+        run: cargo install critcmp --locked
+      - name: Compare with critcmp (if baseline exists)
+        run: |
+          if [ -d target/criterion ]; then
+            echo "Criterion results found, running critcmp..."
+            critcmp --list target/criterion || true
+          else
+            echo "No criterion baseline found (first run). Skipping comparison."
+          fi
+        continue-on-error: true
 
   coverage:
     name: Rust Coverage (tarpaulin)
