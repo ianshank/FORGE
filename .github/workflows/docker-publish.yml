@@ -1,0 +1,222 @@
+# =============================================================================
+# Docker Image Publishing Workflow
+# =============================================================================
+# Builds and publishes multi-platform Docker images to GitHub Container
+# Registry (ghcr.io) for all three FORGE services:
+#   - forge-simulation  (Rust server + Python forge-env)
+#   - forge-dashboard   (React dashboard served via nginx)
+#   - forge-demo        (FastAPI demo UI)
+#
+# Triggers:
+#   - Pushing a semantic version tag (v1.0.0, v0.2.3-rc.1, etc.)
+#   - Manual dispatch via the Actions UI (workflow_dispatch)
+#
+# Images are tagged with the semver version and "latest" for stable releases.
+# All action versions are pinned for reproducibility.
+# =============================================================================
+
+name: Publish Docker Images
+
+on:
+  # Trigger on semantic version tags pushed to the repository
+  push:
+    tags:
+      - "v*"
+
+  # Allow manual runs from the GitHub Actions UI
+  workflow_dispatch:
+
+# ---------------------------------------------------------------------------
+# Repository-level permissions — least privilege
+# ---------------------------------------------------------------------------
+permissions:
+  packages: write   # Required to push images to GHCR
+  contents: read    # Required to checkout the repository
+
+# ---------------------------------------------------------------------------
+# Shared environment variables used across all jobs
+# ---------------------------------------------------------------------------
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # =========================================================================
+  # Job 1: Build and push the simulation server image
+  # =========================================================================
+  build-simulation:
+    name: "Build simulation image"
+    runs-on: ubuntu-latest
+
+    steps:
+      # -- Checkout source code ---------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4.1.7
+
+      # -- Set up Docker Buildx for multi-platform builds -------------------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.6.1
+
+      # -- Authenticate with GitHub Container Registry ----------------------
+      # Uses the built-in GITHUB_TOKEN — no manual secret configuration
+      # required. On first run, the token is automatically available.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # -- Extract metadata for Docker image tags and labels ----------------
+      # Produces semver tags (e.g. 1.2.3, 1.2, 1) and "latest" for stable
+      # releases. For workflow_dispatch without a tag, uses the branch/sha.
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5.5.1
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/forge-simulation
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # -- Build and push the image -----------------------------------------
+      # Context is the repo root (same as docker-compose context: ..)
+      # Dockerfile path matches docker-compose: docker/Dockerfile
+      - name: Build and push simulation image
+        uses: docker/build-push-action@v5.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # -- Optional health check validation ---------------------------------
+      # Pulls the amd64 image and verifies the binary is present.
+      # Marked continue-on-error so a flaky check does not fail the release.
+      - name: Validate image health check
+        continue-on-error: true
+        run: |
+          # Pull the just-pushed image (amd64 only for validation)
+          IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/forge-simulation:sha-${GITHUB_SHA::7}"
+          docker pull --platform linux/amd64 "$IMAGE"
+          # Verify the server binary exists in the image
+          docker run --rm --entrypoint sh "$IMAGE" -c "which forge-server && echo 'OK: forge-server binary found'"
+
+  # =========================================================================
+  # Job 2: Build and push the React dashboard image
+  # =========================================================================
+  build-dashboard:
+    name: "Build dashboard image"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.1.7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.6.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5.5.1
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/forge-dashboard
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # -- Build and push ---------------------------------------------------
+      # Context is the repo root; Dockerfile.dashboard references
+      # dashboard/ and docker/nginx.conf relative to root.
+      - name: Build and push dashboard image
+        uses: docker/build-push-action@v5.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.dashboard
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # -- Optional health check validation ---------------------------------
+      - name: Validate image health check
+        continue-on-error: true
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/forge-dashboard:sha-${GITHUB_SHA::7}"
+          docker pull --platform linux/amd64 "$IMAGE"
+          # Verify nginx config and static assets are in place
+          docker run --rm "$IMAGE" sh -c "test -f /etc/nginx/conf.d/forge.conf && test -d /usr/share/nginx/html && echo 'OK: nginx config and static assets present'"
+
+  # =========================================================================
+  # Job 3: Build and push the FastAPI demo UI image
+  # =========================================================================
+  build-demo:
+    name: "Build demo image"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.1.7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.6.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5.5.1
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/forge-demo
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # -- Build and push ---------------------------------------------------
+      # Dockerfile.demo copies demo_ui/, examples/, and forge.toml from root.
+      - name: Build and push demo image
+        uses: docker/build-push-action@v5.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.demo
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # -- Optional health check validation ---------------------------------
+      - name: Validate image health check
+        continue-on-error: true
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/forge-demo:sha-${GITHUB_SHA::7}"
+          docker pull --platform linux/amd64 "$IMAGE"
+          # Verify uvicorn entrypoint module is importable
+          docker run --rm "$IMAGE" python -c "import demo_ui.backend.main; print('OK: demo module importable')"
