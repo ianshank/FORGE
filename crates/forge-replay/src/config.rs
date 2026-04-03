@@ -67,4 +67,27 @@ mod tests {
         assert!(deser.include_reasoning);
         assert_eq!(deser.format_version, 2);
     }
+
+    #[test]
+    fn test_clone_config() {
+        let config = ReplayConfig {
+            record_compact: false,
+            ..ReplayConfig::default()
+        };
+        let cloned = config.clone();
+        assert!(!cloned.record_compact);
+    }
+
+    #[test]
+    fn test_debug_config() {
+        let config = ReplayConfig::default();
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("ReplayConfig"));
+    }
+
+    #[test]
+    fn test_default_format_version_matches_constant() {
+        let config = ReplayConfig::default();
+        assert_eq!(config.format_version, compact::FORMAT_VERSION);
+    }
 }

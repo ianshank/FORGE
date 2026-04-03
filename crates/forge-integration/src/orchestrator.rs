@@ -280,6 +280,136 @@ mod tests {
             assert_eq!(orch.num_agents(), n);
         }
     }
+
+    #[test]
+    fn test_config_accessor() {
+        let config = test_config();
+        let orch = IntegrationOrchestrator::new(2, config.clone());
+        assert_eq!(orch.config().enabled, config.enabled);
+        assert_eq!(
+            orch.config().memory_write_interval,
+            config.memory_write_interval
+        );
+    }
+
+    #[test]
+    fn test_zero_agents_orchestrator() {
+        let orch = IntegrationOrchestrator::new(0, test_config());
+        assert_eq!(orch.num_agents(), 0);
+        assert!(orch.agent_memory(0).is_none());
+    }
+
+    #[test]
+    fn test_many_ticks_no_panic() {
+        let mut orch = IntegrationOrchestrator::new(2, test_config());
+        for _ in 0..100 {
+            orch.tick();
+        }
+        assert_eq!(orch.current_tick(), 100);
+    }
+
+    #[test]
+    fn test_cooperation_both_reputations_increase() {
+        let mut orch = IntegrationOrchestrator::new(3, test_config());
+        let rep_a_before = orch.reputation.reputation(0);
+        let rep_b_before = orch.reputation.reputation(1);
+        orch.record_cooperation(0, 1);
+        let rep_a_after = orch.reputation.reputation(0);
+        let rep_b_after = orch.reputation.reputation(1);
+        assert!(rep_a_after > rep_a_before);
+        assert!(rep_b_after > rep_b_before);
+    }
+
+    #[test]
+    fn test_hostility_decreases_trust() {
+        let mut orch = IntegrationOrchestrator::new(3, test_config());
+        let initial_trust = orch.trust.trust(0, 1);
+        orch.record_hostility(0, 1);
+        assert!(orch.trust.trust(0, 1) < initial_trust);
+    }
+
+    #[test]
+    fn test_blend_rewards_disabled_social_returns_task() {
+        let config = IntegrationConfig {
+            enabled: true,
+            social_reward_weight: 0.5,
+            social: forge_social::config::SocialConfig {
+                enabled: false,
+                ..forge_social::config::SocialConfig::default()
+            },
+            ..IntegrationConfig::default()
+        };
+        let orch = IntegrationOrchestrator::new(2, config);
+        let task = vec![1.0, 2.0];
+        let blended = orch.blend_rewards(&task);
+        assert_eq!(blended, task);
+    }
+
+    #[test]
+    fn test_memory_write_interval_zero_no_panic() {
+        let config = IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 0,
+            memory: forge_memory::config::MemoryConfig {
+                enabled: true,
+                ..forge_memory::config::MemoryConfig::default()
+            },
+            ..IntegrationConfig::default()
+        };
+        let mut orch = IntegrationOrchestrator::new(2, config);
+        for _ in 0..10 {
+            orch.tick();
+        }
+        assert_eq!(orch.current_tick(), 10);
+    }
+
+    #[test]
+    fn test_memory_disabled_no_decay() {
+        let config = IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 1,
+            memory: forge_memory::config::MemoryConfig {
+                enabled: false,
+                ..forge_memory::config::MemoryConfig::default()
+            },
+            ..IntegrationConfig::default()
+        };
+        let mut orch = IntegrationOrchestrator::new(1, config);
+        for _ in 0..5 {
+            orch.tick();
+        }
+        assert_eq!(orch.current_tick(), 5);
+    }
+
+    #[test]
+    fn test_agent_idx_stored_correctly() {
+        let orch = IntegrationOrchestrator::new(3, test_config());
+        // Agent indexes are correctly assigned
+        assert!(orch.agent_memory(0).is_some());
+        assert!(orch.agent_memory(1).is_some());
+        assert!(orch.agent_memory(2).is_some());
+        assert!(orch.agent_memory(3).is_none());
+    }
+
+    #[test]
+    fn test_blend_rewards_empty_input() {
+        let orch = IntegrationOrchestrator::new(2, test_config());
+        let empty: Vec<f32> = vec![];
+        let blended = orch.blend_rewards(&empty);
+        assert!(blended.is_empty());
+    }
+
+    #[test]
+    fn test_repeated_cooperation_increases_trust_monotonically() {
+        let mut orch = IntegrationOrchestrator::new(3, test_config());
+        let mut prev = orch.trust.trust(0, 1);
+        for _ in 0..5 {
+            orch.record_cooperation(0, 1);
+            let current = orch.trust.trust(0, 1);
+            assert!(current >= prev);
+            prev = current;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -351,6 +481,31 @@ mod proptests {
                 orch.trust.trust(0, 1) >= initial,
                 "trust should not decrease after cooperation"
             );
+        }
+
+        /// Agent count is always preserved after construction.
+        #[test]
+        fn num_agents_matches_construction(n in 0_usize..20) {
+            let orch = IntegrationOrchestrator::new(n, valid_config());
+            prop_assert_eq!(orch.num_agents(), n);
+        }
+
+        /// Blend rewards returns same length as input.
+        #[test]
+        fn blend_rewards_length_matches_zero_weight(n in 1_usize..10) {
+            let config = IntegrationConfig {
+                enabled: true,
+                social_reward_weight: 0.0,
+                ..IntegrationConfig::default()
+            };
+            let orch = IntegrationOrchestrator::new(n, config);
+            let task: Vec<f32> = (0..n).map(|i| i as f32).collect();
+            let blended = orch.blend_rewards(&task);
+            prop_assert_eq!(blended.len(), n);
+            // With zero weight, blended should match task exactly
+            for (b, t) in blended.iter().zip(task.iter()) {
+                prop_assert_eq!(*b, *t);
+            }
         }
     }
 }

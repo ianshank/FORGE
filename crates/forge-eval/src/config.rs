@@ -180,4 +180,81 @@ mod tests {
         config.base_forge_config.agents.num_agents = 0;
         assert!(!config.is_valid());
     }
+
+    #[test]
+    fn test_validate_multiple_errors() {
+        let mut config = EvalConfig::default();
+        config.episodes_per_scenario = 0;
+        config.max_steps_per_episode = 0;
+        config.tiers = vec![0];
+        let errors = config.validate();
+        assert!(errors.len() >= 3);
+    }
+
+    #[test]
+    fn test_validate_all_valid_tiers() {
+        let mut config = EvalConfig::default();
+        config.tiers = vec![1, 2, 3, 4, 5, 6];
+        assert!(config.is_valid());
+    }
+
+    #[test]
+    fn test_validate_zero_height() {
+        let mut config = EvalConfig::default();
+        config.base_forge_config.world.height = 0;
+        assert!(!config.is_valid());
+    }
+
+    #[test]
+    fn test_default_parallelism() {
+        let config = EvalConfig::default();
+        assert_eq!(config.parallelism, 0);
+    }
+
+    #[test]
+    fn test_clone_config() {
+        let config = EvalConfig {
+            episodes_per_scenario: 42,
+            base_seed: 123,
+            ..EvalConfig::default()
+        };
+        let cloned = config.clone();
+        assert_eq!(cloned.episodes_per_scenario, 42);
+        assert_eq!(cloned.base_seed, 123);
+    }
+
+    #[test]
+    fn test_debug_impl() {
+        let config = EvalConfig::default();
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("EvalConfig"));
+    }
+
+    #[test]
+    fn test_validate_empty_tiers_is_valid() {
+        let config = EvalConfig::default();
+        assert!(config.tiers.is_empty());
+        assert!(config.is_valid());
+    }
+
+    #[test]
+    fn test_serde_with_all_fields() {
+        let config = EvalConfig {
+            episodes_per_scenario: 1,
+            max_steps_per_episode: 1,
+            base_seed: u64::MAX,
+            tiers: vec![6],
+            parallelism: 16,
+            record_replays: true,
+            record_trajectories: true,
+            ..EvalConfig::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: EvalConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.episodes_per_scenario, 1);
+        assert_eq!(deser.base_seed, u64::MAX);
+        assert_eq!(deser.parallelism, 16);
+        assert!(deser.record_replays);
+        assert!(deser.record_trajectories);
+    }
 }

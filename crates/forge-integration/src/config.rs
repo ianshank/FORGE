@@ -103,4 +103,117 @@ mod tests {
         let _soc = &config.social;
         let _cog = &config.cognitive;
     }
+
+    #[test]
+    fn test_default_memory_write_interval() {
+        let config = IntegrationConfig::default();
+        assert_eq!(config.memory_write_interval, DEFAULT_MEMORY_WRITE_INTERVAL);
+    }
+
+    #[test]
+    fn test_default_social_reward_weight() {
+        let config = IntegrationConfig::default();
+        assert_eq!(config.social_reward_weight, DEFAULT_SOCIAL_REWARD_WEIGHT);
+    }
+
+    #[test]
+    fn test_default_meta_lr() {
+        let config = IntegrationConfig::default();
+        assert_eq!(config.meta_lr, DEFAULT_META_LR);
+    }
+
+    #[test]
+    fn test_default_meta_learning_disabled() {
+        let config = IntegrationConfig::default();
+        assert!(!config.meta_learning_enabled);
+    }
+
+    #[test]
+    fn test_default_not_enabled() {
+        let config = IntegrationConfig::default();
+        assert!(!config.enabled);
+    }
+
+    #[test]
+    fn test_default_curriculum_contains_navigation() {
+        let config = IntegrationConfig::default();
+        assert!(config.curriculum_domains.contains(&"navigation".to_string()));
+    }
+
+    #[test]
+    fn test_default_curriculum_contains_crafting() {
+        let config = IntegrationConfig::default();
+        assert!(config.curriculum_domains.contains(&"crafting".to_string()));
+    }
+
+    #[test]
+    fn test_default_curriculum_contains_social() {
+        let config = IntegrationConfig::default();
+        assert!(config.curriculum_domains.contains(&"social".to_string()));
+    }
+
+    #[test]
+    fn test_default_curriculum_contains_combat() {
+        let config = IntegrationConfig::default();
+        assert!(config.curriculum_domains.contains(&"combat".to_string()));
+    }
+
+    #[test]
+    fn test_serde_json_explicit_roundtrip() {
+        let config = IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 100,
+            social_reward_weight: 0.5,
+            meta_learning_enabled: true,
+            meta_lr: 0.01,
+            curriculum_domains: vec!["x".to_string(), "y".to_string()],
+            memory: MemoryConfig::default(),
+            social: SocialConfig::default(),
+            cognitive: CognitiveConfig::default(),
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: IntegrationConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.enabled, true);
+        assert_eq!(deser.memory_write_interval, 100);
+        assert_eq!(deser.social_reward_weight, 0.5);
+        assert_eq!(deser.curriculum_domains.len(), 2);
+    }
+
+    #[test]
+    fn test_serde_empty_curriculum_domains() {
+        let config = IntegrationConfig {
+            curriculum_domains: vec![],
+            ..IntegrationConfig::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: IntegrationConfig = serde_json::from_str(&json).unwrap();
+        assert!(deser.curriculum_domains.is_empty());
+    }
+
+    #[test]
+    fn test_clone_produces_equal_config() {
+        let config = IntegrationConfig::default();
+        let cloned = config.clone();
+        assert_eq!(cloned.enabled, config.enabled);
+        assert_eq!(cloned.memory_write_interval, config.memory_write_interval);
+        assert_eq!(cloned.social_reward_weight, config.social_reward_weight);
+        assert_eq!(cloned.meta_lr, config.meta_lr);
+        assert_eq!(cloned.curriculum_domains, config.curriculum_domains);
+    }
+
+    #[test]
+    fn test_debug_impl() {
+        let config = IntegrationConfig::default();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("IntegrationConfig"));
+    }
+
+    #[test]
+    fn test_serde_preserves_sub_configs() {
+        let config = IntegrationConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("memory"));
+        assert!(json.contains("social"));
+        assert!(json.contains("cognitive"));
+    }
 }
