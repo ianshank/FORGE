@@ -17,12 +17,20 @@ classifiers = [
 #   pip install -e ".[cleanrl]"   -- CleanRL CLI (tyro)
 #   pip install -e ".[wandb]"     -- Weights & Biases
 #   pip install -e ".[mlflow]"    -- MLflow
+#   pip install -e ".[dev]"       -- development / testing
 #   pip install -e ".[all]"       -- everything
 sb3        = ["stable-baselines3>=2.0", "torch>=2.0"]
 cleanrl    = ["torch>=2.0"]
 wandb      = ["wandb>=0.16"]
 mlflow     = ["mlflow>=2.0"]
 mousedroid = ["huggingface-hub>=0.20", "torch>=2.0"]
+dev        = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+    "mypy>=1.0",
+    "numpy>=1.24",
+]
 all        = [
     "stable-baselines3>=2.0",
     "torch>=2.0",
@@ -64,7 +72,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["forge_env"]
+known-first-party = ["forge", "forge_env"]
 
 [tool.mypy]
 python_version = "3.9"

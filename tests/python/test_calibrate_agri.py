@@ -8,16 +8,11 @@ and JSON/TOML export logic.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-# Make scripts/ importable
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(_SCRIPTS_DIR))
-
-import calibrate_agri as cal  # noqa: E402, I001
+import calibrate_agri as cal
 
 
 # ---------------------------------------------------------------------------

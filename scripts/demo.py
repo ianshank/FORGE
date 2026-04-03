@@ -21,12 +21,9 @@ import atexit
 import logging
 import os
 import subprocess
-import sys
 import time
 import webbrowser
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 _logger = logging.getLogger("forge.demo")
 

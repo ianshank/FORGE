@@ -13,12 +13,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 import time
 from pathlib import Path
 from typing import Any
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 from forge.agents.base_agent import AgentConfig
 from forge.agents.random_agent import RandomAgent
