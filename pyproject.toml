@@ -129,3 +129,6 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short --cov=python --cov-report=term-missing --cov-fail-under=85"
+markers = [
+    "native: tests requiring maturin develop / native forge_env extension",
+]

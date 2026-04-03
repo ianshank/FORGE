@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.native
+
 # ---------------------------------------------------------------------------
 # Skip entire module if torch / SB3 are not installed
 # ---------------------------------------------------------------------------

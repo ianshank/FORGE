@@ -20,6 +20,8 @@ from typing import Any
 
 import pytest
 
+pytestmark = pytest.mark.native
+
 from forge_env.wrappers import DEFAULT_REWARD_CLIP
 
 # ---------------------------------------------------------------------------

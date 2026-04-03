@@ -138,8 +138,29 @@ jobs:
           name: coverage-report
           path: coverage/cobertura.xml
 
-  python:
-    name: Python Lint & Tests
+  python-fast:
+    name: Python Lint & Fast Tests
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy pytest numpy gymnasium httpx
+      - name: Ruff lint
+        run: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
+      - name: Mypy type check
+        run: mypy python/ scripts/ --config-file pyproject.toml
+      - name: Pytest (pure-Python, no native extension)
+        run: pytest tests/python/ -m 'not native' -q -o 'addopts='
+
+  python-native:
+    name: Python Native Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -156,11 +177,7 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Build native extension
         run: maturin develop
-      - name: Ruff lint
-        run: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
-      - name: Mypy type check
-        run: mypy python/ scripts/ --config-file pyproject.toml
-      - name: Pytest with coverage
+      - name: Pytest with coverage (all tests)
         run: |
           pytest tests/python/ -v \
             --cov=forge --cov=forge_env \

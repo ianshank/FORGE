@@ -14,6 +14,8 @@ from pathlib import Path  # noqa: TC003
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.native
+
 from forge_env.datasets import (
     _DEFAULT_INV_SLOTS,
     _DEFAULT_VIEW_SIZE,
