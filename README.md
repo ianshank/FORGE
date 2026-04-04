@@ -2,27 +2,11 @@
 
 **Fast Open-source Runtime for Generalist Environments**
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+
 A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python.
-
-```
-============================================================
-   FORGE - Fast Open-source Runtime for Generalist Envs
-============================================================
-
-  Seed 42                  Seed 142                 Seed 242
-  TTRRARTTRRTRT.R..TRR   TR.RTRT.RRRTT....RRT   TRTTTTRRTTRTTRTTRRRT
-  .TTRTTTTTTRRT..RRRTT   TRSRTRT.RTRTR.....TT   RRTRRTTTRRRRRRRRRTRT
-  ..TTRTRTTRTTTT.RTTRT   SSRSSRS.RTTSS...RRTR   TTTT.......RRRRRTRTT
-  ..RRRRTRRTTT.R.RTRRT   S~RS~SS...RSSS..R.RR   RTRT.SR.RS.TRTTTTTRT
-  ..R.TTTTTTTTR...RTTT   SSS~R~SSS.R.~RSSRTTR   TTRT.SSSSSSSRR.RTRTT
-  ...TTRTRTTRTR..TRRTR   SS~SSSRRSSSS~SSS..TT   RTTTR...SSSRR....RTR
-  .RRTTTTTTTTTTTRTRTRT   TRSSRTTTSSR~S.R....R   TRT.RTT...SR~....TRT
-  .RTTTT.TTTTRRTRRTTRR   TRRTTARTS.SSS...R..T   TTRTTTT..SSS~S...TTR
-  ..RTR..TTTRRTRRRRTRT   RRRRRRTRR.SSS.RRS.RT   TATRTTR..SS......RRT
-
-  . Ground  ~ Water  # Wall  T Forest  M Mountain
-  S Sand    I Ice    L Lava  A Agent   R Resource  O Object
-```
 
 ## Key Features
 
@@ -89,71 +73,90 @@ python examples/forge_demo.py --quick      # CI mode (no delays)
 python examples/forge_demo.py --section crafting  # Single section
 ```
 
-### Interactive Demo UI (Web)
-
-Launch a premium dark-mode web UI that streams live FORGE output in a browser:
-
-```powershell
-# Windows (one-click launcher — installs deps, starts server, opens browser)
-.\demo_ui\run_demo.ps1
-
-# Or manually:
-python -m pip install -r demo_ui/backend/requirements.txt
-python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765
-# Then open http://127.0.0.1:8765
-```
-
-**Features:**
-
-- 📟 **Live terminal** — streams `forge_demo.py` output in real-time via Server-Sent Events
-- 🌍 **World canvas** — ASCII grid rendered as colored tiles (terrain types, agents, resources)
-- 📊 **Stats panel** — live steps/sec, μs/step, seed, run progress (0/8 → 8/8)
-- 🎛️ **Section nav** — run any of the 8 demo sections individually or all at once
-- 🟢 **PASS/FAIL badges** — each section badge updates live as output streams in
-- ⚡ **Quick mode toggle** — full or fast (CI-style) execution
-
-## MangoMAS Integration
-
-FORGE now includes a Python-side MangoMAS bridge for training and evaluation workflows that need a configurable control plane on top of the deterministic Rust simulator.
-
-- `python/forge/mangomas/config.py` centralizes bridge defaults for action adaptation, observation shaping, curriculum tiers, constitutional constraints, curiosity channels, batch collection, and MCTS sweep bounds
-- `python/forge/mangomas/constitutional_trainer.py` maps FORGE safety signals into constitutional penalties for offline pre-training
-- `python/forge/mangomas/curriculum_controller.py` manages platform-specific car and drone tier progression using rolling success windows
-- `python/forge/mangomas/curiosity_optimizer.py` runs a lightweight evolutionary search over curiosity-channel weights
-- `python/forge/mangomas/batch.py` and `sweep_runner.py` provide batch episode collection and repeatable MCTS parameter sweeps for transfer experiments
-
-The branch also hardens the Python package surface so `forge_env` remains importable when optional native, SB3, or Torch-backed components are absent, which keeps fast CI and targeted local verification practical.
-
 ## Architecture
 
-FORGE is organized as a multi-crate Rust workspace with Python and WASM frontends:
+FORGE is a 19-crate Rust workspace organized in six layers, from shared foundations through cognitive systems to bindings and deployment targets.
+
+```mermaid
+graph TD
+    subgraph "Foundation"
+        forge_types["forge-types<br/><i>shared types & configs</i>"]
+    end
+
+    subgraph "Core Simulation"
+        forge_worldgen["forge-worldgen<br/><i>procedural terrain</i>"]
+        forge_task["forge-task<br/><i>task DSL & curriculum</i>"]
+        forge_core["forge-core<br/><i>deterministic engine</i>"]
+    end
+
+    subgraph "Agent & Planning"
+        forge_agent["forge-agent<br/><i>MCTS planner</i>"]
+        forge_procgen["forge-procgen<br/><i>procedural content</i>"]
+        forge_scenario["forge-scenario<br/><i>scenario registry</i>"]
+    end
+
+    subgraph "Advanced Cognitive"
+        forge_memory["forge-memory<br/><i>persistent memory</i>"]
+        forge_social["forge-social<br/><i>trust & reputation</i>"]
+        forge_cognitive["forge-cognitive<br/><i>LLM reasoning</i>"]
+        forge_integration["forge-integration-layer<br/><i>cognitive orchestrator</i>"]
+    end
+
+    subgraph "Data & Evaluation"
+        forge_replay["forge-replay<br/><i>trajectory storage</i>"]
+        forge_eval["forge-eval<br/><i>evaluation harness</i>"]
+        forge_data["forge-data<br/><i>training data pipeline</i>"]
+        forge_mangomas["forge-mangomas<br/><i>MangoMAS bridge</i>"]
+    end
+
+    subgraph "Bindings & Deployment"
+        forge_python["forge-python<br/><i>PyO3 / Gymnasium</i>"]
+        forge_wasm["forge-wasm<br/><i>wasm-bindgen / JS</i>"]
+        forge_server["forge-server<br/><i>HTTP & WebSocket</i>"]
+        forge_bench["forge-bench<br/><i>benchmarks</i>"]
+    end
+
+    forge_types --> forge_worldgen
+    forge_types --> forge_task
+    forge_types --> forge_memory
+    forge_types --> forge_social
+    forge_types --> forge_procgen
+    forge_types --> forge_scenario
+
+    forge_worldgen --> forge_core
+    forge_task --> forge_core
+    forge_core --> forge_agent
+    forge_memory --> forge_cognitive
+    forge_memory --> forge_integration
+    forge_social --> forge_integration
+    forge_cognitive --> forge_integration
+
+    forge_core --> forge_replay
+    forge_replay --> forge_eval
+    forge_core --> forge_data
+    forge_integration --> forge_mangomas
+
+    forge_core --> forge_python
+    forge_core --> forge_wasm
+    forge_core --> forge_server
+    forge_core --> forge_bench
+```
 
 ```
 FORGE/
-├── crates/
-│   ├── forge-types/     # Shared types, configs, errors (no heavy deps)
-│   ├── forge-core/      # Simulation engine — deterministic step function
-│   ├── forge-worldgen/  # Procedural generation (Perlin noise, biomes)
-│   ├── forge-procgen/   # Procedural content: maps, objectives, curriculum
-│   ├── forge-task/      # Task DSL and curriculum system
-│   ├── forge-agent/     # MCTS planner and baseline agents
-│   ├── forge-server/    # HTTP/WebSocket API server (metrics, live state)
-│   ├── forge-python/    # PyO3 bindings for Python/Gymnasium API
-│   ├── forge-wasm/      # wasm-bindgen bindings for browser/JS
-│   └── forge-bench/     # Criterion benchmarks
-├── python/
-│   ├── forge_env/       # Python wrappers (Gymnasium, PettingZoo, JAX)
-│   └── forge/           # Training, MangoMAS bridge, agents, models, traces, config, utils
-├── configs/             # TOML configs (agents, curriculum, scenarios)
-├── scripts/             # CLI tools (train, evaluate, demo, replay, export)
-├── dashboard/           # React/TypeScript real-time simulation dashboard
-├── demo_ui/             # Lightweight SSE-based demo web UI
-├── docker/              # Docker and Compose deployment files
-├── examples/            # Python demo scripts
-└── tests/               # Integration and Python tests
+├── crates/          # 19 Rust crates (see diagram above)
+├── python/          # forge_env wrappers, forge training package
+├── configs/         # TOML configuration files
+├── scripts/         # CLI tools (train, evaluate, demo, replay, export)
+├── dashboard/       # React/TypeScript real-time dashboard
+├── demo_ui/         # Lightweight SSE-based demo web UI
+├── docker/          # Docker Compose deployment
+├── examples/        # Python demo scripts
+├── docs/            # C4 architecture diagrams
+└── tests/           # Integration and Python tests
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the full C4 architecture diagrams.
+For full C4 architecture diagrams, see [`docs/architecture.md`](docs/architecture.md).
 
 ## Environment API
 
@@ -316,6 +319,32 @@ console.log(env.render_ascii());
 ```
 
 All WASM I/O uses JSON strings for JavaScript compatibility.
+
+## Interactive Demo UI
+
+Launch a dark-mode web UI that streams live FORGE output in a browser:
+
+```bash
+# Windows (one-click launcher — installs deps, starts server, opens browser)
+.\demo_ui\run_demo.ps1
+
+# Or manually:
+python -m pip install -r demo_ui/backend/requirements.txt
+python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765
+# Then open http://127.0.0.1:8765
+```
+
+**Features:** Live terminal streaming via SSE, ASCII world canvas with colored tiles, real-time stats panel (steps/sec, seed, progress), section navigation, PASS/FAIL badges, and quick mode toggle.
+
+## MangoMAS Integration
+
+FORGE includes a Python-side MangoMAS bridge for training and evaluation workflows that need a configurable control plane on top of the deterministic Rust simulator.
+
+- `python/forge/mangomas/config.py` — bridge defaults for action adaptation, observation shaping, curriculum tiers, constitutional constraints, curiosity channels, batch collection, and MCTS sweep bounds
+- `python/forge/mangomas/constitutional_trainer.py` — maps safety signals into constitutional penalties for offline pre-training
+- `python/forge/mangomas/curriculum_controller.py` — manages tier progression using rolling success windows
+- `python/forge/mangomas/curiosity_optimizer.py` — lightweight evolutionary search over curiosity-channel weights
+- `python/forge/mangomas/batch.py` and `sweep_runner.py` — batch episode collection and repeatable MCTS parameter sweeps
 
 ## Development
 
