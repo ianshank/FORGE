@@ -5,12 +5,9 @@ These tests use REAL environments (or RealisticFakeEnv) — no MagicMock.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
 
 from forge.agents.base_agent import AgentConfig
 from forge.agents.random_agent import RandomAgent

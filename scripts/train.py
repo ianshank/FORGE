@@ -19,9 +19,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Add python/ to path so forge and forge_env packages are importable.
-sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
-
 logger = logging.getLogger("forge.train")
 
 # --- CLI argument defaults (no magic numbers) ---

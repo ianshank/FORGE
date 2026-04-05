@@ -462,4 +462,66 @@ difficulty_tier = 1
         });
         assert_eq!(results.len(), 1);
     }
+
+    #[test]
+    fn test_registry_default() {
+        let reg = ScenarioRegistry::default();
+        assert!(reg.is_empty());
+    }
+
+    #[test]
+    fn test_by_tier_no_match() {
+        let reg = make_populated_registry();
+        let results = reg.by_tier(6);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_ids_contains_all_registered() {
+        let reg = make_populated_registry();
+        let ids = reg.ids();
+        assert!(ids.contains(&"patrol"));
+        assert!(ids.contains(&"gather"));
+        assert!(ids.contains(&"combat"));
+        assert!(ids.contains(&"coop"));
+    }
+
+    #[test]
+    fn test_search_tier_range_single_tier() {
+        let reg = make_populated_registry();
+        let results = reg.search(&ScenarioQuery {
+            tier_range: Some((3, 3)),
+            ..Default::default()
+        });
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].scenario.id, "combat");
+    }
+
+    #[test]
+    fn test_search_tier_out_of_range() {
+        let reg = make_populated_registry();
+        let results = reg.search(&ScenarioQuery {
+            tier_range: Some((5, 6)),
+            ..Default::default()
+        });
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_all_filters_combined_no_match() {
+        let reg = make_populated_registry();
+        let results = reg.search(&ScenarioQuery {
+            tags: vec!["navigation".into()],
+            tier_range: Some((3, 6)),
+            min_agents: Some(5),
+            text_search: Some("xyz".into()),
+        });
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_get_returns_none_for_missing() {
+        let reg = ScenarioRegistry::new();
+        assert!(reg.get("anything").is_none());
+    }
 }

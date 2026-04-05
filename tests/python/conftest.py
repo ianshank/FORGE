@@ -9,11 +9,18 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from forge_env.gymnasium_env import (
-    _DEFAULT_CARRY_CAPACITY,
-    _DEFAULT_GRID_CHANNELS,
-    _DEFAULT_VIEW_SIDE,
-)
+try:
+    from forge_env.gymnasium_env import (
+        _DEFAULT_CARRY_CAPACITY,
+        _DEFAULT_GRID_CHANNELS,
+        _DEFAULT_VIEW_SIDE,
+    )
+except ImportError:
+    # Fallback defaults when the native extension is not built (pure-Python CI).
+    # Must match python/forge_env/gymnasium_env.py to keep mock data consistent.
+    _DEFAULT_VIEW_SIDE = 11  # 2 * 5 + 1
+    _DEFAULT_GRID_CHANNELS = 7  # OBS_FEATURES_PER_TILE
+    _DEFAULT_CARRY_CAPACITY = 10  # DEFAULT_CARRY_CAPACITY
 
 # ---------------------------------------------------------------------------
 # Mock observation data matching the native wrapper's expected structure.

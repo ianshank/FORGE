@@ -7,6 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.native
+
 # ---------------------------------------------------------------------------
 # Skip if SB3 not installed
 # ---------------------------------------------------------------------------

@@ -523,4 +523,171 @@ mod tests {
         assert_eq!(iter.current_tick(), 0);
         assert!(!iter.world().terminated);
     }
+
+    #[test]
+    fn test_corrupted_config_hash_blocks_replay() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0]);
+        let mut replay = builder.build();
+        replay.config_hash = 999;
+        // Replay should return None due to hash mismatch
+        assert!(replay.replay().is_none());
+    }
+
+    #[test]
+    fn test_builder_no_ticks() {
+        let config = test_config();
+        let replay = CompactReplay::builder(config, 0).build();
+        assert!(replay.actions.is_empty());
+        assert_eq!(replay.metadata.total_ticks, 0);
+    }
+
+    #[test]
+    fn test_builder_agent_metadata() {
+        use forge_types::agent_interface::AgentMetadata;
+        let config = test_config();
+        let meta = vec![AgentMetadata::heuristic("TestBot")];
+        let replay = CompactReplay::builder(config, 42)
+            .agent_metadata(meta.clone())
+            .build();
+        assert_eq!(replay.metadata.agent_metadata.len(), 1);
+        assert_eq!(replay.metadata.agent_metadata[0].model_name, "TestBot");
+    }
+
+    #[test]
+    fn test_different_seeds_different_hashes_same_config() {
+        let config = test_config();
+        let r1 = CompactReplay::builder(config.clone(), 1).build();
+        let r2 = CompactReplay::builder(config, 2).build();
+        // Config hash should be the same (same config), but seeds differ
+        assert_eq!(r1.config_hash, r2.config_hash);
+        assert_ne!(r1.seed, r2.seed);
+    }
+
+    #[test]
+    fn test_different_configs_different_hashes() {
+        let mut c1 = test_config();
+        c1.world.width = 16;
+        let mut c2 = test_config();
+        c2.world.width = 64;
+
+        let h1 = hash_config(&c1);
+        let h2 = hash_config(&c2);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_json_from_invalid_structure() {
+        let result = CompactReplay::from_json("[]");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bincode_json_cross_roundtrip() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0, 1]);
+        builder.record_tick(vec![1, 0]);
+        let replay = builder.build();
+
+        // Bincode roundtrip
+        let bytes = replay.to_bytes().unwrap();
+        let from_bin = CompactReplay::from_bytes(&bytes).unwrap();
+
+        // JSON roundtrip
+        let json = replay.to_json().unwrap();
+        let from_json = CompactReplay::from_json(&json).unwrap();
+
+        assert_eq!(from_bin.seed, from_json.seed);
+        assert_eq!(from_bin.actions, from_json.actions);
+        assert_eq!(from_bin.config_hash, from_json.config_hash);
+    }
+
+    #[test]
+    fn test_replay_iterator_tick_increments() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0]);
+        builder.record_tick(vec![0]);
+        builder.record_tick(vec![0]);
+        let replay = builder.build();
+
+        let mut iter = replay.replay().unwrap();
+        assert_eq!(iter.current_tick(), 0);
+        iter.next();
+        assert_eq!(iter.current_tick(), 1);
+        iter.next();
+        assert_eq!(iter.current_tick(), 2);
+    }
+
+    #[test]
+    fn test_metadata_timestamp_populated() {
+        let config = test_config();
+        let replay = CompactReplay::builder(config, 0).build();
+        assert!(!replay.metadata.timestamp.is_empty());
+    }
+
+    #[test]
+    fn test_metadata_completed_tasks_default_empty() {
+        let config = test_config();
+        let replay = CompactReplay::builder(config, 0).build();
+        assert!(replay.metadata.completed_tasks.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn test_config() -> ForgeConfig {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        config.agents.comm_vocab_size = 0;
+        config.task.max_episode_length = 100;
+        config
+    }
+
+    proptest! {
+        /// Bincode roundtrip preserves seed and action count.
+        #[test]
+        fn bincode_roundtrip_preserves_data(
+            seed in 0_u64..10000,
+            num_ticks in 0_usize..50,
+        ) {
+            let config = test_config();
+            let mut builder = CompactReplay::builder(config, seed);
+            for _ in 0..num_ticks {
+                builder.record_tick(vec![0]);
+            }
+            let replay = builder.build();
+            let bytes = replay.to_bytes().unwrap();
+            let deser = CompactReplay::from_bytes(&bytes).unwrap();
+            prop_assert_eq!(deser.seed, seed);
+            prop_assert_eq!(deser.actions.len(), num_ticks);
+            prop_assert!(deser.validate_config());
+        }
+
+        /// JSON roundtrip preserves seed and action count.
+        #[test]
+        fn json_roundtrip_preserves_data(
+            seed in 0_u64..10000,
+            num_ticks in 0_usize..20,
+        ) {
+            let config = test_config();
+            let mut builder = CompactReplay::builder(config, seed);
+            for _ in 0..num_ticks {
+                builder.record_tick(vec![0]);
+            }
+            let replay = builder.build();
+            let json = replay.to_json().unwrap();
+            let deser = CompactReplay::from_json(&json).unwrap();
+            prop_assert_eq!(deser.seed, seed);
+            prop_assert_eq!(deser.actions.len(), num_ticks);
+        }
+    }
 }

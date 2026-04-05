@@ -238,4 +238,49 @@ mod tests {
         assert!(merged["x"].is_null());
         assert_eq!(merged["y"], 2);
     }
+
+    #[test]
+    fn test_merge_base_empty_object() {
+        let base = serde_json::json!({});
+        let overrides = serde_json::json!({"a": 1});
+        let merged = merge_json_values(base, overrides);
+        assert_eq!(merged["a"], 1);
+    }
+
+    #[test]
+    fn test_merge_override_empty_object() {
+        let base = serde_json::json!({"a": 1});
+        let overrides = serde_json::json!({});
+        let merged = merge_json_values(base, overrides);
+        assert_eq!(merged["a"], 1);
+    }
+
+    #[test]
+    fn test_merge_deeply_nested() {
+        let base = serde_json::json!({"a": {"b": {"c": 1}}});
+        let overrides = serde_json::json!({"a": {"b": {"c": 99}}});
+        let merged = merge_json_values(base, overrides);
+        assert_eq!(merged["a"]["b"]["c"], 99);
+    }
+
+    #[test]
+    fn test_compose_preserves_base_forge_fields() {
+        let base = make_base_scenario();
+        let mut override_config = make_override_scenario();
+        // Override only changes width, height should come from override's default
+        override_config.forge.agents.num_agents = 5;
+
+        let result = compose_scenarios(&[base, override_config]).unwrap();
+        assert_eq!(result.forge.agents.num_agents, 5);
+    }
+
+    #[test]
+    fn test_merge_forge_configs_identity() {
+        let config = ForgeConfig::default();
+        let merged = merge_forge_configs(&config, &config);
+        // Merging with itself should produce equivalent config
+        let json1 = serde_json::to_string(&config).unwrap();
+        let json2 = serde_json::to_string(&merged).unwrap();
+        assert_eq!(json1, json2);
+    }
 }

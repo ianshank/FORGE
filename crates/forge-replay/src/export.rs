@@ -219,4 +219,58 @@ mod tests {
 
         let _ = std::fs::remove_file(&path);
     }
+
+    #[test]
+    fn test_export_jsonl_invalid_path() {
+        let traj = make_test_trajectory();
+        let result = export_to_jsonl(&traj, Path::new("/nonexistent/dir/file.jsonl"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_export_metadata_invalid_path() {
+        let traj = make_test_trajectory();
+        let result = export_metadata(&traj, Path::new("/nonexistent/dir/meta.json"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_export_csv_values_match_observation() {
+        let traj = make_test_trajectory();
+        let dir = std::env::temp_dir().join("forge_test_csv_vals");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("vals.csv");
+        export_to_csv(&traj, &path).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        // Check observation values appear in CSV (health=0.8, stamina=0.6, pos=(3,7))
+        assert!(content.contains("0.8"));
+        assert!(content.contains("0.6"));
+        assert!(content.contains("3,7"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_export_empty_jsonl() {
+        let traj = Trajectory::new();
+        let dir = std::env::temp_dir().join("forge_test_empty_jsonl");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("empty.jsonl");
+        export_to_jsonl(&traj, &path).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_export_empty_metadata() {
+        let traj = Trajectory::new();
+        let dir = std::env::temp_dir().join("forge_test_empty_meta");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("empty_meta.json");
+        export_metadata(&traj, &path).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(v["total_steps"], 0);
+        let _ = std::fs::remove_file(&path);
+    }
 }

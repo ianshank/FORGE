@@ -11,6 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.native
+
 from conftest import make_mock_native_env
 
 # ---------------------------------------------------------------------------

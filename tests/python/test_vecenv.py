@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.native
+
 # ---------------------------------------------------------------------------
 # Helpers — build mock ForgeGymnasiumEnv without the native Rust extension
 # ---------------------------------------------------------------------------

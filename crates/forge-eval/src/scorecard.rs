@@ -356,6 +356,108 @@ mod tests {
         assert_eq!(tier.success_rate, 0.0);
         assert_eq!(tier.episodes_evaluated, 0);
     }
+
+    #[test]
+    fn test_overall_score_all_success() {
+        let tiers = vec![
+            TierScore { tier: 1, success_rate: 1.0, ..Default::default() },
+            TierScore { tier: 2, success_rate: 1.0, ..Default::default() },
+        ];
+        let score = Scorecard::compute_overall_score(&tiers);
+        assert!((score - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_overall_score_all_fail() {
+        let tiers = vec![
+            TierScore { tier: 1, success_rate: 0.0, ..Default::default() },
+            TierScore { tier: 2, success_rate: 0.0, ..Default::default() },
+        ];
+        let score = Scorecard::compute_overall_score(&tiers);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_overall_score_zero_tier_weight() {
+        let tiers = vec![TierScore { tier: 0, success_rate: 1.0, ..Default::default() }];
+        let score = Scorecard::compute_overall_score(&tiers);
+        assert_eq!(score, 0.0); // total_weight is 0
+    }
+
+    #[test]
+    fn test_scenario_result_all_success() {
+        let episodes = vec![
+            make_episode(0, 1.0, true, 10),
+            make_episode(1, 1.0, true, 20),
+        ];
+        let result = ScenarioResult::from_episodes("s".into(), 1, episodes);
+        assert!((result.success_rate - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_scenario_result_all_fail() {
+        let episodes = vec![
+            make_episode(0, 0.0, false, 100),
+            make_episode(1, 0.0, false, 100),
+        ];
+        let result = ScenarioResult::from_episodes("s".into(), 1, episodes);
+        assert_eq!(result.success_rate, 0.0);
+    }
+
+    #[test]
+    fn test_scenario_result_mean_decision_time() {
+        let episodes = vec![
+            EpisodeResult { seed: 0, total_reward: 0.0, success: false, steps: 10, terminated: false, truncated: true, mean_decision_time_ms: 2.0 },
+            EpisodeResult { seed: 1, total_reward: 0.0, success: false, steps: 10, terminated: false, truncated: true, mean_decision_time_ms: 4.0 },
+        ];
+        let result = ScenarioResult::from_episodes("s".into(), 1, episodes);
+        assert!((result.mean_decision_time_ms - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_scorecard_markdown_contains_table() {
+        let scorecard = Scorecard {
+            agent_metadata: AgentMetadata::heuristic("A"),
+            timestamp: "2026".to_string(),
+            overall_score: 0.0,
+            tier_scores: vec![TierScore { tier: 1, success_rate: 0.5, mean_reward: 1.0, mean_steps_to_completion: 10.0, episodes_evaluated: 5, scenarios_count: 1 }],
+            scenario_results: vec![],
+            summary: SummaryStats::default(),
+        };
+        let md = scorecard.to_markdown();
+        assert!(md.contains("| Tier |"));
+        assert!(md.contains("| 1 |"));
+    }
+
+    #[test]
+    fn test_summary_stats_default() {
+        let s = SummaryStats::default();
+        assert_eq!(s.total_episodes, 0);
+        assert_eq!(s.total_steps, 0);
+        assert_eq!(s.wall_clock_seconds, 0.0);
+    }
+
+    #[test]
+    fn test_episode_result_truncated() {
+        let ep = make_episode(0, 0.0, false, 100);
+        assert!(!ep.success);
+        assert!(ep.truncated);
+        assert!(!ep.terminated);
+    }
+
+    #[test]
+    fn test_scorecard_json_invalid_returns_err() {
+        assert!(Scorecard::from_json("{}").is_err());
+    }
+
+    #[test]
+    fn test_tier_score_serde_roundtrip() {
+        let ts = TierScore { tier: 3, success_rate: 0.5, mean_reward: 1.0, mean_steps_to_completion: 50.0, episodes_evaluated: 100, scenarios_count: 5 };
+        let json = serde_json::to_string(&ts).unwrap();
+        let deser: TierScore = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.tier, 3);
+        assert_eq!(deser.scenarios_count, 5);
+    }
 }
 
 #[cfg(test)]
@@ -407,6 +509,39 @@ mod proptests {
             let result = ScenarioResult::from_episodes("test".into(), 1, episodes);
             prop_assert!(result.success_rate >= 0.0);
             prop_assert!(result.success_rate <= 1.0);
+        }
+
+        /// ScenarioResult mean_reward is bounded by min/max episode rewards.
+        #[test]
+        fn scenario_mean_reward_bounded(
+            r1 in -100.0_f64..100.0,
+            r2 in -100.0_f64..100.0,
+            r3 in -100.0_f64..100.0,
+        ) {
+            let episodes = vec![
+                EpisodeResult { seed: 0, total_reward: r1, success: false, steps: 1, terminated: false, truncated: true, mean_decision_time_ms: 0.0 },
+                EpisodeResult { seed: 1, total_reward: r2, success: false, steps: 1, terminated: false, truncated: true, mean_decision_time_ms: 0.0 },
+                EpisodeResult { seed: 2, total_reward: r3, success: false, steps: 1, terminated: false, truncated: true, mean_decision_time_ms: 0.0 },
+            ];
+            let min_r = r1.min(r2).min(r3);
+            let max_r = r1.max(r2).max(r3);
+            let result = ScenarioResult::from_episodes("test".into(), 1, episodes);
+            prop_assert!(result.mean_reward >= min_r);
+            prop_assert!(result.mean_reward <= max_r);
+        }
+
+        /// TierScore serde roundtrip preserves all fields.
+        #[test]
+        fn tier_score_serde_roundtrip(
+            tier in 1_u8..=6,
+            sr in 0.0_f64..=1.0,
+            episodes in 1_u32..1000,
+        ) {
+            let ts = TierScore { tier, success_rate: sr, mean_reward: 0.0, mean_steps_to_completion: 0.0, episodes_evaluated: episodes, scenarios_count: 1 };
+            let json = serde_json::to_string(&ts).unwrap();
+            let deser: TierScore = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(deser.tier, tier);
+            prop_assert_eq!(deser.episodes_evaluated, episodes);
         }
     }
 }

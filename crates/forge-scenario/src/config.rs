@@ -368,4 +368,184 @@ max_agents = 4
         assert_eq!(MIN_DIFFICULTY_TIER, 1);
         assert_eq!(MAX_DIFFICULTY_TIER, 6);
     }
+
+    #[test]
+    fn test_validate_empty_name() {
+        let mut config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = "test"
+name = ""
+"#,
+        )
+        .unwrap();
+        config.scenario.name = String::new();
+        let errors = config.validate();
+        assert!(errors.iter().any(|e| e.contains("name")));
+    }
+
+    #[test]
+    fn test_validate_all_valid_tiers() {
+        for tier in MIN_DIFFICULTY_TIER..=MAX_DIFFICULTY_TIER {
+            let mut config = ScenarioConfig::from_toml(
+                r#"
+[scenario]
+id = "test"
+name = "Test"
+"#,
+            )
+            .unwrap();
+            config.scenario.difficulty_tier = tier;
+            assert!(
+                config.is_valid(),
+                "tier {tier} should be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn test_scenario_config_clone() {
+        let config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = "clone_test"
+name = "Clone Test"
+tags = ["a", "b"]
+"#,
+        )
+        .unwrap();
+        let cloned = config.clone();
+        assert_eq!(cloned.scenario.id, "clone_test");
+        assert_eq!(cloned.scenario.tags.len(), 2);
+    }
+
+    #[test]
+    fn test_scenario_debug() {
+        let config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = "debug_test"
+name = "Debug Test"
+"#,
+        )
+        .unwrap();
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("ScenarioConfig"));
+    }
+
+    #[test]
+    fn test_scenario_meta_serde_roundtrip() {
+        let config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = "serde_test"
+name = "Serde Test"
+tags = ["x"]
+difficulty_tier = 4
+min_agents = 2
+max_agents = 8
+author = "forge-team"
+version = "2.0"
+"#,
+        )
+        .unwrap();
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: ScenarioConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.scenario.id, "serde_test");
+        assert_eq!(deser.scenario.difficulty_tier, 4);
+        assert_eq!(deser.scenario.min_agents, 2);
+        assert_eq!(deser.scenario.max_agents, 8);
+        assert_eq!(deser.scenario.author, "forge-team");
+        assert_eq!(deser.scenario.version, "2.0");
+    }
+
+    #[test]
+    fn test_validate_multiple_errors() {
+        let mut config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = ""
+name = ""
+"#,
+        )
+        .unwrap();
+        config.scenario.id = String::new();
+        config.scenario.name = String::new();
+        config.scenario.difficulty_tier = 0;
+        config.scenario.min_agents = 0;
+        let errors = config.validate();
+        assert!(errors.len() >= 3, "expected at least 3 errors, got {}", errors.len());
+    }
+
+    #[test]
+    fn test_display_with_multi_agent() {
+        let config = ScenarioConfig::from_toml(
+            r#"
+[scenario]
+id = "multi"
+name = "Multi Agent"
+min_agents = 2
+max_agents = 8
+difficulty_tier = 5
+"#,
+        )
+        .unwrap();
+        let display = format!("{config}");
+        assert!(display.contains("2-8 agents"));
+        assert!(display.contains("tier 5"));
+    }
+
+    #[test]
+    fn test_from_toml_missing_scenario_section() {
+        let result = ScenarioConfig::from_toml("[forge]\nwidth = 32");
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Difficulty tier validation accepts all tiers in valid range.
+        #[test]
+        fn valid_tier_passes_validation(tier in 1_u8..=6) {
+            let meta = ScenarioMeta {
+                id: "prop_test".into(),
+                name: "PropTest".into(),
+                description: String::new(),
+                tags: vec![],
+                difficulty_tier: tier,
+                min_agents: 1,
+                max_agents: 4,
+                author: String::new(),
+                version: "1.0".into(),
+            };
+            let errors = meta.validate();
+            prop_assert!(!errors.iter().any(|e| e.contains("difficulty_tier")));
+        }
+
+        /// min_agents <= max_agents never produces that error.
+        #[test]
+        fn valid_agent_range_passes(
+            min in 1_u32..=10,
+            extra in 0_u32..=10,
+        ) {
+            let max = min + extra;
+            let meta = ScenarioMeta {
+                id: "test".into(),
+                name: "Test".into(),
+                description: String::new(),
+                tags: vec![],
+                difficulty_tier: 1,
+                min_agents: min,
+                max_agents: max,
+                author: String::new(),
+                version: "1.0".into(),
+            };
+            let errors = meta.validate();
+            prop_assert!(!errors.iter().any(|e| e.contains("min_agents") && e.contains("max_agents")));
+        }
+    }
 }

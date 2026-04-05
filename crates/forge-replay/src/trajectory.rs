@@ -334,4 +334,91 @@ mod tests {
         assert!((traj.total_reward(0) - 0.5).abs() < f32::EPSILON);
         assert!((traj.total_reward(1) - 0.3).abs() < f32::EPSILON);
     }
+
+    #[test]
+    fn test_trajectory_default() {
+        let traj = Trajectory::default();
+        assert!(traj.is_empty());
+        assert_eq!(traj.len(), 0);
+    }
+
+    #[test]
+    fn test_trajectory_builder_default() {
+        let builder = TrajectoryBuilder::default();
+        let traj = builder.build(vec![]);
+        assert!(traj.is_empty());
+    }
+
+    #[test]
+    fn test_trajectory_total_reward_out_of_bounds_agent() {
+        let traj = Trajectory::new();
+        assert_eq!(traj.total_reward(100), 0.0);
+    }
+
+    #[test]
+    fn test_trajectory_metadata_defaults() {
+        let meta = TrajectoryMetadata::default();
+        assert!(meta.agent_names.is_empty());
+        assert!(meta.agent_metadata.is_empty());
+        assert_eq!(meta.total_steps, 0);
+        assert!(meta.final_rewards.is_empty());
+        assert_eq!(meta.seed, 0);
+        assert!(meta.scenario_id.is_none());
+    }
+
+    #[test]
+    fn test_trajectory_step_terminated_flag() {
+        let mut builder = TrajectoryBuilder::new();
+        let obs = make_test_observation();
+        let responses = vec![AgentResponse::from_action(0)];
+        builder.record_step(0, vec![obs], &responses, vec![0.0], true, false);
+        let traj = builder.build(vec![0.0]);
+        assert!(traj.steps[0].terminated);
+        assert!(!traj.steps[0].truncated);
+    }
+
+    #[test]
+    fn test_trajectory_step_truncated_flag() {
+        let mut builder = TrajectoryBuilder::new();
+        let obs = make_test_observation();
+        let responses = vec![AgentResponse::from_action(0)];
+        builder.record_step(0, vec![obs], &responses, vec![0.0], false, true);
+        let traj = builder.build(vec![0.0]);
+        assert!(!traj.steps[0].terminated);
+        assert!(traj.steps[0].truncated);
+    }
+
+    #[test]
+    fn test_trajectory_clone() {
+        let mut builder = TrajectoryBuilder::new();
+        let obs = make_test_observation();
+        let responses = vec![AgentResponse::from_action(1)];
+        builder.record_step(0, vec![obs], &responses, vec![1.0], false, false);
+        let traj = builder.seed(42).build(vec![1.0]);
+        let cloned = traj.clone();
+        assert_eq!(cloned.len(), traj.len());
+        assert_eq!(cloned.metadata.seed, 42);
+    }
+
+    #[test]
+    fn test_trajectory_agent_metadata_builder() {
+        use forge_types::agent_interface::AgentMetadata;
+        let builder = TrajectoryBuilder::new();
+        let meta = vec![AgentMetadata::heuristic("Bot1")];
+        let traj = builder.agent_metadata(meta).build(vec![]);
+        assert_eq!(traj.metadata.agent_metadata.len(), 1);
+    }
+
+    #[test]
+    fn test_trajectory_multiple_steps_total_reward() {
+        let mut builder = TrajectoryBuilder::new();
+        let obs = make_test_observation();
+        let responses = vec![AgentResponse::from_action(0)];
+        for i in 0..10 {
+            builder.record_step(i, vec![obs.clone()], &responses, vec![0.1], false, false);
+        }
+        let traj = builder.build(vec![1.0]);
+        assert_eq!(traj.len(), 10);
+        assert!((traj.total_reward(0) - 1.0).abs() < 0.01);
+    }
 }

@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.native
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
