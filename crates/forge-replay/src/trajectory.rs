@@ -63,6 +63,7 @@ pub struct TrajectoryMetadata {
 
 impl Trajectory {
     /// Creates a new empty trajectory.
+    #[instrument(skip_all)]
     pub fn new() -> Self {
         Self {
             steps: Vec::new(),
@@ -81,6 +82,7 @@ impl Trajectory {
     }
 
     /// Returns total reward for the given agent index.
+    #[instrument(skip(self))]
     pub fn total_reward(&self, agent_idx: usize) -> f32 {
         self.steps
             .iter()
@@ -103,6 +105,7 @@ pub struct TrajectoryBuilder {
 
 impl TrajectoryBuilder {
     /// Creates a new trajectory builder.
+    #[instrument(skip_all)]
     pub fn new() -> Self {
         Self {
             steps: Vec::new(),
@@ -141,24 +144,28 @@ impl TrajectoryBuilder {
     }
 
     /// Sets the seed.
+    #[instrument(skip(self))]
     pub fn seed(mut self, seed: u64) -> Self {
         self.metadata.seed = seed;
         self
     }
 
     /// Sets agent names.
+    #[instrument(skip(self))]
     pub fn agent_names(mut self, names: Vec<String>) -> Self {
         self.metadata.agent_names = names;
         self
     }
 
     /// Sets agent metadata.
+    #[instrument(skip(self))]
     pub fn agent_metadata(mut self, metadata: Vec<AgentMetadata>) -> Self {
         self.metadata.agent_metadata = metadata;
         self
     }
 
     /// Sets scenario ID.
+    #[instrument(skip(self))]
     pub fn scenario_id(mut self, id: String) -> Self {
         self.metadata.scenario_id = Some(id);
         self

@@ -22,27 +22,49 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def test_default_hardware_config() -> None:
+@pytest.mark.parametrize(
+    "attr,expected",
+    [
+        ("num_workers", 4),
+        ("device", "cpu"),
+        ("pin_memory", False),
+        ("gpu_memory_fraction", 0.9),
+    ],
+)
+def test_default_hardware_config(attr: str, expected: object) -> None:
     hw = HardwareConfig()
-    assert hw.num_workers == 4
-    assert hw.device == "cpu"
-    assert hw.pin_memory is False
-    assert hw.gpu_memory_fraction == 0.9
+    assert getattr(hw, attr) == expected
 
 
-def test_default_simulation_config() -> None:
+@pytest.mark.parametrize(
+    "attr,expected",
+    [
+        ("grid_size", 64),
+        ("max_agents_per_team", 16),
+        ("seed", 0),
+        ("fog_of_war", True),
+    ],
+)
+def test_default_simulation_config(attr: str, expected: object) -> None:
     sim = SimulationConfig()
-    assert sim.grid_size == 64
-    assert sim.max_agents_per_team == 16
-    assert sim.seed == 0
-    assert sim.fog_of_war is True
+    assert getattr(sim, attr) == expected
 
 
-def test_default_training_config() -> None:
+@pytest.mark.parametrize(
+    "attr,expected",
+    [
+        ("gamma", pytest.approx(0.99)),
+        ("batch_size", 256),
+    ],
+)
+def test_default_training_config(attr: str, expected: object) -> None:
+    train = TrainingConfig()
+    assert getattr(train, attr) == expected
+
+
+def test_default_training_config_learning_rate() -> None:
     train = TrainingConfig()
     assert train.learning_rate == pytest.approx(3e-4)
-    assert train.gamma == pytest.approx(0.99)
-    assert train.batch_size == 256
 
 
 def test_default_forge_config() -> None:

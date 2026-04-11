@@ -117,7 +117,7 @@ def _worker(
                 break
             else:  # pragma: no cover
                 pipe.send(RuntimeError(f"Unknown command: {cmd}"))
-    except Exception as exc:
+    except (RuntimeError, ValueError, OSError) as exc:
         pipe.send(exc)
     finally:
         pipe.close()

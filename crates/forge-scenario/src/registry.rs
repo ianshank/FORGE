@@ -133,6 +133,7 @@ impl ScenarioRegistry {
     }
 
     /// Returns scenarios matching the given tier.
+    #[instrument(skip(self))]
     pub fn by_tier(&self, tier: u8) -> Vec<&ScenarioConfig> {
         self.index
             .iter()
@@ -142,6 +143,7 @@ impl ScenarioRegistry {
     }
 
     /// Returns scenarios matching any of the given tags.
+    #[instrument(skip(self))]
     pub fn by_tag(&self, tag: &str) -> Vec<&ScenarioConfig> {
         let tag_lower = tag.to_lowercase();
         self.index

@@ -219,29 +219,34 @@ impl CompactReplayBuilder {
     }
 
     /// Records one tick of actions.
+    #[instrument(skip(self))]
     pub fn record_tick(&mut self, action_ids: Vec<u32>) {
         self.actions.push(action_ids);
     }
 
     /// Sets agent names.
+    #[instrument(skip(self))]
     pub fn agent_names(mut self, names: Vec<String>) -> Self {
         self.metadata.agent_names = names;
         self
     }
 
     /// Sets agent metadata.
+    #[instrument(skip(self))]
     pub fn agent_metadata(mut self, metadata: Vec<AgentMetadata>) -> Self {
         self.metadata.agent_metadata = metadata;
         self
     }
 
     /// Sets final rewards.
+    #[instrument(skip(self))]
     pub fn final_rewards(mut self, rewards: Vec<f32>) -> Self {
         self.metadata.final_rewards = rewards;
         self
     }
 
     /// Sets scenario ID.
+    #[instrument(skip(self))]
     pub fn scenario_id(mut self, id: String) -> Self {
         self.metadata.scenario_id = Some(id);
         self

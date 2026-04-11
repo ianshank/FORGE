@@ -80,6 +80,7 @@ impl EvalConfig {
     }
 
     /// Returns true if the configuration passes all validation checks.
+    #[instrument(skip(self))]
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
     }
