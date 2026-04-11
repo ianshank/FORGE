@@ -12,7 +12,7 @@ description = "Python bindings for the FORGE simulation platform"
 
 [lib]
 name = "forge_env"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 forge-types = { workspace = true }
@@ -24,3 +24,6 @@ numpy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

@@ -117,7 +117,15 @@ pub const DEFAULT_COGNITIVE_MODEL: &str = "claude-haiku-4-5-20251001";
 /// Default sampling temperature for cognitive completion.
 pub const DEFAULT_COGNITIVE_TEMPERATURE: f32 = 0.7;
 /// Default maximum tokens for cognitive completion.
-pub const DEFAULT_COGNITIVE_MAX_TOKENS: u32 = 512;
+pub const DEFAULT_COGNITIVE_MAX_TOKENS: u32 = 1024;
+/// Default number of reasoning steps per cognitive action selection.
+pub const DEFAULT_COGNITIVE_REASONING_STEPS: u32 = 5;
+/// Default confidence assigned when the provider doesn't return one.
+pub const DEFAULT_COGNITIVE_CONFIDENCE: f32 = 0.8;
+/// Default system prompt for the cognitive agent.
+pub const DEFAULT_COGNITIVE_SYSTEM_PROMPT: &str =
+    "You are an intelligent agent in a grid-based simulation. \
+     Reason step by step, then select an action.";
 /// Default healthcheck interval in seconds.
 pub const DEFAULT_HEALTHCHECK_INTERVAL_S: u32 = 15;
 /// Default healthcheck timeout in seconds.
@@ -527,6 +535,9 @@ mod tests {
         assert!(!DEFAULT_COGNITIVE_MODEL.is_empty());
         assert!(DEFAULT_COGNITIVE_TEMPERATURE >= 0.0 && DEFAULT_COGNITIVE_TEMPERATURE <= 2.0);
         assert!(DEFAULT_COGNITIVE_MAX_TOKENS > 0);
+        assert!(DEFAULT_COGNITIVE_REASONING_STEPS > 0);
+        assert!(DEFAULT_COGNITIVE_CONFIDENCE >= 0.0 && DEFAULT_COGNITIVE_CONFIDENCE <= 1.0);
+        assert!(!DEFAULT_COGNITIVE_SYSTEM_PROMPT.is_empty());
     }
 
     #[test]

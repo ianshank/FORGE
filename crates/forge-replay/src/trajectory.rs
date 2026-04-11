@@ -313,6 +313,57 @@ mod tests {
         );
     }
 
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn step_count_matches_transitions(n in 0usize..50) {
+                let mut builder = TrajectoryBuilder::new();
+                let obs = make_test_observation();
+                let responses = vec![AgentResponse::from_action(0)];
+
+                for tick in 0..n {
+                    builder.record_step(
+                        tick as u64,
+                        vec![obs.clone()],
+                        &responses,
+                        vec![0.1],
+                        false,
+                        false,
+                    );
+                }
+
+                let traj = builder.build(vec![n as f32 * 0.1]);
+                prop_assert_eq!(traj.len(), n);
+                prop_assert_eq!(traj.metadata.total_steps, n as u64);
+            }
+
+            #[test]
+            fn total_reward_sums_correctly(rewards in proptest::collection::vec(0.0f32..10.0, 1..20)) {
+                let mut builder = TrajectoryBuilder::new();
+                let obs = make_test_observation();
+                let responses = vec![AgentResponse::from_action(0)];
+                let expected_sum: f32 = rewards.iter().sum();
+
+                for (tick, &reward) in rewards.iter().enumerate() {
+                    builder.record_step(
+                        tick as u64,
+                        vec![obs.clone()],
+                        &responses,
+                        vec![reward],
+                        false,
+                        false,
+                    );
+                }
+
+                let traj = builder.build(vec![expected_sum]);
+                prop_assert!((traj.total_reward(0) - expected_sum).abs() < 0.01);
+            }
+        }
+    }
+
     #[test]
     fn test_multi_agent_trajectory() {
         let mut builder = TrajectoryBuilder::new();

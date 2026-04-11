@@ -230,6 +230,46 @@ mod tests {
         assert_eq!(merged["arr"], serde_json::json!([4, 5]));
     }
 
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn merge_with_self_produces_same_config(seed in 0u64..10000) {
+                let mut config = ForgeConfig::default();
+                config.world.seed = seed;
+                let merged = merge_forge_configs(&config, &config);
+                prop_assert_eq!(merged.world.seed, config.world.seed);
+                prop_assert_eq!(merged.world.width, config.world.width);
+                prop_assert_eq!(merged.world.height, config.world.height);
+            }
+
+            #[test]
+            fn compose_single_returns_identity(seed in 0u64..10000) {
+                let mut forge = ForgeConfig::default();
+                forge.world.seed = seed;
+                let scenario = ScenarioConfig {
+                    scenario: ScenarioMeta {
+                        id: "test".into(),
+                        name: "Test".into(),
+                        description: "test".into(),
+                        tags: vec![],
+                        difficulty_tier: 1,
+                        min_agents: 1,
+                        max_agents: 4,
+                        author: "test".into(),
+                        version: "1.0".into(),
+                    },
+                    forge,
+                };
+                let result = compose_scenarios(&[scenario.clone()]).unwrap();
+                prop_assert_eq!(result.forge.world.seed, scenario.forge.world.seed);
+                prop_assert_eq!(result.scenario.id, scenario.scenario.id);
+            }
+        }
+    }
+
     #[test]
     fn test_merge_json_values_null_override() {
         let base = serde_json::json!({"x": 1, "y": 2});

@@ -310,6 +310,52 @@ mod tests {
         assert!(!result.satisfied);
     }
 
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn empty_and_is_vacuously_true(tick in 0u64..10000) {
+                let agents = vec![];
+                let ctx = make_ctx(&agents, tick);
+                let task = TaskComposition::And(vec![]);
+                let mut seq_idx = 0;
+                let result = evaluate_composition(&task, &ctx, &mut seq_idx, &[]);
+                prop_assert!(result.satisfied);
+                prop_assert!((result.progress - 1.0).abs() < f32::EPSILON);
+            }
+
+            #[test]
+            fn empty_or_is_always_false(tick in 0u64..10000) {
+                let agents = vec![];
+                let ctx = make_ctx(&agents, tick);
+                let task = TaskComposition::Or(vec![]);
+                let mut seq_idx = 0;
+                let result = evaluate_composition(&task, &ctx, &mut seq_idx, &[]);
+                prop_assert!(!result.satisfied);
+                prop_assert!((result.progress - 0.0).abs() < f32::EPSILON);
+            }
+
+            #[test]
+            fn before_always_fails_after_deadline(
+                deadline in 1u64..1000,
+                extra in 1u64..1000,
+            ) {
+                let agents = vec![make_agent(0, 0, 0)];
+                let tick = deadline + extra;
+                let ctx = make_ctx(&agents, tick);
+                let task = TaskComposition::Before(
+                    Box::new(TaskComposition::Atom(Predicate::AgentAt(0, Position::new(5, 5)))),
+                    deadline,
+                );
+                let mut seq_idx = 0;
+                let result = evaluate_composition(&task, &ctx, &mut seq_idx, &[]);
+                prop_assert!(!result.satisfied);
+            }
+        }
+    }
+
     #[test]
     fn test_composer_deeply_nested() {
         // Build deeply nested AND/OR/SEQUENCE composition:

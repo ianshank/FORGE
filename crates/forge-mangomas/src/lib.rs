@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(clippy::all)]
+
 //! MangoMAS agent training integration layer for FORGE.
 //!
 //! This crate bridges the FORGE simulation platform with MangoMAS autonomous

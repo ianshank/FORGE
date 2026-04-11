@@ -1126,7 +1126,7 @@ num_agents = 4
 
     // ---- Proptest: config invariants ----
 
-    mod proptests {
+    mod proptests_roundtrip {
         use super::*;
         use proptest::prelude::*;
 

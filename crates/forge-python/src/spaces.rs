@@ -104,3 +104,60 @@ pub fn action_space(py: Python<'_>, config: &ForgeConfig) -> PyResult<PyObject> 
     dict.set_item("n", n)?;
     Ok(dict.unbind().into())
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::config::ForgeConfig;
+    use forge_types::constants::{NUM_DAY_PHASES, OBS_FEATURES_PER_TILE};
+    use forge_types::Action;
+
+    #[test]
+    fn test_view_side_computation() {
+        let config = ForgeConfig::default();
+        let vr = config.agents.default_vision_radius as usize;
+        let view_side = 2 * vr + 1;
+        // Default VR=5 -> 11x11 view
+        assert_eq!(view_side, 11);
+    }
+
+    #[test]
+    fn test_action_space_size_default_positive() {
+        let config = ForgeConfig::default();
+        let n = Action::space_size(config.agents.comm_vocab_size, config.drone.enabled);
+        assert!(n > 0, "action space must be non-empty");
+    }
+
+    #[test]
+    fn test_action_space_grows_with_drone() {
+        let config = ForgeConfig::default();
+        let without_drone = Action::space_size(config.agents.comm_vocab_size, false);
+        let with_drone = Action::space_size(config.agents.comm_vocab_size, true);
+        assert!(
+            with_drone > without_drone,
+            "drone actions should increase action space"
+        );
+    }
+
+    #[test]
+    fn test_obs_features_per_tile_is_seven() {
+        assert_eq!(OBS_FEATURES_PER_TILE, 7);
+    }
+
+    #[test]
+    fn test_num_day_phases_is_four() {
+        assert_eq!(NUM_DAY_PHASES, 4);
+    }
+
+    #[test]
+    fn test_grid_shape_matches_config() {
+        let config = ForgeConfig::default();
+        let vr = config.agents.default_vision_radius as usize;
+        let view_side = 2 * vr + 1;
+        let capacity = config.agents.default_carry_capacity as usize;
+
+        // Grid view shape: (view_side, view_side, 7)
+        assert_eq!(view_side * view_side * OBS_FEATURES_PER_TILE, 11 * 11 * 7);
+        // Inventory shape: (capacity, 2)
+        assert_eq!(capacity, 10);
+    }
+}

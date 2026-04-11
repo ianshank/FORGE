@@ -499,7 +499,7 @@ mod proptests {
         fn prop_discrete_roundtrip(action_id in valid_action_id()) {
             // vocab_size=0 means no Communicate actions; IDs 0–39 are all
             // non-Communicate so this is correct.
-            let action = Action::from_discrete(action_id, 0)
+            let action = Action::from_discrete(action_id, 0, false)
                 .expect("valid action_id must produce Some(Action)");
             prop_assert_eq!(action.to_discrete(), action_id);
         }
@@ -511,7 +511,7 @@ mod proptests {
         fn prop_communicate_roundtrip(token in 0u32..64u32, vocab_size in 1u16..64u16) {
             prop_assume!(token < vocab_size as u32);
             let action_id = 40 + token;
-            let action = Action::from_discrete(action_id, vocab_size)
+            let action = Action::from_discrete(action_id, vocab_size, false)
                 .expect("valid comm action_id must produce Some(Action)");
             let discrete = action.to_discrete();
             match action {
@@ -524,14 +524,14 @@ mod proptests {
         /// Action IDs that exceed the action space should return `None`.
         #[test]
         fn prop_out_of_range_returns_none(action_id in 40u32..u32::MAX) {
-            // With vocab_size=0 nothing above 39 is valid.
-            prop_assert!(Action::from_discrete(action_id, 0).is_none());
+            // With vocab_size=0 and no drone actions, nothing above 39 is valid.
+            prop_assert!(Action::from_discrete(action_id, 0, false).is_none());
         }
 
         /// `space_size` must always be at least 40 regardless of vocab size.
         #[test]
         fn prop_space_size_at_least_40(vocab_size in 0u16..=u16::MAX) {
-            prop_assert!(Action::space_size(vocab_size) >= 40);
+            prop_assert!(Action::space_size(vocab_size, false) >= 40);
         }
     }
 }

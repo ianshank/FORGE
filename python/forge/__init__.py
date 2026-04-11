@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import contextlib
 
+from forge.utils.logging_config import setup_logging  # noqa: F401
+
 # Expose training loggers at the forge package level so that scripts can do:
 #   from forge import ForgeLogger, WandbLogger
 with contextlib.suppress(ImportError):

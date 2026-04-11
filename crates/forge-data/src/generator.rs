@@ -131,8 +131,7 @@ impl ExpertDemoGenerator {
         };
 
         let mut dataset = OfflineDataset::new("ExpertDemoGenerator");
-        dataset.metadata.source_url =
-            Some("https://github.com/ianshank/forge".to_string());
+        dataset.metadata.source_url = Some("https://github.com/ianshank/forge".to_string());
         dataset.metadata.license = Some("Apache-2.0".to_string());
         for traj in trajectories {
             dataset.push(traj);
@@ -152,10 +151,7 @@ impl ExpertDemoGenerator {
     ///
     /// [`Trajectory`]: forge_replay::trajectory::Trajectory
     #[instrument(skip(self), fields(seed))]
-    pub fn generate_episode(
-        &self,
-        seed: u64,
-    ) -> Option<forge_replay::trajectory::Trajectory> {
+    pub fn generate_episode(&self, seed: u64) -> Option<forge_replay::trajectory::Trajectory> {
         let mut episode_config = self.config.forge_config.clone();
         episode_config.world.seed = seed;
 
@@ -205,10 +201,7 @@ impl ExpertDemoGenerator {
                 })
                 .collect();
 
-            let action_ids: Vec<u32> = actions
-                .iter()
-                .map(|a| a.to_discrete())
-                .collect();
+            let action_ids: Vec<u32> = actions.iter().map(|a| a.to_discrete()).collect();
 
             let result = state.step(&actions);
 
@@ -292,10 +285,7 @@ mod tests {
         let traj = gen.generate_episode(42).expect("episode generation failed");
         assert!(!traj.is_empty());
         assert_eq!(traj.metadata.seed, 42);
-        assert_eq!(
-            traj.metadata.scenario_id.as_deref(),
-            Some("expert_seed_42")
-        );
+        assert_eq!(traj.metadata.scenario_id.as_deref(), Some("expert_seed_42"));
     }
 
     #[test]
@@ -384,6 +374,24 @@ mod tests {
         let gen = ExpertDemoGenerator::new(cfg);
         let traj = gen.generate_episode(0).unwrap();
         assert!(traj.len() <= 3);
+    }
+
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn config_roundtrip_serde(seed in 0u64..1000) {
+                let mut cfg = ExpertDemoConfig::default();
+                cfg.forge_config.world.seed = seed;
+                let json = serde_json::to_string(&cfg).unwrap();
+                let deser: ExpertDemoConfig = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.forge_config.world.seed, seed);
+                prop_assert_eq!(deser.max_steps, cfg.max_steps);
+                prop_assert_eq!(deser.parallel, cfg.parallel);
+            }
+        }
     }
 
     #[test]

@@ -207,3 +207,54 @@ impl ForgeEnv {
         Ok(dict)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::config::ForgeConfig;
+    use forge_types::Action;
+
+    #[test]
+    fn test_action_noop_is_zero() {
+        let config = ForgeConfig::default();
+        let action = Action::from_discrete(0, config.agents.comm_vocab_size, config.drone.enabled);
+        assert!(action.is_some(), "action 0 should always be valid (Noop)");
+    }
+
+    #[test]
+    fn test_action_max_u32_is_invalid() {
+        let config = ForgeConfig::default();
+        let action = Action::from_discrete(
+            u32::MAX,
+            config.agents.comm_vocab_size,
+            config.drone.enabled,
+        );
+        assert!(action.is_none(), "u32::MAX should be out of action range");
+    }
+
+    #[test]
+    fn test_action_roundtrip() {
+        let config = ForgeConfig::default();
+        let comm_vocab = config.agents.comm_vocab_size;
+        let drone = config.drone.enabled;
+
+        // Every valid discrete action should round-trip
+        let n = Action::space_size(comm_vocab, drone);
+        for i in 0..n {
+            let action = Action::from_discrete(i, comm_vocab, drone);
+            assert!(action.is_some(), "action {i} of {n} should be valid");
+            let discrete = action.unwrap().to_discrete_full(comm_vocab);
+            assert_eq!(discrete, i, "round-trip failed for action {i}");
+        }
+    }
+
+    #[test]
+    fn test_action_just_beyond_range_is_invalid() {
+        let config = ForgeConfig::default();
+        let n = Action::space_size(config.agents.comm_vocab_size, config.drone.enabled);
+        let action = Action::from_discrete(n, config.agents.comm_vocab_size, config.drone.enabled);
+        assert!(
+            action.is_none(),
+            "action index n={n} should be out of range"
+        );
+    }
+}

@@ -113,6 +113,29 @@ mod tests {
         assert_ne!(s1, s2);
     }
 
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn derive_seed_is_deterministic(base in 0u64..u64::MAX, component in "[a-z]{1,20}") {
+                let a = derive_seed(base, &component);
+                let b = derive_seed(base, &component);
+                prop_assert_eq!(a, b);
+            }
+
+            #[test]
+            fn seed_sequence_is_deterministic(base in 0u64..u64::MAX) {
+                let mut seq_a = SeedSequence::new(base);
+                let mut seq_b = SeedSequence::new(base);
+                for _ in 0..20 {
+                    prop_assert_eq!(seq_a.next_seed(), seq_b.next_seed());
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_many_next_seed_calls_produce_unique_values() {
         let mut seq = SeedSequence::new(12345);

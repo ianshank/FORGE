@@ -4,9 +4,13 @@
 //! environments. Each environment runs independently with a unique seed
 //! derived from the base seed + environment index.
 
+use std::sync::Mutex;
+
 use forge_core::WorldState;
 use forge_types::action::Action;
 use forge_types::observation::Observation;
+use rand::SeedableRng;
+use rand_pcg::Pcg64Mcg;
 use rayon::prelude::*;
 use tracing::{debug, instrument, warn};
 
@@ -55,21 +59,41 @@ pub trait ActionPolicy: Send + Sync {
 }
 
 /// Random action policy for baseline data collection.
+///
+/// Uses a seeded `Pcg64Mcg` RNG to ensure deterministic action selection.
+/// Two policies created with the same seed and action space size will
+/// produce identical action sequences.
 pub struct RandomActionPolicy {
+    /// Size of the discrete action space.
     action_space_size: u32,
+    /// Deterministic RNG guarded by a mutex for `Send + Sync` compatibility.
+    rng: Mutex<Pcg64Mcg>,
 }
 
 impl RandomActionPolicy {
-    /// Creates a new random policy for the given action space.
+    /// Creates a new random policy with a default seed of 0.
+    #[instrument(skip_all)]
     pub fn new(action_space_size: u32) -> Self {
-        Self { action_space_size }
+        Self::new_with_seed(action_space_size, 0)
+    }
+
+    /// Creates a new random policy seeded for deterministic reproducibility.
+    #[instrument(skip_all)]
+    pub fn new_with_seed(action_space_size: u32, seed: u64) -> Self {
+        Self {
+            action_space_size,
+            rng: Mutex::new(Pcg64Mcg::seed_from_u64(seed)),
+        }
     }
 }
 
 impl ActionPolicy for RandomActionPolicy {
     fn select_action(&self, _obs: &Observation, _agent_idx: usize) -> u32 {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = self
+            .rng
+            .lock()
+            .expect("RandomActionPolicy RNG lock poisoned");
         rng.gen_range(0..self.action_space_size)
     }
 }
@@ -261,7 +285,7 @@ mod tests {
             runner.config().forge_config.agents.comm_vocab_size,
             runner.config().forge_config.drone.enabled,
         );
-        let policy = RandomActionPolicy::new(action_space);
+        let policy = RandomActionPolicy::new_with_seed(action_space, 42);
         let batch = runner.collect_episodes(1, &policy).unwrap();
         assert_eq!(batch.episodes.len(), 1);
         assert!(batch.episodes[0].length > 0);
@@ -275,7 +299,7 @@ mod tests {
             runner.config().forge_config.agents.comm_vocab_size,
             runner.config().forge_config.drone.enabled,
         );
-        let policy = RandomActionPolicy::new(action_space);
+        let policy = RandomActionPolicy::new_with_seed(action_space, 42);
         let batch = runner.collect_episodes(4, &policy).unwrap();
         assert_eq!(batch.episodes.len(), 4);
     }
@@ -309,7 +333,7 @@ mod tests {
         let mut config = test_config();
         config.max_episode_steps = 5;
         let runner = BatchRunner::new(config);
-        let policy = RandomActionPolicy::new(42);
+        let policy = RandomActionPolicy::new_with_seed(42, 0);
         let batch = runner.collect_episodes(1, &policy).unwrap();
         assert_eq!(batch.episodes.len(), 1);
         assert!(batch.episodes[0].length <= 5);
@@ -330,5 +354,76 @@ mod tests {
 
         let batch = runner.collect_episodes(1, &NoopPolicy).unwrap();
         assert!(batch.episodes[0].length <= 5);
+    }
+
+    #[test]
+    fn test_random_policy_determinism() {
+        let seed = 12345u64;
+        let action_space = 10u32;
+
+        let policy_a = RandomActionPolicy::new_with_seed(action_space, seed);
+        let policy_b = RandomActionPolicy::new_with_seed(action_space, seed);
+
+        let dummy_obs = Observation {
+            grid_view: vec![],
+            view_width: 0,
+            view_height: 0,
+            inventory: forge_types::observation::InventoryObservation { slots: vec![] },
+            health: 1.0,
+            stamina: 1.0,
+            position: (0, 0),
+            messages: vec![],
+            day_phase: 0,
+            task_progress: vec![],
+            altitude: 0,
+            battery: 1.0,
+            morphology: 0,
+            heading: 0,
+            crop_scan_results: vec![],
+            soil_readings: vec![],
+            disease_detections: 0,
+            report_ready: false,
+        };
+
+        // Same seed must produce identical action sequences
+        for i in 0..100 {
+            let a = policy_a.select_action(&dummy_obs, 0);
+            let b = policy_b.select_action(&dummy_obs, 0);
+            assert_eq!(a, b, "Actions diverged at step {i}");
+            assert!(a < action_space, "Action {a} out of range");
+        }
+    }
+
+    #[test]
+    fn test_random_policy_default_seed_is_deterministic() {
+        let policy_a = RandomActionPolicy::new(10);
+        let policy_b = RandomActionPolicy::new(10);
+
+        let dummy_obs = Observation {
+            grid_view: vec![],
+            view_width: 0,
+            view_height: 0,
+            inventory: forge_types::observation::InventoryObservation { slots: vec![] },
+            health: 1.0,
+            stamina: 1.0,
+            position: (0, 0),
+            messages: vec![],
+            day_phase: 0,
+            task_progress: vec![],
+            altitude: 0,
+            battery: 1.0,
+            morphology: 0,
+            heading: 0,
+            crop_scan_results: vec![],
+            soil_readings: vec![],
+            disease_detections: 0,
+            report_ready: false,
+        };
+
+        for i in 0..50 {
+            let a = policy_a.select_action(&dummy_obs, 0);
+            let b = policy_b.select_action(&dummy_obs, 0);
+            assert_eq!(a, b, "Default-seed actions diverged at step {i}");
+        }
     }
 }

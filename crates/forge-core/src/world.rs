@@ -1128,22 +1128,21 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
-    use forge_types::Action;
     use forge_types::grid::Direction;
+    use forge_types::Action;
     use proptest::prelude::*;
 
     /// Build a minimal, valid `ForgeConfig` suitable for fast proptest runs.
     /// Width and height are kept small (8–16) so world creation is cheap.
     fn small_config(width: u16, height: u16, seed: u64, num_agents: u32) -> ForgeConfig {
         let mut config = ForgeConfig::default();
-        config.world.width  = width;
+        config.world.width = width;
         config.world.height = height;
-        config.world.seed   = seed;
+        config.world.seed = seed;
         config.agents.num_agents = num_agents;
         // Vision radius must fit: 2*r+1 <= min(width, height)
         let max_radius = ((width.min(height) - 1) / 2) as u8;
-        config.agents.default_vision_radius =
-            config.agents.default_vision_radius.min(max_radius);
+        config.agents.default_vision_radius = config.agents.default_vision_radius.min(max_radius);
         config.task.max_episode_length = 1000;
         config
     }

@@ -512,6 +512,37 @@ mod tests {
         assert_eq!(hash_config(&c1), hash_config(&c2));
     }
 
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn bincode_roundtrip_any_seed(seed in 0u64..10000) {
+                let config = test_config();
+                let mut builder = CompactReplay::builder(config, seed);
+                builder.record_tick(vec![0]);
+                builder.record_tick(vec![1]);
+                let replay = builder.build();
+
+                let bytes = replay.to_bytes().unwrap();
+                let deser = CompactReplay::from_bytes(&bytes).unwrap();
+                prop_assert_eq!(deser.seed, seed);
+                prop_assert_eq!(deser.actions.len(), 2);
+                prop_assert!(deser.validate_config());
+            }
+
+            #[test]
+            fn config_hash_is_deterministic(seed in 0u64..10000) {
+                let mut config = test_config();
+                config.world.seed = seed;
+                let h1 = hash_config(&config);
+                let h2 = hash_config(&config);
+                prop_assert_eq!(h1, h2);
+            }
+        }
+    }
+
     #[test]
     fn test_replay_iterator_world_access() {
         let config = test_config();

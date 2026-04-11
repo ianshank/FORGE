@@ -358,6 +358,124 @@ mod tests {
     }
 
     #[test]
+    fn test_determinism_same_seed_same_actions() {
+        let config_json =
+            r#"{"world":{"width":16,"height":16,"seed":42},"agents":{"num_agents":1}}"#;
+        let mut env_a = ForgeWasmEnv::new(config_json);
+        let mut env_b = ForgeWasmEnv::new(config_json);
+
+        env_a.reset(Some(42));
+        env_b.reset(Some(42));
+
+        for action in [0, 1, 2, 3, 4, 0, 1, 2] {
+            let json_a = env_a.step(action);
+            let json_b = env_b.step(action);
+            assert_eq!(json_a, json_b, "Determinism broken at action {action}");
+        }
+    }
+
+    #[test]
+    fn test_reset_with_none_seed() {
+        let mut env = ForgeWasmEnv::new(&default_config_json());
+        let json = env.reset(None);
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value.get("observations").is_some());
+        assert_eq!(value["terminated"].as_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_get_state_json_tick_advances() {
+        let mut env = ForgeWasmEnv::new(&default_config_json());
+        env.reset(Some(1));
+
+        let state_before = env.get_state_json();
+        let before: serde_json::Value = serde_json::from_str(&state_before).unwrap();
+        let tick_before = before["tick"].as_u64().unwrap();
+
+        env.step(0); // Noop
+        let state_after = env.get_state_json();
+        let after: serde_json::Value = serde_json::from_str(&state_after).unwrap();
+        let tick_after = after["tick"].as_u64().unwrap();
+
+        assert!(tick_after > tick_before, "Tick should advance after step");
+    }
+
+    #[test]
+    fn test_tiny_world() {
+        let config_json = r#"{"world":{"width":8,"height":8,"seed":7},"agents":{"num_agents":1,"default_vision_radius":2}}"#;
+        let mut env = ForgeWasmEnv::new(config_json);
+        let json = env.reset(Some(7));
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value.get("observations").is_some());
+
+        // Should be able to step without crash
+        for _ in 0..10 {
+            let step_json = env.step(0);
+            let _: serde_json::Value = serde_json::from_str(&step_json).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_observation_space_matches_config() {
+        let config_json =
+            r#"{"world":{"width":32,"height":32},"agents":{"default_vision_radius":3}}"#;
+        let env = ForgeWasmEnv::new(config_json);
+        let json = env.observation_space_json();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let grid_shape = value["grid_shape"].as_array().unwrap();
+        // VR=3 -> view_side=7
+        assert_eq!(grid_shape[0].as_u64().unwrap(), 7);
+        assert_eq!(grid_shape[1].as_u64().unwrap(), 7);
+        assert_eq!(grid_shape[2].as_u64().unwrap(), 7); // OBS_FEATURES_PER_TILE
+    }
+
+    #[test]
+    fn test_action_space_n_matches() {
+        let env = ForgeWasmEnv::new(&default_config_json());
+        let json = env.action_space_json();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let n = value["n"].as_u64().unwrap();
+        let expected = forge_types::Action::space_size(
+            env.config.agents.comm_vocab_size,
+            env.config.drone.enabled,
+        ) as u64;
+        assert_eq!(n, expected);
+    }
+
+    #[test]
+    fn test_multiple_resets_produce_valid_output() {
+        let mut env = ForgeWasmEnv::new(&default_config_json());
+        for seed in [1, 2, 3, 42, 999] {
+            let json = env.reset(Some(seed));
+            let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert!(value.get("observations").is_some());
+            assert_eq!(value["terminated"].as_bool(), Some(false));
+        }
+    }
+
+    #[test]
+    fn test_different_seeds_produce_different_states() {
+        let mut env_a = ForgeWasmEnv::new(&default_config_json());
+        let mut env_b = ForgeWasmEnv::new(&default_config_json());
+
+        env_a.reset(Some(1));
+        env_b.reset(Some(9999));
+
+        // Step a few times
+        for _ in 0..5 {
+            env_a.step(1);
+            env_b.step(1);
+        }
+
+        let state_a = env_a.get_state_json();
+        let state_b = env_b.get_state_json();
+        // Different seeds should produce different world states (positions, etc.)
+        // This is probabilistic but extremely likely
+        assert_ne!(state_a, state_b);
+    }
+
+    #[test]
     fn test_step_with_invalid_action_falls_back_to_noop() {
         let mut env = ForgeWasmEnv::new(&default_config_json());
         // Very large action index should fall back to Noop
