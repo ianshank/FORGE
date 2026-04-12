@@ -329,6 +329,21 @@ mod tests {
     }
 
     #[test]
+    fn test_proposal_from_toml_file_valid() {
+        let proposal = ProposalBuilder::new()
+            .agency(AgencyProfile::dod_phase_i())
+            .cover_page(make_cover())
+            .build()
+            .unwrap();
+        let toml_str = proposal.to_toml().unwrap();
+        let tmp = std::env::temp_dir().join("forge_proposal_test.toml");
+        std::fs::write(&tmp, &toml_str).expect("failed to write temp file");
+        let loaded = Proposal::from_toml(&tmp).expect("failed to load from file");
+        assert_eq!(loaded.cover_page.title, proposal.cover_page.title);
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
     fn test_proposal_total_estimated_pages() {
         let proposal = ProposalBuilder::new()
             .agency(AgencyProfile::dod_phase_i())
@@ -374,5 +389,106 @@ mod tests {
             .cover_page(make_cover())
             .build();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_total_cost_zero_for_empty() {
+        let proposal = ProposalBuilder::new()
+            .agency(AgencyProfile::dod_phase_i())
+            .cover_page(make_cover())
+            .build()
+            .unwrap();
+        assert_eq!(proposal.total_cost(), 0);
+    }
+
+    #[test]
+    fn test_validate_strict_returns_error() {
+        let proposal = ProposalBuilder::new()
+            .agency(AgencyProfile::dod_phase_i())
+            .cover_page(CoverPage::default())
+            .build()
+            .unwrap();
+        assert!(proposal.validate_strict().is_err());
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn prop_builder_always_requires_agency(_ in 0u8..1) {
+                let result = ProposalBuilder::new()
+                    .cover_page(make_cover())
+                    .build();
+                prop_assert!(result.is_err());
+            }
+
+            #[test]
+            fn prop_builder_always_requires_cover(_ in 0u8..1) {
+                let result = ProposalBuilder::new()
+                    .agency(AgencyProfile::dod_phase_i())
+                    .build();
+                prop_assert!(result.is_err());
+            }
+
+            #[test]
+            fn prop_total_pages_non_negative(
+                idx in 0usize..4
+            ) {
+                let profiles = AgencyProfile::builtin_profiles();
+                let proposal = ProposalBuilder::new()
+                    .agency(profiles[idx].clone())
+                    .cover_page(make_cover())
+                    .build()
+                    .unwrap();
+                prop_assert!(proposal.total_estimated_pages() >= 0.0);
+            }
+
+            #[test]
+            fn prop_toml_roundtrip_preserves_title(
+                title in "[a-zA-Z ]{1,50}"
+            ) {
+                let proposal = ProposalBuilder::new()
+                    .agency(AgencyProfile::dod_phase_i())
+                    .cover_page(CoverPage {
+                        title: title.clone(),
+                        topic_number: "T001".to_string(),
+                        company_name: "Co".to_string(),
+                        pi_name: "PI".to_string(),
+                        uei: "UEI".to_string(),
+                        ..Default::default()
+                    })
+                    .build()
+                    .unwrap();
+                let toml_str = proposal.to_toml().unwrap();
+                let restored = Proposal::from_toml_str(&toml_str).unwrap();
+                prop_assert_eq!(restored.cover_page.title, title);
+            }
+
+            #[test]
+            fn prop_render_non_empty(idx in 0usize..4) {
+                let profiles = AgencyProfile::builtin_profiles();
+                let proposal = ProposalBuilder::new()
+                    .agency(profiles[idx].clone())
+                    .cover_page(make_cover())
+                    .build()
+                    .unwrap();
+                let md = proposal.render_markdown();
+                prop_assert!(!md.is_empty());
+            }
+
+            #[test]
+            fn prop_display_non_empty(idx in 0usize..4) {
+                let profiles = AgencyProfile::builtin_profiles();
+                let proposal = ProposalBuilder::new()
+                    .agency(profiles[idx].clone())
+                    .cover_page(make_cover())
+                    .build()
+                    .unwrap();
+                let display = format!("{proposal}");
+                prop_assert!(!display.is_empty());
+            }
+        }
     }
 }

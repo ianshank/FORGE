@@ -265,4 +265,47 @@ mod tests {
         let result: ProposalResult<u32> = Err(ProposalError::Serialization("fail".to_string()));
         assert!(result.is_err());
     }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn prop_validation_error_display_non_empty(
+                actual in 0.0f32..100.0,
+                limit in 1u32..100,
+            ) {
+                let err = ValidationError::PageLimitExceeded {
+                    section: "test".to_string(),
+                    actual,
+                    limit,
+                };
+                let msg = err.to_string();
+                prop_assert!(!msg.is_empty());
+                prop_assert!(msg.contains("page limit exceeded"));
+            }
+
+            #[test]
+            fn prop_cost_error_display_contains_values(
+                total in 0u64..2_000_000,
+                min in 0u64..500_000,
+                extra in 0u64..500_000,
+            ) {
+                let max = min + extra;
+                let err = ValidationError::CostOutOfRange { total, min, max };
+                let msg = err.to_string();
+                prop_assert!(msg.contains("cost out of range"));
+            }
+
+            #[test]
+            fn prop_serialization_error_contains_message(
+                msg_part in "[a-z ]{1,50}",
+            ) {
+                let err = ProposalError::Serialization(msg_part.clone());
+                let display = err.to_string();
+                prop_assert!(display.contains(&msg_part));
+            }
+        }
+    }
 }

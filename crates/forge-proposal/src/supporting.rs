@@ -4,6 +4,7 @@
 //! and data management plan.
 
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 /// Complete supporting documentation for a proposal.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -21,18 +22,21 @@ pub struct SupportingDocumentation {
 
 impl SupportingDocumentation {
     /// Estimates page count for supporting documentation.
+    #[instrument(skip_all)]
     pub fn estimated_pages(&self) -> f32 {
-        let base = 1.0; // Registration + PI commitment
-        let sub_pages = self.subcontract_plans.len() as f32 * 0.5;
+        let base = crate::constants::DEFAULT_SUPPORTING_DOCS_BASE_PAGES;
+        let sub_pages = self.subcontract_plans.len() as f32
+            * crate::constants::DEFAULT_PAGES_PER_SUBCONTRACT_PLAN;
         let dmp_pages = if self.data_management.plan_text.is_empty() {
             0.0
         } else {
-            1.0
+            crate::constants::DEFAULT_DATA_MANAGEMENT_PLAN_PAGES
         };
         base + sub_pages + dmp_pages
     }
 
     /// Renders this section to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let sub = heading_level + 1;
@@ -69,6 +73,7 @@ pub struct Registration {
 
 impl Registration {
     /// Renders registration info to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -121,6 +126,7 @@ impl Default for PICommitment {
 
 impl PICommitment {
     /// Renders PI commitment info to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -170,6 +176,7 @@ pub struct DataManagementPlan {
 
 impl DataManagementPlan {
     /// Renders data management plan to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -299,6 +306,16 @@ mod tests {
     }
 
     #[test]
+    fn test_render_empty_supporting_docs() {
+        let docs = SupportingDocumentation::default();
+        let md = docs.render_markdown(1);
+        assert!(md.contains("# Supporting Documentation"));
+        assert!(md.contains("Company Registration"));
+        assert!(md.contains("PI Commitment"));
+        assert!(md.contains("Data Management Plan"));
+    }
+
+    #[test]
     fn test_render_supporting_docs_full() {
         let docs = SupportingDocumentation {
             registration: Registration {
@@ -327,5 +344,79 @@ mod tests {
         assert!(md.contains("PI Commitment"));
         assert!(md.contains("SubCo"));
         assert!(md.contains("Data Management Plan"));
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        prop_compose! {
+            fn arb_supporting_docs()(
+                sub_count in 0usize..5,
+                has_dmp in proptest::bool::ANY,
+                sam_reg in proptest::bool::ANY,
+                sbir_reg in proptest::bool::ANY,
+            ) -> SupportingDocumentation {
+                SupportingDocumentation {
+                    registration: Registration {
+                        sam_registered: sam_reg,
+                        sbir_registered: sbir_reg,
+                        ..Default::default()
+                    },
+                    pi_commitment: PICommitment::default(),
+                    subcontract_plans: (0..sub_count).map(|i| SubcontractPlan {
+                        organization: format!("Org-{i}"),
+                        scope: "Research".to_string(),
+                        estimated_cost: 10_000,
+                        agreement_signed: true,
+                    }).collect(),
+                    data_management: if has_dmp {
+                        DataManagementPlan {
+                            plan_text: "Data management plan.".to_string(),
+                            retention_period: "5 years".to_string(),
+                            sharing_approach: "Open access".to_string(),
+                        }
+                    } else {
+                        DataManagementPlan::default()
+                    },
+                }
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn prop_estimated_pages_non_negative(docs in arb_supporting_docs()) {
+                prop_assert!(docs.estimated_pages() >= 0.0);
+            }
+
+            #[test]
+            fn prop_estimated_pages_grows_with_subcontracts(sub_count in 0usize..10) {
+                let docs = SupportingDocumentation {
+                    subcontract_plans: (0..sub_count).map(|i| SubcontractPlan {
+                        organization: format!("Org-{i}"),
+                        scope: "Work".to_string(),
+                        estimated_cost: 10_000,
+                        agreement_signed: true,
+                    }).collect(),
+                    ..Default::default()
+                };
+                let pages = docs.estimated_pages();
+                prop_assert!(pages >= crate::constants::DEFAULT_SUPPORTING_DOCS_BASE_PAGES);
+            }
+
+            #[test]
+            fn prop_render_non_empty(docs in arb_supporting_docs()) {
+                let md = docs.render_markdown(1);
+                prop_assert!(!md.is_empty());
+                prop_assert!(md.contains("Supporting Documentation"));
+            }
+
+            #[test]
+            fn prop_serde_roundtrip(docs in arb_supporting_docs()) {
+                let json = serde_json::to_string(&docs).unwrap();
+                let deser: SupportingDocumentation = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.subcontract_plans.len(), docs.subcontract_plans.len());
+            }
+        }
     }
 }

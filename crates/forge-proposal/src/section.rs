@@ -6,6 +6,7 @@
 //! require different section arrangements.
 
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 /// Content for a leaf section in the composition tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +86,7 @@ impl SectionComposition {
     }
 
     /// Returns the total estimated pages for this composition tree.
+    #[instrument(skip_all)]
     pub fn total_estimated_pages(&self) -> f32 {
         match self {
             Self::Leaf(content) => content.estimated_pages,
@@ -135,6 +137,7 @@ impl SectionComposition {
     }
 
     /// Collects all page constraints from the tree.
+    #[instrument(skip_all)]
     pub fn page_constraints(&self) -> Vec<(&str, u32)> {
         match self {
             Self::Leaf(_) => vec![],
@@ -270,10 +273,128 @@ mod tests {
     }
 
     #[test]
+    fn test_one_of_page_constraints() {
+        let one_of = SectionComposition::OneOf(vec![
+            SectionComposition::constrained(make_leaf("a", 1.0), Some(5), true),
+            make_leaf("b", 2.0),
+        ]);
+        let constraints = one_of.page_constraints();
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0], ("a", 5));
+    }
+
+    #[test]
+    fn test_constrained_no_page_limit() {
+        let c = SectionComposition::constrained(make_leaf("x", 3.0), None, true);
+        let constraints = c.page_constraints();
+        assert!(constraints.is_empty());
+    }
+
+    #[test]
+    fn test_optional_page_constraints() {
+        let opt = SectionComposition::optional(SectionComposition::constrained(
+            make_leaf("opt", 2.0),
+            Some(8),
+            false,
+        ));
+        let constraints = opt.page_constraints();
+        assert_eq!(constraints.len(), 1);
+    }
+
+    #[test]
+    fn test_leaf_body_preserved() {
+        let leaf = SectionComposition::leaf("id", "Title", "Body content here.", 1.0);
+        if let SectionComposition::Leaf(content) = leaf {
+            assert_eq!(content.body, "Body content here.");
+            assert_eq!(content.title, "Title");
+        } else {
+            panic!("expected Leaf variant");
+        }
+    }
+
+    #[test]
     fn test_empty_sequence() {
         let seq = SectionComposition::sequence(vec![]);
         assert_eq!(seq.leaf_count(), 0);
         assert!((seq.total_estimated_pages()).abs() < f32::EPSILON);
         assert!(seq.leaf_ids().is_empty());
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        prop_compose! {
+            fn arb_leaf()(
+                pages in 0.0f32..100.0,
+                id_num in 0u32..1000,
+            ) -> SectionComposition {
+                SectionComposition::leaf(
+                    format!("sec-{id_num}"),
+                    format!("Section {id_num}"),
+                    "Body text.",
+                    pages,
+                )
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn prop_leaf_has_one_count(leaf in arb_leaf()) {
+                prop_assert_eq!(leaf.leaf_count(), 1);
+            }
+
+            #[test]
+            fn prop_leaf_depth_is_one(leaf in arb_leaf()) {
+                prop_assert_eq!(leaf.depth(), 1);
+            }
+
+            #[test]
+            fn prop_leaf_pages_non_negative(pages in 0.0f32..1000.0) {
+                let leaf = SectionComposition::leaf("test", "Test", "", pages);
+                prop_assert!(leaf.total_estimated_pages() >= 0.0);
+            }
+
+            #[test]
+            fn prop_sequence_pages_is_sum(
+                p1 in 0.0f32..50.0,
+                p2 in 0.0f32..50.0,
+                p3 in 0.0f32..50.0,
+            ) {
+                let seq = SectionComposition::sequence(vec![
+                    SectionComposition::leaf("a", "A", "", p1),
+                    SectionComposition::leaf("b", "B", "", p2),
+                    SectionComposition::leaf("c", "C", "", p3),
+                ]);
+                let total = seq.total_estimated_pages();
+                let expected = p1 + p2 + p3;
+                prop_assert!((total - expected).abs() < 0.01);
+            }
+
+            #[test]
+            fn prop_constrained_preserves_pages(pages in 0.0f32..50.0, limit in 1u32..100) {
+                let c = SectionComposition::constrained(
+                    SectionComposition::leaf("x", "X", "", pages),
+                    Some(limit),
+                    true,
+                );
+                prop_assert!((c.total_estimated_pages() - pages).abs() < f32::EPSILON);
+            }
+
+            #[test]
+            fn prop_optional_preserves_pages(pages in 0.0f32..50.0) {
+                let opt = SectionComposition::optional(
+                    SectionComposition::leaf("x", "X", "", pages),
+                );
+                prop_assert!((opt.total_estimated_pages() - pages).abs() < f32::EPSILON);
+            }
+
+            #[test]
+            fn prop_serde_roundtrip(leaf in arb_leaf()) {
+                let json = serde_json::to_string(&leaf).unwrap();
+                let deser: SectionComposition = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.leaf_count(), leaf.leaf_count());
+            }
+        }
     }
 }

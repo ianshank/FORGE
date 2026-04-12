@@ -4,6 +4,7 @@
 //! title, topic number, company details, PI information, etc.
 
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 use crate::constants;
 
@@ -64,6 +65,7 @@ impl Default for CoverPage {
 
 impl CoverPage {
     /// Returns a list of field names that are empty but should be filled.
+    #[instrument(skip_all)]
     pub fn missing_fields(&self) -> Vec<&'static str> {
         let mut missing = Vec::new();
         if self.title.is_empty() {
@@ -88,10 +90,11 @@ impl CoverPage {
     ///
     /// Cover pages are typically a single page.
     pub fn estimated_pages(&self) -> f32 {
-        1.0
+        constants::DEFAULT_COVER_PAGE_PAGES
     }
 
     /// Renders this cover page to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -236,5 +239,67 @@ mod tests {
         assert!(display.contains("Test Title"));
         assert!(display.contains("TestCo"));
         assert!(display.contains("PI"));
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        prop_compose! {
+            fn arb_cover_page()(
+                title in "[a-zA-Z ]{0,50}",
+                topic in "[A-Z0-9-]{0,10}",
+                company in "[a-zA-Z ]{0,30}",
+                pi in "[a-zA-Z. ]{0,20}",
+                effort in 0u8..100,
+                duration in 1u32..36,
+                cost in 0u64..2_000_000,
+            ) -> CoverPage {
+                CoverPage {
+                    title,
+                    topic_number: topic,
+                    company_name: company,
+                    pi_name: pi,
+                    pi_effort_percent: effort,
+                    duration_months: duration,
+                    proposed_cost: cost,
+                    ..Default::default()
+                }
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn prop_estimated_pages_positive(cover in arb_cover_page()) {
+                prop_assert!(cover.estimated_pages() > 0.0);
+            }
+
+            #[test]
+            fn prop_serde_roundtrip(cover in arb_cover_page()) {
+                let json = serde_json::to_string(&cover).unwrap();
+                let deser: CoverPage = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.title, cover.title);
+                prop_assert_eq!(deser.proposed_cost, cover.proposed_cost);
+            }
+
+            #[test]
+            fn prop_render_non_empty(cover in arb_cover_page()) {
+                let md = cover.render_markdown(1);
+                prop_assert!(!md.is_empty());
+                prop_assert!(md.contains("Cover Page"));
+            }
+
+            #[test]
+            fn prop_missing_fields_count_bounded(cover in arb_cover_page()) {
+                let missing = cover.missing_fields();
+                prop_assert!(missing.len() <= 5);
+            }
+
+            #[test]
+            fn prop_display_non_empty(cover in arb_cover_page()) {
+                let display = format!("{cover}");
+                prop_assert!(!display.is_empty());
+            }
+        }
     }
 }

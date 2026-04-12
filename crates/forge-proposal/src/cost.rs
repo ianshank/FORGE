@@ -4,6 +4,7 @@
 //! with configurable rates and automatic total computation.
 
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 use crate::constants;
 
@@ -61,6 +62,7 @@ impl CostVolume {
     }
 
     /// Returns the total proposal cost (direct + indirect + profit).
+    #[instrument(skip_all)]
     pub fn total_cost(&self) -> u64 {
         let subtotal = self.total_direct() + self.total_indirect();
         let profit = (subtotal as f64 * self.indirect.profit_rate as f64) as u64;
@@ -84,10 +86,11 @@ impl CostVolume {
             + self.travel.len()
             + self.subcontracts.len()
             + 5; // header rows
-        line_count as f32 / 40.0 // ~40 table rows per page
+        line_count as f32 / constants::DEFAULT_TABLE_ROWS_PER_PAGE
     }
 
     /// Renders this cost volume to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -383,5 +386,88 @@ mod tests {
             ..Default::default()
         };
         assert!(big.estimated_pages() > small.estimated_pages());
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        prop_compose! {
+            fn arb_labor_item()(
+                hours in 0u32..10_000,
+                rate in 0u32..1_000,
+            ) -> LaborItem {
+                LaborItem {
+                    category: "Worker".to_string(),
+                    hours,
+                    hourly_rate: rate,
+                }
+            }
+        }
+
+        prop_compose! {
+            fn arb_cost_volume()(
+                labor_count in 0usize..5,
+                hours in 0u32..5_000,
+                rate in 0u32..500,
+                material_cost in 0u64..50_000,
+                travel_cost in 0u64..10_000,
+                sub_cost in 0u64..100_000,
+            ) -> CostVolume {
+                CostVolume {
+                    labor: (0..labor_count).map(|i| LaborItem {
+                        category: format!("Cat-{i}"),
+                        hours,
+                        hourly_rate: rate,
+                    }).collect(),
+                    materials: if material_cost > 0 {
+                        vec![MaterialItem { description: "Material".to_string(), cost: material_cost }]
+                    } else {
+                        vec![]
+                    },
+                    travel: if travel_cost > 0 {
+                        vec![TravelItem { description: "Travel".to_string(), cost: travel_cost }]
+                    } else {
+                        vec![]
+                    },
+                    subcontracts: if sub_cost > 0 {
+                        vec![SubcontractItem { organization: "Sub".to_string(), description: "Work".to_string(), cost: sub_cost }]
+                    } else {
+                        vec![]
+                    },
+                    indirect: IndirectCosts::default(),
+                }
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn prop_labor_total_is_product(item in arb_labor_item()) {
+                prop_assert_eq!(item.total(), item.hours as u64 * item.hourly_rate as u64);
+            }
+
+            #[test]
+            fn prop_total_cost_geq_direct(vol in arb_cost_volume()) {
+                prop_assert!(vol.total_cost() >= vol.total_direct());
+            }
+
+            #[test]
+            fn prop_subcontract_percentage_bounded(vol in arb_cost_volume()) {
+                let pct = vol.subcontract_percentage();
+                prop_assert!(pct >= 0.0 && pct <= 100.0);
+            }
+
+            #[test]
+            fn prop_estimated_pages_non_negative(vol in arb_cost_volume()) {
+                prop_assert!(vol.estimated_pages() >= 0.0);
+            }
+
+            #[test]
+            fn prop_render_markdown_non_empty(vol in arb_cost_volume()) {
+                let md = vol.render_markdown(1);
+                prop_assert!(!md.is_empty());
+                prop_assert!(md.contains("Cost Volume"));
+            }
+        }
     }
 }

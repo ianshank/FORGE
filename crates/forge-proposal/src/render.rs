@@ -307,4 +307,69 @@ mod tests {
         assert!(toc.contains("C. Cost Volume"));
         assert!(toc.contains("D. Supporting Documentation"));
     }
+
+    #[test]
+    fn test_render_summary_total_cost() {
+        let proposal = make_test_proposal();
+        let summary = render_summary(&proposal);
+        assert!(summary.contains("Total Calculated Cost"));
+    }
+
+    #[test]
+    fn test_render_summary_page_info() {
+        let proposal = make_test_proposal();
+        let summary = render_summary(&proposal);
+        assert!(summary.contains("Estimated Pages"));
+        assert!(summary.contains("Page Limit"));
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn prop_render_always_non_empty(
+                heading in 1u8..4,
+                toc in proptest::bool::ANY,
+                breaks in proptest::bool::ANY,
+            ) {
+                let proposal = make_test_proposal();
+                let config = RenderConfig {
+                    heading_level_offset: heading,
+                    include_toc: toc,
+                    include_page_breaks: breaks,
+                    ..Default::default()
+                };
+                let md = render_to_markdown(&proposal, &config);
+                prop_assert!(!md.is_empty());
+            }
+
+            #[test]
+            fn prop_render_contains_required_sections(
+                heading in 1u8..4,
+            ) {
+                let proposal = make_test_proposal();
+                let config = RenderConfig {
+                    heading_level_offset: heading,
+                    include_toc: false,
+                    include_page_breaks: false,
+                    ..Default::default()
+                };
+                let md = render_to_markdown(&proposal, &config);
+                prop_assert!(md.contains("Cover Page"));
+                prop_assert!(md.contains("Technical Volume"));
+                prop_assert!(md.contains("Cost Volume"));
+                prop_assert!(md.contains("Supporting Documentation"));
+            }
+
+            #[test]
+            fn prop_summary_always_non_empty(_ in 0u8..1) {
+                let proposal = make_test_proposal();
+                let summary = render_summary(&proposal);
+                prop_assert!(!summary.is_empty());
+                prop_assert!(summary.contains("Proposal Summary"));
+            }
+        }
+    }
 }

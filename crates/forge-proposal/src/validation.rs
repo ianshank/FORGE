@@ -517,4 +517,200 @@ mod tests {
             .any(|i| matches!(&i.error, ValidationError::DurationMismatch { .. }));
         assert!(has_duration, "expected duration mismatch error");
     }
+
+    #[test]
+    fn test_validate_page_limit_exceeded() {
+        use crate::technical::ProblemSection;
+        let mut proposal = make_valid_proposal();
+        // Fill problem section with enough words to exceed the 10-page limit
+        proposal.technical.problem = ProblemSection {
+            description: "word ".repeat(5000),
+            ..Default::default()
+        };
+        let report = validate_proposal(&proposal, &ProposalConfig::default());
+        let has_page_error = report
+            .issues
+            .iter()
+            .any(|i| matches!(&i.error, ValidationError::PageLimitExceeded { .. }));
+        assert!(has_page_error, "expected page limit exceeded error");
+    }
+
+    #[test]
+    fn test_validate_page_limit_strict_returns_early() {
+        use crate::technical::ProblemSection;
+        let mut proposal = make_valid_proposal();
+        proposal.technical.problem = ProblemSection {
+            description: "word ".repeat(5000),
+            ..Default::default()
+        };
+        let mut config = ProposalConfig::default();
+        config.validation.strict = true;
+        let report = validate_proposal(&proposal, &config);
+        assert_eq!(
+            report.blocking_count(),
+            1,
+            "strict mode should stop after first error"
+        );
+    }
+
+    #[test]
+    fn test_validate_cost_strict_returns_early() {
+        let mut proposal = make_valid_proposal();
+        proposal.cost = CostVolume {
+            labor: vec![LaborItem {
+                category: "PI".to_string(),
+                hours: 5000,
+                hourly_rate: 200,
+            }],
+            ..Default::default()
+        };
+        let mut config = ProposalConfig::default();
+        config.validation.strict = true;
+        let report = validate_proposal(&proposal, &config);
+        assert!(report.blocking_count() >= 1);
+    }
+
+    #[test]
+    fn test_validate_duration_strict_returns_early() {
+        use crate::technical::{MonthBlock, WorkPlanSection};
+        let mut proposal = make_valid_proposal();
+        proposal.technical.work_plan = WorkPlanSection {
+            months: vec![MonthBlock {
+                start_month: 1,
+                end_month: 12,
+                milestone: "M1".to_string(),
+                deliverables: vec![],
+            }],
+        };
+        let mut config = ProposalConfig::default();
+        config.validation.strict = true;
+        let report = validate_proposal(&proposal, &config);
+        assert!(report.blocking_count() >= 1);
+    }
+
+    #[test]
+    fn test_validate_pi_effort_strict() {
+        let mut proposal = make_valid_proposal();
+        proposal.cover_page.pi_effort_percent = 10;
+        let mut config = ProposalConfig::default();
+        config.validation.strict = true;
+        let report = validate_proposal(&proposal, &config);
+        assert!(report.blocking_count() >= 1);
+    }
+
+    #[test]
+    fn test_validate_subcontract_strict() {
+        let mut proposal = make_valid_proposal();
+        proposal.cost.subcontracts = vec![SubcontractItem {
+            organization: "Big".to_string(),
+            description: "Work".to_string(),
+            cost: 500_000,
+        }];
+        let mut config = ProposalConfig::default();
+        config.validation.strict = true;
+        let report = validate_proposal(&proposal, &config);
+        assert!(report.blocking_count() >= 1);
+    }
+
+    #[test]
+    fn test_validate_unknown_required_section_passes() {
+        let mut proposal = make_valid_proposal();
+        proposal.agency.required_sections = vec!["unknown_section".to_string()];
+        let report = validate_proposal(&proposal, &ProposalConfig::default());
+        let has_missing = report
+            .issues
+            .iter()
+            .any(|i| matches!(&i.error, ValidationError::MissingSectionContent { .. }));
+        assert!(!has_missing, "unknown sections should not generate errors");
+    }
+
+    #[test]
+    fn test_validate_deliverable_count_warning() {
+        use crate::technical::{Deliverable, MonthBlock, WorkPlanSection};
+        let mut proposal = make_valid_proposal();
+        proposal.technical.work_plan = WorkPlanSection {
+            months: vec![MonthBlock {
+                start_month: 1,
+                end_month: 6,
+                milestone: "M1".to_string(),
+                deliverables: (0..60)
+                    .map(|i| Deliverable {
+                        name: format!("D{i}"),
+                        description: "desc".to_string(),
+                    })
+                    .collect(),
+            }],
+        };
+        let report = validate_proposal(&proposal, &ProposalConfig::default());
+        assert!(
+            report.warning_count() > 0,
+            "should have a warning for too many deliverables"
+        );
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn prop_cost_in_range_boundaries(
+                cost in 0u64..2_000_000,
+            ) {
+                let profile = AgencyProfile::dod_phase_i();
+                let in_range = cost_in_range(cost, &profile);
+                if cost >= profile.cost_range_min && cost <= profile.cost_range_max {
+                    prop_assert!(in_range);
+                } else {
+                    prop_assert!(!in_range);
+                }
+            }
+
+            #[test]
+            fn prop_pages_within_limit_boundaries(
+                pages in 0.0f32..50.0,
+            ) {
+                let profile = AgencyProfile::dod_phase_i();
+                let within = pages_within_limit(pages, &profile);
+                if pages <= profile.technical_page_limit as f32 {
+                    prop_assert!(within);
+                } else {
+                    prop_assert!(!within);
+                }
+            }
+
+            #[test]
+            fn prop_words_to_pages_proportional(
+                words in 0usize..10_000,
+                wpp in 1u32..1_000,
+            ) {
+                let pages = words_to_pages(words, wpp);
+                prop_assert!(pages >= 0.0);
+                let expected = words as f32 / wpp as f32;
+                prop_assert!((pages - expected).abs() < 0.01);
+            }
+
+            #[test]
+            fn prop_words_to_pages_zero_wpp(words in 0usize..10_000) {
+                let pages = words_to_pages(words, 0);
+                prop_assert!((pages).abs() < f32::EPSILON);
+            }
+
+            #[test]
+            fn prop_estimate_word_count_leq_len(
+                text in "[a-z ]{0,200}",
+            ) {
+                let count = estimate_word_count(&text);
+                prop_assert!(count <= text.len());
+            }
+
+            #[test]
+            fn prop_empty_report_is_valid(_ in 0u8..1) {
+                let report = ValidationReport::default();
+                prop_assert!(report.is_valid());
+                prop_assert_eq!(report.blocking_count(), 0);
+                prop_assert_eq!(report.warning_count(), 0);
+            }
+        }
+    }
 }

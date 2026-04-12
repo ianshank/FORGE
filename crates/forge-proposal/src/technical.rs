@@ -9,6 +9,7 @@
 //! 6. Related work / PI qualifications
 
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 use crate::constants;
 
@@ -32,6 +33,7 @@ pub struct TechnicalVolume {
 
 impl TechnicalVolume {
     /// Estimates the total page count across all sections.
+    #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
         self.problem.estimated_pages(words_per_page)
             + self.approach.estimated_pages(words_per_page)
@@ -42,6 +44,7 @@ impl TechnicalVolume {
     }
 
     /// Renders the entire technical volume to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let sub = heading_level + 1;
@@ -75,6 +78,7 @@ pub struct ProblemSection {
 
 impl ProblemSection {
     /// Estimates page count based on word count.
+    #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
         let words = self.description.split_whitespace().count()
             + self.significance.split_whitespace().count()
@@ -88,6 +92,7 @@ impl ProblemSection {
     }
 
     /// Renders this section to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -153,6 +158,7 @@ pub struct TechnicalApproachSection {
 
 impl TechnicalApproachSection {
     /// Estimates page count based on word count.
+    #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
         let words = self.overview.split_whitespace().count()
             + self
@@ -175,6 +181,7 @@ impl TechnicalApproachSection {
     }
 
     /// Renders this section to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -231,6 +238,7 @@ pub struct InnovationSection {
 
 impl InnovationSection {
     /// Estimates page count based on word count.
+    #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
         let words = self.summary.split_whitespace().count()
             + self
@@ -247,6 +255,7 @@ impl InnovationSection {
     }
 
     /// Renders this section to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -295,6 +304,7 @@ pub struct TechnicalMeritSection {
 
 impl TechnicalMeritSection {
     /// Estimates page count based on word count.
+    #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
         let words = self.overview.split_whitespace().count()
             + self
@@ -312,6 +322,7 @@ impl TechnicalMeritSection {
     }
 
     /// Renders this section to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -367,16 +378,19 @@ pub struct WorkPlanSection {
 
 impl WorkPlanSection {
     /// Returns the total number of months covered by the work plan.
+    #[instrument(skip_all)]
     pub fn total_months(&self) -> u32 {
         self.months.iter().map(|m| m.end_month).max().unwrap_or(0)
     }
 
     /// Returns the total number of deliverables across all months.
+    #[instrument(skip_all)]
     pub fn total_deliverables(&self) -> usize {
         self.months.iter().map(|m| m.deliverables.len()).sum()
     }
 
     /// Estimates page count based on word count.
+    #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
         let words: usize = self
             .months
@@ -399,6 +413,7 @@ impl WorkPlanSection {
     }
 
     /// Renders this section to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -459,6 +474,7 @@ pub struct RelatedWorkSection {
 
 impl RelatedWorkSection {
     /// Estimates page count based on word count.
+    #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
         let words = self.overview.split_whitespace().count()
             + self.pi.qualifications.split_whitespace().count()
@@ -473,6 +489,7 @@ impl RelatedWorkSection {
     }
 
     /// Renders this section to Markdown.
+    #[instrument(skip_all)]
     pub fn render_markdown(&self, heading_level: u8) -> String {
         let h = "#".repeat(heading_level as usize);
         let mut out = String::new();
@@ -732,5 +749,168 @@ mod tests {
         assert!(md.contains("Dr. Smith"));
         assert!(md.contains("Professor"));
         assert!(md.contains("Smith et al. 2025"));
+    }
+
+    #[test]
+    fn test_render_problem_with_significance() {
+        let section = ProblemSection {
+            description: "A problem.".to_string(),
+            significance: "Highly significant impact.".to_string(),
+            ..Default::default()
+        };
+        let md = section.render_markdown(2);
+        assert!(md.contains("Highly significant impact."));
+    }
+
+    #[test]
+    fn test_render_merit_overview() {
+        let section = TechnicalMeritSection {
+            overview: "Strong track record in numerical methods.".to_string(),
+            ..Default::default()
+        };
+        let md = section.render_markdown(2);
+        assert!(md.contains("Strong track record"));
+    }
+
+    #[test]
+    fn test_render_related_work_overview() {
+        let section = RelatedWorkSection {
+            overview: "Extensive related work in HPC.".to_string(),
+            ..Default::default()
+        };
+        let md = section.render_markdown(2);
+        assert!(md.contains("Extensive related work in HPC."));
+    }
+
+    #[test]
+    fn test_render_related_work_pi_qualifications() {
+        let section = RelatedWorkSection {
+            pi: PIQualification {
+                name: "Dr. Jones".to_string(),
+                title: "CTO".to_string(),
+                qualifications: "20 years in simulation.".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let md = section.render_markdown(2);
+        assert!(md.contains("Dr. Jones"));
+        assert!(md.contains("CTO"));
+        assert!(md.contains("20 years in simulation."));
+    }
+
+    #[test]
+    fn test_render_innovation_with_gaps() {
+        let section = InnovationSection {
+            literature_gaps: vec!["Gap 1".to_string(), "Gap 2".to_string()],
+            ..Default::default()
+        };
+        let md = section.render_markdown(2);
+        assert!(md.contains("Literature gaps"));
+        assert!(md.contains("Gap 1"));
+        assert!(md.contains("Gap 2"));
+    }
+
+    #[test]
+    fn test_render_merit_with_results() {
+        let section = TechnicalMeritSection {
+            prior_results: vec![PriorResult {
+                description: "Benchmark result".to_string(),
+                metrics: vec!["MSE = 0.001".to_string()],
+            }],
+            ..Default::default()
+        };
+        let md = section.render_markdown(2);
+        assert!(md.contains("Benchmark result"));
+        assert!(md.contains("MSE = 0.001"));
+    }
+
+    #[test]
+    fn test_render_related_work_company_capabilities() {
+        let section = RelatedWorkSection {
+            company_capabilities: "Expert in HPC.".to_string(),
+            ..Default::default()
+        };
+        let md = section.render_markdown(2);
+        assert!(md.contains("Company Capabilities"));
+        assert!(md.contains("Expert in HPC"));
+    }
+
+    #[test]
+    fn test_work_plan_single_month() {
+        let plan = WorkPlanSection {
+            months: vec![MonthBlock {
+                start_month: 3,
+                end_month: 3,
+                milestone: "Single month".to_string(),
+                deliverables: vec![],
+            }],
+        };
+        let md = plan.render_markdown(2);
+        assert!(md.contains("| 3 |"));
+        assert!(!md.contains("3-3"));
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn prop_problem_pages_non_negative(
+                word_count in 0usize..500,
+                wpp in 1u32..1000,
+            ) {
+                let text = "word ".repeat(word_count);
+                let section = ProblemSection {
+                    description: text,
+                    ..Default::default()
+                };
+                prop_assert!(section.estimated_pages(wpp) >= 0.0);
+            }
+
+            #[test]
+            fn prop_work_plan_deliverables_count(
+                block_count in 0usize..5,
+                del_per_block in 0usize..4,
+            ) {
+                let plan = WorkPlanSection {
+                    months: (0..block_count).map(|i| MonthBlock {
+                        start_month: (i as u32) + 1,
+                        end_month: (i as u32) + 1,
+                        milestone: "M".to_string(),
+                        deliverables: (0..del_per_block).map(|j| Deliverable {
+                            name: format!("D{j}"),
+                            description: "desc".to_string(),
+                        }).collect(),
+                    }).collect(),
+                };
+                prop_assert_eq!(plan.total_deliverables(), block_count * del_per_block);
+            }
+
+            #[test]
+            fn prop_technical_volume_render_non_empty(
+                desc in "[a-z ]{0,100}",
+            ) {
+                let vol = TechnicalVolume {
+                    problem: ProblemSection {
+                        description: desc,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                let md = vol.render_markdown(1);
+                prop_assert!(!md.is_empty());
+                prop_assert!(md.contains("Technical Volume"));
+            }
+
+            #[test]
+            fn prop_volume_pages_non_negative(
+                wpp in 1u32..1000,
+            ) {
+                let vol = TechnicalVolume::default();
+                prop_assert!(vol.estimated_pages(wpp) >= 0.0);
+            }
+        }
     }
 }

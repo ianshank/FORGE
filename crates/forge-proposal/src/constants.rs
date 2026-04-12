@@ -88,6 +88,20 @@ pub const DEFAULT_GA_RATE: f32 = 0.05;
 pub const DEFAULT_INCLUDE_TOC: bool = true;
 /// Whether to include page break hints by default.
 pub const DEFAULT_INCLUDE_PAGE_BREAKS: bool = true;
+
+// ---------- Page estimation defaults ----------
+
+/// Default estimated pages for a cover page.
+pub const DEFAULT_COVER_PAGE_PAGES: f32 = 1.0;
+/// Default estimated table rows per page in cost volumes.
+pub const DEFAULT_TABLE_ROWS_PER_PAGE: f32 = 40.0;
+/// Default estimated pages per subcontract plan entry.
+pub const DEFAULT_PAGES_PER_SUBCONTRACT_PLAN: f32 = 0.5;
+/// Default base pages for supporting documentation (registration + PI commitment).
+pub const DEFAULT_SUPPORTING_DOCS_BASE_PAGES: f32 = 1.0;
+/// Default estimated pages for a data management plan when present.
+pub const DEFAULT_DATA_MANAGEMENT_PLAN_PAGES: f32 = 1.0;
+
 /// Default minimum duration for any proposal (months).
 pub const DEFAULT_MIN_DURATION_MONTHS: u32 = 1;
 /// Default maximum duration for any proposal (months).
@@ -209,9 +223,31 @@ mod tests {
     }
 
     #[test]
+    fn test_page_estimation_constants_positive() {
+        assert!(DEFAULT_COVER_PAGE_PAGES > 0.0);
+        assert!(DEFAULT_TABLE_ROWS_PER_PAGE > 0.0);
+        assert!(DEFAULT_PAGES_PER_SUBCONTRACT_PLAN > 0.0);
+        assert!(DEFAULT_SUPPORTING_DOCS_BASE_PAGES > 0.0);
+        assert!(DEFAULT_DATA_MANAGEMENT_PLAN_PAGES > 0.0);
+    }
+
+    #[test]
     fn test_afwerx_is_shortest_program() {
         assert!(DEFAULT_AFWERX_DURATION_MONTHS <= DEFAULT_DOD_PHASE_I_DURATION_MONTHS);
         assert!(DEFAULT_AFWERX_DURATION_MONTHS <= DEFAULT_NSF_PHASE_I_DURATION_MONTHS);
         assert!(DEFAULT_AFWERX_PAGE_LIMIT <= DEFAULT_DOD_PHASE_I_PAGE_LIMIT);
+    }
+
+    #[test]
+    fn test_table_rows_per_page_reasonable() {
+        // Should be at least 10 and at most 100
+        assert!(DEFAULT_TABLE_ROWS_PER_PAGE >= 10.0);
+        assert!(DEFAULT_TABLE_ROWS_PER_PAGE <= 100.0);
+    }
+
+    #[test]
+    fn test_page_estimation_constants_less_than_one_page() {
+        // Per-item page estimates should be less than a full page
+        assert!(DEFAULT_PAGES_PER_SUBCONTRACT_PLAN <= 1.0);
     }
 }

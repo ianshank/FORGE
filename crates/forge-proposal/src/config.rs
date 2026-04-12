@@ -186,4 +186,57 @@ mod tests {
         let toml_str2 = toml::to_string_pretty(&deser).expect("TOML re-serialization failed");
         assert_eq!(toml_str, toml_str2);
     }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        prop_compose! {
+            fn arb_render_config()(
+                heading in 1u8..6,
+                toc in proptest::bool::ANY,
+                page_breaks in proptest::bool::ANY,
+            ) -> RenderConfig {
+                RenderConfig {
+                    heading_level_offset: heading,
+                    include_toc: toc,
+                    include_page_breaks: page_breaks,
+                    date_format: "%Y-%m-%d".to_string(),
+                }
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn prop_default_config_always_valid(
+                _ in 0u8..1
+            ) {
+                let config = ProposalConfig::default();
+                let result = crate::validation::validate_proposal_config(&config);
+                prop_assert!(result.is_ok());
+            }
+
+            #[test]
+            fn prop_render_config_serde_roundtrip(config in arb_render_config()) {
+                let json = serde_json::to_string(&config).unwrap();
+                let deser: RenderConfig = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.heading_level_offset, config.heading_level_offset);
+                prop_assert_eq!(deser.include_toc, config.include_toc);
+                prop_assert_eq!(deser.include_page_breaks, config.include_page_breaks);
+            }
+
+            #[test]
+            fn prop_validation_config_positive_words(
+                words in 1u32..10_000
+            ) {
+                let config = ValidationConfig {
+                    words_per_page: words,
+                    strict: false,
+                };
+                let json = serde_json::to_string(&config).unwrap();
+                let deser: ValidationConfig = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.words_per_page, words);
+            }
+        }
+    }
 }

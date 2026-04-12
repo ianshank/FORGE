@@ -412,6 +412,10 @@ mod tests {
             format!("{}", AgencyId::AfwerxOpenTopic),
             "AFWERX Open Topic"
         );
+        assert_eq!(
+            format!("{}", AgencyId::DarpaDirectToPhaseII),
+            "DARPA Direct-to-Phase-II"
+        );
         assert_eq!(format!("{}", AgencyId::Custom), "Custom");
     }
 
@@ -431,5 +435,71 @@ mod tests {
             afwerx.required_sections.len() < dod.required_sections.len(),
             "AFWERX should have fewer required sections than DoD",
         );
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        prop_compose! {
+            fn arb_agency_profile()(
+                page_limit in 1u32..100,
+                cost_min in 10_000u64..500_000,
+                cost_extra in 0u64..1_000_000,
+                duration in 1u32..36,
+                pi_effort in 1u8..100,
+                sub_limit in 1u8..100,
+            ) -> AgencyProfile {
+                AgencyProfile {
+                    id: AgencyId::Custom,
+                    name: "Test Agency".to_string(),
+                    technical_page_limit: page_limit,
+                    supplemental_page_limit: None,
+                    cost_range_min: cost_min,
+                    cost_range_max: cost_min + cost_extra,
+                    duration_months: duration,
+                    naics_codes: vec!["541715".to_string()],
+                    required_sections: vec![],
+                    allows_subcontracts: true,
+                    cost_sharing_required: false,
+                    pi_min_effort_percent: pi_effort,
+                    subcontract_limit_percent: sub_limit,
+                }
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn prop_builtin_profiles_cost_min_leq_max(
+                idx in 0usize..4
+            ) {
+                let profiles = AgencyProfile::builtin_profiles();
+                let p = &profiles[idx];
+                prop_assert!(p.cost_range_min <= p.cost_range_max);
+            }
+
+            #[test]
+            fn prop_custom_profile_serde_roundtrip(profile in arb_agency_profile()) {
+                let json = serde_json::to_string(&profile).unwrap();
+                let deser: AgencyProfile = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.id, profile.id);
+                prop_assert_eq!(deser.cost_range_min, profile.cost_range_min);
+                prop_assert_eq!(deser.cost_range_max, profile.cost_range_max);
+                prop_assert_eq!(deser.duration_months, profile.duration_months);
+            }
+
+            #[test]
+            fn prop_custom_profile_toml_roundtrip(profile in arb_agency_profile()) {
+                let toml_str = profile.to_toml().unwrap();
+                let deser = AgencyProfile::from_toml(&toml_str).unwrap();
+                prop_assert_eq!(deser.technical_page_limit, profile.technical_page_limit);
+            }
+
+            #[test]
+            fn prop_display_non_empty(profile in arb_agency_profile()) {
+                let display = format!("{profile}");
+                prop_assert!(!display.is_empty());
+            }
+        }
     }
 }
