@@ -245,9 +245,8 @@ impl DatasetLoader for MazeLoader {
         let reader = std::io::BufReader::new(file);
 
         let mut dataset = OfflineDataset::new("StrategicGameMaze");
-        dataset.metadata.source_url = Some(
-            "https://huggingface.co/datasets/laion/strategic_game_maze".to_string(),
-        );
+        dataset.metadata.source_url =
+            Some("https://huggingface.co/datasets/laion/strategic_game_maze".to_string());
         dataset.metadata.license = Some("Open (LAION)".to_string());
 
         for (line_no, line) in reader.lines().enumerate() {
@@ -257,13 +256,10 @@ impl DatasetLoader for MazeLoader {
                 continue;
             }
 
-            let record: MazeRecord = serde_json::from_str(line).map_err(|e| {
-                DatasetError::Deserialize(format!("line {}: {e}", line_no + 1))
-            })?;
+            let record: MazeRecord = serde_json::from_str(line)
+                .map_err(|e| DatasetError::Deserialize(format!("line {}: {e}", line_no + 1)))?;
 
-            if self.max_solution_length > 0
-                && record.solution.len() > self.max_solution_length
-            {
+            if self.max_solution_length > 0 && record.solution.len() > self.max_solution_length {
                 continue;
             }
 
@@ -362,7 +358,7 @@ mod tests {
         let r = simple_maze_record();
         let traj = MazeLoader::build_trajectory(&r, 0);
         assert_eq!(traj.len(), 6); // RRDDRR = 6 steps
-        // Last step should be terminal
+                                   // Last step should be terminal
         assert!(traj.steps.last().unwrap().terminated);
         assert_eq!(traj.steps.last().unwrap().rewards[0], 1.0);
     }

@@ -44,8 +44,8 @@
 pub mod generator;
 pub mod loader;
 pub mod maze;
-pub mod minerl;
 pub mod minari;
+pub mod minerl;
 
 // ---------------------------------------------------------------------------
 // Internal helpers shared by loaders

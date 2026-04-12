@@ -304,8 +304,7 @@ impl DatasetLoader for MinerlLoader {
         let mapper = MinerlActionMapper;
 
         let mut dataset = OfflineDataset::new("MineRL");
-        dataset.metadata.source_url =
-            Some("https://zenodo.org/records/12659939".to_string());
+        dataset.metadata.source_url = Some("https://zenodo.org/records/12659939".to_string());
         dataset.metadata.license = Some("MIT-like (MineRL)".to_string());
 
         let mut builder = TrajectoryBuilder::new();
@@ -320,9 +319,8 @@ impl DatasetLoader for MinerlLoader {
                 continue;
             }
 
-            let raw: MinerlStep = serde_json::from_str(line).map_err(|e| {
-                DatasetError::Deserialize(format!("line {}: {e}", line_no + 1))
-            })?;
+            let raw: MinerlStep = serde_json::from_str(line)
+                .map_err(|e| DatasetError::Deserialize(format!("line {}: {e}", line_no + 1)))?;
 
             let forge_action = mapper.map(&raw.action);
             let action_id = forge_action.to_discrete();
@@ -343,8 +341,7 @@ impl DatasetLoader for MinerlLoader {
 
             let episode_done = raw.terminated
                 || raw.truncated
-                || (self.max_steps_per_episode > 0
-                    && step_in_ep >= self.max_steps_per_episode);
+                || (self.max_steps_per_episode > 0 && step_in_ep >= self.max_steps_per_episode);
 
             if episode_done {
                 let traj = std::mem::replace(&mut builder, TrajectoryBuilder::new())
@@ -386,31 +383,46 @@ mod tests {
 
     #[test]
     fn test_map_forward() {
-        let a = MinerlAction { forward: 1, ..Default::default() };
+        let a = MinerlAction {
+            forward: 1,
+            ..Default::default()
+        };
         assert_eq!(mapper().map(&a), Action::Move(Direction::Up));
     }
 
     #[test]
     fn test_map_back() {
-        let a = MinerlAction { back: 1, ..Default::default() };
+        let a = MinerlAction {
+            back: 1,
+            ..Default::default()
+        };
         assert_eq!(mapper().map(&a), Action::Move(Direction::Down));
     }
 
     #[test]
     fn test_map_attack() {
-        let a = MinerlAction { attack: 1, ..Default::default() };
+        let a = MinerlAction {
+            attack: 1,
+            ..Default::default()
+        };
         assert_eq!(mapper().map(&a), Action::Use(0));
     }
 
     #[test]
     fn test_map_use() {
-        let a = MinerlAction { use_: 1, ..Default::default() };
+        let a = MinerlAction {
+            use_: 1,
+            ..Default::default()
+        };
         assert_eq!(mapper().map(&a), Action::Interact);
     }
 
     #[test]
     fn test_map_pickup() {
-        let a = MinerlAction { pickup: 1, ..Default::default() };
+        let a = MinerlAction {
+            pickup: 1,
+            ..Default::default()
+        };
         assert_eq!(mapper().map(&a), Action::PickUp);
     }
 
@@ -443,7 +455,11 @@ mod tests {
 
     #[test]
     fn test_map_noop_flag() {
-        let a = MinerlAction { forward: 1, no_op: true, ..Default::default() };
+        let a = MinerlAction {
+            forward: 1,
+            no_op: true,
+            ..Default::default()
+        };
         assert_eq!(mapper().map(&a), Action::Noop);
     }
 
@@ -482,10 +498,22 @@ mod tests {
         // Verify that mapped actions can be converted to discrete IDs
         let mapper = MinerlActionMapper;
         let actions = [
-            MinerlAction { forward: 1, ..Default::default() },
-            MinerlAction { back: 1, ..Default::default() },
-            MinerlAction { attack: 1, ..Default::default() },
-            MinerlAction { craft: Some("axe".to_string()), ..Default::default() },
+            MinerlAction {
+                forward: 1,
+                ..Default::default()
+            },
+            MinerlAction {
+                back: 1,
+                ..Default::default()
+            },
+            MinerlAction {
+                attack: 1,
+                ..Default::default()
+            },
+            MinerlAction {
+                craft: Some("axe".to_string()),
+                ..Default::default()
+            },
         ];
         for a in &actions {
             let forge = mapper.map(a);
@@ -523,13 +551,19 @@ mod tests {
 
     #[test]
     fn test_map_left() {
-        let a = MinerlAction { left: 1, ..Default::default() };
+        let a = MinerlAction {
+            left: 1,
+            ..Default::default()
+        };
         assert_eq!(mapper().map(&a), Action::Move(Direction::Left));
     }
 
     #[test]
     fn test_map_right() {
-        let a = MinerlAction { right: 1, ..Default::default() };
+        let a = MinerlAction {
+            right: 1,
+            ..Default::default()
+        };
         assert_eq!(mapper().map(&a), Action::Move(Direction::Right));
     }
 
@@ -541,8 +575,13 @@ mod tests {
                 craft: Some(name.to_string()),
                 ..Default::default()
             };
-            assert_eq!(m.map(&a), Action::Craft(*expected_idx),
-                "CRAFT_MAP entry '{}' → expected Craft({})", name, expected_idx);
+            assert_eq!(
+                m.map(&a),
+                Action::Craft(*expected_idx),
+                "CRAFT_MAP entry '{}' → expected Craft({})",
+                name,
+                expected_idx
+            );
         }
     }
 
@@ -551,7 +590,11 @@ mod tests {
         use std::io::Write as _;
         let mut f = tempfile::NamedTempFile::new().unwrap();
         for _ in 0..3 {
-            writeln!(f, r#"{{"action":{{"forward":1}},"reward":0.0,"terminated":false}}"#).unwrap();
+            writeln!(
+                f,
+                r#"{{"action":{{"forward":1}},"reward":0.0,"terminated":false}}"#
+            )
+            .unwrap();
             writeln!(f, r#"{{"action":{{}},"reward":1.0,"terminated":true}}"#).unwrap();
         }
         // new(max_steps_per_episode, max_episodes): limit to 2 episodes

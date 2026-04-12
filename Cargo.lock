@@ -613,6 +613,7 @@ dependencies = [
  "forge-core",
  "forge-integration-layer",
  "forge-memory",
+ "forge-proposal",
  "forge-social",
  "forge-task",
  "forge-types",
@@ -664,6 +665,19 @@ dependencies = [
  "rand_pcg",
  "serde",
  "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "forge-proposal"
+version = "0.1.0"
+dependencies = [
+ "forge-types",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml",
  "tracing",
 ]
 
