@@ -1124,9 +1124,9 @@ num_agents = 4
         );
     }
 
-    // ---- Proptest: config invariants ----
+    // ---- Proptest: config invariants (serde roundtrips) ----
 
-    mod proptests_roundtrip {
+    mod proptests_serde {
         use super::*;
         use proptest::prelude::*;
 

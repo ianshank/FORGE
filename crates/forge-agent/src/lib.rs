@@ -10,9 +10,11 @@
 //! - **Forward model** (`forward_model`): Simulation interface for planning
 //! - **MCTS** (`mcts`): Monte Carlo Tree Search with PUCT selection
 //! - **Baselines** (`baselines`): Random, heuristic, and greedy baseline agents
+//! - **Latent MCTS** (`latent_mcts`): MuZero-style tree search in learned latent space
 
 pub mod adapter;
 pub mod baselines;
 pub mod forward_model;
+pub mod latent_mcts;
 pub mod mcts;
 pub mod prelude;

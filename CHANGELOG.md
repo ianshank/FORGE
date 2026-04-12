@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### MuZero Latent-Space Planning & ONNX Integration
+
+- Embedded a full `MuZeroWorldModel` across Python and Rust for evaluating search in latent-space environments.
+- Added `forge_agent::latent_mcts` with `LatentMctsSearch`, capable of dynamically routing inference through a generic `LatentForwardModel` trait.
+- Added `OnnxMuZeroModel` backend utilizing `ort` (ONNX Runtime v2) with safe mutex session management for E2E MCTS evaluations.
+- Implemented `MuZeroExporter` to natively convert the multi-head PyTorch MuZero network instances into `.onnx` binaries natively.
+- Developed an end-to-end integration test (`onnx_integration.rs`) to automatically orchestrate Python ONNX export and Rust latent graph search.
+
 #### MangoMAS Bridge Coverage And Training Surface
 
 - Added targeted Python coverage for the MangoMAS bridge components: constitutional pre-training, adaptive curriculum control, curiosity-weight optimization, and MCTS sweep reporting
@@ -33,7 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Rust Coverage Hardening
 
+- Converted naive `unwrap()/expect()` calls inside `onnx_model.rs` and `LatentForwardModel` into robust `anyhow::Result` boundaries bubbled up through the `search` pipeline.
 - Added targeted Rust coverage for MCTS terminal-search and short-priors fallback behavior in `forge-agent`
+- Fixed outdated 2-argument signature definitions wrapped by duplicate `mod proptests` in `action.rs` and `config.rs`.
 - Expanded predicate, validation, and terrain edge-case coverage across `forge-task`, `forge-types`, and `forge-worldgen`
 
 #### Python Gap Analysis Cleanup

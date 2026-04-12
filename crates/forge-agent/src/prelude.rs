@@ -6,4 +6,9 @@
 
 pub use crate::baselines::{GreedyNavigator, HeuristicAgent, NoopAgent, RandomAgent};
 pub use crate::forward_model::DefaultForwardModel;
+pub use crate::latent_mcts::model::{LatentForwardModel, LatentInferenceOutput, StubLatentModel};
+#[cfg(feature = "onnx")]
+pub use crate::latent_mcts::onnx_model::{OnnxModelConfig, OnnxMuZeroModel};
+pub use crate::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch, LatentSearchResult};
+pub use crate::latent_mcts::state::LatentState;
 pub use crate::mcts::search::MctsSearch;
