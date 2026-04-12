@@ -125,7 +125,7 @@ Shows the major containers (deployable units) within FORGE.
 | **forge-core** | Rust crate | Deterministic simulation engine. `WorldState::step()` is the hot path. |
 | **forge-worldgen** | Rust crate | Procedural world generation: Perlin noise terrain, biome classification, resource/object placement. |
 | **forge-task** | Rust crate | Composable task DSL with 7 operators, 10 predicates, 6 tiers, and adaptive curriculum. |
-| **forge-agent** | Rust crate | MCTS planner with PUCT selection, forward model, baseline agents (Random, Greedy, Heuristic). |
+| **forge-agent** | Rust crate | MCTS planner with PUCT selection, forward model, baseline agents, and a LatentMctsSearch for `.onnx` PyTorch MuZero models via `ort`. |
 | **forge-procgen** | Rust crate | Procedural content generation: map generator, objective generator, team composer, curriculum controller with configurable difficulty scaling. |
 | **forge-server** | Rust crate | HTTP/WebSocket API server: REST endpoints, metrics collection, live simulation state streaming. |
 | **forge-python** | Rust crate (PyO3) | Python bindings exposing `ForgeEnv` with numpy observations, GIL release during step. |
@@ -441,11 +441,11 @@ The core engine executes a deterministic pipeline of systems every tick.
          │  simulate(state, acts)  │
          │  → (next_state, result) │
          │                         │
-         │  Clones WorldState and  │
-         │  calls step() to look   │
-         │  ahead without mutating │
-         │  the real simulation    │
-         └─────────────────────────┘
+         │   Clones WorldState and │        │ LatentForwardModel(ort) │
+         │  calls step() to look  │        │ simulate(latent, action)│
+         │  ahead without mutating│        │ → policy, value, reward │
+         │  the real simulation   │        │ Uses pre-trained ONNX   │
+         └────────────────────────┘        └─────────────────────────┘
 
          Baseline Agents:
          ┌──────────┐ ┌───────────────┐ ┌────────────────┐ ┌──────┐

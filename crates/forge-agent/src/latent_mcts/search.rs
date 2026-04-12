@@ -154,13 +154,13 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
     /// A [`LatentSearchResult`] containing the selected action,
     /// visit counts, and root value estimate.
     #[instrument(skip_all)]
-    pub fn search(&self, observation: &[f32]) -> LatentSearchResult {
+    pub fn search(&self, observation: &[f32]) -> anyhow::Result<LatentSearchResult> {
         let action_space = self.model.action_space_size();
         let mut nodes: Vec<LatentNode> = Vec::new();
         let mut min_max = MinMaxStats::new();
 
         // Create root node
-        let output = self.model.initial_inference(observation);
+        let output = self.model.initial_inference(observation)?;
         let mut root = LatentNode::new(1.0, action_space);
         root.latent_state = Some(output.latent_state);
         root.is_expanded = true;
@@ -182,7 +182,7 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
 
         // Run simulations
         for sim in 0..self.config.base.num_simulations {
-            self.simulate(&mut nodes, &mut min_max, action_space);
+            self.simulate(&mut nodes, &mut min_max, action_space)?;
             trace!(
                 simulation = sim,
                 tree_size = nodes.len(),
@@ -208,16 +208,16 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
             .map(|(idx, _)| idx as u32)
             .unwrap_or(0);
 
-        LatentSearchResult {
+        Ok(LatentSearchResult {
             action,
             visit_counts,
             root_value: output.value,
-        }
+        })
     }
 
     /// Run a single MCTS simulation: select → expand → backpropagate.
     #[instrument(skip_all)]
-    fn simulate(&self, nodes: &mut Vec<LatentNode>, min_max: &mut MinMaxStats, action_space: u32) {
+    fn simulate(&self, nodes: &mut Vec<LatentNode>, min_max: &mut MinMaxStats, action_space: u32) -> anyhow::Result<()> {
         let mut path: Vec<usize> = vec![0]; // Start at root
         let mut node_idx = 0;
         let mut depth = 0;
@@ -252,7 +252,7 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
                 .unwrap_or(0);
 
             if let Some(parent_latent) = &nodes[parent_idx].latent_state {
-                let output = self.model.recurrent_inference(parent_latent, action);
+                let output = self.model.recurrent_inference(parent_latent, action)?;
                 nodes[node_idx].latent_state = Some(output.latent_state);
                 nodes[node_idx].reward = output.reward;
                 nodes[node_idx].is_expanded = true;
@@ -284,6 +284,8 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
             min_max.update(nodes[idx].mean_value() as f32);
             current_value = nodes[idx].reward as f64 + discount * current_value;
         }
+
+        Ok(())
     }
 
     /// Select the best child using PUCT with min-max Q normalization.
@@ -372,7 +374,7 @@ mod tests {
     fn test_search_returns_valid_action() {
         let search = make_search(10, 8);
         let obs = vec![0.0; 100];
-        let result = search.search(&obs);
+        let result = search.search(&obs).unwrap();
 
         assert!(result.action < 8);
         assert_eq!(result.visit_counts.len(), 8);
@@ -382,7 +384,7 @@ mod tests {
     fn test_visit_counts_sum_equals_simulations() {
         let search = make_search(20, 4);
         let obs = vec![0.0; 50];
-        let result = search.search(&obs);
+        let result = search.search(&obs).unwrap();
 
         // Total visits across children should approximately equal num_simulations
         let total_visits: u32 = result.visit_counts.iter().sum();
@@ -394,7 +396,7 @@ mod tests {
     fn test_zero_simulations_returns_action() {
         let search = make_search(0, 4);
         let obs = vec![0.0; 50];
-        let result = search.search(&obs);
+        let result = search.search(&obs).unwrap();
 
         // Should still return a valid action (action 0 as fallback)
         assert!(result.action < 4);
@@ -404,7 +406,7 @@ mod tests {
     fn test_single_action_space() {
         let search = make_search(5, 1);
         let obs = vec![0.0; 50];
-        let result = search.search(&obs);
+        let result = search.search(&obs).unwrap();
 
         assert_eq!(result.action, 0);
         assert_eq!(result.visit_counts.len(), 1);
@@ -414,7 +416,7 @@ mod tests {
     fn test_large_action_space() {
         let search = make_search(10, 75);
         let obs = vec![0.0; 920];
-        let result = search.search(&obs);
+        let result = search.search(&obs).unwrap();
 
         assert!(result.action < 75);
         assert_eq!(result.visit_counts.len(), 75);
@@ -492,7 +494,7 @@ mod tests {
             fn visit_counts_bounded(sims in 1u32..50, actions in 2u32..20) {
                 let search = make_search(sims, actions);
                 let obs = vec![0.0; 50];
-                let result = search.search(&obs);
+                let result = search.search(&obs).unwrap();
                 let total: u32 = result.visit_counts.iter().sum();
                 prop_assert!(total <= sims);
             }
@@ -501,7 +503,7 @@ mod tests {
             fn action_in_range(sims in 1u32..20, actions in 1u32..50) {
                 let search = make_search(sims, actions);
                 let obs = vec![0.0; 100];
-                let result = search.search(&obs);
+                let result = search.search(&obs).unwrap();
                 prop_assert!(result.action < actions);
             }
         }

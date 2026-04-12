@@ -3,6 +3,8 @@
 //! The [`LatentForwardModel`] trait abstracts neural network inference so
 //! the MCTS search can operate with different backends (ONNX, PyTorch, stubs).
 
+use anyhow::Result;
+
 use super::state::LatentState;
 
 /// Output of a MuZero inference step (initial or recurrent).
@@ -37,7 +39,7 @@ pub trait LatentForwardModel: Send + Sync {
     /// # Arguments
     ///
     /// * `observation` - Flat observation vector (e.g., 920 floats for FORGE drone).
-    fn initial_inference(&self, observation: &[f32]) -> LatentInferenceOutput;
+    fn initial_inference(&self, observation: &[f32]) -> Result<LatentInferenceOutput>;
 
     /// Run recurrent inference: predict the next latent state, reward,
     /// policy, and value given a current latent state and action.
@@ -46,7 +48,7 @@ pub trait LatentForwardModel: Send + Sync {
     ///
     /// * `state` - Current latent state from a previous inference call.
     /// * `action` - Discrete action index.
-    fn recurrent_inference(&self, state: &LatentState, action: u32) -> LatentInferenceOutput;
+    fn recurrent_inference(&self, state: &LatentState, action: u32) -> Result<LatentInferenceOutput>;
 
     /// Returns the total number of discrete actions.
     fn action_space_size(&self) -> u32;
@@ -75,24 +77,24 @@ impl StubLatentModel {
 }
 
 impl LatentForwardModel for StubLatentModel {
-    fn initial_inference(&self, _observation: &[f32]) -> LatentInferenceOutput {
+    fn initial_inference(&self, _observation: &[f32]) -> Result<LatentInferenceOutput> {
         let uniform_prior = 1.0 / self.action_space as f32;
-        LatentInferenceOutput {
+        Ok(LatentInferenceOutput {
             latent_state: LatentState::zeros(self.latent_dim),
             reward: 0.0,
             policy_logits: vec![uniform_prior; self.action_space as usize],
             value: 0.0,
-        }
+        })
     }
 
-    fn recurrent_inference(&self, _state: &LatentState, _action: u32) -> LatentInferenceOutput {
+    fn recurrent_inference(&self, _state: &LatentState, _action: u32) -> Result<LatentInferenceOutput> {
         let uniform_prior = 1.0 / self.action_space as f32;
-        LatentInferenceOutput {
+        Ok(LatentInferenceOutput {
             latent_state: LatentState::zeros(self.latent_dim),
             reward: 0.0,
             policy_logits: vec![uniform_prior; self.action_space as usize],
             value: 0.0,
-        }
+        })
     }
 
     fn action_space_size(&self) -> u32 {
@@ -108,7 +110,7 @@ mod tests {
     fn test_stub_model_initial_inference() {
         let model = StubLatentModel::new(10, 64);
         let obs = vec![0.0; 100];
-        let output = model.initial_inference(&obs);
+        let output = model.initial_inference(&obs).unwrap();
 
         assert_eq!(output.latent_state.dim(), 64);
         assert_eq!(output.policy_logits.len(), 10);
@@ -120,7 +122,7 @@ mod tests {
     fn test_stub_model_recurrent_inference() {
         let model = StubLatentModel::new(5, 32);
         let state = LatentState::zeros(32);
-        let output = model.recurrent_inference(&state, 2);
+        let output = model.recurrent_inference(&state, 2).unwrap();
 
         assert_eq!(output.latent_state.dim(), 32);
         assert_eq!(output.policy_logits.len(), 5);

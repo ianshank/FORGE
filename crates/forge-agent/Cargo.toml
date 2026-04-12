@@ -23,9 +23,11 @@ rand = { workspace = true }
 rand_pcg = { workspace = true }
 
 # Optional ONNX Runtime for latent MCTS deployment
-ort = { version = "2.0.0-rc.12", features = ["load-dynamic"], optional = true }
+ort = { version = "2.0.0-rc.9", optional = true }
 ndarray = { version = "0.16", optional = true }
+anyhow.workspace = true
 
 [dev-dependencies]
 proptest = { workspace = true }
 serde_json = { workspace = true }
+tempfile = "3.27.0"

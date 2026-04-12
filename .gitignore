@@ -92,3 +92,9 @@ mlruns/
 
 # Copilot memory workspace state
 /memories/
+
+# ML Models and ONNX Exports
+*.onnx
+models/
+*.pt
+*.pth

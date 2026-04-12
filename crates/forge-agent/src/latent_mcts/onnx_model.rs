@@ -10,6 +10,10 @@
 //! Add `ort` to your dependencies and compile with `--features onnx`.
 
 use std::path::Path;
+use std::sync::Mutex;
+use anyhow::{Context, Result};
+
+use ort::session::Session;
 
 use super::model::{LatentForwardModel, LatentInferenceOutput};
 use super::state::LatentState;
@@ -49,6 +53,9 @@ impl Default for OnnxModelConfig {
 /// Loads three ONNX models and provides the [`LatentForwardModel`] interface
 /// for latent MCTS search. Each model runs in its own ONNX session.
 ///
+/// Sessions are wrapped in `Mutex` because `ort` v2's `Session::run` requires
+/// `&mut self`, while [`LatentForwardModel`] takes `&self`.
+///
 /// # Example
 ///
 /// ```rust,no_run
@@ -71,11 +78,11 @@ pub struct OnnxMuZeroModel {
     // Model configuration (paths, dimensions, threading).
     config: OnnxModelConfig,
     // ONNX session for the representation network (observation → latent state).
-    representation: ort::Session,
+    representation: Mutex<Session>,
     // ONNX session for the dynamics network (latent + action → next latent + reward).
-    dynamics: ort::Session,
+    dynamics: Mutex<Session>,
     // ONNX session for the prediction network (latent → policy + value).
-    prediction: ort::Session,
+    prediction: Mutex<Session>,
 }
 
 impl OnnxMuZeroModel {
@@ -85,23 +92,23 @@ impl OnnxMuZeroModel {
     ///
     /// Returns an error if any of the ONNX files cannot be loaded.
     pub fn load(config: OnnxModelConfig) -> Result<Self, ort::Error> {
-        let rep = ort::Session::builder()?
+        let rep = Session::builder()?
             .with_intra_threads(config.num_threads)?
             .commit_from_file(&config.representation_path)?;
 
-        let dyn_ = ort::Session::builder()?
+        let dyn_ = Session::builder()?
             .with_intra_threads(config.num_threads)?
             .commit_from_file(&config.dynamics_path)?;
 
-        let pred = ort::Session::builder()?
+        let pred = Session::builder()?
             .with_intra_threads(config.num_threads)?
             .commit_from_file(&config.prediction_path)?;
 
         Ok(Self {
             config,
-            representation: rep,
-            dynamics: dyn_,
-            prediction: pred,
+            representation: Mutex::new(rep),
+            dynamics: Mutex::new(dyn_),
+            prediction: Mutex::new(pred),
         })
     }
 
@@ -116,59 +123,85 @@ impl OnnxMuZeroModel {
             && Path::new(&config.dynamics_path).exists()
             && Path::new(&config.prediction_path).exists()
     }
+
+    /// Helper: create a 2D ONNX input DynValue from a flat Vec<f32>.
+    ///
+    /// Uses `(shape, Vec<T>)` tuple constructor to avoid ndarray version
+    /// conflicts between the workspace `ndarray 0.16` and ort's `ndarray 0.15`.
+    fn make_input(data: Vec<f32>, cols: usize) -> Result<ort::value::DynValue> {
+        Ok(ort::value::Value::from_array(([1usize, cols], data))
+            .context("failed to create ONNX tensor")?
+            .into())
+    }
+
+    /// Helper: extract a flat Vec<f32> from an ONNX output DynValue.
+    fn extract_f32(value: &ort::value::DynValue) -> Result<Vec<f32>> {
+        let (_shape, slice) = value
+            .try_extract_tensor::<f32>()
+            .context("failed to extract f32 tensor")?;
+        Ok(slice.iter().copied().collect())
+    }
+
+    /// Run representation network and return latent data.
+    fn run_representation(&self, observation: &[f32]) -> Result<Vec<f32>> {
+        let obs_value = Self::make_input(observation.to_vec(), observation.len())?;
+        let mut session = self
+            .representation
+            .lock()
+            .map_err(|_| anyhow::anyhow!("representation lock poisoned"))?;
+        let outputs = session
+            .run(ort::inputs![obs_value])
+            .context("Representation inference failed")?;
+        Self::extract_f32(&outputs[0])
+    }
+
+    /// Run prediction network and return (policy_logits, value).
+    fn run_prediction(&self, latent_data: Vec<f32>) -> Result<(Vec<f32>, f32)> {
+        let latent_value = Self::make_input(latent_data, self.config.latent_dim)?;
+        let mut session = self
+            .prediction
+            .lock()
+            .map_err(|_| anyhow::anyhow!("prediction lock poisoned"))?;
+        let outputs = session
+            .run(ort::inputs![latent_value])
+            .context("Prediction inference failed")?;
+        let policy_logits = Self::extract_f32(&outputs[0])?;
+        let value = Self::extract_f32(&outputs[1])?;
+        Ok((policy_logits, value.first().copied().unwrap_or(0.0)))
+    }
+
+    /// Run dynamics network and return (next_latent_data, reward).
+    fn run_dynamics(&self, dyn_input: Vec<f32>, input_dim: usize) -> Result<(Vec<f32>, f32)> {
+        let dyn_value = Self::make_input(dyn_input, input_dim)?;
+        let mut session = self
+            .dynamics
+            .lock()
+            .map_err(|_| anyhow::anyhow!("dynamics lock poisoned"))?;
+        let outputs = session
+            .run(ort::inputs![dyn_value])
+            .context("Dynamics inference failed")?;
+        let next_latent = Self::extract_f32(&outputs[0])?;
+        let reward = Self::extract_f32(&outputs[1])?;
+        Ok((next_latent, reward.first().copied().unwrap_or(0.0)))
+    }
 }
 
 impl LatentForwardModel for OnnxMuZeroModel {
-    fn initial_inference(&self, observation: &[f32]) -> LatentInferenceOutput {
-        let obs_dim = observation.len();
-
-        // Run representation network
-        let obs_array =
-            ndarray::Array2::from_shape_vec((1, obs_dim), observation.to_vec()).unwrap();
-        let rep_outputs = self
-            .representation
-            .run(ort::inputs![obs_array].unwrap())
-            .expect("Representation inference failed");
-
-        let latent_data: Vec<f32> = rep_outputs[0]
-            .try_extract_tensor::<f32>()
-            .expect("Failed to extract latent tensor")
-            .iter()
-            .copied()
-            .collect();
+    fn initial_inference(&self, observation: &[f32]) -> Result<LatentInferenceOutput> {
+        let latent_data = self.run_representation(observation)?;
         let latent_state = LatentState::new(latent_data.clone());
 
-        // Run prediction network
-        let latent_array =
-            ndarray::Array2::from_shape_vec((1, self.config.latent_dim), latent_data).unwrap();
-        let pred_outputs = self
-            .prediction
-            .run(ort::inputs![latent_array].unwrap())
-            .expect("Prediction inference failed");
+        let (policy_logits, value) = self.run_prediction(latent_data)?;
 
-        let policy_logits: Vec<f32> = pred_outputs[0]
-            .try_extract_tensor::<f32>()
-            .expect("Failed to extract policy tensor")
-            .iter()
-            .copied()
-            .collect();
-
-        let value_raw: Vec<f32> = pred_outputs[1]
-            .try_extract_tensor::<f32>()
-            .expect("Failed to extract value tensor")
-            .iter()
-            .copied()
-            .collect();
-
-        LatentInferenceOutput {
+        Ok(LatentInferenceOutput {
             latent_state,
             reward: 0.0,
             policy_logits,
-            value: value_raw.first().copied().unwrap_or(0.0),
-        }
+            value,
+        })
     }
 
-    fn recurrent_inference(&self, state: &LatentState, action: u32) -> LatentInferenceOutput {
+    fn recurrent_inference(&self, state: &LatentState, action: u32) -> Result<LatentInferenceOutput> {
         // Build one-hot action
         let mut action_oh = vec![0.0f32; self.config.action_space_size as usize];
         if (action as usize) < action_oh.len() {
@@ -179,57 +212,18 @@ impl LatentForwardModel for OnnxMuZeroModel {
         let mut dyn_input = state.data.clone();
         dyn_input.extend_from_slice(&action_oh);
         let input_dim = self.config.latent_dim + self.config.action_space_size as usize;
-        let dyn_array = ndarray::Array2::from_shape_vec((1, input_dim), dyn_input).unwrap();
 
-        let dyn_outputs = self
-            .dynamics
-            .run(ort::inputs![dyn_array].unwrap())
-            .expect("Dynamics inference failed");
-
-        let next_latent_data: Vec<f32> = dyn_outputs[0]
-            .try_extract_tensor::<f32>()
-            .expect("Failed to extract next latent")
-            .iter()
-            .copied()
-            .collect();
-
-        let reward_raw: Vec<f32> = dyn_outputs[1]
-            .try_extract_tensor::<f32>()
-            .expect("Failed to extract reward")
-            .iter()
-            .copied()
-            .collect();
-
+        let (next_latent_data, reward) = self.run_dynamics(dyn_input, input_dim)?;
         let next_state = LatentState::new(next_latent_data.clone());
 
-        // Run prediction on next latent
-        let pred_array =
-            ndarray::Array2::from_shape_vec((1, self.config.latent_dim), next_latent_data).unwrap();
-        let pred_outputs = self
-            .prediction
-            .run(ort::inputs![pred_array].unwrap())
-            .expect("Prediction inference failed");
+        let (policy_logits, value) = self.run_prediction(next_latent_data)?;
 
-        let policy_logits: Vec<f32> = pred_outputs[0]
-            .try_extract_tensor::<f32>()
-            .expect("Failed to extract policy")
-            .iter()
-            .copied()
-            .collect();
-
-        let value_raw: Vec<f32> = pred_outputs[1]
-            .try_extract_tensor::<f32>()
-            .expect("Failed to extract value")
-            .iter()
-            .copied()
-            .collect();
-
-        LatentInferenceOutput {
+        Ok(LatentInferenceOutput {
             latent_state: next_state,
-            reward: reward_raw.first().copied().unwrap_or(0.0),
+            reward,
             policy_logits,
-            value: value_raw.first().copied().unwrap_or(0.0),
-        }
+            value,
+        })
     }
 
     fn action_space_size(&self) -> u32 {

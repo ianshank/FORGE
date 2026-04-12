@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from forge.social.trust_tracker import SocialConfig, TrustTracker
 
 
@@ -28,7 +30,7 @@ class TestTrustTracker:
     def test_initial_trust(self) -> None:
         config = SocialConfig(trust_initial=0.3)
         tracker = TrustTracker(num_agents=3, config=config)
-        assert tracker.trust_matrix[0, 1] == 0.3
+        assert tracker.trust_matrix[0, 1] == pytest.approx(0.3)
 
     def test_cooperation_increases_trust(self) -> None:
         tracker = TrustTracker(num_agents=3)
