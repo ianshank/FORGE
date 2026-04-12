@@ -10,6 +10,10 @@ keywords.workspace = true
 categories.workspace = true
 description = "Agent framework, MCTS planning, and baselines for FORGE"
 
+[features]
+default = []
+onnx = ["ort", "ndarray"]
+
 [dependencies]
 forge-types = { workspace = true }
 forge-core = { workspace = true }
@@ -17,6 +21,10 @@ serde = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
+
+# Optional ONNX Runtime for latent MCTS deployment
+ort = { version = "2.0.0-rc.12", features = ["load-dynamic"], optional = true }
+ndarray = { version = "0.16", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

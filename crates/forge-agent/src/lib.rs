@@ -14,5 +14,6 @@
 pub mod adapter;
 pub mod baselines;
 pub mod forward_model;
+pub mod latent_mcts;
 pub mod mcts;
 pub mod prelude;
