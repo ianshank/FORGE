@@ -143,8 +143,7 @@ impl DatasetLoader for MinariLoader {
         let reader = BufReader::new(file);
 
         let mut dataset = OfflineDataset::new("Minari");
-        dataset.metadata.source_url =
-            Some("https://minari.farama.org/".to_string());
+        dataset.metadata.source_url = Some("https://minari.farama.org/".to_string());
         dataset.metadata.license = Some("Apache-2.0".to_string());
 
         let mut builder = TrajectoryBuilder::new();
@@ -159,9 +158,8 @@ impl DatasetLoader for MinariLoader {
                 continue;
             }
 
-            let raw: MinariStep = serde_json::from_str(line).map_err(|e| {
-                DatasetError::Deserialize(format!("line {}: {e}", line_no + 1))
-            })?;
+            let raw: MinariStep = serde_json::from_str(line)
+                .map_err(|e| DatasetError::Deserialize(format!("line {}: {e}", line_no + 1)))?;
 
             let tick = raw.tick.unwrap_or(step_in_episode);
             let obs = minari_obs_to_forge(&raw.observations, crate::DEFAULT_VIEW_SIZE);
@@ -284,8 +282,7 @@ mod tests {
     fn test_max_episodes_limit() {
         let lines: Vec<String> = (0..6)
             .map(|_| {
-                r#"{"actions":[0],"rewards":[0.0],"terminated":true,"truncated":false}"#
-                    .to_string()
+                r#"{"actions":[0],"rewards":[0.0],"terminated":true,"truncated":false}"#.to_string()
             })
             .collect();
         let refs: Vec<&str> = lines.iter().map(String::as_str).collect();

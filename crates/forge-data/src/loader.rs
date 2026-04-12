@@ -220,10 +220,18 @@ mod tests {
 
     #[test]
     fn test_dataset_error_display_variants() {
-        assert!(DatasetError::Io("oops".to_string()).to_string().contains("oops"));
-        assert!(DatasetError::Deserialize("bad".to_string()).to_string().contains("bad"));
-        assert!(DatasetError::UnsupportedVersion("v99".to_string()).to_string().contains("v99"));
-        assert!(DatasetError::UnmappableAction("X".to_string()).to_string().contains("X"));
+        assert!(DatasetError::Io("oops".to_string())
+            .to_string()
+            .contains("oops"));
+        assert!(DatasetError::Deserialize("bad".to_string())
+            .to_string()
+            .contains("bad"));
+        assert!(DatasetError::UnsupportedVersion("v99".to_string())
+            .to_string()
+            .contains("v99"));
+        assert!(DatasetError::UnmappableAction("X".to_string())
+            .to_string()
+            .contains("X"));
     }
 
     #[test]
@@ -270,7 +278,10 @@ mod tests {
         let mut ds = OfflineDataset::new("x");
         ds.metadata.source_url = Some("https://example.com".to_string());
         ds.metadata.license = Some("Apache-2.0".to_string());
-        assert_eq!(ds.metadata.source_url.as_deref(), Some("https://example.com"));
+        assert_eq!(
+            ds.metadata.source_url.as_deref(),
+            Some("https://example.com")
+        );
         assert_eq!(ds.metadata.license.as_deref(), Some("Apache-2.0"));
     }
 }
