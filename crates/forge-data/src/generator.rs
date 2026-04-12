@@ -376,6 +376,24 @@ mod tests {
         assert!(traj.len() <= 3);
     }
 
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn config_roundtrip_serde(seed in 0u64..1000) {
+                let mut cfg = ExpertDemoConfig::default();
+                cfg.forge_config.world.seed = seed;
+                let json = serde_json::to_string(&cfg).unwrap();
+                let deser: ExpertDemoConfig = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.forge_config.world.seed, seed);
+                prop_assert_eq!(deser.max_steps, cfg.max_steps);
+                prop_assert_eq!(deser.parallel, cfg.parallel);
+            }
+        }
+    }
+
     #[test]
     fn test_expert_demo_config_default_fields() {
         let cfg = ExpertDemoConfig::default();

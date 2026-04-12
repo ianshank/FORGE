@@ -101,6 +101,14 @@ class Evaluator:
             Aggregated statistics over all episodes.
         """
         cfg = self.config
+
+        logger.info(
+            "Starting evaluation: episodes=%d seed=%d determinism_check=%s",
+            cfg.num_episodes,
+            cfg.seed,
+            cfg.determinism_check,
+        )
+
         episode_rewards: list[float] = []
         episode_lengths: list[int] = []
         # tier -> list[bool] success per episode
@@ -236,6 +244,6 @@ class Evaluator:
                     reward,
                 )
             return passed
-        except Exception:
-            logger.exception("Determinism check raised an exception")
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            logger.exception("Determinism check raised %s", type(exc).__name__)
             return False

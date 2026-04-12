@@ -551,4 +551,86 @@ mod tests {
         assert!(config.max_episode_steps > 0);
         assert!(config.num_envs > 0);
     }
+
+    // ---- Serde roundtrip and defaults validation macros ----
+
+    #[test]
+    fn test_action_adapter_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(ActionAdapterConfig);
+    }
+
+    #[test]
+    fn test_action_adapter_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(ActionAdapterConfig);
+    }
+
+    #[test]
+    fn test_observation_adapter_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(ObservationAdapterConfig);
+    }
+
+    #[test]
+    fn test_observation_adapter_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(ObservationAdapterConfig);
+    }
+
+    #[test]
+    fn test_sweep_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(SweepConfig);
+    }
+
+    #[test]
+    fn test_sweep_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(SweepConfig);
+    }
+
+    #[test]
+    fn test_surprise_validator_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(SurpriseValidatorConfig);
+    }
+
+    #[test]
+    fn test_surprise_validator_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(SurpriseValidatorConfig);
+    }
+
+    #[test]
+    fn test_transfer_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(TransferConfig);
+    }
+
+    #[test]
+    fn test_transfer_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(TransferConfig);
+    }
+
+    #[test]
+    fn test_curriculum_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(PlatformCurriculumConfig);
+    }
+
+    #[test]
+    fn test_curriculum_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(PlatformCurriculumConfig);
+    }
+
+    #[test]
+    fn test_batch_runner_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(BatchRunnerConfig);
+    }
+
+    #[test]
+    fn test_batch_runner_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(BatchRunnerConfig);
+    }
+
+    #[test]
+    fn test_mangomas_config_serde_roundtrip() {
+        forge_types::assert_config_serde_roundtrip!(MangoMasConfig);
+    }
+
+    #[test]
+    fn test_mangomas_config_defaults_valid() {
+        forge_types::assert_config_defaults_valid!(MangoMasConfig);
+    }
 }

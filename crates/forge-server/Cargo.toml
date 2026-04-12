@@ -27,3 +27,4 @@ path = "src/main.rs"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros"] }
+proptest = { workspace = true }

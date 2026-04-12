@@ -9,9 +9,9 @@
 //! This module is only available when the `onnx` feature is enabled.
 //! Add `ort` to your dependencies and compile with `--features onnx`.
 
+use anyhow::{Context, Result};
 use std::path::Path;
 use std::sync::Mutex;
-use anyhow::{Context, Result};
 
 use ort::session::Session;
 
@@ -201,7 +201,11 @@ impl LatentForwardModel for OnnxMuZeroModel {
         })
     }
 
-    fn recurrent_inference(&self, state: &LatentState, action: u32) -> Result<LatentInferenceOutput> {
+    fn recurrent_inference(
+        &self,
+        state: &LatentState,
+        action: u32,
+    ) -> Result<LatentInferenceOutput> {
         // Build one-hot action
         let mut action_oh = vec![0.0f32; self.config.action_space_size as usize];
         if (action as usize) < action_oh.len() {

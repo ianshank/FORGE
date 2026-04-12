@@ -29,13 +29,15 @@ class TestBaseAgent:
 class TestRandomAgent:
     """Tests for RandomAgent."""
 
-    def test_act_returns_valid_action(self) -> None:
+    @pytest.mark.parametrize("action_space_size", [1, 4, 8, 16, 40])
+    def test_act_returns_valid_action(self, action_space_size: int) -> None:
         """act() should return an action within the action space."""
-        agent = RandomAgent(AgentConfig(), action_space_size=4, seed=0)
+        agent = RandomAgent(AgentConfig(), action_space_size=action_space_size, seed=0)
         obs = np.zeros(10, dtype=np.float32)
-        action, info = agent.act(obs)
-        assert 0 <= action < 4
-        assert isinstance(info, dict)
+        for _ in range(20):
+            action, info = agent.act(obs)
+            assert 0 <= action < action_space_size
+            assert isinstance(info, dict)
 
     def test_learn_returns_dict(self) -> None:
         """learn() should return an empty dict for random agent."""
@@ -43,6 +45,17 @@ class TestRandomAgent:
         result = agent.learn({})
         assert isinstance(result, dict)
         assert len(result) == 0
+
+    @pytest.mark.parametrize("seed", [0, 42, 12345])
+    def test_deterministic_with_same_seed(self, seed: int) -> None:
+        """Two agents with the same seed should produce identical actions."""
+        agent_a = RandomAgent(AgentConfig(), action_space_size=10, seed=seed)
+        agent_b = RandomAgent(AgentConfig(), action_space_size=10, seed=seed)
+        obs = np.zeros(10, dtype=np.float32)
+        for _ in range(20):
+            a, _ = agent_a.act(obs)
+            b, _ = agent_b.act(obs)
+            assert a == b
 
 
 class TestMCTSNode:
@@ -54,12 +67,18 @@ class TestMCTSNode:
         score = node.ucb1_score(parent_visits=10, exploration_constant=1.414)
         assert score == float("inf")
 
-    def test_ucb1_visited(self) -> None:
+    @pytest.mark.parametrize(
+        "visit_count,total_value,parent_visits",
+        [(5, 3.0, 20), (1, 0.0, 1), (100, 50.0, 1000)],
+    )
+    def test_ucb1_visited(
+        self, visit_count: int, total_value: float, parent_visits: int
+    ) -> None:
         """Visited nodes should return a finite UCB1 score."""
         node = MCTSNode()
-        node.visit_count = 5
-        node.total_value = 3.0
-        score = node.ucb1_score(parent_visits=20, exploration_constant=1.414)
+        node.visit_count = visit_count
+        node.total_value = total_value
+        score = node.ucb1_score(parent_visits=parent_visits, exploration_constant=1.414)
         assert isinstance(score, float)
         assert score > 0
         assert score != float("inf")
@@ -114,10 +133,11 @@ class TestRolloutBuffer:
         buf.clear()
         assert len(buf) == 0
 
-    def test_is_full(self) -> None:
+    @pytest.mark.parametrize("capacity", [1, 3, 10, 100])
+    def test_is_full(self, capacity: int) -> None:
         """is_full() should return True when buffer is at capacity."""
-        buf = RolloutBuffer(capacity=3, obs_shape=(2,))
-        for _i in range(3):
+        buf = RolloutBuffer(capacity=capacity, obs_shape=(2,))
+        for _i in range(capacity):
             buf.add(np.zeros(2), 0, 0.0, False, {})
         assert buf.is_full()
 

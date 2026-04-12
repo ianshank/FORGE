@@ -29,12 +29,12 @@ __all__ = ["ForgeGymnasiumEnv"]
 # Fallback defaults that mirror Rust-side constants (forge_types::constants).
 # These are only used when the native observation_space dict does not provide
 # the corresponding key — in normal operation the Rust side always sets them.
-_DEFAULT_VISION_RADIUS = 5
+_DEFAULT_VISION_RADIUS = 5  # forge_types::constants::DEFAULT_VISION_RADIUS
 _DEFAULT_VIEW_SIDE = 2 * _DEFAULT_VISION_RADIUS + 1
-_DEFAULT_GRID_CHANNELS = 7  # OBS_FEATURES_PER_TILE
-_DEFAULT_CARRY_CAPACITY = 10  # DEFAULT_CARRY_CAPACITY
-_DEFAULT_NUM_DAY_PHASES = 4  # NUM_DAY_PHASES
-_DEFAULT_ACTION_N = 40  # Action::space_size(0) base actions with no comm
+_DEFAULT_GRID_CHANNELS = 7  # forge_types::constants::OBS_FEATURES_PER_TILE
+_DEFAULT_CARRY_CAPACITY = 10  # forge_types::constants::DEFAULT_CARRY_CAPACITY
+_DEFAULT_NUM_DAY_PHASES = 4  # forge_types::constants::NUM_DAY_PHASES
+_DEFAULT_ACTION_N = 40  # Action::space_size(0, false) base actions with no comm/drone
 _UINT16_MAX = 65535  # Maximum value for uint16 observation ranges
 
 

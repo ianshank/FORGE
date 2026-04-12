@@ -328,6 +328,47 @@ mod tests {
         assert_eq!(grid.tiles.len(), 16);
     }
 
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn any_seed_produces_correct_dimensions(seed in 0u64..10000) {
+                let config = MapGenConfig {
+                    width: 16,
+                    height: 16,
+                    seed,
+                    ..Default::default()
+                };
+                let gen = MapGenerator::new(config);
+                let grid = gen.generate();
+                prop_assert_eq!(grid.width, 16);
+                prop_assert_eq!(grid.height, 16);
+                prop_assert_eq!(grid.tiles.len(), 16 * 16);
+            }
+
+            #[test]
+            fn generation_is_deterministic(seed in 0u64..10000) {
+                let config = MapGenConfig {
+                    width: 16,
+                    height: 16,
+                    seed,
+                    ..Default::default()
+                };
+                let gen = MapGenerator::new(config.clone());
+                let grid_a = gen.generate();
+
+                let gen2 = MapGenerator::new(config);
+                let grid_b = gen2.generate();
+
+                for (a, b) in grid_a.tiles.iter().zip(grid_b.tiles.iter()) {
+                    prop_assert_eq!(a.terrain, b.terrain);
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_deterministic_same_config_same_result() {
         let config = MapGenConfig {

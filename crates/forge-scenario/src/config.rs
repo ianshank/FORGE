@@ -102,6 +102,7 @@ impl ScenarioConfig {
 
 impl ScenarioMeta {
     /// Validates the scenario metadata, returning a list of issues.
+    #[instrument(skip(self))]
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 

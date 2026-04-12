@@ -217,7 +217,12 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
 
     /// Run a single MCTS simulation: select → expand → backpropagate.
     #[instrument(skip_all)]
-    fn simulate(&self, nodes: &mut Vec<LatentNode>, min_max: &mut MinMaxStats, action_space: u32) -> anyhow::Result<()> {
+    fn simulate(
+        &self,
+        nodes: &mut Vec<LatentNode>,
+        min_max: &mut MinMaxStats,
+        action_space: u32,
+    ) -> anyhow::Result<()> {
         let mut path: Vec<usize> = vec![0]; // Start at root
         let mut node_idx = 0;
         let mut depth = 0;

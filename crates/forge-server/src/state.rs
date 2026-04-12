@@ -341,6 +341,45 @@ mod tests {
         assert_eq!(cloned.read().tick, 99);
     }
 
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn snapshot_json_roundtrip(
+                tick in 0u64..100000,
+                width in 8u16..256,
+                height in 8u16..256,
+            ) {
+                let snapshot = SimulationSnapshot {
+                    tick,
+                    agents: vec![],
+                    grid_width: width,
+                    grid_height: height,
+                    events: vec![],
+                    schema_version: SCHEMA_VERSION,
+                };
+                let json = serde_json::to_string(&snapshot).unwrap();
+                let deser: SimulationSnapshot = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(deser.tick, tick);
+                prop_assert_eq!(deser.grid_width, width);
+                prop_assert_eq!(deser.grid_height, height);
+            }
+
+            #[test]
+            fn shared_state_update_is_visible(tick in 1u64..100000) {
+                let state = SharedState::new();
+                let snapshot = SimulationSnapshot {
+                    tick,
+                    ..SimulationSnapshot::default()
+                };
+                state.update(snapshot);
+                prop_assert_eq!(state.read().tick, tick);
+            }
+        }
+    }
+
     #[test]
     fn test_concurrent_read_after_update() {
         let state = SharedState::new();

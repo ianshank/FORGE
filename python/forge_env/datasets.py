@@ -273,7 +273,7 @@ def _parse_forge_jsonl_step(raw: dict[str, Any], tick: int) -> ForgeStep | None:
             terminated=bool(raw.get("terminated", False)),
             truncated=bool(raw.get("truncated", False)),
         )
-    except Exception as exc:
+    except (KeyError, ValueError, TypeError, IndexError) as exc:
         logger.debug("Skipping malformed step at tick %d: %s", tick, exc)
         return None
 

@@ -112,6 +112,7 @@ impl OfflineDataset {
     }
 
     /// Adds a trajectory and updates metadata step count.
+    #[instrument(skip_all)]
     pub fn push(&mut self, traj: Trajectory) {
         self.metadata.total_steps += traj.len() as u64;
         self.metadata.num_trajectories += 1;

@@ -3,15 +3,15 @@ use std::process::Command;
 #[cfg(feature = "onnx")]
 #[test]
 fn test_onnx_pipeline_integration() {
-    use std::fs;
-    use tempfile::tempdir;
     use forge_agent::latent_mcts::onnx_model::{OnnxModelConfig, OnnxMuZeroModel};
     use forge_agent::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch};
+    use std::fs;
+    use tempfile::tempdir;
 
     let dir = tempdir().unwrap();
     let out_dir = dir.path().join("onnx_out");
     fs::create_dir_all(&out_dir).unwrap();
-    
+
     let python_script = r#"
 import sys
 from pathlib import Path
@@ -36,12 +36,18 @@ model = MuZeroWorldModel(config)
 exporter = MuZeroExporter(model)
 exporter.export_onnx(out_dir)
 "#;
-    
+
     let script_path = dir.path().join("export.py");
     fs::write(&script_path, python_script).unwrap();
-    
+
     // Set PYTHONPATH to point to the python directory from the workspace root where the test runs
-    let workspace_root = std::env::current_dir().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+    let workspace_root = std::env::current_dir()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
     let python_dir = workspace_root.join("python");
 
     let status = Command::new("python3")
@@ -50,31 +56,43 @@ exporter.export_onnx(out_dir)
         .env("PYTHONPATH", python_dir)
         .status()
         .expect("Failed to execute python3 command");
-    
-    assert!(status.success(), "Python ONNX export script failed. Note: Requires torch and onnx runtime installed.");
+
+    assert!(
+        status.success(),
+        "Python ONNX export script failed. Note: Requires torch and onnx runtime installed."
+    );
 
     let config = OnnxModelConfig {
-        representation_path: out_dir.join("representation.onnx").to_string_lossy().to_string(),
+        representation_path: out_dir
+            .join("representation.onnx")
+            .to_string_lossy()
+            .to_string(),
         dynamics_path: out_dir.join("dynamics.onnx").to_string_lossy().to_string(),
-        prediction_path: out_dir.join("prediction.onnx").to_string_lossy().to_string(),
+        prediction_path: out_dir
+            .join("prediction.onnx")
+            .to_string_lossy()
+            .to_string(),
         action_space_size: 75,
         latent_dim: 16,
         num_threads: 1,
     };
-    
-    assert!(OnnxMuZeroModel::validate_paths(&config), "ONNX paths missing");
-    
+
+    assert!(
+        OnnxMuZeroModel::validate_paths(&config),
+        "ONNX paths missing"
+    );
+
     let model = OnnxMuZeroModel::load(config).expect("Failed to load ONNX models in Rust");
-    
+
     let mcts_config = LatentMctsConfig::default();
     let search = LatentMctsSearch::new(model, mcts_config);
-    
+
     let obs = vec![0.0f32; 920];
     let result = search.search(&obs).unwrap();
-    
+
     assert!(result.action < 75);
     assert!(result.visit_counts.len() == 75);
-    
+
     let total_visits: u32 = result.visit_counts.iter().sum();
     // Default is 50 simulations (from MctsConfig::default()) + initial node expansion
     assert!(total_visits > 0);

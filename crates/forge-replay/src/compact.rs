@@ -219,29 +219,34 @@ impl CompactReplayBuilder {
     }
 
     /// Records one tick of actions.
+    #[instrument(skip(self))]
     pub fn record_tick(&mut self, action_ids: Vec<u32>) {
         self.actions.push(action_ids);
     }
 
     /// Sets agent names.
+    #[instrument(skip(self))]
     pub fn agent_names(mut self, names: Vec<String>) -> Self {
         self.metadata.agent_names = names;
         self
     }
 
     /// Sets agent metadata.
+    #[instrument(skip(self))]
     pub fn agent_metadata(mut self, metadata: Vec<AgentMetadata>) -> Self {
         self.metadata.agent_metadata = metadata;
         self
     }
 
     /// Sets final rewards.
+    #[instrument(skip(self))]
     pub fn final_rewards(mut self, rewards: Vec<f32>) -> Self {
         self.metadata.final_rewards = rewards;
         self
     }
 
     /// Sets scenario ID.
+    #[instrument(skip(self))]
     pub fn scenario_id(mut self, id: String) -> Self {
         self.metadata.scenario_id = Some(id);
         self
@@ -510,6 +515,37 @@ mod tests {
         let c1 = test_config();
         let c2 = test_config();
         assert_eq!(hash_config(&c1), hash_config(&c2));
+    }
+
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn bincode_roundtrip_any_seed(seed in 0u64..10000) {
+                let config = test_config();
+                let mut builder = CompactReplay::builder(config, seed);
+                builder.record_tick(vec![0]);
+                builder.record_tick(vec![1]);
+                let replay = builder.build();
+
+                let bytes = replay.to_bytes().unwrap();
+                let deser = CompactReplay::from_bytes(&bytes).unwrap();
+                prop_assert_eq!(deser.seed, seed);
+                prop_assert_eq!(deser.actions.len(), 2);
+                prop_assert!(deser.validate_config());
+            }
+
+            #[test]
+            fn config_hash_is_deterministic(seed in 0u64..10000) {
+                let mut config = test_config();
+                config.world.seed = seed;
+                let h1 = hash_config(&config);
+                let h2 = hash_config(&config);
+                prop_assert_eq!(h1, h2);
+            }
+        }
     }
 
     #[test]

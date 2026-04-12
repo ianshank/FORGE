@@ -16,3 +16,48 @@ pub fn config_from_dict(py: Python<'_>, dict: &Bound<'_, PyDict>) -> PyResult<Fo
     })?;
     Ok(config)
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::config::ForgeConfig;
+
+    #[test]
+    fn test_config_default_roundtrip_through_json() {
+        let config = ForgeConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: ForgeConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.world.width, config.world.width);
+        assert_eq!(deser.world.height, config.world.height);
+        assert_eq!(deser.world.seed, config.world.seed);
+        assert_eq!(deser.agents.num_agents, config.agents.num_agents);
+    }
+
+    #[test]
+    fn test_partial_json_uses_defaults() {
+        let json = r#"{"world":{"seed":42}}"#;
+        let config: ForgeConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.world.seed, 42);
+        assert_eq!(
+            config.world.width,
+            forge_types::constants::DEFAULT_WORLD_WIDTH
+        );
+        assert_eq!(
+            config.world.height,
+            forge_types::constants::DEFAULT_WORLD_HEIGHT
+        );
+    }
+
+    #[test]
+    fn test_invalid_json_returns_error() {
+        let result: Result<ForgeConfig, _> = serde_json::from_str("not json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_empty_object_uses_all_defaults() {
+        let config: ForgeConfig = serde_json::from_str("{}").unwrap();
+        let default = ForgeConfig::default();
+        assert_eq!(config.world.width, default.world.width);
+        assert_eq!(config.agents.num_agents, default.agents.num_agents);
+    }
+}

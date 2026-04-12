@@ -48,7 +48,11 @@ pub trait LatentForwardModel: Send + Sync {
     ///
     /// * `state` - Current latent state from a previous inference call.
     /// * `action` - Discrete action index.
-    fn recurrent_inference(&self, state: &LatentState, action: u32) -> Result<LatentInferenceOutput>;
+    fn recurrent_inference(
+        &self,
+        state: &LatentState,
+        action: u32,
+    ) -> Result<LatentInferenceOutput>;
 
     /// Returns the total number of discrete actions.
     fn action_space_size(&self) -> u32;
@@ -87,7 +91,11 @@ impl LatentForwardModel for StubLatentModel {
         })
     }
 
-    fn recurrent_inference(&self, _state: &LatentState, _action: u32) -> Result<LatentInferenceOutput> {
+    fn recurrent_inference(
+        &self,
+        _state: &LatentState,
+        _action: u32,
+    ) -> Result<LatentInferenceOutput> {
         let uniform_prior = 1.0 / self.action_space as f32;
         Ok(LatentInferenceOutput {
             latent_state: LatentState::zeros(self.latent_dim),

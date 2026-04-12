@@ -734,6 +734,7 @@ dependencies = [
  "forge-core",
  "forge-types",
  "futures",
+ "proptest",
  "rand 0.8.5",
  "serde",
  "serde_json",
