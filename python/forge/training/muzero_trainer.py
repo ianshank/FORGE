@@ -18,6 +18,8 @@ Usage::
 """
 from __future__ import annotations
 
+__all__ = ["MuZeroTrainer", "MuZeroTrainerConfig"]
+
 import logging
 import time
 from dataclasses import dataclass, field
@@ -63,6 +65,8 @@ class MuZeroTrainerConfig:
         temperature_final: Final temperature after schedule.
         temperature_schedule_steps: Steps over which to anneal temperature.
         max_episode_steps: Maximum steps per self-play episode.
+        max_grad_norm: Maximum gradient norm for gradient clipping.
+        gradient_scale: Scale factor for latent gradient in dynamics unroll.
         seed: Random seed.
         buffer_config: Replay buffer configuration.
         mcts_config: MCTS search configuration.
@@ -78,6 +82,8 @@ class MuZeroTrainerConfig:
     temperature_final: float = DEFAULT_TEMPERATURE_FINAL
     temperature_schedule_steps: int = DEFAULT_TEMPERATURE_SCHEDULE_STEPS
     max_episode_steps: int = 500
+    max_grad_norm: float = 1.0
+    gradient_scale: float = 0.5
     seed: int = 42
     buffer_config: MuZeroBufferConfig = field(default_factory=MuZeroBufferConfig)
     mcts_config: MuZeroMCTSConfig = field(default_factory=MuZeroMCTSConfig)
@@ -193,6 +199,8 @@ class MuZeroTrainer:
         """Perform a single training step.
 
         Samples a batch from the replay buffer and updates the networks.
+        The forward pass, backward pass, and optimizer step all happen
+        inside :meth:`_train_with_gradients` to avoid redundant computation.
 
         Returns:
             Training metrics dictionary.
@@ -200,8 +208,6 @@ class MuZeroTrainer:
         Raises:
             RuntimeError: If the replay buffer is empty.
         """
-        import torch  # noqa: PLC0415
-
         if self._buffer.num_games == 0:
             msg = "Cannot train: replay buffer is empty. Run self-play first."
             raise RuntimeError(msg)
@@ -213,43 +219,7 @@ class MuZeroTrainer:
             discount=self._model.config.discount,
         )
 
-        # Forward pass through model
-        metrics = self._model.train_step(batch)
-
-        # Backward pass and optimizer step
-        import torch  # noqa: PLC0415
-
-        loss_tensor = torch.tensor(metrics["loss"], requires_grad=False)
-
-        # Recompute for backward (train_step returns metrics, we need gradients)
-        self._optimizer.zero_grad()
-
-        # Re-run forward with gradient tracking
-        obs_t = torch.as_tensor(
-            batch["observations"], dtype=torch.float32,
-            device=torch.device(self._model.config.device),
-        )
-        actions_t = torch.as_tensor(batch["actions"], dtype=torch.long)
-        target_values_t = torch.as_tensor(batch["target_values"], dtype=torch.float32)
-        target_rewards_t = torch.as_tensor(batch["target_rewards"], dtype=torch.float32)
-        target_policies_t = torch.as_tensor(batch["target_policies"], dtype=torch.float32)
-
-        # Move to device
-        device = torch.device(self._model.config.device)
-        actions_t = actions_t.to(device)
-        target_values_t = target_values_t.to(device)
-        target_rewards_t = target_rewards_t.to(device)
-        target_policies_t = target_policies_t.to(device)
-
-        grad_batch = {
-            "observations": batch["observations"],
-            "actions": batch["actions"],
-            "target_values": batch["target_values"],
-            "target_rewards": batch["target_rewards"],
-            "target_policies": batch["target_policies"],
-        }
-        # Use the model's internal training (which computes loss with gradients)
-        self._train_with_gradients(grad_batch)
+        metrics = self._train_with_gradients(batch)
 
         self._total_train_steps += 1
 
@@ -265,18 +235,22 @@ class MuZeroTrainer:
 
         return metrics
 
-    def _train_with_gradients(self, batch: dict[str, np.ndarray]) -> None:
+    def _train_with_gradients(self, batch: dict[str, np.ndarray]) -> dict[str, float]:
         """Run forward + backward + optimizer step with gradient tracking.
 
         Args:
             batch: Training batch dictionary.
+
+        Returns:
+            Training metrics dictionary.
         """
         import torch  # noqa: PLC0415
         from torch import nn  # noqa: PLC0415
 
-        from forge.models.muzero_networks import scalar_to_support, support_to_scalar
+        from forge.models.muzero_networks import scalar_to_support  # noqa: PLC0415
 
         c = self._model.config
+        tc = self._config
         device = torch.device(c.device)
 
         obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=device)
@@ -299,12 +273,13 @@ class MuZeroTrainer:
         reward_loss = torch.tensor(0.0, device=device)
 
         # Unroll
+        gs = tc.gradient_scale
         num_steps = min(c.num_unroll_steps, actions.shape[1])
         for k in range(num_steps):
             action_oh = nn.functional.one_hot(actions[:, k], num_classes=c.action_dim).float()
 
-            # Scale gradient for dynamics (halve to balance initial vs unrolled)
-            latent_scaled = latent.detach() * 0.5 + latent * 0.5
+            # Scale gradient for dynamics (balance initial vs unrolled)
+            latent_scaled = latent.detach() * (1.0 - gs) + latent * gs
             latent, rew_logits = self._model.dynamics.forward(latent_scaled, action_oh)
             pol_logits, val_logits = self._model.prediction.forward(latent)
 
@@ -326,8 +301,16 @@ class MuZeroTrainer:
 
         total_loss.backward()
         # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(self._model.all_parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self._model.all_parameters(), max_norm=tc.max_grad_norm)
         self._optimizer.step()
+
+        return {
+            "loss": float(total_loss.item()),
+            "policy_loss": float(policy_loss.item() * scale),
+            "value_loss": float(value_loss.item() * scale),
+            "reward_loss": float(reward_loss.item() * scale),
+            "l2_reg": float(l2_reg.item()),
+        }
 
     def train(
         self,

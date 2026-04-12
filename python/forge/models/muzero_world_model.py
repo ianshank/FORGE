@@ -20,6 +20,8 @@ Usage::
 """
 from __future__ import annotations
 
+__all__ = ["MuZeroWorldModel", "NetworkOutput"]
+
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,7 +103,7 @@ class MuZeroWorldModel(WorldModel):
         """Return the MuZero configuration."""
         return self._config
 
-    def _action_to_onehot(self, action: int) -> "torch.Tensor":
+    def _action_to_onehot(self, action: int) -> torch.Tensor:
         """Convert a discrete action index to a one-hot tensor.
 
         Args:
@@ -125,7 +127,7 @@ class MuZeroWorldModel(WorldModel):
         vec[action] = 1.0
         return vec
 
-    def initial_inference(self, observation: "np.ndarray") -> NetworkOutput:
+    def initial_inference(self, observation: np.ndarray) -> NetworkOutput:
         """Run representation + prediction on a raw observation.
 
         Args:
@@ -135,7 +137,6 @@ class MuZeroWorldModel(WorldModel):
             :class:`NetworkOutput` with latent state, policy, and value.
             Reward is 0.0 (no transition occurred).
         """
-        import numpy as np  # noqa: PLC0415
         import torch  # noqa: PLC0415
 
         with torch.no_grad():
@@ -157,7 +158,7 @@ class MuZeroWorldModel(WorldModel):
         )
 
     def recurrent_inference(
-        self, latent_state: "np.ndarray", action: int
+        self, latent_state: np.ndarray, action: int
     ) -> NetworkOutput:
         """Run dynamics + prediction from a latent state and action.
 
@@ -169,7 +170,6 @@ class MuZeroWorldModel(WorldModel):
             :class:`NetworkOutput` with next latent state, reward,
             policy, and value.
         """
-        import numpy as np  # noqa: PLC0415
         import torch  # noqa: PLC0415
 
         with torch.no_grad():
@@ -201,7 +201,7 @@ class MuZeroWorldModel(WorldModel):
 
     # --- WorldModel ABC methods ---
 
-    def predict(self, state: "np.ndarray", action: int) -> "np.ndarray":
+    def predict(self, state: np.ndarray, action: int) -> np.ndarray:
         """Predict the next latent state (WorldModel ABC compliance).
 
         Args:
@@ -214,7 +214,7 @@ class MuZeroWorldModel(WorldModel):
         output = self.recurrent_inference(state, action)
         return output.latent_state
 
-    def train_step(self, batch: dict[str, "np.ndarray"]) -> dict[str, float]:
+    def train_step(self, batch: dict[str, np.ndarray]) -> dict[str, float]:
         """Perform a single MuZero training step.
 
         Unrolls the dynamics network for ``num_unroll_steps`` steps and
@@ -359,6 +359,6 @@ class MuZeroWorldModel(WorldModel):
         self.prediction.modules_list.load_state_dict(checkpoint["prediction"])
         logger.info("MuZeroWorldModel loaded from %s", path)
 
-    def all_parameters(self) -> list["torch.nn.Parameter"]:
+    def all_parameters(self) -> list[torch.nn.Parameter]:
         """Return all trainable parameters across all networks."""
         return list(self._all_params)

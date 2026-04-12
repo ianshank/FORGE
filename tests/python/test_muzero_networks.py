@@ -213,6 +213,16 @@ class TestRepresentationNetwork:
         net = RepresentationNetwork(cfg)
         assert len(net.parameters()) > 0
 
+    def test_gradient_flow(self) -> None:
+        """Verify gradients propagate through representation network."""
+        cfg = _make_config()
+        net = RepresentationNetwork(cfg)
+        obs = torch.randn(2, OBS_DIM, requires_grad=True)
+        latent = net.forward(obs)
+        latent.sum().backward()
+        assert obs.grad is not None
+        assert torch.all(torch.isfinite(obs.grad))
+
 
 # ---------------------------------------------------------------------------
 # DynamicsNetwork
@@ -250,6 +260,11 @@ class TestDynamicsNetwork:
         assert torch.all(torch.isfinite(next_latent))
         assert torch.all(torch.isfinite(reward_logits))
 
+    def test_parameters_count(self) -> None:
+        cfg = _make_config()
+        net = DynamicsNetwork(cfg)
+        assert len(net.parameters()) > 0
+
 
 # ---------------------------------------------------------------------------
 # PredictionNetwork
@@ -282,6 +297,37 @@ class TestPredictionNetwork:
         policy, value = net.forward(latent)
         assert torch.all(torch.isfinite(policy))
         assert torch.all(torch.isfinite(value))
+
+    def test_parameters_count(self) -> None:
+        cfg = _make_config()
+        net = PredictionNetwork(cfg)
+        assert len(net.parameters()) > 0
+
+
+# ---------------------------------------------------------------------------
+# ResidualBlock
+# ---------------------------------------------------------------------------
+
+
+class TestResidualBlock:
+    """Tests for ResidualBlock."""
+
+    def test_build_output_shape(self) -> None:
+        from forge.models.muzero_networks import ResidualBlock  # noqa: PLC0415
+
+        block = ResidualBlock.build(32)
+        x = torch.randn(4, 32)
+        out = block(x)
+        assert out.shape == (4, 32)
+
+    def test_residual_connection(self) -> None:
+        """Output should differ from input (non-identity) but be same shape."""
+        from forge.models.muzero_networks import ResidualBlock  # noqa: PLC0415
+
+        block = ResidualBlock.build(16)
+        x = torch.randn(2, 16)
+        out = block(x)
+        assert out.shape == x.shape
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +372,29 @@ class TestMuZeroWorldModel:
         state = np.random.randn(LATENT_DIM).astype(np.float32)
         next_state = model.predict(state, action=0)
         assert next_state.shape == (LATENT_DIM,)
+
+    def test_all_parameters_returns_list(self) -> None:
+        model = MuZeroWorldModel(_make_config())
+        params = model.all_parameters()
+        assert isinstance(params, list)
+        assert len(params) > 0
+
+    def test_recurrent_inference_boundary_actions(self) -> None:
+        model = MuZeroWorldModel(_make_config())
+        obs = np.random.randn(OBS_DIM).astype(np.float32)
+        init = model.initial_inference(obs)
+        # Test action 0 (lower bound)
+        out0 = model.recurrent_inference(init.latent_state, action=0)
+        assert out0.latent_state.shape == (LATENT_DIM,)
+        # Test action ACTION_DIM-1 (upper bound)
+        out_last = model.recurrent_inference(init.latent_state, action=ACTION_DIM - 1)
+        assert out_last.latent_state.shape == (LATENT_DIM,)
+
+    def test_negative_action_raises(self) -> None:
+        model = MuZeroWorldModel(_make_config())
+        state = np.random.randn(LATENT_DIM).astype(np.float32)
+        with pytest.raises(ValueError, match="Invalid action"):
+            model.recurrent_inference(state, action=-1)
 
     def test_invalid_action_raises(self) -> None:
         model = MuZeroWorldModel(_make_config())

@@ -13,9 +13,10 @@ Usage::
 """
 from __future__ import annotations
 
+__all__ = ["GameHistory", "MuZeroBufferConfig", "MuZeroReplayBuffer"]
+
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 
@@ -213,52 +214,10 @@ class MuZeroReplayBuffer:
             # Select position within game
             pos = self._rng.integers(0, max(1, game.length))
 
-            # Extract observation at position
-            obs = game.observations[pos]
+            obs, game_actions, game_target_values, game_target_rewards, game_target_policies = (
+                self._sample_single_position(game, pos, num_unroll_steps, td_steps, discount)
+            )
             observations.append(obs)
-
-            # Build unroll targets
-            game_actions = []
-            game_target_values = []
-            game_target_rewards = []
-            game_target_policies = []
-
-            for k in range(num_unroll_steps + 1):
-                step = pos + k
-
-                if step < game.length:
-                    # Compute n-step return as target value
-                    value = self._compute_n_step_return(
-                        game, step, td_steps, discount
-                    )
-                    game_target_values.append(value)
-                else:
-                    game_target_values.append(0.0)
-
-                if k < num_unroll_steps:
-                    if step < game.length:
-                        game_actions.append(game.actions[step])
-                        game_target_rewards.append(game.rewards[step])
-                    else:
-                        game_actions.append(0)  # Padding
-                        game_target_rewards.append(0.0)
-
-                if step < len(game.child_visits) and len(game.child_visits[step]) > 0:
-                    visits = game.child_visits[step]
-                    total = visits.sum()
-                    policy = visits / total if total > 0 else np.ones_like(visits) / len(visits)
-                    game_target_policies.append(policy)
-                else:
-                    # Uniform policy for padding
-                    action_dim = (
-                        len(game.child_visits[0])
-                        if game.child_visits
-                        else 1
-                    )
-                    game_target_policies.append(
-                        np.ones(action_dim, dtype=np.float32) / action_dim
-                    )
-
             actions_batch.append(game_actions)
             target_values.append(game_target_values)
             target_rewards.append(game_target_rewards)
@@ -295,6 +254,69 @@ class MuZeroReplayBuffer:
         for idx, priority in zip(game_indices, new_priorities):
             if 0 <= idx < len(self._priorities):
                 self._priorities[idx] = max(priority, self._config.min_priority)
+
+    def _sample_single_position(
+        self,
+        game: GameHistory,
+        pos: int,
+        num_unroll_steps: int,
+        td_steps: int,
+        discount: float,
+    ) -> tuple[np.ndarray, list[int], list[float], list[float], list[np.ndarray]]:
+        """Extract observation and unroll targets for a single position.
+
+        Args:
+            game: The game history to sample from.
+            pos: Position within the game.
+            num_unroll_steps: Number of dynamics steps to unroll (K).
+            td_steps: Number of steps for n-step return computation.
+            discount: Reward discount factor.
+
+        Returns:
+            Tuple of (observation, actions, target_values, target_rewards, target_policies).
+        """
+        obs = game.observations[pos]
+
+        game_actions: list[int] = []
+        game_target_values: list[float] = []
+        game_target_rewards: list[float] = []
+        game_target_policies: list[np.ndarray] = []
+
+        for k in range(num_unroll_steps + 1):
+            step = pos + k
+
+            if step < game.length:
+                value = self._compute_n_step_return(
+                    game, step, td_steps, discount
+                )
+                game_target_values.append(value)
+            else:
+                game_target_values.append(0.0)
+
+            if k < num_unroll_steps:
+                if step < game.length:
+                    game_actions.append(game.actions[step])
+                    game_target_rewards.append(game.rewards[step])
+                else:
+                    game_actions.append(0)  # Padding
+                    game_target_rewards.append(0.0)
+
+            if step < len(game.child_visits) and len(game.child_visits[step]) > 0:
+                visits = game.child_visits[step]
+                total = visits.sum()
+                policy = visits / total if total > 0 else np.ones_like(visits) / len(visits)
+                game_target_policies.append(policy)
+            else:
+                action_dim = (
+                    len(game.child_visits[0])
+                    if game.child_visits
+                    else 1
+                )
+                game_target_policies.append(
+                    np.ones(action_dim, dtype=np.float32) / action_dim
+                )
+
+        return obs, game_actions, game_target_values, game_target_rewards, game_target_policies
 
     def _compute_n_step_return(
         self,

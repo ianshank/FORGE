@@ -216,6 +216,7 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
     }
 
     /// Run a single MCTS simulation: select → expand → backpropagate.
+    #[instrument(skip_all)]
     fn simulate(&self, nodes: &mut Vec<LatentNode>, min_max: &mut MinMaxStats, action_space: u32) {
         let mut path: Vec<usize> = vec![0]; // Start at root
         let mut node_idx = 0;
@@ -250,7 +251,7 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
                 .map(|(a, _)| a as u32)
                 .unwrap_or(0);
 
-            if let Some(ref parent_latent) = nodes[parent_idx].latent_state.clone() {
+            if let Some(parent_latent) = &nodes[parent_idx].latent_state {
                 let output = self.model.recurrent_inference(parent_latent, action);
                 nodes[node_idx].latent_state = Some(output.latent_state);
                 nodes[node_idx].reward = output.reward;
@@ -320,6 +321,12 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
                 }
             }
         }
+
+        trace!(
+            node_idx,
+            best = ?best_child,
+            "select_child"
+        );
 
         best_child
     }
@@ -458,5 +465,45 @@ mod tests {
         let mut stats = MinMaxStats::new();
         stats.update(3.0);
         assert!((stats.normalize(3.0) - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_latent_mcts_config_defaults() {
+        let config = LatentMctsConfig::default();
+        assert!(config.dirichlet_alpha > 0.0);
+        assert!(config.dirichlet_epsilon >= 0.0 && config.dirichlet_epsilon <= 1.0);
+        assert!(config.base.c_puct > 0.0);
+    }
+
+    #[test]
+    fn test_min_max_stats_negative_values() {
+        let mut stats = MinMaxStats::new();
+        stats.update(-10.0);
+        stats.update(-1.0);
+        assert!((stats.normalize(-5.5) - 0.5).abs() < 1e-6);
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn visit_counts_bounded(sims in 1u32..50, actions in 2u32..20) {
+                let search = make_search(sims, actions);
+                let obs = vec![0.0; 50];
+                let result = search.search(&obs);
+                let total: u32 = result.visit_counts.iter().sum();
+                prop_assert!(total <= sims);
+            }
+
+            #[test]
+            fn action_in_range(sims in 1u32..20, actions in 1u32..50) {
+                let search = make_search(sims, actions);
+                let obs = vec![0.0; 100];
+                let result = search.search(&obs);
+                prop_assert!(result.action < actions);
+            }
+        }
     }
 }

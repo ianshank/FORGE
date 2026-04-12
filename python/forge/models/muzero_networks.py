@@ -26,17 +26,27 @@ Usage::
 """
 from __future__ import annotations
 
+__all__ = [
+    "DynamicsNetwork",
+    "PredictionNetwork",
+    "RepresentationNetwork",
+    "ResidualBlock",
+    "scalar_to_support",
+    "support_to_scalar",
+]
+
 import logging
-import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import torch
+
     from forge.models.muzero_config import MuZeroConfig
 
 logger = logging.getLogger(__name__)
 
 
-def scalar_to_support(x: "torch.Tensor", support_size: int) -> "torch.Tensor":
+def scalar_to_support(x: torch.Tensor, support_size: int) -> torch.Tensor:
     """Convert scalar values to a categorical distribution over support bins.
 
     Uses the MuZero transform: distributes each scalar across the two
@@ -65,7 +75,7 @@ def scalar_to_support(x: "torch.Tensor", support_size: int) -> "torch.Tensor":
     return result
 
 
-def support_to_scalar(logits: "torch.Tensor", support_size: int) -> "torch.Tensor":
+def support_to_scalar(logits: torch.Tensor, support_size: int) -> torch.Tensor:
     """Convert categorical logits to scalar values via softmax expectation.
 
     Args:
@@ -93,7 +103,7 @@ class ResidualBlock:
     """
 
     @staticmethod
-    def build(dim: int) -> "torch.nn.Module":
+    def build(dim: int) -> torch.nn.Module:
         """Build a residual block as a ``nn.Module``.
 
         Args:
@@ -112,7 +122,7 @@ class ResidualBlock:
                 self.fc2 = nn.Linear(d, d)
                 self.act = nn.ReLU()
 
-            def forward(self, x: "torch.Tensor") -> "torch.Tensor":
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
                 residual = x
                 out = self.norm(x)
                 out = self.act(self.fc1(out))
@@ -192,7 +202,7 @@ class RepresentationNetwork:
             config.vector_dim, config.latent_dim, total_params,
         )
 
-    def forward(self, observation: "torch.Tensor") -> "torch.Tensor":
+    def forward(self, observation: torch.Tensor) -> torch.Tensor:
         """Encode a raw observation into a latent state.
 
         Args:
@@ -231,7 +241,7 @@ class RepresentationNetwork:
         return latent
 
     @staticmethod
-    def _cat(a: "torch.Tensor", b: "torch.Tensor") -> "torch.Tensor":
+    def _cat(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         import torch  # noqa: PLC0415
 
         return torch.cat([a, b], dim=-1)
@@ -295,8 +305,8 @@ class DynamicsNetwork:
         )
 
     def forward(
-        self, latent_state: "torch.Tensor", action: "torch.Tensor"
-    ) -> tuple["torch.Tensor", "torch.Tensor"]:
+        self, latent_state: torch.Tensor, action: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Predict the next latent state and reward logits.
 
         Args:
@@ -367,8 +377,8 @@ class PredictionNetwork:
         )
 
     def forward(
-        self, latent_state: "torch.Tensor"
-    ) -> tuple["torch.Tensor", "torch.Tensor"]:
+        self, latent_state: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Predict policy logits and value logits from a latent state.
 
         Args:

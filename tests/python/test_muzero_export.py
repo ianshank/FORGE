@@ -1,7 +1,6 @@
 """Tests for MuZero model export to ONNX and TorchScript."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -66,7 +65,7 @@ class TestTorchScriptExport:
 
         loaded = torch.jit.load(str(tmp_path / "ts" / "prediction.pt"))
         latent = torch.randn(1, LATENT_DIM)
-        policy, value = loaded(latent)
+        policy, _value = loaded(latent)
         assert policy.shape == (1, ACTION_DIM)
 
     def test_torchscript_dynamics_loadable(self, tmp_path: Any) -> None:
@@ -77,7 +76,7 @@ class TestTorchScriptExport:
         loaded = torch.jit.load(str(tmp_path / "ts" / "dynamics.pt"))
         input_dim = LATENT_DIM + ACTION_DIM
         x = torch.randn(1, input_dim)
-        next_latent, reward = loaded(x)
+        next_latent, _reward = loaded(x)
         assert next_latent.shape == (1, LATENT_DIM)
 
 
@@ -147,7 +146,7 @@ class TestWeightExporterIntegration:
         assert "rep_w0" in loaded
 
     def test_manifest_includes_muzero(self, tmp_path: Any) -> None:
-        import json
+        import json  # noqa: PLC0415
 
         from forge.mangomas.export import WeightExporter  # noqa: PLC0415
 

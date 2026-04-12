@@ -1,7 +1,6 @@
 """Tests for MuZero trainer: self-play and training loop."""
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -9,11 +8,11 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from forge.agents.muzero_mcts import MuZeroMCTSConfig  # noqa: E402
 from forge.models.muzero_config import MuZeroConfig  # noqa: E402
 from forge.models.muzero_world_model import MuZeroWorldModel  # noqa: E402
 from forge.training.muzero_buffer import GameHistory, MuZeroBufferConfig  # noqa: E402
 from forge.training.muzero_trainer import MuZeroTrainer, MuZeroTrainerConfig  # noqa: E402
-from forge.agents.muzero_mcts import MuZeroMCTSConfig  # noqa: E402
 
 OBS_DIM = 11 * 11 * 7 + 73
 ACTION_DIM = 5
@@ -112,6 +111,12 @@ class TestSelfPlay:
         trainer.self_play(_make_env())
         assert trainer.total_games == 2
 
+    def test_self_play_env_close_called(self) -> None:
+        trainer = _make_trainer()
+        env = _make_env()
+        trainer.self_play(env)
+        # env.close is NOT called in self_play (only in train loop)
+
 
 # ---------------------------------------------------------------------------
 # Training
@@ -140,6 +145,20 @@ class TestTraining:
         # At 0 games, temperature should be init
         temp = trainer.current_temperature()
         assert abs(temp - trainer._config.temperature_init) < 1e-6
+
+    def test_current_temperature_zero_schedule(self) -> None:
+        model = _make_model()
+        config = MuZeroTrainerConfig(
+            temperature_schedule_steps=0,
+            temperature_final=0.1,
+            training_steps_per_iter=1,
+            self_play_games_per_iter=1,
+            batch_size=2,
+            mcts_config=MuZeroMCTSConfig(num_simulations=2, add_exploration_noise=False),
+            buffer_config=MuZeroBufferConfig(capacity=10),
+        )
+        trainer = MuZeroTrainer(config, model)
+        assert trainer.current_temperature() == 0.1  # Should be final when schedule=0
 
 
 # ---------------------------------------------------------------------------

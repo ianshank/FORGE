@@ -17,15 +17,17 @@ Usage::
 """
 from __future__ import annotations
 
+__all__ = ["MuZeroAgent"]
+
 import logging
 from typing import TYPE_CHECKING, Any
-
-import numpy as np
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.agents.muzero_mcts import MuZeroMCTS, MuZeroMCTSConfig
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from forge.models.muzero_world_model import MuZeroWorldModel
 
 logger = logging.getLogger(__name__)

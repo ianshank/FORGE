@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from forge.training.muzero_buffer import (
     DEFAULT_BUFFER_CAPACITY,
     GameHistory,
@@ -17,7 +16,7 @@ ACTION_DIM = 5
 def _make_game(length: int = 10) -> GameHistory:
     """Create a synthetic game history."""
     history = GameHistory()
-    for i in range(length + 1):
+    for _i in range(length + 1):
         history.observations.append(np.random.randn(20).astype(np.float32))
     for i in range(length):
         history.actions.append(np.random.randint(0, ACTION_DIM))
@@ -52,6 +51,11 @@ class TestGameHistory:
     def test_validate_mismatched_rewards(self) -> None:
         game = _make_game(10)
         game.rewards.pop()
+        assert not game.validate()
+
+    def test_validate_dones_mismatch(self) -> None:
+        game = _make_game(10)
+        game.dones.pop()
         assert not game.validate()
 
     def test_empty_game(self) -> None:
@@ -136,6 +140,12 @@ class TestMuZeroReplayBuffer:
         buf.update_priorities([0], [10.0])
         # No crash; priorities updated internally
 
+    def test_sample_batch_single_game(self) -> None:
+        buf = MuZeroReplayBuffer()
+        buf.save_game(_make_game(20))
+        batch = buf.sample_batch(batch_size=4, num_unroll_steps=2, td_steps=3, discount=0.99)
+        assert batch["observations"].shape[0] == 4
+
     def test_n_step_return(self) -> None:
         buf = MuZeroReplayBuffer()
         game = GameHistory()
@@ -149,3 +159,17 @@ class TestMuZeroReplayBuffer:
         value = buf._compute_n_step_return(game, position=0, td_steps=3, discount=1.0)
         # 1.0 + 1.0 + 1.0 + bootstrap(root_values[3]) = 3.0 + 0.2 = 3.2
         assert abs(value - 3.2) < 1e-6
+
+    def test_n_step_return_at_end(self) -> None:
+        """n-step return at terminal position should return 0."""
+        buf = MuZeroReplayBuffer()
+        game = GameHistory()
+        game.observations = [np.zeros(5) for _ in range(4)]
+        game.actions = [0, 0, 0]
+        game.rewards = [1.0, 1.0, 1.0]
+        game.root_values = [0.5, 0.4, 0.3]
+        game.child_visits = [np.ones(3) for _ in range(3)]
+        game.dones = [False, False, True]
+
+        value = buf._compute_n_step_return(game, position=3, td_steps=3, discount=0.99)
+        assert value == 0.0  # Beyond game length

@@ -17,6 +17,8 @@ Usage::
 """
 from __future__ import annotations
 
+__all__ = ["MuZeroExporter"]
+
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -24,6 +26,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    import torch
+
     from forge.models.muzero_world_model import MuZeroWorldModel
 
 logger = logging.getLogger(__name__)
@@ -182,7 +186,6 @@ class MuZeroExporter:
         Returns:
             True if all models pass validation.
         """
-        import torch  # noqa: PLC0415
 
         c = self._config
         obs = np.random.randn(c.obs_dim).astype(np.float32)
@@ -254,7 +257,7 @@ class MuZeroExporter:
 
         pred_model = torch.jit.load(str(output_dir / "prediction.pt"))
         latent_t = torch.tensor(ts_latent, dtype=torch.float32).unsqueeze(0)
-        ts_policy, ts_value = pred_model(latent_t)
+        ts_policy, _ts_value = pred_model(latent_t)
         if not np.allclose(ts_policy.detach().numpy().flatten()[: len(ref_policy)], ref_policy, atol=atol):
             logger.error("Prediction TorchScript validation failed")
             return False
@@ -266,7 +269,7 @@ class MuZeroExporter:
 # --- Internal nn.Module builders for ONNX/TorchScript export ---
 
 
-def _build_rep_module(model: MuZeroWorldModel) -> "torch.nn.Module":
+def _build_rep_module(model: MuZeroWorldModel) -> torch.nn.Module:
     """Build a traceable nn.Module wrapping the representation network."""
     from torch import nn  # noqa: PLC0415
 
@@ -278,7 +281,7 @@ def _build_rep_module(model: MuZeroWorldModel) -> "torch.nn.Module":
             self.fusion = model.representation.fusion
             self.res_blocks = model.representation.res_blocks
 
-        def forward(self, observation: "torch.Tensor") -> "torch.Tensor":
+        def forward(self, observation: torch.Tensor) -> torch.Tensor:
             return model.representation.forward(observation)
 
     m = RepModule()
@@ -286,9 +289,8 @@ def _build_rep_module(model: MuZeroWorldModel) -> "torch.nn.Module":
     return m
 
 
-def _build_dyn_module(model: MuZeroWorldModel) -> "torch.nn.Module":
+def _build_dyn_module(model: MuZeroWorldModel) -> torch.nn.Module:
     """Build a traceable nn.Module wrapping the dynamics network."""
-    import torch  # noqa: PLC0415
     from torch import nn  # noqa: PLC0415
 
     latent_dim = model.config.latent_dim
@@ -312,9 +314,8 @@ def _build_dyn_module(model: MuZeroWorldModel) -> "torch.nn.Module":
     return m
 
 
-def _build_pred_module(model: MuZeroWorldModel) -> "torch.nn.Module":
+def _build_pred_module(model: MuZeroWorldModel) -> torch.nn.Module:
     """Build a traceable nn.Module wrapping the prediction network."""
-    import torch  # noqa: PLC0415
     from torch import nn  # noqa: PLC0415
 
     class PredModule(nn.Module):

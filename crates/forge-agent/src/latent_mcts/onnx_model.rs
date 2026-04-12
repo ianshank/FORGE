@@ -68,9 +68,13 @@ impl Default for OnnxModelConfig {
 /// # }
 /// ```
 pub struct OnnxMuZeroModel {
+    // Model configuration (paths, dimensions, threading).
     config: OnnxModelConfig,
+    // ONNX session for the representation network (observation → latent state).
     representation: ort::Session,
+    // ONNX session for the dynamics network (latent + action → next latent + reward).
     dynamics: ort::Session,
+    // ONNX session for the prediction network (latent → policy + value).
     prediction: ort::Session,
 }
 
@@ -101,7 +105,12 @@ impl OnnxMuZeroModel {
         })
     }
 
-    /// Check that all ONNX model files exist.
+    /// Check that all ONNX model files exist on disk.
+    ///
+    /// Returns `true` if the representation, dynamics, and prediction
+    /// ONNX files all exist at the paths specified in `config`.
+    /// Use this before calling [`Self::load`] to provide a friendlier
+    /// error message when files are missing.
     pub fn validate_paths(config: &OnnxModelConfig) -> bool {
         Path::new(&config.representation_path).exists()
             && Path::new(&config.dynamics_path).exists()

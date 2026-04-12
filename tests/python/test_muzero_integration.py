@@ -15,7 +15,7 @@ torch = pytest.importorskip("torch")
 from forge.agents.muzero_mcts import MuZeroMCTS, MuZeroMCTSConfig  # noqa: E402
 from forge.models.muzero_config import MuZeroConfig  # noqa: E402
 from forge.models.muzero_world_model import MuZeroWorldModel  # noqa: E402
-from forge.training.muzero_buffer import MuZeroBufferConfig, MuZeroReplayBuffer  # noqa: E402
+from forge.training.muzero_buffer import MuZeroBufferConfig  # noqa: E402
 from forge.training.muzero_trainer import MuZeroTrainer, MuZeroTrainerConfig  # noqa: E402
 
 OBS_DIM = 11 * 11 * 7 + 73

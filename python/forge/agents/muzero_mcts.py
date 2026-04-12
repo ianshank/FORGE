@@ -18,9 +18,11 @@ Usage::
 """
 from __future__ import annotations
 
+__all__ = ["MuZeroMCTS", "MuZeroMCTSConfig"]
+
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -105,13 +107,13 @@ class _MCTSNode:
     """
 
     __slots__ = (
-        "latent_state",
-        "reward",
-        "prior",
-        "visit_count",
-        "value_sum",
         "children",
         "is_expanded",
+        "latent_state",
+        "prior",
+        "reward",
+        "value_sum",
+        "visit_count",
     )
 
     def __init__(self, prior: float) -> None:
@@ -258,15 +260,14 @@ class MuZeroMCTS:
                 value = output.value
             else:
                 value = 0.0
+        # Already expanded or at max depth; use existing value estimate
+        elif node.latent_state is not None:
+            output = self._model.recurrent_inference(
+                node.latent_state, action_history[-1] if action_history else 0
+            )
+            value = output.value
         else:
-            # Already expanded or at max depth; use existing value estimate
-            if node.latent_state is not None:
-                output = self._model.recurrent_inference(
-                    node.latent_state, action_history[-1] if action_history else 0
-                )
-                value = output.value
-            else:
-                value = 0.0
+            value = 0.0
 
         # Backpropagation
         self._backpropagate(search_path, value, min_max)

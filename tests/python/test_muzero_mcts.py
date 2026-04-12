@@ -127,12 +127,50 @@ class TestMuZeroMCTS:
     def test_zero_simulations(self) -> None:
         mcts = _make_mcts(num_simulations=0)
         obs = np.random.randn(OBS_DIM).astype(np.float32)
-        action, info = mcts.search(obs)
+        action, _info = mcts.search(obs)
         assert 0 <= action < ACTION_DIM
 
     def test_config_property(self) -> None:
         mcts = _make_mcts()
         assert mcts.config.num_simulations == 10
+
+
+# ---------------------------------------------------------------------------
+# _MinMaxStats
+# ---------------------------------------------------------------------------
+
+
+class TestMinMaxStats:
+    def test_normalize_range(self) -> None:
+        from forge.agents.muzero_mcts import _MinMaxStats  # noqa: PLC0415
+
+        stats = _MinMaxStats()
+        stats.update(1.0)
+        stats.update(5.0)
+        assert abs(stats.normalize(3.0) - 0.5) < 1e-6
+
+    def test_normalize_equal_min_max(self) -> None:
+        from forge.agents.muzero_mcts import _MinMaxStats  # noqa: PLC0415
+
+        stats = _MinMaxStats()
+        stats.update(3.0)
+        assert stats.normalize(3.0) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# _visit_counts_to_probs
+# ---------------------------------------------------------------------------
+
+
+class TestVisitCountsToProbs:
+    def test_zero_counts_uniform(self) -> None:
+        probs = MuZeroMCTS._visit_counts_to_probs(np.zeros(4), temperature=1.0)
+        np.testing.assert_allclose(probs, [0.25, 0.25, 0.25, 0.25])
+
+    def test_single_visited(self) -> None:
+        counts = np.array([0.0, 0.0, 10.0, 0.0])
+        probs = MuZeroMCTS._visit_counts_to_probs(counts, temperature=0.0)
+        assert probs[2] == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +206,7 @@ class TestMuZeroAgent:
             MuZeroMCTSConfig(num_simulations=5),
         )
         obs = np.random.randn(OBS_DIM).astype(np.float32)
-        action, info = agent.act(obs)
+        action, _info = agent.act(obs)
         assert 0 <= action < ACTION_DIM
         assert agent.step_count == 1
 
