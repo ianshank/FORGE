@@ -623,6 +623,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-proposal"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "forge-types",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "forge-python"
 version = "0.1.0"
 dependencies = [
