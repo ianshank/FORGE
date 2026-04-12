@@ -95,6 +95,16 @@ class WeightExporter:
         logger.info("Exported curiosity weights: %s", path)
         return path
 
+    def export_muzero_weights(self, weights: dict[str, np.ndarray]) -> Path:
+        """Export MuZero world model weights."""
+        path = self.output_dir / "muzero_weights.npz"
+        self._ensure_dir()
+        np.savez(str(path), **weights)  # type: ignore[arg-type]
+        self._manifest.components.append("muzero")
+        self._manifest.metadata["muzero_arrays"] = list(weights.keys())
+        logger.info("Exported MuZero weights: %s", path)
+        return path
+
     def export_curriculum_state(self, state: dict[str, Any]) -> Path:
         """Export curriculum state."""
         path = self.output_dir / "curriculum_state.json"

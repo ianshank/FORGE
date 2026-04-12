@@ -219,6 +219,35 @@ class CuriosityOptimizerConfig:
 
 
 @dataclass
+class MuZeroTrainerConfig:
+    """MuZero training pipeline configuration."""
+
+    latent_dim: int = 256
+    hidden_dim: int = 256
+    num_blocks: int = 4
+    reward_support_size: int = 31
+    value_support_size: int = 31
+    num_unroll_steps: int = 5
+    td_steps: int = 10
+    discount: float = 0.997
+    learning_rate: float = 3e-4
+    weight_decay: float = 1e-4
+    batch_size: int = 256
+    training_steps_per_iter: int = 100
+    self_play_games_per_iter: int = 10
+    num_simulations: int = 50
+    c_puct: float = 1.25
+    dirichlet_alpha: float = 0.3
+    temperature_init: float = 1.0
+    temperature_final: float = 0.25
+    temperature_schedule_steps: int = 500
+    buffer_capacity: int = 10000
+    max_episode_steps: int = 500
+    checkpoint_interval: int = 50
+    seed: int = DEFAULT_SEED
+
+
+@dataclass
 class MangoMASBridgeConfig:
     """Top-level MangoMAS integration configuration."""
 
@@ -241,6 +270,7 @@ class MangoMASBridgeConfig:
     curiosity_optimizer: CuriosityOptimizerConfig = field(
         default_factory=CuriosityOptimizerConfig
     )
+    muzero_trainer: MuZeroTrainerConfig = field(default_factory=MuZeroTrainerConfig)
 
     @classmethod
     def from_toml(cls, path: str | Path) -> MangoMASBridgeConfig:
