@@ -85,6 +85,16 @@ pub fn validate_proposal_config(config: &ProposalConfig) -> ProposalResult<()> {
             },
         ));
     }
+    if config.render.heading_level_offset < 1 || config.render.heading_level_offset > 5 {
+        return Err(ProposalError::Config(
+            forge_types::error::ConfigError::OutOfRange {
+                field: "heading_level_offset".to_string(),
+                value: config.render.heading_level_offset.to_string(),
+                min: "1".to_string(),
+                max: "5".to_string(),
+            },
+        ));
+    }
     Ok(())
 }
 
@@ -175,6 +185,20 @@ pub fn validate_proposal(proposal: &Proposal, config: &ProposalConfig) -> Valida
         }
     }
 
+    // Check subcontracts allowed
+    if !profile.allows_subcontracts && proposal.cost.total_subcontracts() > 0 {
+        report.issues.push(ValidationIssue {
+            error: ValidationError::SubcontractLimitExceeded {
+                actual: proposal.cost.subcontract_percentage(),
+                limit: 0,
+            },
+            is_blocking: true,
+        });
+        if config.validation.strict {
+            return report;
+        }
+    }
+
     // Check subcontract limits
     let sub_pct = proposal.cost.subcontract_percentage();
     if sub_pct > profile.subcontract_limit_percent as f32 {
@@ -182,6 +206,20 @@ pub fn validate_proposal(proposal: &Proposal, config: &ProposalConfig) -> Valida
             error: ValidationError::SubcontractLimitExceeded {
                 actual: sub_pct,
                 limit: profile.subcontract_limit_percent,
+            },
+            is_blocking: true,
+        });
+        if config.validation.strict {
+            return report;
+        }
+    }
+
+    // Check profit rate limit
+    if proposal.cost.indirect.profit_rate > config.limits.profit_rate_max {
+        report.issues.push(ValidationIssue {
+            error: ValidationError::ProfitRateExceeded {
+                actual: proposal.cost.indirect.profit_rate,
+                max: config.limits.profit_rate_max,
             },
             is_blocking: true,
         });
@@ -633,6 +671,56 @@ mod tests {
         config.validation.strict = true;
         let report = validate_proposal(&proposal, &config);
         assert!(report.blocking_count() >= 1);
+    }
+
+    #[test]
+    fn test_validate_subcontracts_not_allowed() {
+        let mut proposal = make_valid_proposal();
+        proposal.agency.allows_subcontracts = false;
+        proposal.cost.subcontracts = vec![SubcontractItem {
+            organization: "Sub".to_string(),
+            description: "Work".to_string(),
+            cost: 1_000,
+        }];
+        let report = validate_proposal(&proposal, &ProposalConfig::default());
+        let has_sub_error = report.issues.iter().any(|i| {
+            matches!(
+                &i.error,
+                ValidationError::SubcontractLimitExceeded { limit: 0, .. }
+            )
+        });
+        assert!(
+            has_sub_error,
+            "should block subcontracts when allows_subcontracts is false"
+        );
+    }
+
+    #[test]
+    fn test_validate_config_invalid_heading_level() {
+        let mut config = ProposalConfig::default();
+        config.render.heading_level_offset = 0;
+        let err = validate_proposal_config(&config).unwrap_err();
+        assert!(matches!(err, ProposalError::Config(_)));
+
+        let mut config2 = ProposalConfig::default();
+        config2.render.heading_level_offset = 6;
+        let err2 = validate_proposal_config(&config2).unwrap_err();
+        assert!(matches!(err2, ProposalError::Config(_)));
+    }
+
+    #[test]
+    fn test_validate_profit_rate_exceeded() {
+        let mut proposal = make_valid_proposal();
+        proposal.cost.indirect.profit_rate = 0.25; // exceeds default 0.10 max
+        let report = validate_proposal(&proposal, &ProposalConfig::default());
+        let has_profit_error = report
+            .issues
+            .iter()
+            .any(|i| matches!(&i.error, ValidationError::ProfitRateExceeded { .. }));
+        assert!(
+            has_profit_error,
+            "should catch profit rate exceeding configured maximum"
+        );
     }
 
     #[test]

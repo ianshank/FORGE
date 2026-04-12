@@ -107,6 +107,15 @@ pub enum ValidationError {
         /// Maximum allowed deliverables.
         max: u16,
     },
+
+    /// Profit rate exceeds the configured maximum.
+    #[error("profit rate {actual:.1}% exceeds maximum {max:.1}%")]
+    ProfitRateExceeded {
+        /// Actual profit rate (fraction).
+        actual: f32,
+        /// Maximum allowed profit rate (fraction).
+        max: f32,
+    },
 }
 
 /// Result type alias for proposal operations.
@@ -245,6 +254,17 @@ mod tests {
         assert!(msg.contains("PI effort"));
         assert!(msg.contains("30"));
         assert!(msg.contains("51"));
+    }
+
+    #[test]
+    fn test_validation_error_profit_rate_exceeded() {
+        let err = ValidationError::ProfitRateExceeded {
+            actual: 0.15,
+            max: 0.10,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("profit rate"));
+        assert!(msg.contains("exceeds maximum"));
     }
 
     #[test]

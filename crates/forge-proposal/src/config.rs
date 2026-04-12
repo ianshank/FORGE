@@ -33,7 +33,7 @@ pub struct RenderConfig {
     pub include_toc: bool,
     /// Whether to include page break hints (`---`).
     pub include_page_breaks: bool,
-    /// Date format string for `chrono` formatting.
+    /// Date format string (e.g., `"%Y-%m-%d"`).
     pub date_format: String,
 }
 

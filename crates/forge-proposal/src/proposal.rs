@@ -96,7 +96,7 @@ impl Proposal {
             + self.supporting.estimated_pages()
     }
 
-    /// Returns the total proposed cost.
+    /// Returns the total calculated cost from the cost volume breakdown.
     pub fn total_cost(&self) -> u64 {
         self.cost.total_cost()
     }

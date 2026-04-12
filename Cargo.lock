@@ -627,7 +627,6 @@ dependencies = [
 name = "forge-proposal"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "forge-types",
  "proptest",
  "serde",
