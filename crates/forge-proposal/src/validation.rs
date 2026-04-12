@@ -51,22 +51,39 @@ impl ValidationReport {
 /// Validates the proposal configuration itself.
 ///
 /// Checks that all config values are within valid ranges.
+/// Uses `ConfigError::OutOfRange` for range violations to stay consistent
+/// with `forge-types` error handling.
 #[instrument(skip_all)]
 pub fn validate_proposal_config(config: &ProposalConfig) -> ProposalResult<()> {
     if config.validation.words_per_page == 0 {
-        return Err(ProposalError::Validation(ValidationError::MissingField {
-            field: "words_per_page must be > 0".to_string(),
-        }));
+        return Err(ProposalError::Config(
+            forge_types::error::ConfigError::OutOfRange {
+                field: "words_per_page".to_string(),
+                value: config.validation.words_per_page.to_string(),
+                min: "1".to_string(),
+                max: u32::MAX.to_string(),
+            },
+        ));
     }
     if config.limits.max_sections == 0 {
-        return Err(ProposalError::Validation(ValidationError::MissingField {
-            field: "max_sections must be > 0".to_string(),
-        }));
+        return Err(ProposalError::Config(
+            forge_types::error::ConfigError::OutOfRange {
+                field: "max_sections".to_string(),
+                value: config.limits.max_sections.to_string(),
+                min: "1".to_string(),
+                max: usize::MAX.to_string(),
+            },
+        ));
     }
     if config.limits.profit_rate_max < 0.0 || config.limits.profit_rate_max > 1.0 {
-        return Err(ProposalError::Validation(ValidationError::MissingField {
-            field: "profit_rate_max must be in [0.0, 1.0]".to_string(),
-        }));
+        return Err(ProposalError::Config(
+            forge_types::error::ConfigError::OutOfRange {
+                field: "profit_rate_max".to_string(),
+                value: config.limits.profit_rate_max.to_string(),
+                min: "0.0".to_string(),
+                max: "1.0".to_string(),
+            },
+        ));
     }
     Ok(())
 }
@@ -93,21 +110,23 @@ pub fn validate_proposal(proposal: &Proposal, config: &ProposalConfig) -> Valida
         }
     }
 
-    // Check technical volume page limit
-    let tech_pages = proposal
-        .technical
-        .estimated_pages(config.validation.words_per_page);
-    if tech_pages > profile.technical_page_limit as f32 {
-        report.issues.push(ValidationIssue {
-            error: ValidationError::PageLimitExceeded {
-                section: "technical_volume".to_string(),
-                actual: tech_pages,
-                limit: profile.technical_page_limit,
-            },
-            is_blocking: true,
-        });
-        if config.validation.strict {
-            return report;
+    // Check technical volume page limit (guard against zero words_per_page)
+    if config.validation.words_per_page > 0 {
+        let tech_pages = proposal
+            .technical
+            .estimated_pages(config.validation.words_per_page);
+        if tech_pages > profile.technical_page_limit as f32 {
+            report.issues.push(ValidationIssue {
+                error: ValidationError::PageLimitExceeded {
+                    section: "technical_volume".to_string(),
+                    actual: tech_pages,
+                    limit: profile.technical_page_limit,
+                },
+                is_blocking: true,
+            });
+            if config.validation.strict {
+                return report;
+            }
         }
     }
 
@@ -127,9 +146,9 @@ pub fn validate_proposal(proposal: &Proposal, config: &ProposalConfig) -> Valida
         }
     }
 
-    // Check duration consistency
+    // Check duration consistency — only block if work plan exceeds declared duration
     let work_plan_months = proposal.technical.work_plan.total_months();
-    if work_plan_months > 0 && work_plan_months != proposal.cover_page.duration_months {
+    if work_plan_months > 0 && work_plan_months > proposal.cover_page.duration_months {
         report.issues.push(ValidationIssue {
             error: ValidationError::DurationMismatch {
                 work_plan_months,
@@ -196,9 +215,12 @@ pub fn validate_proposal(proposal: &Proposal, config: &ProposalConfig) -> Valida
                 proposal.cost.labor.is_empty()
                     && proposal.cost.materials.is_empty()
                     && proposal.cost.travel.is_empty()
+                    && proposal.cost.subcontracts.is_empty()
             }
             "cover_page" => proposal.cover_page.title.is_empty(),
-            _ => false, // Unknown sections are not checked
+            // Unknown required sections fail closed — report as missing
+            // since we cannot verify their content
+            _ => true,
         };
         if is_empty {
             report.issues.push(ValidationIssue {
@@ -217,11 +239,9 @@ pub fn validate_proposal(proposal: &Proposal, config: &ProposalConfig) -> Valida
     let total_deliverables = proposal.technical.work_plan.total_deliverables();
     if total_deliverables > config.limits.max_deliverables as usize {
         report.issues.push(ValidationIssue {
-            error: ValidationError::MissingField {
-                field: format!(
-                    "work_plan has {} deliverables, max is {}",
-                    total_deliverables, config.limits.max_deliverables,
-                ),
+            error: ValidationError::TooManyDeliverables {
+                actual: total_deliverables,
+                max: config.limits.max_deliverables,
             },
             is_blocking: false,
         });
@@ -321,21 +341,24 @@ mod tests {
     fn test_validate_config_zero_words_per_page() {
         let mut config = ProposalConfig::default();
         config.validation.words_per_page = 0;
-        assert!(validate_proposal_config(&config).is_err());
+        let err = validate_proposal_config(&config).unwrap_err();
+        assert!(matches!(err, ProposalError::Config(_)));
     }
 
     #[test]
     fn test_validate_config_zero_max_sections() {
         let mut config = ProposalConfig::default();
         config.limits.max_sections = 0;
-        assert!(validate_proposal_config(&config).is_err());
+        let err = validate_proposal_config(&config).unwrap_err();
+        assert!(matches!(err, ProposalError::Config(_)));
     }
 
     #[test]
     fn test_validate_config_invalid_profit_rate() {
         let mut config = ProposalConfig::default();
         config.limits.profit_rate_max = 1.5;
-        assert!(validate_proposal_config(&config).is_err());
+        let err = validate_proposal_config(&config).unwrap_err();
+        assert!(matches!(err, ProposalError::Config(_)));
     }
 
     #[test]
@@ -613,7 +636,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_unknown_required_section_passes() {
+    fn test_validate_unknown_required_section_fails_closed() {
         let mut proposal = make_valid_proposal();
         proposal.agency.required_sections = vec!["unknown_section".to_string()];
         let report = validate_proposal(&proposal, &ProposalConfig::default());
@@ -621,7 +644,10 @@ mod tests {
             .issues
             .iter()
             .any(|i| matches!(&i.error, ValidationError::MissingSectionContent { .. }));
-        assert!(!has_missing, "unknown sections should not generate errors");
+        assert!(
+            has_missing,
+            "unknown required sections should fail closed and report as missing"
+        );
     }
 
     #[test]
@@ -642,8 +668,12 @@ mod tests {
             }],
         };
         let report = validate_proposal(&proposal, &ProposalConfig::default());
+        let has_deliverable_warning = report
+            .issues
+            .iter()
+            .any(|i| matches!(&i.error, ValidationError::TooManyDeliverables { .. }));
         assert!(
-            report.warning_count() > 0,
+            has_deliverable_warning,
             "should have a warning for too many deliverables"
         );
     }

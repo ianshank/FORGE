@@ -18,10 +18,11 @@
 //! - **Rendering** ([`render`]): Structured Markdown output
 //! - **Builder** ([`proposal`]): Fluent API for proposal construction
 //!
-//! # No Hard-Coded Values
+//! # Configurable Defaults
 //!
-//! All defaults flow through named constants in [`constants`].
-//! Agency profiles, page limits, cost ranges, and rates are fully configurable.
+//! Core defaults and reusable configuration values are defined as named constants
+//! in [`constants`]. Agency profiles, page limits, cost ranges, and rates are
+//! configurable via the corresponding config structs.
 //!
 //! # Example
 //!

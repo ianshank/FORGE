@@ -80,6 +80,9 @@ impl ProblemSection {
     /// Estimates page count based on word count.
     #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
+        if words_per_page == 0 {
+            return 0.0;
+        }
         let words = self.description.split_whitespace().count()
             + self.significance.split_whitespace().count()
             + self
@@ -160,6 +163,9 @@ impl TechnicalApproachSection {
     /// Estimates page count based on word count.
     #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
+        if words_per_page == 0 {
+            return 0.0;
+        }
         let words = self.overview.split_whitespace().count()
             + self
                 .objectives
@@ -240,6 +246,9 @@ impl InnovationSection {
     /// Estimates page count based on word count.
     #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
+        if words_per_page == 0 {
+            return 0.0;
+        }
         let words = self.summary.split_whitespace().count()
             + self
                 .claims
@@ -306,6 +315,9 @@ impl TechnicalMeritSection {
     /// Estimates page count based on word count.
     #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
+        if words_per_page == 0 {
+            return 0.0;
+        }
         let words = self.overview.split_whitespace().count()
             + self
                 .prior_results
@@ -392,6 +404,9 @@ impl WorkPlanSection {
     /// Estimates page count based on word count.
     #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
+        if words_per_page == 0 {
+            return 0.0;
+        }
         let words: usize = self
             .months
             .iter()
@@ -406,9 +421,9 @@ impl WorkPlanSection {
                         .sum::<usize>()
             })
             .sum();
-        // Add overhead for table formatting
+        // Add overhead for table formatting (headers, separators, etc.)
         let table_overhead =
-            self.months.len() * constants::DEFAULT_MAX_MILESTONES_PER_MONTH as usize;
+            self.months.len() * constants::DEFAULT_WORK_PLAN_TABLE_OVERHEAD_PER_BLOCK;
         (words + table_overhead) as f32 / words_per_page as f32
     }
 
@@ -476,6 +491,9 @@ impl RelatedWorkSection {
     /// Estimates page count based on word count.
     #[instrument(skip_all)]
     pub fn estimated_pages(&self, words_per_page: u32) -> f32 {
+        if words_per_page == 0 {
+            return 0.0;
+        }
         let words = self.overview.split_whitespace().count()
             + self.pi.qualifications.split_whitespace().count()
             + self

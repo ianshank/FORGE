@@ -171,7 +171,6 @@ impl AgencyProfile {
                 "work_plan".to_string(),
                 "related_work".to_string(),
                 "cost_volume".to_string(),
-                "feasibility".to_string(),
             ],
             allows_subcontracts: true,
             cost_sharing_required: false,
@@ -208,14 +207,18 @@ impl AgencyProfile {
 
     /// Parses an agency profile from a TOML string.
     #[instrument(skip_all)]
-    pub fn from_toml(toml_str: &str) -> Result<Self, String> {
-        toml::from_str(toml_str).map_err(|e| format!("TOML parse error: {e}"))
+    pub fn from_toml(toml_str: &str) -> crate::error::ProposalResult<Self> {
+        toml::from_str(toml_str).map_err(|e| {
+            crate::error::ProposalError::Serialization(format!("TOML parse error: {e}"))
+        })
     }
 
     /// Serializes this agency profile to a TOML string.
     #[instrument(skip_all)]
-    pub fn to_toml(&self) -> Result<String, String> {
-        toml::to_string_pretty(self).map_err(|e| format!("TOML serialization error: {e}"))
+    pub fn to_toml(&self) -> crate::error::ProposalResult<String> {
+        toml::to_string_pretty(self).map_err(|e| {
+            crate::error::ProposalError::Serialization(format!("TOML serialization error: {e}"))
+        })
     }
 }
 
@@ -420,11 +423,12 @@ mod tests {
     }
 
     #[test]
-    fn test_darpa_has_feasibility_section() {
+    fn test_darpa_has_supplemental_page_limit() {
         let profile = AgencyProfile::darpa_direct_to_phase_ii();
-        assert!(profile
-            .required_sections
-            .contains(&"feasibility".to_string()));
+        assert!(
+            profile.supplemental_page_limit.is_some(),
+            "DARPA D2P2 should have a supplemental page limit for feasibility addendum"
+        );
     }
 
     #[test]

@@ -98,6 +98,15 @@ pub enum ValidationError {
         /// Minimum required PI effort percentage.
         required: u8,
     },
+
+    /// Work plan has too many deliverables.
+    #[error("too many deliverables: {actual} exceeds maximum {max}")]
+    TooManyDeliverables {
+        /// Actual deliverable count.
+        actual: usize,
+        /// Maximum allowed deliverables.
+        max: u16,
+    },
 }
 
 /// Result type alias for proposal operations.
@@ -236,6 +245,18 @@ mod tests {
         assert!(msg.contains("PI effort"));
         assert!(msg.contains("30"));
         assert!(msg.contains("51"));
+    }
+
+    #[test]
+    fn test_validation_error_too_many_deliverables() {
+        let err = ValidationError::TooManyDeliverables {
+            actual: 75,
+            max: 50,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("too many deliverables"));
+        assert!(msg.contains("75"));
+        assert!(msg.contains("50"));
     }
 
     #[test]

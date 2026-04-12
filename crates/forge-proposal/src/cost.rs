@@ -53,11 +53,15 @@ impl CostVolume {
             + self.total_subcontracts()
     }
 
-    /// Returns total indirect costs based on the configured rates and the direct cost base.
+    /// Returns total indirect costs based on the configured rates.
+    ///
+    /// Overhead applies to labor; G&A applies to total direct costs plus overhead,
+    /// following standard SBIR cost accounting.
     pub fn total_indirect(&self) -> u64 {
-        let base = self.total_labor(); // Indirect rates typically apply to labor
-        let overhead = (base as f64 * self.indirect.overhead_rate as f64) as u64;
-        let ga = ((base + overhead) as f64 * self.indirect.ga_rate as f64) as u64;
+        let labor_base = self.total_labor();
+        let overhead = (labor_base as f64 * self.indirect.overhead_rate as f64).round() as u64;
+        let tdc_base = self.total_direct() + overhead;
+        let ga = (tdc_base as f64 * self.indirect.ga_rate as f64).round() as u64;
         overhead + ga
     }
 
@@ -65,7 +69,7 @@ impl CostVolume {
     #[instrument(skip_all)]
     pub fn total_cost(&self) -> u64 {
         let subtotal = self.total_direct() + self.total_indirect();
-        let profit = (subtotal as f64 * self.indirect.profit_rate as f64) as u64;
+        let profit = (subtotal as f64 * self.indirect.profit_rate as f64).round() as u64;
         subtotal + profit
     }
 

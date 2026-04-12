@@ -1,8 +1,7 @@
 //! Default constants for the SBIR proposal template system.
 //!
-//! All proposal configuration defaults are defined here as named constants.
+//! Proposal configuration defaults are defined here as named constants.
 //! Every constant is overridable via the corresponding config field.
-//! No hard-coded values exist outside this module.
 
 // ---------- DoD Phase I defaults ----------
 
@@ -101,6 +100,9 @@ pub const DEFAULT_PAGES_PER_SUBCONTRACT_PLAN: f32 = 0.5;
 pub const DEFAULT_SUPPORTING_DOCS_BASE_PAGES: f32 = 1.0;
 /// Default estimated pages for a data management plan when present.
 pub const DEFAULT_DATA_MANAGEMENT_PLAN_PAGES: f32 = 1.0;
+
+/// Default table formatting overhead words per work plan block.
+pub const DEFAULT_WORK_PLAN_TABLE_OVERHEAD_PER_BLOCK: usize = 5;
 
 /// Default minimum duration for any proposal (months).
 pub const DEFAULT_MIN_DURATION_MONTHS: u32 = 1;
@@ -243,6 +245,11 @@ mod tests {
         // Should be at least 10 and at most 100
         assert!(DEFAULT_TABLE_ROWS_PER_PAGE >= 10.0);
         assert!(DEFAULT_TABLE_ROWS_PER_PAGE <= 100.0);
+    }
+
+    #[test]
+    fn test_work_plan_table_overhead_positive() {
+        assert!(DEFAULT_WORK_PLAN_TABLE_OVERHEAD_PER_BLOCK > 0);
     }
 
     #[test]
