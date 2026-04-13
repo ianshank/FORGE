@@ -518,6 +518,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-cloud"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "chrono",
+ "forge-replay",
+ "forge-types",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-cognitive"
 version = "0.1.0"
 dependencies = [

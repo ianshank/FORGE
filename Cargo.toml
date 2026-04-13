@@ -20,6 +20,7 @@ members = [
     "crates/forge-scenario",
     "crates/forge-data",
     "crates/forge-proposal",
+    "crates/forge-cloud",
 ]
 resolver = "2"
 
@@ -80,6 +81,7 @@ forge-integration-layer = { path = "crates/forge-integration" }
 forge-replay = { path = "crates/forge-replay" }
 forge-eval = { path = "crates/forge-eval" }
 forge-proposal = { path = "crates/forge-proposal" }
+forge-cloud = { path = "crates/forge-cloud" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

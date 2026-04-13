@@ -369,6 +369,60 @@ pub const ITEM_TYPE_AGRI_MIN: u8 = 40;
 /// Upper exclusive bound for agricultural item discriminants.
 pub const ITEM_TYPE_AGRI_MAX: u8 = 50;
 
+// ======================== Cloud training defaults ========================
+
+/// Default number of rollout workers for cloud training.
+pub const DEFAULT_CLOUD_NUM_WORKERS: u32 = 4;
+/// Default replay batch size (replays collected before syncing to coordinator).
+pub const DEFAULT_CLOUD_REPLAY_BATCH_SIZE: u32 = 64;
+/// Default worker heartbeat interval in seconds.
+pub const DEFAULT_CLOUD_HEARTBEAT_INTERVAL_S: u32 = 10;
+/// Default worker heartbeat timeout in seconds before marking as dead.
+pub const DEFAULT_CLOUD_HEARTBEAT_TIMEOUT_S: u32 = 30;
+/// Default maximum replay payload size in bytes (10 MB).
+pub const DEFAULT_CLOUD_MAX_REPLAY_SIZE_BYTES: u64 = 10_485_760;
+/// Default compression level for replay transport (0 = none, 1-9 = zstd levels).
+pub const DEFAULT_CLOUD_COMPRESSION_LEVEL: u8 = 3;
+/// Default port for worker coordination service.
+pub const DEFAULT_CLOUD_COORDINATOR_PORT: u16 = 9090;
+/// Default replay archive path for local storage backend.
+pub const DEFAULT_CLOUD_REPLAY_ARCHIVE_PATH: &str = "replays";
+/// Default model registry path for local storage backend.
+pub const DEFAULT_CLOUD_MODEL_REGISTRY_PATH: &str = "models";
+/// Default checkpoint path for training state persistence.
+pub const DEFAULT_CLOUD_CHECKPOINT_PATH: &str = "checkpoints";
+/// Default maximum model versions retained in the registry.
+pub const DEFAULT_CLOUD_MODEL_VERSION_RETENTION: u32 = 10;
+/// Default checkpoint interval in training steps.
+pub const DEFAULT_CLOUD_CHECKPOINT_INTERVAL_STEPS: u64 = 1000;
+
+// ======================== Edge runtime defaults ========================
+
+/// Default MCTS latency budget in milliseconds for edge planning.
+pub const DEFAULT_EDGE_MCTS_LATENCY_BUDGET_MS: u32 = 50;
+/// Default minimum MCTS simulations on edge (floor even under time pressure).
+pub const DEFAULT_EDGE_MCTS_MIN_SIMULATIONS: u32 = 8;
+/// Default maximum MCTS simulations on edge (cap for battery saving).
+pub const DEFAULT_EDGE_MCTS_MAX_SIMULATIONS: u32 = 200;
+/// Default telemetry upload interval in seconds (store-and-forward).
+pub const DEFAULT_EDGE_TELEMETRY_INTERVAL_S: u32 = 300;
+/// Default maximum telemetry buffer size in bytes (1 MB).
+pub const DEFAULT_EDGE_TELEMETRY_BUFFER_BYTES: u64 = 1_048_576;
+/// Whether edge telemetry compression is enabled by default.
+pub const DEFAULT_EDGE_COMPRESS_TELEMETRY: bool = true;
+/// Default ONNX inference batch size on edge.
+pub const DEFAULT_EDGE_ONNX_BATCH_SIZE: u32 = 1;
+/// Default ONNX thread count on edge.
+pub const DEFAULT_EDGE_ONNX_NUM_THREADS: u32 = 1;
+/// Default model update check interval in seconds.
+pub const DEFAULT_EDGE_MODEL_UPDATE_INTERVAL_S: u32 = 3600;
+/// Default exponential moving average alpha for edge latency estimation.
+pub const DEFAULT_EDGE_LATENCY_EMA_ALPHA: f32 = 0.3;
+/// Default number of upload retries for edge telemetry.
+pub const DEFAULT_EDGE_UPLOAD_RETRY_COUNT: u32 = 4;
+/// Default base delay in milliseconds for exponential backoff retries.
+pub const DEFAULT_EDGE_UPLOAD_RETRY_BASE_MS: u64 = 2000;
+
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
 mod tests {
@@ -594,5 +648,78 @@ mod tests {
     fn test_agri_action_count() {
         // 10 Spray slots + ScanMultispectral + ScanThermal + RelaySoilData + GenerateReport
         assert_eq!(AGRI_ACTION_COUNT, 14);
+    }
+
+    // ---- Cloud constants validation ----
+
+    #[test]
+    fn test_cloud_constants_are_positive() {
+        assert!(DEFAULT_CLOUD_NUM_WORKERS > 0);
+        assert!(DEFAULT_CLOUD_REPLAY_BATCH_SIZE > 0);
+        assert!(DEFAULT_CLOUD_HEARTBEAT_INTERVAL_S > 0);
+        assert!(DEFAULT_CLOUD_HEARTBEAT_TIMEOUT_S > 0);
+        assert!(DEFAULT_CLOUD_MAX_REPLAY_SIZE_BYTES > 0);
+        assert!(DEFAULT_CLOUD_MODEL_VERSION_RETENTION > 0);
+        assert!(DEFAULT_CLOUD_CHECKPOINT_INTERVAL_STEPS > 0);
+    }
+
+    #[test]
+    fn test_cloud_compression_level_in_range() {
+        assert!(DEFAULT_CLOUD_COMPRESSION_LEVEL <= 9);
+    }
+
+    #[test]
+    fn test_cloud_heartbeat_timeout_exceeds_interval() {
+        assert!(DEFAULT_CLOUD_HEARTBEAT_TIMEOUT_S > DEFAULT_CLOUD_HEARTBEAT_INTERVAL_S);
+    }
+
+    #[test]
+    fn test_cloud_coordinator_port_non_privileged() {
+        assert!(DEFAULT_CLOUD_COORDINATOR_PORT >= 1024);
+    }
+
+    #[test]
+    fn test_cloud_ports_distinct_from_existing() {
+        assert_ne!(DEFAULT_CLOUD_COORDINATOR_PORT, DEFAULT_SERVER_PORT);
+        assert_ne!(DEFAULT_CLOUD_COORDINATOR_PORT, DEFAULT_DASHBOARD_PORT);
+        assert_ne!(DEFAULT_CLOUD_COORDINATOR_PORT, DEFAULT_DEMO_UI_PORT);
+    }
+
+    #[test]
+    fn test_cloud_paths_not_empty() {
+        assert!(!DEFAULT_CLOUD_REPLAY_ARCHIVE_PATH.is_empty());
+        assert!(!DEFAULT_CLOUD_MODEL_REGISTRY_PATH.is_empty());
+        assert!(!DEFAULT_CLOUD_CHECKPOINT_PATH.is_empty());
+    }
+
+    // ---- Edge constants validation ----
+
+    #[test]
+    fn test_edge_mcts_min_le_max() {
+        assert!(DEFAULT_EDGE_MCTS_MIN_SIMULATIONS <= DEFAULT_EDGE_MCTS_MAX_SIMULATIONS);
+    }
+
+    #[test]
+    fn test_edge_latency_budget_positive() {
+        assert!(DEFAULT_EDGE_MCTS_LATENCY_BUDGET_MS > 0);
+    }
+
+    #[test]
+    fn test_edge_constants_are_positive() {
+        assert!(DEFAULT_EDGE_MCTS_MIN_SIMULATIONS > 0);
+        assert!(DEFAULT_EDGE_MCTS_MAX_SIMULATIONS > 0);
+        assert!(DEFAULT_EDGE_TELEMETRY_INTERVAL_S > 0);
+        assert!(DEFAULT_EDGE_TELEMETRY_BUFFER_BYTES > 0);
+        assert!(DEFAULT_EDGE_ONNX_BATCH_SIZE > 0);
+        assert!(DEFAULT_EDGE_ONNX_NUM_THREADS > 0);
+        assert!(DEFAULT_EDGE_MODEL_UPDATE_INTERVAL_S > 0);
+        assert!(DEFAULT_EDGE_UPLOAD_RETRY_COUNT > 0);
+        assert!(DEFAULT_EDGE_UPLOAD_RETRY_BASE_MS > 0);
+    }
+
+    #[test]
+    fn test_edge_latency_ema_alpha_in_range() {
+        assert!(DEFAULT_EDGE_LATENCY_EMA_ALPHA > 0.0);
+        assert!(DEFAULT_EDGE_LATENCY_EMA_ALPHA <= 1.0);
     }
 }
