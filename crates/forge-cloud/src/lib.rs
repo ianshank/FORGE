@@ -17,7 +17,9 @@
 pub mod config;
 pub mod constants;
 pub mod error;
+pub mod reconstruct;
 pub mod replay_transport;
+pub mod storage;
 pub mod traits;
 pub mod worker;
 
@@ -29,7 +31,9 @@ pub use config::{
 pub use error::{
     CloudError, CloudResult, ModelRegistryError, StorageError, TransportError, WorkerError,
 };
+pub use reconstruct::TrajectoryReconstructor;
 pub use replay_transport::ReplayBatch;
+pub use storage::{LocalModelStore, LocalReplayStore};
 pub use traits::{
     ModelStore, ReplayStore, SeedAssignment, WorkerInfo, WorkerManager, WorkerMetadata,
     WorkerStatus,
