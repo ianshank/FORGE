@@ -588,6 +588,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-edge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "forge-agent",
+ "forge-replay",
+ "forge-types",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-eval"
 version = "0.1.0"
 dependencies = [
