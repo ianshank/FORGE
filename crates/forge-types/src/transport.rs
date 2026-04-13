@@ -116,10 +116,11 @@ mod tests {
 
     impl ModelStore for MockModelStore {
         fn store_model(&self, name: &str, version: &str, data: &[u8]) -> ForgeResult<()> {
-            self.models
-                .lock()
-                .unwrap()
-                .push((name.to_string(), version.to_string(), data.to_vec()));
+            self.models.lock().unwrap().push((
+                name.to_string(),
+                version.to_string(),
+                data.to_vec(),
+            ));
             Ok(())
         }
 
@@ -216,7 +217,10 @@ mod tests {
 
         store.store_model("muzero", "v1", b"w1").unwrap();
         store.store_model("muzero", "v2", b"w2").unwrap();
-        assert_eq!(store.latest_version("muzero").unwrap(), Some("v2".to_string()));
+        assert_eq!(
+            store.latest_version("muzero").unwrap(),
+            Some("v2".to_string())
+        );
     }
 
     #[test]
