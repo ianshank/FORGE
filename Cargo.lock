@@ -643,11 +643,17 @@ dependencies = [
 name = "forge-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "bincode",
+ "forge-agent",
+ "forge-cloud",
  "forge-cognitive",
  "forge-core",
+ "forge-data",
+ "forge-edge",
  "forge-integration-layer",
  "forge-memory",
  "forge-proposal",
+ "forge-replay",
  "forge-social",
  "forge-task",
  "forge-types",
@@ -655,6 +661,8 @@ dependencies = [
  "rand 0.8.5",
  "rand_pcg",
  "serde_json",
+ "tempfile",
+ "toml",
 ]
 
 [[package]]

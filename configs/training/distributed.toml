@@ -1,0 +1,134 @@
+# configs/training/distributed.toml
+# Configuration for distributed cloud-edge training pipeline.
+#
+# This config enables both cloud coordinator + workers and edge inference
+# features. All values can be overridden via environment variables with
+# the FORGE_ prefix (e.g. FORGE_CLOUD_NUM_WORKERS=16).
+#
+# Usage:
+#   cargo run -p forge-server -- --config configs/training/distributed.toml
+#   docker compose -f docker/docker-compose.distributed.yml up --scale worker=4
+
+[hardware]
+# Number of parallel simulation workers per node.
+num_workers = 4
+# Device for ML inference: "cpu", "cuda", "mps".
+device = "cpu"
+# Pin memory for faster GPU transfers (enable when using CUDA).
+pin_memory = false
+# Maximum GPU memory fraction (0.0-1.0).
+gpu_memory_fraction = 0.9
+
+[simulation]
+# Grid dimensions for training environments.
+grid_size = 64
+# Maximum agents per team.
+max_agents_per_team = 4
+# Random seed (0 = random per episode).
+seed = 0
+# Maximum episode length in ticks.
+max_episode_length = 5000
+# Fog-of-war for partial observability.
+fog_of_war = true
+# Biome noise scale for terrain generation.
+biome_scale = 0.1
+# Resource spawn density (0.0-1.0).
+resource_density = 0.3
+# Day/night cycle length in ticks (0 = disabled).
+day_night_cycle_length = 500
+# Communication vocabulary size (0 = disabled).
+comm_vocab_size = 16
+# Communication broadcast radius in tiles.
+comm_radius = 10
+# Schema version for serialized state.
+schema_version = 1
+
+[training]
+# Learning rate for policy optimisation.
+learning_rate = 3e-4
+# Discount factor (gamma).
+gamma = 0.99
+# GAE lambda for advantage estimation.
+gae_lambda = 0.95
+# PPO clip ratio.
+clip_ratio = 0.2
+# Number of training epochs per rollout.
+epochs = 4
+# Batch size for training updates.
+batch_size = 512
+# Rollout buffer length in timesteps.
+rollout_length = 4096
+# Target success rate for curriculum advancement.
+target_success_rate = 0.6
+# Curriculum window size for rolling statistics.
+curriculum_window_size = 200
+# Checkpoint save interval in episodes.
+checkpoint_interval = 50
+# Entropy bonus coefficient.
+entropy_coeff = 0.01
+# Value loss coefficient.
+value_coeff = 0.5
+# Maximum gradient norm for clipping.
+max_grad_norm = 0.5
+
+# ---------------------------------------------------------------------------
+# Cloud training pipeline (coordinator + distributed workers)
+# ---------------------------------------------------------------------------
+[cloud]
+# Enable the cloud training coordinator.
+enabled = true
+# Number of rollout workers (matches --scale worker=N in docker compose).
+num_workers = 4
+# Number of replays collected per batch before syncing to coordinator.
+replay_batch_size = 64
+# Worker heartbeat interval in seconds.
+heartbeat_interval_s = 10
+# Worker heartbeat timeout in seconds before marking as dead.
+heartbeat_timeout_s = 30
+# Maximum replay payload size in bytes (10 MB).
+max_replay_size_bytes = 10485760
+# Compression level for replay transport (0 = none, 1-9 = zstd levels).
+compression_level = 3
+# Port for worker coordination service.
+coordinator_port = 9090
+# Path for replay archive (local storage backend).
+replay_archive_path = "replays"
+# Path for model registry (local storage backend).
+model_registry_path = "models"
+# Path for training checkpoint persistence.
+checkpoint_path = "checkpoints"
+# Maximum model versions retained in the registry.
+model_version_retention = 10
+# Checkpoint interval in training steps.
+checkpoint_interval_steps = 1000
+
+# ---------------------------------------------------------------------------
+# Edge deployment runtime (adaptive MCTS, telemetry, model sync)
+# ---------------------------------------------------------------------------
+[edge]
+# Enable edge runtime features (adaptive MCTS, telemetry upload).
+enabled = true
+# MCTS latency budget in milliseconds for edge planning.
+mcts_latency_budget_ms = 50
+# Minimum MCTS simulations (floor even under time pressure).
+mcts_min_simulations = 8
+# Maximum MCTS simulations (cap for battery saving).
+mcts_max_simulations = 200
+# Telemetry upload interval in seconds (store-and-forward).
+telemetry_interval_s = 300
+# Maximum telemetry buffer size in bytes (1 MB).
+telemetry_buffer_bytes = 1048576
+# Whether to compress telemetry before upload.
+compress_telemetry = true
+# ONNX inference batch size on edge.
+onnx_batch_size = 1
+# ONNX thread count on edge.
+onnx_num_threads = 1
+# Model update check interval in seconds (1 hour).
+model_update_interval_s = 3600
+# EMA alpha for latency estimation (higher = more responsive).
+latency_ema_alpha = 0.3
+# Number of upload retries for edge telemetry.
+upload_retry_count = 4
+# Base delay in milliseconds for exponential backoff retries.
+upload_retry_base_ms = 2000

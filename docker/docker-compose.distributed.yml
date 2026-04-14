@@ -1,0 +1,98 @@
+# docker/docker-compose.distributed.yml
+# Distributed training pipeline for FORGE
+# Usage: docker compose -f docker/docker-compose.distributed.yml up --scale worker=4
+
+services:
+  coordinator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["forge-server", "--cloud-enabled"]
+    ports:
+      - "127.0.0.1:${FORGE_SERVER_PORT:-8080}:8080"
+      - "127.0.0.1:${FORGE_CLOUD_COORDINATOR_PORT:-9090}:9090"
+    volumes:
+      - ../forge.toml:/app/forge.toml:ro
+      - ../configs:/app/configs:ro
+      - replay-storage:/app/replays
+      - model-registry:/app/models
+      - checkpoint-storage:/app/checkpoints
+    environment:
+      - FORGE_CLOUD_ENABLED=true
+      - FORGE_CLOUD_NUM_WORKERS=${FORGE_CLOUD_NUM_WORKERS:-4}
+      - FORGE_CLOUD_REPLAY_BATCH_SIZE=${FORGE_CLOUD_REPLAY_BATCH_SIZE:-64}
+      - FORGE_CLOUD_HEARTBEAT_INTERVAL_S=${FORGE_CLOUD_HEARTBEAT_INTERVAL_S:-10}
+      - FORGE_CLOUD_HEARTBEAT_TIMEOUT_S=${FORGE_CLOUD_HEARTBEAT_TIMEOUT_S:-30}
+      - FORGE_CLOUD_COORDINATOR_PORT=${FORGE_CLOUD_COORDINATOR_PORT:-9090}
+      - FORGE_CLOUD_REPLAY_ARCHIVE_PATH=/app/replays
+      - FORGE_CLOUD_MODEL_REGISTRY_PATH=/app/models
+      - FORGE_CLOUD_CHECKPOINT_PATH=/app/checkpoints
+      - FORGE_CLOUD_MODEL_VERSION_RETENTION=${FORGE_CLOUD_MODEL_VERSION_RETENTION:-10}
+      - FORGE_CLOUD_CHECKPOINT_INTERVAL_STEPS=${FORGE_CLOUD_CHECKPOINT_INTERVAL_STEPS:-1000}
+      - FORGE_CLOUD_COMPRESSION_LEVEL=${FORGE_CLOUD_COMPRESSION_LEVEL:-3}
+      - FORGE_HARDWARE_NUM_WORKERS=${FORGE_HARDWARE_NUM_WORKERS:-4}
+      - RUST_LOG=${RUST_LOG:-info}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: ${FORGE_HEALTHCHECK_INTERVAL:-15s}
+      timeout: ${FORGE_HEALTHCHECK_TIMEOUT:-3s}
+      start_period: ${FORGE_HEALTHCHECK_START_PERIOD:-10s}
+      retries: ${FORGE_HEALTHCHECK_RETRIES:-3}
+    networks:
+      - forge-net
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["forge-server", "--worker-mode"]
+    volumes:
+      - ../forge.toml:/app/forge.toml:ro
+      - ../configs:/app/configs:ro
+      - replay-storage:/app/replays
+      - model-registry:/app/models:ro
+    environment:
+      - FORGE_CLOUD_ENABLED=true
+      - FORGE_CLOUD_COORDINATOR_HOST=coordinator
+      - FORGE_CLOUD_COORDINATOR_PORT=${FORGE_CLOUD_COORDINATOR_PORT:-9090}
+      - FORGE_CLOUD_REPLAY_BATCH_SIZE=${FORGE_CLOUD_REPLAY_BATCH_SIZE:-64}
+      - FORGE_CLOUD_HEARTBEAT_INTERVAL_S=${FORGE_CLOUD_HEARTBEAT_INTERVAL_S:-10}
+      - FORGE_CLOUD_REPLAY_ARCHIVE_PATH=/app/replays
+      - FORGE_CLOUD_MODEL_REGISTRY_PATH=/app/models
+      - FORGE_CLOUD_COMPRESSION_LEVEL=${FORGE_CLOUD_COMPRESSION_LEVEL:-3}
+      - FORGE_EDGE_ENABLED=${FORGE_EDGE_ENABLED:-false}
+      - FORGE_EDGE_MCTS_LATENCY_BUDGET_MS=${FORGE_EDGE_MCTS_LATENCY_BUDGET_MS:-50}
+      - FORGE_EDGE_MCTS_MIN_SIMULATIONS=${FORGE_EDGE_MCTS_MIN_SIMULATIONS:-8}
+      - FORGE_EDGE_MCTS_MAX_SIMULATIONS=${FORGE_EDGE_MCTS_MAX_SIMULATIONS:-200}
+      - FORGE_EDGE_TELEMETRY_BUFFER_BYTES=${FORGE_EDGE_TELEMETRY_BUFFER_BYTES:-1048576}
+      - FORGE_EDGE_COMPRESS_TELEMETRY=${FORGE_EDGE_COMPRESS_TELEMETRY:-true}
+      - FORGE_SIMULATION_GRID_SIZE=${FORGE_SIMULATION_GRID_SIZE:-64}
+      - FORGE_HARDWARE_NUM_WORKERS=1
+      - RUST_LOG=${RUST_LOG:-info}
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: ${FORGE_HEALTHCHECK_INTERVAL:-15s}
+      timeout: ${FORGE_HEALTHCHECK_TIMEOUT:-3s}
+      start_period: ${FORGE_HEALTHCHECK_START_PERIOD:-15s}
+      retries: ${FORGE_HEALTHCHECK_RETRIES:-3}
+    networks:
+      - forge-net
+    restart: unless-stopped
+    deploy:
+      replicas: ${FORGE_CLOUD_NUM_WORKERS:-4}
+
+volumes:
+  replay-storage:
+    driver: local
+  model-registry:
+    driver: local
+  checkpoint-storage:
+    driver: local
+
+networks:
+  forge-net:
+    driver: bridge
