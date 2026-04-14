@@ -423,14 +423,17 @@ fn test_worker_registry_lifecycle() {
 /// into ForgeConfig, and verify cloud.enabled=false and edge.enabled=false.
 #[test]
 fn test_cloud_edge_config_backward_compat() {
-    // Read the existing forge.toml
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let forge_toml_path = std::path::Path::new(manifest_dir).join("forge.toml");
-    let toml_content = std::fs::read_to_string(&forge_toml_path)
-        .expect("forge.toml should exist at workspace root");
+    // Use an inline TOML snippet that sets a non-default ForgeConfig field so
+    // we actually exercise deserialization (the workspace forge.toml uses
+    // [hardware]/[simulation]/[training] keys that ForgeConfig ignores and
+    // would let any breakage pass silently).
+    let toml_content = "[world]\nwidth = 32\n";
 
     let config: ForgeConfig =
-        toml::from_str(&toml_content).expect("Failed to deserialize forge.toml into ForgeConfig");
+        toml::from_str(toml_content).expect("Failed to deserialize inline TOML into ForgeConfig");
+
+    // The non-default field we set must round-trip.
+    assert_eq!(config.world.width, 32, "world.width should be 32 from inline TOML");
 
     // Cloud and edge should default to disabled
     assert!(
@@ -472,7 +475,7 @@ fn test_cloud_edge_config_backward_compat() {
 
     // Test that a TOML with explicit cloud/edge sections also parses correctly
     let extended_toml = format!(
-        "{}\n\n[cloud]\nenabled = true\nnum_workers = 8\n\n[edge]\nenabled = true\nmcts_latency_budget_ms = 100\n",
+        "{}\n[cloud]\nenabled = true\nnum_workers = 8\n\n[edge]\nenabled = true\nmcts_latency_budget_ms = 100\n",
         toml_content
     );
     let extended_config: ForgeConfig =
