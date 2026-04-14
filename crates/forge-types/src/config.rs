@@ -667,6 +667,20 @@ impl ForgeConfig {
         env_override!(cloud.model_version_retention, u32);
         env_override!(cloud.checkpoint_interval_steps, u64);
 
+        // Cloud string path overrides
+        if let Ok(val) = std::env::var("FORGE_CLOUD_REPLAY_ARCHIVE_PATH") {
+            debug!(key = "FORGE_CLOUD_REPLAY_ARCHIVE_PATH", value = %val, "applying env override");
+            self.cloud.replay_archive_path = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_CLOUD_MODEL_REGISTRY_PATH") {
+            debug!(key = "FORGE_CLOUD_MODEL_REGISTRY_PATH", value = %val, "applying env override");
+            self.cloud.model_registry_path = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_CLOUD_CHECKPOINT_PATH") {
+            debug!(key = "FORGE_CLOUD_CHECKPOINT_PATH", value = %val, "applying env override");
+            self.cloud.checkpoint_path = val;
+        }
+
         // Edge overrides
         env_override!(edge.enabled, bool);
         env_override!(edge.mcts_latency_budget_ms, u32);
@@ -678,6 +692,7 @@ impl ForgeConfig {
         env_override!(edge.onnx_batch_size, u32);
         env_override!(edge.onnx_num_threads, u32);
         env_override!(edge.model_update_interval_s, u32);
+        env_override!(edge.latency_ema_alpha, f32);
         env_override!(edge.upload_retry_count, u32);
         env_override!(edge.upload_retry_base_ms, u64);
     }

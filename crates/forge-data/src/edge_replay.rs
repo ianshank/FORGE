@@ -77,6 +77,13 @@ impl EdgeReplayLoader {
                 .get(tick as usize)
                 .cloned()
                 .unwrap_or_default();
+
+            // Pad action_ids to match observation count (engine pads with Noop=0)
+            let num_agents = step_result.observations.len();
+            let mut action_ids = action_ids; // make mutable
+            action_ids.resize(num_agents, 0); // pad with Noop
+            action_ids.truncate(num_agents); // truncate excess
+
             let responses: Vec<AgentResponse> = action_ids
                 .iter()
                 .map(|&id| AgentResponse::from_action(id))

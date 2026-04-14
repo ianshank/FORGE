@@ -424,8 +424,10 @@ fn test_worker_registry_lifecycle() {
 #[test]
 fn test_cloud_edge_config_backward_compat() {
     // Read the existing forge.toml
-    let toml_content =
-        std::fs::read_to_string("forge.toml").expect("Could not read forge.toml from project root");
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let forge_toml_path = std::path::Path::new(manifest_dir).join("forge.toml");
+    let toml_content = std::fs::read_to_string(&forge_toml_path)
+        .expect("forge.toml should exist at workspace root");
 
     let config: ForgeConfig =
         toml::from_str(&toml_content).expect("Failed to deserialize forge.toml into ForgeConfig");

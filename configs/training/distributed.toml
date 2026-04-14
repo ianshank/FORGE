@@ -87,7 +87,7 @@ heartbeat_interval_s = 10
 heartbeat_timeout_s = 30
 # Maximum replay payload size in bytes (10 MB).
 max_replay_size_bytes = 10485760
-# Compression level for replay transport (0 = none, 1-9 = zstd levels).
+# Compression setting for replay transport (0 = disabled, non-zero = enabled).
 compression_level = 3
 # Port for worker coordination service.
 coordinator_port = 9090

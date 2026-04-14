@@ -22,16 +22,11 @@ pub fn compress_replay(data: &[u8], config: &ReplayTransportConfig) -> CloudResu
     }
 
     if data.len() > config.max_payload_bytes {
-        warn!(
+        debug!(
             size = data.len(),
             max = config.max_payload_bytes,
-            "payload exceeds max size before compression"
+            "payload exceeds max size before compression, attempting compression"
         );
-        return Err(TransportError::PayloadTooLarge {
-            size: data.len(),
-            max: config.max_payload_bytes,
-        }
-        .into());
     }
 
     // Simple RLE compression: [byte, count] pairs for runs of 3+
@@ -55,6 +50,15 @@ pub fn compress_replay(data: &[u8], config: &ReplayTransportConfig) -> CloudResu
             }
         }
         i += run_len;
+    }
+
+    // Check compressed size against limit (compression can expand data for non-repeating input)
+    if compressed.len() > config.max_payload_bytes {
+        return Err(TransportError::PayloadTooLarge {
+            size: compressed.len(),
+            max: config.max_payload_bytes,
+        }
+        .into());
     }
 
     debug!(
@@ -224,7 +228,8 @@ mod tests {
             max_payload_bytes: 10,
             ..ReplayTransportConfig::default()
         };
-        let data = vec![0u8; 100];
+        // Use non-repeating data so RLE cannot shrink it below the limit.
+        let data: Vec<u8> = (0..100).map(|i| i as u8).collect();
         let result = compress_replay(&data, &config);
         assert!(result.is_err());
     }

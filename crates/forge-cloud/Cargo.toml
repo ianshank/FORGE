@@ -14,7 +14,7 @@ description = "Cloud training pipeline and edge deployment for the FORGE platfor
 forge-types = { workspace = true }
 forge-core = { workspace = true }
 forge-replay = { workspace = true }
-forge-data = { path = "../forge-data" }
+forge-data = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { workspace = true }

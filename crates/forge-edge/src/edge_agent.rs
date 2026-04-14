@@ -16,13 +16,16 @@ use tracing::{instrument, warn};
 use crate::adaptive_mcts::AdaptiveMctsSearch;
 use crate::telemetry::TelemetryCollector;
 
-/// Flattens an [`Observation`] into a `Vec<f32>` suitable for
-/// [`LatentForwardModel::initial_inference`].
+/// Flattens an [`Observation`] into a contiguous `f32` vector.
 ///
-/// Encodes the observation fields in the same order as the Python
-/// `ForgeEnv` which flattens observations to numpy arrays:
-/// grid tiles, inventory, scalars (health, stamina, position), messages,
-/// day phase, task progress, and drone fields.
+/// The flattened layout is defined by this Rust implementation in the
+/// following order: grid tiles (7 features each), inventory slots (2 values
+/// each), scalar fields (health, stamina, position x/y, day_phase), and
+/// drone fields (altitude, battery, morphology, heading).
+///
+/// This ordering is an internal contract for the edge agent model input and
+/// is not guaranteed to match Python `ForgeEnv` flattening unless the
+/// trainer/exporter uses the same layout explicitly.
 fn flatten_observation(obs: &Observation) -> Vec<f32> {
     let mut flat = Vec::new();
 

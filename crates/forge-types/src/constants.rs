@@ -381,7 +381,7 @@ pub const DEFAULT_CLOUD_HEARTBEAT_INTERVAL_S: u32 = 10;
 pub const DEFAULT_CLOUD_HEARTBEAT_TIMEOUT_S: u32 = 30;
 /// Default maximum replay payload size in bytes (10 MB).
 pub const DEFAULT_CLOUD_MAX_REPLAY_SIZE_BYTES: u64 = 10_485_760;
-/// Default compression level for replay transport (0 = none, 1-9 = zstd levels).
+/// Default replay transport compression setting (0 = disabled, non-zero = enabled).
 pub const DEFAULT_CLOUD_COMPRESSION_LEVEL: u8 = 3;
 /// Default port for worker coordination service.
 pub const DEFAULT_CLOUD_COORDINATOR_PORT: u16 = 9090;
