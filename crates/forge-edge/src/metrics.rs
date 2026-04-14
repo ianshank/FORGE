@@ -45,8 +45,8 @@ pub struct TelemetrySnapshot {
     pub total_replays_recorded: u64,
     /// Total replays successfully flushed.
     pub total_replays_flushed: u64,
-    /// Total flush operations that failed.
-    pub total_flush_failures: u64,
+    /// Total individual replay send failures (per-replay, not per-flush-call).
+    pub total_replay_send_failures: u64,
 }
 
 #[cfg(test)]
@@ -79,7 +79,7 @@ mod tests {
         assert_eq!(snap.buffer_capacity_bytes, 0);
         assert_eq!(snap.total_replays_recorded, 0);
         assert_eq!(snap.total_replays_flushed, 0);
-        assert_eq!(snap.total_flush_failures, 0);
+        assert_eq!(snap.total_replay_send_failures, 0);
     }
 
     #[test]
@@ -90,7 +90,7 @@ mod tests {
             buffer_capacity_bytes: 1_048_576,
             total_replays_recorded: 100,
             total_replays_flushed: 95,
-            total_flush_failures: 2,
+            total_replay_send_failures: 2,
         };
         let json = serde_json::to_string(&snap).unwrap();
         let deser: TelemetrySnapshot = serde_json::from_str(&json).unwrap();

@@ -310,7 +310,7 @@ fn test_telemetry_collect_and_flush() {
     // Verify counters
     let snap = collector.snapshot();
     assert_eq!(snap.total_replays_flushed, 5);
-    assert_eq!(snap.total_flush_failures, 0);
+    assert_eq!(snap.total_replay_send_failures, 0);
 }
 
 // ---------------------------------------------------------------------------

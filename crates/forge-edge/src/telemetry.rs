@@ -40,15 +40,16 @@ pub struct TelemetryCollector {
     /// Total replays successfully flushed.
     total_flushed: u64,
     /// Total flush operations that failed.
-    total_flush_failures: u64,
+    /// Per-replay send failures (incremented once per failed replay, not per flush call).
+    total_replay_send_failures: u64,
 }
 
 impl TelemetryCollector {
     /// Creates a new telemetry collector from an [`EdgeConfig`].
     pub fn new(config: &EdgeConfig) -> Self {
         if config.compress_telemetry {
-            warn!(
-                "compress_telemetry is reserved for future transport-level support; built-in telemetry uploads raw compact replay bytes"
+            debug!(
+                "compress_telemetry enabled; compression is delegated to the transport layer"
             );
         }
 
@@ -59,7 +60,7 @@ impl TelemetryCollector {
             compress: config.compress_telemetry,
             total_recorded: 0,
             total_flushed: 0,
-            total_flush_failures: 0,
+            total_replay_send_failures: 0,
         }
     }
 
@@ -133,7 +134,7 @@ impl TelemetryCollector {
                 }
                 Err(e) => {
                     warn!(error = %e, "Transport send failed, re-queuing replay");
-                    self.total_flush_failures += 1;
+                    self.total_replay_send_failures += 1;
                     failed_bytes += replay.payload.len() as u64;
                     failed_replays.push(replay);
                 }
@@ -164,7 +165,7 @@ impl TelemetryCollector {
             buffer_capacity_bytes: self.max_buffer_bytes,
             total_replays_recorded: self.total_recorded,
             total_replays_flushed: self.total_flushed,
-            total_flush_failures: self.total_flush_failures,
+            total_replay_send_failures: self.total_replay_send_failures,
         }
     }
 
@@ -327,7 +328,7 @@ mod tests {
         collector.record(make_test_replay()).unwrap();
         let sent = collector.flush(&transport).unwrap();
         assert_eq!(sent, 0);
-        assert_eq!(collector.snapshot().total_flush_failures, 1);
+        assert_eq!(collector.snapshot().total_replay_send_failures, 1);
     }
 
     #[test]
@@ -344,7 +345,7 @@ mod tests {
         assert_eq!(snap.buffer_capacity_bytes, 1_048_576);
         assert_eq!(snap.total_replays_recorded, 2);
         assert_eq!(snap.total_replays_flushed, 0);
-        assert_eq!(snap.total_flush_failures, 0);
+        assert_eq!(snap.total_replay_send_failures, 0);
     }
 
     #[test]
@@ -409,6 +410,6 @@ mod tests {
         // Failed replays should be re-queued back into the buffer.
         assert_eq!(collector.pending_count(), 2);
         assert!(collector.buffer_bytes > 0);
-        assert_eq!(collector.snapshot().total_flush_failures, 2);
+        assert_eq!(collector.snapshot().total_replay_send_failures, 2);
     }
 }

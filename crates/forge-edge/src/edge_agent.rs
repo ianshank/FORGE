@@ -27,7 +27,16 @@ use crate::telemetry::TelemetryCollector;
 /// is not guaranteed to match Python `ForgeEnv` flattening unless the
 /// trainer/exporter uses the same layout explicitly.
 fn flatten_observation(obs: &Observation) -> Vec<f32> {
-    let mut flat = Vec::new();
+    let max_messages = forge_types::constants::DEFAULT_COMM_BUFFER_SIZE as usize;
+    let max_predicates = forge_types::constants::DEFAULT_MAX_PREDICATES as usize;
+    let capacity = obs.grid_view.len() * 7
+        + obs.inventory.slots.len() * 2
+        + 4 // health, stamina, pos_x, pos_y
+        + max_messages
+        + 1 // day_phase
+        + max_predicates
+        + 4; // altitude, battery, morphology, heading
+    let mut flat = Vec::with_capacity(capacity);
 
     // Grid tiles
     for tile in &obs.grid_view {
@@ -52,8 +61,7 @@ fn flatten_observation(obs: &Observation) -> Vec<f32> {
     flat.push(obs.position.0 as f32);
     flat.push(obs.position.1 as f32);
 
-    // Messages (fixed size: DEFAULT_COMM_BUFFER_SIZE)
-    let max_messages = forge_types::constants::DEFAULT_COMM_BUFFER_SIZE as usize;
+    // Messages (fixed size)
     for i in 0..max_messages {
         flat.push(obs.messages.get(i).copied().unwrap_or(0) as f32);
     }
@@ -61,8 +69,7 @@ fn flatten_observation(obs: &Observation) -> Vec<f32> {
     // Day phase
     flat.push(obs.day_phase as f32);
 
-    // Task progress (fixed size: DEFAULT_MAX_PREDICATES)
-    let max_predicates = forge_types::constants::DEFAULT_MAX_PREDICATES as usize;
+    // Task progress (fixed size)
     for i in 0..max_predicates {
         flat.push(obs.task_progress.get(i).copied().unwrap_or(0.0));
     }

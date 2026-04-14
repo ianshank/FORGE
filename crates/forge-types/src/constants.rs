@@ -409,7 +409,8 @@ pub const DEFAULT_EDGE_TELEMETRY_INTERVAL_S: u32 = 300;
 /// Default maximum telemetry buffer size in bytes (1 MB).
 pub const DEFAULT_EDGE_TELEMETRY_BUFFER_BYTES: u64 = 1_048_576;
 /// Whether edge telemetry compression is enabled by default.
-pub const DEFAULT_EDGE_COMPRESS_TELEMETRY: bool = true;
+/// Defaults to false until transport-level compression is implemented.
+pub const DEFAULT_EDGE_COMPRESS_TELEMETRY: bool = false;
 /// Default ONNX inference batch size on edge.
 pub const DEFAULT_EDGE_ONNX_BATCH_SIZE: u32 = 1;
 /// Default ONNX thread count on edge.
