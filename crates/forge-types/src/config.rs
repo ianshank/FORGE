@@ -466,6 +466,18 @@ pub struct CloudConfig {
     pub model_version_retention: u32,
     /// Checkpoint interval in training steps.
     pub checkpoint_interval_steps: u64,
+    /// Storage backend: `"local"` or `"gcs"`.
+    pub storage_backend: String,
+    /// GCS bucket name (required when `storage_backend` is `"gcs"`).
+    pub gcs_bucket: String,
+    /// Key prefix within the GCS bucket.
+    pub gcs_prefix: String,
+    /// GCP project ID (empty = use Application Default Credentials project).
+    pub gcp_project: String,
+    /// GCP region for storage and compute.
+    pub gcp_region: String,
+    /// GCP service account email (empty = use ADC).
+    pub gcp_service_account: String,
 }
 
 impl Default for CloudConfig {
@@ -484,6 +496,12 @@ impl Default for CloudConfig {
             checkpoint_path: constants::DEFAULT_CLOUD_CHECKPOINT_PATH.to_string(),
             model_version_retention: constants::DEFAULT_CLOUD_MODEL_VERSION_RETENTION,
             checkpoint_interval_steps: constants::DEFAULT_CLOUD_CHECKPOINT_INTERVAL_STEPS,
+            storage_backend: constants::DEFAULT_CLOUD_STORAGE_BACKEND.to_string(),
+            gcs_bucket: constants::DEFAULT_CLOUD_GCS_BUCKET.to_string(),
+            gcs_prefix: constants::DEFAULT_CLOUD_GCS_PREFIX.to_string(),
+            gcp_project: constants::DEFAULT_CLOUD_GCP_PROJECT.to_string(),
+            gcp_region: constants::DEFAULT_CLOUD_GCP_REGION.to_string(),
+            gcp_service_account: constants::DEFAULT_CLOUD_GCP_SERVICE_ACCOUNT.to_string(),
         }
     }
 }
@@ -524,6 +542,10 @@ pub struct EdgeConfig {
     pub upload_retry_count: u32,
     /// Base delay in milliseconds for exponential backoff retries.
     pub upload_retry_base_ms: u64,
+    /// GCS bucket for pulling model updates on edge (empty = unconfigured).
+    pub gcs_model_bucket: String,
+    /// GCS prefix for model artifacts on edge.
+    pub gcs_model_prefix: String,
 }
 
 impl Default for EdgeConfig {
@@ -542,6 +564,8 @@ impl Default for EdgeConfig {
             latency_ema_alpha: constants::DEFAULT_EDGE_LATENCY_EMA_ALPHA,
             upload_retry_count: constants::DEFAULT_EDGE_UPLOAD_RETRY_COUNT,
             upload_retry_base_ms: constants::DEFAULT_EDGE_UPLOAD_RETRY_BASE_MS,
+            gcs_model_bucket: constants::DEFAULT_EDGE_GCS_MODEL_BUCKET.to_string(),
+            gcs_model_prefix: constants::DEFAULT_EDGE_GCS_MODEL_PREFIX.to_string(),
         }
     }
 }
@@ -684,6 +708,32 @@ impl ForgeConfig {
             self.cloud.checkpoint_path = val;
         }
 
+        // Cloud GCP string overrides
+        if let Ok(val) = std::env::var("FORGE_CLOUD_STORAGE_BACKEND") {
+            debug!(key = "FORGE_CLOUD_STORAGE_BACKEND", value = %val, "applying env override");
+            self.cloud.storage_backend = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_CLOUD_GCS_BUCKET") {
+            debug!(key = "FORGE_CLOUD_GCS_BUCKET", value = %val, "applying env override");
+            self.cloud.gcs_bucket = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_CLOUD_GCS_PREFIX") {
+            debug!(key = "FORGE_CLOUD_GCS_PREFIX", value = %val, "applying env override");
+            self.cloud.gcs_prefix = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_CLOUD_GCP_PROJECT") {
+            debug!(key = "FORGE_CLOUD_GCP_PROJECT", value = %val, "applying env override");
+            self.cloud.gcp_project = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_CLOUD_GCP_REGION") {
+            debug!(key = "FORGE_CLOUD_GCP_REGION", value = %val, "applying env override");
+            self.cloud.gcp_region = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_CLOUD_GCP_SERVICE_ACCOUNT") {
+            debug!(key = "FORGE_CLOUD_GCP_SERVICE_ACCOUNT", value = %val, "applying env override");
+            self.cloud.gcp_service_account = val;
+        }
+
         // Edge overrides
         env_override!(edge.enabled, bool);
         env_override!(edge.mcts_latency_budget_ms, u32);
@@ -698,6 +748,16 @@ impl ForgeConfig {
         env_override!(edge.latency_ema_alpha, f32);
         env_override!(edge.upload_retry_count, u32);
         env_override!(edge.upload_retry_base_ms, u64);
+
+        // Edge GCS string overrides
+        if let Ok(val) = std::env::var("FORGE_EDGE_GCS_MODEL_BUCKET") {
+            debug!(key = "FORGE_EDGE_GCS_MODEL_BUCKET", value = %val, "applying env override");
+            self.edge.gcs_model_bucket = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_EDGE_GCS_MODEL_PREFIX") {
+            debug!(key = "FORGE_EDGE_GCS_MODEL_PREFIX", value = %val, "applying env override");
+            self.edge.gcs_model_prefix = val;
+        }
     }
 }
 

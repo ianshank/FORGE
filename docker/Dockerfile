@@ -8,11 +8,16 @@
 # Stage 1: Rust builder
 # ---------------------------------------------------------------------------
 FROM rust:1.82-bookworm AS rust-builder
+ARG FEATURES=""
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 # Note: tests/ is intentionally excluded — not needed for cargo build --release
-RUN cargo build --release -p forge-server
+RUN if [ -n "$FEATURES" ]; then \
+      cargo build --release -p forge-server --features "$FEATURES"; \
+    else \
+      cargo build --release -p forge-server; \
+    fi
 
 # ---------------------------------------------------------------------------
 # Stage 2: Python wheel builder (separate from runtime to avoid Rust toolchain

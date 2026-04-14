@@ -116,6 +116,12 @@ pub struct StorageConfig {
     pub model_registry_path: String,
     /// Path for checkpoint storage.
     pub checkpoint_path: String,
+    /// GCP project ID (used when backend is `Gcs`; empty = use ADC default).
+    pub gcp_project: String,
+    /// GCP region (used when backend is `Gcs`).
+    pub gcp_region: String,
+    /// GCP service account email (used when backend is `Gcs`; empty = use ADC).
+    pub gcp_service_account: String,
 }
 
 impl Default for StorageConfig {
@@ -125,6 +131,9 @@ impl Default for StorageConfig {
             replay_archive_path: constants::DEFAULT_REPLAY_ARCHIVE_PATH.to_string(),
             model_registry_path: constants::DEFAULT_MODEL_REGISTRY_PATH.to_string(),
             checkpoint_path: constants::DEFAULT_CHECKPOINT_PATH.to_string(),
+            gcp_project: String::new(),
+            gcp_region: constants::DEFAULT_GCP_REGION.to_string(),
+            gcp_service_account: String::new(),
         }
     }
 }

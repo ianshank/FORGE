@@ -173,12 +173,14 @@ impl LocalModelStore {
 
     /// Returns the path to the model binary within a version directory.
     fn model_file(&self, name: &str, version: &str) -> PathBuf {
-        self.version_dir(name, version).join("model.bin")
+        self.version_dir(name, version)
+            .join(crate::constants::MODEL_BINARY_FILENAME)
     }
 
     /// Returns the path to the `latest.txt` tracking file.
     fn latest_file(&self, name: &str) -> PathBuf {
-        self.model_dir(name).join("latest.txt")
+        self.model_dir(name)
+            .join(crate::constants::LATEST_VERSION_FILENAME)
     }
 
     /// Validates model name and version to prevent path traversal.

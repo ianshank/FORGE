@@ -64,6 +64,17 @@ pub const DEFAULT_MODEL_REGISTRY_PATH: &str = "models";
 /// Default path for checkpoint storage.
 pub const DEFAULT_CHECKPOINT_PATH: &str = "checkpoints";
 
+// ---------- GCS / GCP defaults ----------
+
+/// Default GCP region for Google Cloud Storage operations.
+pub const DEFAULT_GCP_REGION: &str = "us-central1";
+/// Default object-key prefix within a GCS bucket (trailing slash included).
+pub const DEFAULT_GCS_PREFIX: &str = "forge/";
+/// Filename for the model binary within a versioned model directory.
+pub const MODEL_BINARY_FILENAME: &str = "model.bin";
+/// Filename for the pointer file that tracks the latest model version.
+pub const LATEST_VERSION_FILENAME: &str = "latest.txt";
+
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
 mod tests {
@@ -144,6 +155,31 @@ mod tests {
         assert!(!DEFAULT_REPLAY_ARCHIVE_PATH.is_empty());
         assert!(!DEFAULT_MODEL_REGISTRY_PATH.is_empty());
         assert!(!DEFAULT_CHECKPOINT_PATH.is_empty());
+    }
+
+    #[test]
+    fn test_gcp_region_not_empty() {
+        assert!(!DEFAULT_GCP_REGION.is_empty());
+    }
+
+    #[test]
+    fn test_gcs_prefix_has_trailing_slash() {
+        assert!(DEFAULT_GCS_PREFIX.ends_with('/'));
+    }
+
+    #[test]
+    fn test_model_binary_filename_not_empty() {
+        assert!(!MODEL_BINARY_FILENAME.is_empty());
+    }
+
+    #[test]
+    fn test_latest_version_filename_not_empty() {
+        assert!(!LATEST_VERSION_FILENAME.is_empty());
+    }
+
+    #[test]
+    fn test_filenames_are_distinct() {
+        assert_ne!(MODEL_BINARY_FILENAME, LATEST_VERSION_FILENAME);
     }
 
     #[test]

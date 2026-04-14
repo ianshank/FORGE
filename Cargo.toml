@@ -128,6 +128,11 @@ smallvec = { version = "1", features = ["serde"] }
 # Testing
 proptest = "1"
 
+# Cloud storage (GCS/S3/Azure — Apache Arrow object_store)
+object_store = "0.11"
+tokio = { version = "1", features = ["rt", "macros"] }
+futures = "0.3"
+
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 

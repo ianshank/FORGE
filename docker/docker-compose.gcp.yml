@@ -1,0 +1,59 @@
+# docker/docker-compose.gcp.yml
+# GCP overlay for distributed training with GCS storage.
+#
+# Usage (with GCS):
+#   docker compose -f docker/docker-compose.distributed.yml \
+#                  -f docker/docker-compose.gcp.yml up --scale worker=4
+#
+# Usage (local dev with fake-gcs-server emulator):
+#   docker compose -f docker/docker-compose.distributed.yml \
+#                  -f docker/docker-compose.gcp.yml --profile emulator up --scale worker=4
+
+services:
+  # ---------- GCS emulator for local dev / CI ----------
+  fake-gcs:
+    image: fsouza/fake-gcs-server:latest
+    command: ["-scheme", "http", "-port", "4443"]
+    ports:
+      - "127.0.0.1:4443:4443"
+    networks:
+      - forge-net
+    profiles:
+      - emulator
+
+  # ---------- Coordinator with GCS storage ----------
+  coordinator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        FEATURES: gcs
+    environment:
+      - FORGE_CLOUD_STORAGE_BACKEND=${FORGE_CLOUD_STORAGE_BACKEND:-gcs}
+      - FORGE_CLOUD_GCS_BUCKET=${FORGE_CLOUD_GCS_BUCKET:-civ6az-training}
+      - FORGE_CLOUD_GCS_PREFIX=${FORGE_CLOUD_GCS_PREFIX:-forge/}
+      - FORGE_CLOUD_GCP_PROJECT=${FORGE_CLOUD_GCP_PROJECT:-hrmtrain}
+      - FORGE_CLOUD_GCP_REGION=${FORGE_CLOUD_GCP_REGION:-us-central1}
+      - FORGE_CLOUD_GCP_SERVICE_ACCOUNT=${FORGE_CLOUD_GCP_SERVICE_ACCOUNT:-}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+      # Set for emulator profile:
+      - STORAGE_EMULATOR_HOST=${STORAGE_EMULATOR_HOST:-}
+
+  # ---------- Workers with GCS storage ----------
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        FEATURES: gcs
+    environment:
+      - FORGE_CLOUD_STORAGE_BACKEND=${FORGE_CLOUD_STORAGE_BACKEND:-gcs}
+      - FORGE_CLOUD_GCS_BUCKET=${FORGE_CLOUD_GCS_BUCKET:-civ6az-training}
+      - FORGE_CLOUD_GCS_PREFIX=${FORGE_CLOUD_GCS_PREFIX:-forge/}
+      - FORGE_CLOUD_GCP_PROJECT=${FORGE_CLOUD_GCP_PROJECT:-hrmtrain}
+      - FORGE_CLOUD_GCP_REGION=${FORGE_CLOUD_GCP_REGION:-us-central1}
+      - FORGE_CLOUD_GCP_SERVICE_ACCOUNT=${FORGE_CLOUD_GCP_SERVICE_ACCOUNT:-}
+      - FORGE_EDGE_GCS_MODEL_BUCKET=${FORGE_EDGE_GCS_MODEL_BUCKET:-civ6az-training}
+      - FORGE_EDGE_GCS_MODEL_PREFIX=${FORGE_EDGE_GCS_MODEL_PREFIX:-forge/models/}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+      - STORAGE_EMULATOR_HOST=${STORAGE_EMULATOR_HOST:-}
