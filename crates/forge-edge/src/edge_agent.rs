@@ -93,16 +93,8 @@ pub struct EdgeAgent<M: LatentForwardModel + Clone> {
     model_version: String,
     /// Agent display name.
     name: String,
-    /// Size of the action space.
-    action_space_size: u32,
     /// Fallback action when MCTS fails (0 = Noop).
     fallback_action: u32,
-    /// Per-episode recorded actions (one vec per tick).
-    episode_actions: Vec<Vec<u32>>,
-    /// Seed for the current episode.
-    episode_seed: u64,
-    /// Edge configuration.
-    config: EdgeConfig,
 }
 
 impl<M: LatentForwardModel + Clone> EdgeAgent<M> {
@@ -120,7 +112,6 @@ impl<M: LatentForwardModel + Clone> EdgeAgent<M> {
         mcts_config: LatentMctsConfig,
         model_version: String,
     ) -> Self {
-        let action_space_size = model.action_space_size();
         let mcts = AdaptiveMctsSearch::new(model, edge_config, mcts_config);
         let telemetry = TelemetryCollector::new(edge_config);
         Self {
@@ -128,11 +119,7 @@ impl<M: LatentForwardModel + Clone> EdgeAgent<M> {
             telemetry,
             model_version,
             name: "EdgeAgent".to_string(),
-            action_space_size,
             fallback_action: 0,
-            episode_actions: Vec::new(),
-            episode_seed: 0,
-            config: edge_config.clone(),
         }
     }
 
@@ -150,52 +137,15 @@ impl<M: LatentForwardModel + Clone> EdgeAgent<M> {
     pub fn model_version(&self) -> &str {
         &self.model_version
     }
-
-    /// Returns the action space size.
-    pub fn action_space_size(&self) -> u32 {
-        self.action_space_size
-    }
-
-    /// Returns the edge configuration.
-    pub fn config(&self) -> &EdgeConfig {
-        &self.config
-    }
-
-    /// Returns the current episode seed.
-    pub fn episode_seed(&self) -> u64 {
-        self.episode_seed
-    }
 }
 
 impl<M: LatentForwardModel + Clone> AgentInterface for EdgeAgent<M> {
     #[instrument(skip_all, fields(agent_idx))]
-    fn select_action(&mut self, obs: &Observation, agent_idx: usize) -> AgentResponse {
+    fn select_action(&mut self, obs: &Observation, _agent_idx: usize) -> AgentResponse {
         let started = Instant::now();
-
-        // Flatten observation to f32 vec for MCTS input
         let flat_obs = flatten_observation(obs);
-
-        // Run adaptive MCTS search
         match self.mcts.search(&flat_obs) {
-            Ok((action, _metrics)) => {
-                // Record action for potential replay building
-                if self.episode_actions.is_empty()
-                    || self
-                        .episode_actions
-                        .last()
-                        .map_or(true, |last| agent_idx == 0 && !last.is_empty())
-                {
-                    if agent_idx == 0 {
-                        self.episode_actions.push(vec![action]);
-                    } else if let Some(last) = self.episode_actions.last_mut() {
-                        last.push(action);
-                    }
-                } else if let Some(last) = self.episode_actions.last_mut() {
-                    last.push(action);
-                }
-
-                AgentResponse::with_timing(action, started)
-            }
+            Ok((action, _metrics)) => AgentResponse::with_timing(action, started),
             Err(e) => {
                 warn!(
                     error = %e,
@@ -217,7 +167,6 @@ impl<M: LatentForwardModel + Clone> AgentInterface for EdgeAgent<M> {
 
     fn reset(&mut self) {
         self.mcts.reset_estimator();
-        self.episode_actions.clear();
     }
 }
 
@@ -352,12 +301,10 @@ mod tests {
 
         // Generate some state
         agent.select_action(&obs, 0);
-        assert!(!agent.episode_actions.is_empty());
         assert!(agent.mcts.estimator().total_samples() > 0);
 
         // Reset
         agent.reset();
-        assert!(agent.episode_actions.is_empty());
         assert_eq!(agent.mcts.estimator().total_samples(), 0);
     }
 

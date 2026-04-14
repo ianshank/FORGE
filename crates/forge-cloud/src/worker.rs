@@ -185,19 +185,19 @@ impl WorkerManager for InMemoryWorkerRegistry {
 
         let mut next = self.next_seed.lock().expect("lock poisoned");
         let start = *next;
-        let end = start
-            .checked_add(count as u64)
-            .ok_or(WorkerError::CapacityExceeded {
-                current: 0,
-                max: self.config.max_workers,
-            })?;
-
+        let seed_capacity = || WorkerError::CapacityExceeded {
+            current: start
+                .saturating_sub(self.config.seed_range_start)
+                .min(u32::MAX as u64) as u32,
+            max: self
+                .config
+                .seed_range_end
+                .saturating_sub(self.config.seed_range_start)
+                .min(u32::MAX as u64) as u32,
+        };
+        let end = start.checked_add(count as u64).ok_or_else(seed_capacity)?;
         if end > self.config.seed_range_end {
-            return Err(WorkerError::CapacityExceeded {
-                current: (start - self.config.seed_range_start) as u32,
-                max: (self.config.seed_range_end - self.config.seed_range_start) as u32,
-            }
-            .into());
+            return Err(seed_capacity().into());
         }
 
         let seeds: Vec<u64> = (start..end).collect();

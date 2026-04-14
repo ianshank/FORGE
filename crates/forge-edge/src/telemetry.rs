@@ -15,8 +15,10 @@ use crate::metrics::TelemetrySnapshot;
 /// Store-and-forward telemetry buffer for edge devices.
 ///
 /// Accumulates [`CompactReplay`] objects in a bounded buffer. When
-/// [`flush()`](TelemetryCollector::flush) is called (or the buffer is full),
-/// serializes and sends via a [`ReplayTransport`] backend.
+/// [`flush()`](TelemetryCollector::flush) is called, serializes and
+/// sends via a [`ReplayTransport`] backend. If the buffer is full,
+/// [`record()`](TelemetryCollector::record) returns an error rather than
+/// flushing automatically.
 pub struct TelemetryCollector {
     /// Buffered replays waiting to be flushed.
     buffer: Vec<CompactReplay>,
@@ -24,9 +26,9 @@ pub struct TelemetryCollector {
     buffer_bytes: u64,
     /// Maximum buffer capacity in bytes.
     max_buffer_bytes: u64,
-    /// Whether the transport backend should compress replays.
-    /// The actual compression is handled by the [`ReplayTransport`] implementation;
-    /// this flag is passed as metadata to inform transport-layer decisions.
+    /// Whether telemetry compression is enabled in configuration.
+    /// This flag is retained for observability/logging only; the collector
+    /// does not apply compression directly (transport backends handle it).
     compress: bool,
     /// Total replays recorded since creation.
     total_recorded: u64,

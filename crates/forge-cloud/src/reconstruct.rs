@@ -33,8 +33,8 @@ impl TrajectoryReconstructor {
     pub fn reconstruct(replay: &CompactReplay) -> ForgeResult<Trajectory> {
         let mut iter = replay.replay().ok_or_else(|| {
             warn!(seed = replay.seed, "Failed to create replay iterator");
-            ForgeError::Cloud(forge_types::error::CloudError::Storage(
-                "failed to create replay iterator: config hash mismatch or world creation failure"
+            ForgeError::Cloud(forge_types::error::CloudError::Coordinator(
+                "replay reconstruction failed: config hash mismatch or invalid world config"
                     .to_string(),
             ))
         })?;

@@ -256,7 +256,7 @@ fn test_edge_agent_with_eval_pattern() {
     for i in 0..10 {
         let resp = agent.select_action(&obs, 0);
         assert!(
-            resp.action_id < agent.action_space_size(),
+            resp.action_id < 8,
             "Action {} out of range at iteration {}",
             resp.action_id,
             i
@@ -270,7 +270,7 @@ fn test_edge_agent_with_eval_pattern() {
     // Reset and verify clean state
     agent.reset();
     let resp = agent.select_action(&obs, 0);
-    assert!(resp.action_id < agent.action_space_size());
+    assert!(resp.action_id < 8);
 }
 
 // ---------------------------------------------------------------------------
