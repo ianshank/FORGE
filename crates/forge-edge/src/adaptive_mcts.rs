@@ -43,12 +43,14 @@ impl<M: LatentForwardModel + Clone> AdaptiveMctsSearch<M> {
     /// The `mcts_config` provides base MCTS parameters (c_puct, discount, etc.).
     pub fn new(model: M, edge_config: &EdgeConfig, mcts_config: LatentMctsConfig) -> Self {
         let estimator = LatencyEstimator::new(edge_config.latency_ema_alpha);
+        let min = edge_config.mcts_min_simulations;
+        let max = edge_config.mcts_max_simulations.max(min); // ensure max >= min
         Self {
             model,
             estimator,
             budget_ms: edge_config.mcts_latency_budget_ms,
-            min_simulations: edge_config.mcts_min_simulations,
-            max_simulations: edge_config.mcts_max_simulations,
+            min_simulations: min,
+            max_simulations: max,
             base_config: mcts_config,
         }
     }
@@ -246,5 +248,22 @@ mod tests {
         search.reset_estimator();
         assert_eq!(search.estimator().total_samples(), 0);
         assert_eq!(search.estimator().estimated_per_sim_ms(), 0.0);
+    }
+
+    #[test]
+    fn test_inverted_min_max_does_not_panic() {
+        let model = StubLatentModel::new(4, 32);
+        let mut edge_cfg = make_edge_config();
+        edge_cfg.mcts_min_simulations = 100;
+        edge_cfg.mcts_max_simulations = 10; // inverted: max < min
+        let mcts_cfg = make_mcts_config(4);
+        let mut search = AdaptiveMctsSearch::new(model, &edge_cfg, mcts_cfg);
+
+        // max should have been corrected to min (100)
+        let obs = vec![0.0; 50];
+        let (action, metrics) = search.search(&obs).unwrap();
+        assert!(action < 4);
+        // Simulations used should be exactly min == max == 100
+        assert_eq!(metrics.simulations_used, 100);
     }
 }

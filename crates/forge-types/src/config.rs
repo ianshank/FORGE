@@ -451,7 +451,8 @@ pub struct CloudConfig {
     pub heartbeat_timeout_s: u32,
     /// Maximum replay payload size in bytes.
     pub max_replay_size_bytes: u64,
-    /// Compression level for replay transport (0 = none, 1-9 = zstd levels).
+    /// Compression setting for replay transport. 0 disables compression;
+    /// non-zero values enable the built-in compression scheme.
     pub compression_level: u8,
     /// Port for worker coordination service.
     pub coordinator_port: u16,
@@ -660,6 +661,7 @@ impl ForgeConfig {
         env_override!(cloud.replay_batch_size, u32);
         env_override!(cloud.heartbeat_interval_s, u32);
         env_override!(cloud.heartbeat_timeout_s, u32);
+        env_override!(cloud.max_replay_size_bytes, u64);
         env_override!(cloud.compression_level, u8);
         env_override!(cloud.coordinator_port, u16);
         env_override!(cloud.model_version_retention, u32);
@@ -671,11 +673,13 @@ impl ForgeConfig {
         env_override!(edge.mcts_min_simulations, u32);
         env_override!(edge.mcts_max_simulations, u32);
         env_override!(edge.telemetry_interval_s, u32);
+        env_override!(edge.telemetry_buffer_bytes, u64);
         env_override!(edge.compress_telemetry, bool);
         env_override!(edge.onnx_batch_size, u32);
         env_override!(edge.onnx_num_threads, u32);
         env_override!(edge.model_update_interval_s, u32);
         env_override!(edge.upload_retry_count, u32);
+        env_override!(edge.upload_retry_base_ms, u64);
     }
 }
 

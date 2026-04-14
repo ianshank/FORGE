@@ -111,19 +111,19 @@ The `LatentForwardModel` trait with `OnnxMuZeroModel` backend is designed exactl
 - Edge devices record `CompactReplay` (seed + config + action sequence)
 - A 1000-tick single-agent mission = ~16KB
 - Over a 2400-baud satellite link: ~53 seconds upload vs ~4.4 hours for full trajectories
-- Upload path: edge device -> MQTT -> Cloud IoT Core (or direct HTTPS to GCS signed URL)
+- Upload path: edge device -> MQTT broker on Cloud Run / Pub/Sub (or direct HTTPS to GCS signed URL)
 - Cloud-side `CompactReplay::replay()` reconstructs full trajectories with complete fidelity
 - GCS event notification triggers Vertex AI Pipeline for automatic trajectory reconstruction
 - This is the difference between feasible and infeasible in bandwidth-constrained operations
 
 ### Offline RL Retraining Loop (GCP-Native)
 
-1. Edge compact replays land in GCS bucket via Cloud IoT Core / signed URL upload
+1. Edge compact replays land in GCS bucket via MQTT broker on Cloud Run / Pub/Sub / signed URL upload
 2. GCS object notification triggers Cloud Function or Pub/Sub event
 3. Vertex AI Pipeline kicks off: `CompactReplay::replay()` reconstructs full `Trajectory`
 4. Feed into `OfflineDataset` -- retrain via Decision Transformer, IQL, or CQL on Vertex AI Training (A100/TPU)
 5. Export updated ONNX models via `MuZeroExporter` to Artifact Registry with semantic versioning
-6. Edge devices pull new model version on next connectivity window (via Artifact Registry pull or Cloud IoT config push)
+6. Edge devices pull new model version on next connectivity window (via Artifact Registry pull or Pub/Sub + device gateway config push)
 
 This is a **data flywheel**: more edge deployment produces more diverse training data in GCS, which triggers retraining pipelines, which produces better policies in Artifact Registry, which perform better at the edge. The entire loop is event-driven and serverless-triggerable.
 
@@ -152,7 +152,7 @@ This is a **data flywheel**: more edge deployment produces more diverse training
 │               |                 │      │         |                   │
 │               v                 │      │         |                   │
 │  Artifact Registry ─────────────│──>───│  OTA Model Update           │
-│  (versioned ONNX models)        │      │  (via Cloud IoT / MQTT)     │
+│  (versioned ONNX models)        │      │  (via Pub/Sub + MQTT)       │
 │               ^                 │      │         |                   │
 │               |                 │      │         |                   │
 │  GCS Bucket <───────────────────│──<───│  Upload Compact Replays     │
@@ -266,7 +266,7 @@ The [Mouse-Droid-AGI](https://github.com/ianshank/Mouse-Droid-AGI) project is a 
 | Training compute (TPU) | Cloud TPU v4/v5e | 3-5x cost-efficient for large-batch JAX workloads via `ForgeJaxEnv` |
 | Model registry | Artifact Registry | Container + ONNX model versioning, vulnerability scanning, IAM-scoped pulls |
 | Pipeline orchestration | Vertex AI Pipelines (Kubeflow) | DAG-based workflows, caching, lineage tracking |
-| Edge device management | Cloud IoT Core / MQTT | Device registry, config push, telemetry ingestion |
+| Edge device management | Pub/Sub + device gateway / MQTT | Device registry, config push, telemetry ingestion |
 | Edge replay upload | GCS signed URLs | No service account on device; time-limited, scoped upload |
 | Monitoring | Cloud Monitoring + Logging | Custom metrics, structured logs, SLOs, alerting policies |
 | Fleet analytics | BigQuery | Trajectory metadata, curriculum progression, fleet-wide query |
@@ -311,7 +311,7 @@ The [Mouse-Droid-AGI](https://github.com/ianshank/Mouse-Droid-AGI) project is a 
 - Edge telemetry daemon: compact replay batching, compression, store-and-forward upload to GCS via signed URLs
 - New `forge-edge` crate: edge runtime config, battery-aware scheduling, failsafe policies
 - Artifact Registry setup for ONNX model versioning and edge device pull authentication
-- Cloud IoT Core / MQTT bridge for edge device management and config push
+- Pub/Sub + device gateway / MQTT bridge for edge device management and config push
 
 ### Phase 3: Closed Loop on GCP (2 months)
 - GCS object notification -> Cloud Function -> Vertex AI Pipeline trigger for automatic replay ingestion

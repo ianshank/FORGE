@@ -41,8 +41,6 @@ struct WorkerEntry {
     episodes_completed: u64,
     /// Total replays submitted.
     replays_submitted: u64,
-    /// Next seed to assign.
-    next_seed: u64,
 }
 
 /// In-memory worker registry implementing [`WorkerManager`].
@@ -54,6 +52,8 @@ pub struct InMemoryWorkerRegistry {
     config: WorkerConfig,
     /// Map from worker ID to worker entry, guarded by a mutex.
     workers: Mutex<HashMap<String, WorkerEntry>>,
+    /// Global seed cursor shared across all workers to prevent overlaps.
+    next_seed: Mutex<u64>,
 }
 
 impl InMemoryWorkerRegistry {
@@ -64,9 +64,11 @@ impl InMemoryWorkerRegistry {
             max_workers = config.max_workers,
             "created in-memory worker registry"
         );
+        let seed_start = config.seed_range_start;
         Self {
             config,
             workers: Mutex::new(HashMap::new()),
+            next_seed: Mutex::new(seed_start),
         }
     }
 
@@ -117,7 +119,6 @@ impl WorkerManager for InMemoryWorkerRegistry {
             last_heartbeat_ms: Self::now_ms(),
             episodes_completed: 0,
             replays_submitted: 0,
-            next_seed: self.config.seed_range_start,
         };
 
         info!(worker_id, "registered worker");
@@ -150,15 +151,26 @@ impl WorkerManager for InMemoryWorkerRegistry {
     #[instrument(skip(self))]
     fn active_workers(&self) -> CloudResult<Vec<WorkerInfo>> {
         let workers = self.workers.lock().expect("lock poisoned");
+        let now_ms = chrono::Utc::now().timestamp_millis() as u64;
         let infos = workers
             .iter()
-            .map(|(id, entry)| WorkerInfo {
-                worker_id: id.clone(),
-                metadata: entry.metadata.clone(),
-                status: entry.status.clone(),
-                last_heartbeat_ms: entry.last_heartbeat_ms,
-                episodes_completed: entry.episodes_completed,
-                replays_submitted: entry.replays_submitted,
+            .map(|(id, entry)| {
+                let status =
+                    if now_ms.saturating_sub(entry.last_heartbeat_ms) > self.config.timeout_ms {
+                        WorkerStatus::Disconnected {
+                            since_ms: entry.last_heartbeat_ms,
+                        }
+                    } else {
+                        entry.status.clone()
+                    };
+                WorkerInfo {
+                    worker_id: id.clone(),
+                    metadata: entry.metadata.clone(),
+                    status,
+                    last_heartbeat_ms: entry.last_heartbeat_ms,
+                    episodes_completed: entry.episodes_completed,
+                    replays_submitted: entry.replays_submitted,
+                }
             })
             .collect();
         Ok(infos)
@@ -171,9 +183,25 @@ impl WorkerManager for InMemoryWorkerRegistry {
             .get_mut(worker_id)
             .ok_or_else(|| WorkerError::NotFound(worker_id.to_string()))?;
 
-        let start = entry.next_seed;
-        let seeds: Vec<u64> = (start..start + count as u64).collect();
-        entry.next_seed = start + count as u64;
+        let mut next = self.next_seed.lock().expect("lock poisoned");
+        let start = *next;
+        let end = start
+            .checked_add(count as u64)
+            .ok_or(WorkerError::CapacityExceeded {
+                current: 0,
+                max: self.config.max_workers,
+            })?;
+
+        if end > self.config.seed_range_end {
+            return Err(WorkerError::CapacityExceeded {
+                current: (start - self.config.seed_range_start) as u32,
+                max: (self.config.seed_range_end - self.config.seed_range_start) as u32,
+            }
+            .into());
+        }
+
+        let seeds: Vec<u64> = (start..end).collect();
+        *next = end;
         entry.status = WorkerStatus::Running {
             current_seeds: seeds.clone(),
         };
@@ -338,5 +366,42 @@ mod tests {
     fn test_with_defaults() {
         let registry = InMemoryWorkerRegistry::with_defaults();
         assert_eq!(registry.worker_count(), 0);
+    }
+
+    #[test]
+    fn test_assign_seeds_no_overlap() {
+        let registry = InMemoryWorkerRegistry::new(test_config());
+        registry.register("w-001", test_metadata()).unwrap();
+        registry.register("w-002", test_metadata()).unwrap();
+
+        let a1 = registry.assign_seeds("w-001", 5).unwrap();
+        let a2 = registry.assign_seeds("w-002", 5).unwrap();
+
+        // Seeds assigned to different workers must be disjoint.
+        for s in &a1.seeds {
+            assert!(!a2.seeds.contains(s), "seed {s} overlaps between workers");
+        }
+        // Second assignment starts where first ended.
+        assert_eq!(a2.seeds[0], a1.seeds[4] + 1);
+    }
+
+    #[test]
+    fn test_assign_seeds_exceeds_range() {
+        let config = WorkerConfig {
+            max_workers: 3,
+            seed_range_start: 0,
+            seed_range_end: 10,
+            ..WorkerConfig::default()
+        };
+        let registry = InMemoryWorkerRegistry::new(config);
+        registry.register("w-001", test_metadata()).unwrap();
+
+        // First assignment of 8 seeds should succeed (0..8).
+        let a1 = registry.assign_seeds("w-001", 8).unwrap();
+        assert_eq!(a1.seeds.len(), 8);
+
+        // Second assignment of 5 seeds would need 8..13, exceeding range_end=10.
+        let result = registry.assign_seeds("w-001", 5);
+        assert!(result.is_err());
     }
 }

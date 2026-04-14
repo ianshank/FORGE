@@ -53,8 +53,13 @@ impl TelemetryCollector {
     /// Returns an error if the buffer would exceed its byte capacity.
     #[instrument(skip_all)]
     pub fn record(&mut self, replay: CompactReplay) -> ForgeResult<()> {
-        // Estimate size of the replay in serialized form
-        let replay_bytes = replay.to_bytes().map(|b| b.len() as u64).unwrap_or(1024); // conservative estimate on serialization failure
+        // Estimate replay size without full serialization.
+        // Each tick has ~(num_agents * 4 bytes) for actions, plus ~200 bytes overhead
+        // for config hash, seed, metadata. This avoids the cost of full bincode serialization.
+        let estimated_bytes = (replay.actions.len() as u64)
+            * (replay.actions.first().map_or(1, |a| a.len()) as u64 * 4)
+            + 512; // overhead for config, metadata, format fields
+        let replay_bytes = estimated_bytes;
 
         if self.buffer_bytes + replay_bytes > self.max_buffer_bytes {
             warn!(
@@ -101,8 +106,9 @@ impl TelemetryCollector {
 
         let mut sent = 0u32;
         let replays = std::mem::take(&mut self.buffer);
-        let prev_bytes = self.buffer_bytes;
         self.buffer_bytes = 0;
+        let mut failed_replays = Vec::new();
+        let mut failed_bytes = 0u64;
 
         for (i, replay) in replays.into_iter().enumerate() {
             let key = format!("edge_replay_{}_{}", replay.seed, i);
@@ -118,21 +124,33 @@ impl TelemetryCollector {
             match transport.send(&key, &payload) {
                 Ok(()) => {
                     sent += 1;
+                    self.total_flushed += 1;
                 }
                 Err(e) => {
-                    warn!(error = %e, "Transport send failed");
+                    warn!(error = %e, "Transport send failed, re-queuing replay");
                     self.total_flush_failures += 1;
+                    let replay_size = payload.len() as u64;
+                    // Reconstruct replay from bytes for re-queue
+                    if let Ok(restored) = CompactReplay::from_bytes(&payload) {
+                        failed_bytes += replay_size;
+                        failed_replays.push(restored);
+                    }
                 }
             }
         }
 
-        self.total_flushed += sent as u64;
+        // Restore failed replays to buffer
+        if !failed_replays.is_empty() {
+            debug!(count = failed_replays.len(), "Re-queuing failed replays");
+            self.buffer = failed_replays;
+            self.buffer_bytes = failed_bytes;
+        }
 
         if sent < count as u32 {
             warn!(sent, total = count, "Not all replays flushed successfully");
         }
 
-        debug!(sent, freed_bytes = prev_bytes, "Telemetry flush complete");
+        debug!(sent, "Telemetry flush complete");
 
         Ok(sent)
     }
@@ -358,5 +376,24 @@ mod tests {
         cfg.telemetry_buffer_bytes = 0;
         let collector = TelemetryCollector::new(&cfg);
         assert_eq!(collector.buffer_utilization(), 0.0);
+    }
+
+    #[test]
+    fn test_flush_requeues_on_transport_failure() {
+        let cfg = make_edge_config();
+        let mut collector = TelemetryCollector::new(&cfg);
+        let transport = FailingTransport;
+
+        collector.record(make_test_replay()).unwrap();
+        collector.record(make_test_replay()).unwrap();
+        assert_eq!(collector.pending_count(), 2);
+
+        let sent = collector.flush(&transport).unwrap();
+        assert_eq!(sent, 0);
+
+        // Failed replays should be re-queued back into the buffer.
+        assert_eq!(collector.pending_count(), 2);
+        assert!(collector.buffer_bytes > 0);
+        assert_eq!(collector.snapshot().total_flush_failures, 2);
     }
 }

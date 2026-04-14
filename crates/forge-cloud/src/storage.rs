@@ -13,6 +13,23 @@ use tracing::{debug, info, instrument};
 use crate::error::{CloudResult, StorageError};
 use crate::traits;
 
+/// Sanitizes a storage key to prevent path traversal.
+fn sanitize_key(key: &str) -> Result<&str, StorageError> {
+    if key.contains("..") || key.contains('/') || key.contains('\\') || key.contains('\0') {
+        return Err(StorageError::WriteFailed {
+            path: key.to_string(),
+            reason: "key contains invalid characters (path traversal attempt)".to_string(),
+        });
+    }
+    if key.is_empty() {
+        return Err(StorageError::WriteFailed {
+            path: key.to_string(),
+            reason: "key must not be empty".to_string(),
+        });
+    }
+    Ok(key)
+}
+
 /// Local filesystem implementation of [`traits::ReplayStore`].
 ///
 /// Stores compact replays as bincode-serialized files at
@@ -33,15 +50,18 @@ impl LocalReplayStore {
     }
 
     /// Returns the file path for a given key.
-    fn key_path(&self, key: &str) -> PathBuf {
-        self.base_path.join(format!("{key}.bin"))
+    ///
+    /// Returns an error if the key contains path traversal characters.
+    fn key_path(&self, key: &str) -> CloudResult<PathBuf> {
+        sanitize_key(key)?;
+        Ok(self.base_path.join(format!("{key}.bin")))
     }
 }
 
 impl traits::ReplayStore for LocalReplayStore {
     #[instrument(skip(self, replay), fields(key = %key))]
     fn store(&self, replay: &CompactReplay, key: &str) -> CloudResult<()> {
-        let path = self.key_path(key);
+        let path = self.key_path(key)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| StorageError::WriteFailed {
                 path: parent.display().to_string(),
@@ -62,7 +82,7 @@ impl traits::ReplayStore for LocalReplayStore {
 
     #[instrument(skip(self), fields(key = %key))]
     fn load(&self, key: &str) -> CloudResult<CompactReplay> {
-        let path = self.key_path(key);
+        let path = self.key_path(key)?;
         let bytes = fs::read(&path).map_err(|_| StorageError::NotFound {
             path: path.display().to_string(),
         })?;
@@ -105,7 +125,7 @@ impl traits::ReplayStore for LocalReplayStore {
 
     #[instrument(skip(self), fields(key = %key))]
     fn delete(&self, key: &str) -> CloudResult<()> {
-        let path = self.key_path(key);
+        let path = self.key_path(key)?;
         fs::remove_file(&path).map_err(|_| StorageError::NotFound {
             path: path.display().to_string(),
         })?;
@@ -115,7 +135,7 @@ impl traits::ReplayStore for LocalReplayStore {
 
     #[instrument(skip(self), fields(key = %key))]
     fn exists(&self, key: &str) -> CloudResult<bool> {
-        let exists = self.key_path(key).exists();
+        let exists = self.key_path(key)?.exists();
         debug!(key = %key, exists, "Checked replay existence");
         Ok(exists)
     }
@@ -159,11 +179,25 @@ impl LocalModelStore {
     fn latest_file(&self, name: &str) -> PathBuf {
         self.model_dir(name).join("latest.txt")
     }
+
+    /// Validates model name and version to prevent path traversal.
+    fn validate_model_params(name: &str, version: &str) -> Result<(), StorageError> {
+        sanitize_key(name)?;
+        sanitize_key(version)?;
+        Ok(())
+    }
+
+    /// Validates model name to prevent path traversal.
+    fn validate_model_name(name: &str) -> Result<(), StorageError> {
+        sanitize_key(name)?;
+        Ok(())
+    }
 }
 
 impl traits::ModelStore for LocalModelStore {
     #[instrument(skip(self, data), fields(model_id = %model_id, version))]
     fn store_model(&self, model_id: &str, version: u32, data: &[u8]) -> CloudResult<()> {
+        Self::validate_model_name(model_id)?;
         let version_str = version.to_string();
         let dir = self.version_dir(model_id, &version_str);
         fs::create_dir_all(&dir).map_err(|e| StorageError::WriteFailed {
@@ -192,6 +226,7 @@ impl traits::ModelStore for LocalModelStore {
 
     #[instrument(skip(self), fields(model_id = %model_id, version))]
     fn load_model(&self, model_id: &str, version: u32) -> CloudResult<Vec<u8>> {
+        Self::validate_model_name(model_id)?;
         let version_str = version.to_string();
         let file = self.model_file(model_id, &version_str);
         let data = fs::read(&file).map_err(|_| StorageError::NotFound {
@@ -208,6 +243,7 @@ impl traits::ModelStore for LocalModelStore {
 
     #[instrument(skip(self), fields(model_id = %model_id))]
     fn latest_version(&self, model_id: &str) -> CloudResult<Option<u32>> {
+        Self::validate_model_name(model_id)?;
         let latest = self.latest_file(model_id);
         if !latest.exists() {
             return Ok(None);
@@ -228,6 +264,7 @@ impl traits::ModelStore for LocalModelStore {
 
     #[instrument(skip(self), fields(model_id = %model_id))]
     fn list_versions(&self, model_id: &str) -> CloudResult<Vec<u32>> {
+        Self::validate_model_name(model_id)?;
         let dir = self.model_dir(model_id);
         if !dir.exists() {
             return Ok(Vec::new());
@@ -266,6 +303,11 @@ impl forge_types::transport::ModelStore for LocalModelStore {
         version: &str,
         data: &[u8],
     ) -> forge_types::error::ForgeResult<()> {
+        Self::validate_model_params(name, version).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
+        })?;
         let dir = self.version_dir(name, version);
         fs::create_dir_all(&dir).map_err(|e| {
             forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(format!(
@@ -299,6 +341,11 @@ impl forge_types::transport::ModelStore for LocalModelStore {
 
     #[instrument(skip(self), fields(name = %name, version = %version))]
     fn load_model(&self, name: &str, version: &str) -> forge_types::error::ForgeResult<Vec<u8>> {
+        Self::validate_model_params(name, version).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
+        })?;
         let file = self.model_file(name, version);
         let data = fs::read(&file).map_err(|_| {
             forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::ModelRegistry(
@@ -316,6 +363,11 @@ impl forge_types::transport::ModelStore for LocalModelStore {
 
     #[instrument(skip(self), fields(name = %name))]
     fn latest_version(&self, name: &str) -> forge_types::error::ForgeResult<Option<String>> {
+        Self::validate_model_name(name).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
+        })?;
         let latest = self.latest_file(name);
         if !latest.exists() {
             return Ok(None);
@@ -331,6 +383,11 @@ impl forge_types::transport::ModelStore for LocalModelStore {
 
     #[instrument(skip(self), fields(name = %name))]
     fn list_versions(&self, name: &str) -> forge_types::error::ForgeResult<Vec<String>> {
+        Self::validate_model_name(name).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
+        })?;
         let dir = self.model_dir(name);
         if !dir.exists() {
             return Ok(Vec::new());
@@ -594,5 +651,160 @@ mod tests {
         let dir = tempdir().unwrap();
         let store = LocalModelStore::new(dir.path());
         assert_eq!(TransportModelStore::backend_name(&store), "local");
+    }
+
+    // ---- Path traversal prevention tests (replay store) ----
+
+    #[test]
+    fn test_replay_path_traversal_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalReplayStore::new(dir.path());
+        let replay = test_replay();
+
+        let result = store.store(&replay, "../etc/passwd");
+        assert!(result.is_err());
+
+        let result = store.load("../../secret");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_replay_slash_in_key_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalReplayStore::new(dir.path());
+        let replay = test_replay();
+
+        let result = store.store(&replay, "foo/bar");
+        assert!(result.is_err());
+
+        let result = store.load("a/b");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_replay_backslash_in_key_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalReplayStore::new(dir.path());
+        let replay = test_replay();
+
+        let result = store.store(&replay, "foo\\bar");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_replay_empty_key_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalReplayStore::new(dir.path());
+        let replay = test_replay();
+
+        let result = store.store(&replay, "");
+        assert!(result.is_err());
+
+        let result = store.load("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_replay_null_byte_in_key_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalReplayStore::new(dir.path());
+        let replay = test_replay();
+
+        let result = store.store(&replay, "foo\0bar");
+        assert!(result.is_err());
+    }
+
+    // ---- Path traversal prevention tests (model store, u32 trait) ----
+
+    #[test]
+    fn test_model_store_u32_path_traversal_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalModelStore::new(dir.path());
+
+        let result = CloudModelStore::store_model(&store, "../etc", 1, b"data");
+        assert!(result.is_err());
+
+        let result = CloudModelStore::load_model(&store, "../../secret", 1);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_model_store_u32_slash_in_name_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalModelStore::new(dir.path());
+
+        let result = CloudModelStore::store_model(&store, "foo/bar", 1, b"data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_model_store_u32_empty_name_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalModelStore::new(dir.path());
+
+        let result = CloudModelStore::store_model(&store, "", 1, b"data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_model_store_u32_null_byte_in_name_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalModelStore::new(dir.path());
+
+        let result = CloudModelStore::store_model(&store, "model\0bad", 1, b"data");
+        assert!(result.is_err());
+    }
+
+    // ---- Path traversal prevention tests (model store, str trait) ----
+
+    #[test]
+    fn test_model_store_str_path_traversal_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalModelStore::new(dir.path());
+
+        let result = TransportModelStore::store_model(&store, "../etc", "v1", b"data");
+        assert!(result.is_err());
+
+        let result = TransportModelStore::store_model(&store, "policy", "../v1", b"data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_model_store_str_slash_in_version_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalModelStore::new(dir.path());
+
+        let result = TransportModelStore::store_model(&store, "policy", "v1/hack", b"data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_model_store_str_empty_name_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalModelStore::new(dir.path());
+
+        let result = TransportModelStore::store_model(&store, "", "v1", b"data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_model_store_str_empty_version_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalModelStore::new(dir.path());
+
+        let result = TransportModelStore::store_model(&store, "policy", "", b"data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_model_store_str_null_byte_rejected() {
+        let dir = tempdir().unwrap();
+        let store = LocalModelStore::new(dir.path());
+
+        let result = TransportModelStore::store_model(&store, "model\0x", "v1", b"data");
+        assert!(result.is_err());
+
+        let result = TransportModelStore::store_model(&store, "model", "v1\0x", b"data");
+        assert!(result.is_err());
     }
 }
