@@ -29,8 +29,12 @@ pub fn create_replay_store(config: &StorageConfig) -> CloudResult<Box<dyn traits
             #[cfg(feature = "gcs")]
             {
                 info!(bucket, prefix, "Using GCS replay store");
-                let store =
-                    crate::gcs_storage::GcsReplayStore::new(bucket, prefix)?;
+                let store = crate::gcs_storage::GcsReplayStore::new(
+                    bucket,
+                    prefix,
+                    &config.gcp_project,
+                    &config.gcp_service_account,
+                )?;
                 Ok(Box::new(store))
             }
             #[cfg(not(feature = "gcs"))]
@@ -65,8 +69,12 @@ pub fn create_model_store(config: &StorageConfig) -> CloudResult<Box<dyn traits:
             #[cfg(feature = "gcs")]
             {
                 info!(bucket, prefix, "Using GCS model store");
-                let store =
-                    crate::gcs_storage::GcsModelStore::new(bucket, prefix)?;
+                let store = crate::gcs_storage::GcsModelStore::new(
+                    bucket,
+                    prefix,
+                    &config.gcp_project,
+                    &config.gcp_service_account,
+                )?;
                 Ok(Box::new(store))
             }
             #[cfg(not(feature = "gcs"))]
@@ -105,8 +113,12 @@ pub fn create_replay_transport(
             #[cfg(feature = "gcs")]
             {
                 info!(bucket, prefix, "Using GCS replay transport");
-                let transport =
-                    crate::gcs_storage::GcsReplayTransport::new(bucket, prefix)?;
+                let transport = crate::gcs_storage::GcsReplayTransport::new(
+                    bucket,
+                    prefix,
+                    &config.gcp_project,
+                    &config.gcp_service_account,
+                )?;
                 Ok(Box::new(transport))
             }
             #[cfg(not(feature = "gcs"))]
@@ -143,6 +155,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unused_variables)]
     fn test_gcs_without_feature_returns_error() {
         let config = StorageConfig {
             backend: StorageBackend::Gcs {

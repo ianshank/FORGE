@@ -913,6 +913,74 @@ num_agents = 4
     }
 
     #[test]
+    fn test_env_overrides_cloud_gcp_fields() {
+        let _lock = ENV_TEST_LOCK.lock().unwrap();
+
+        let env_vars = [
+            "FORGE_CLOUD_STORAGE_BACKEND",
+            "FORGE_CLOUD_GCS_BUCKET",
+            "FORGE_CLOUD_GCS_PREFIX",
+            "FORGE_CLOUD_GCP_PROJECT",
+            "FORGE_CLOUD_GCP_REGION",
+            "FORGE_CLOUD_GCP_SERVICE_ACCOUNT",
+        ];
+        let guards: Vec<EnvironmentGuard> = env_vars
+            .iter()
+            .map(|&var| EnvironmentGuard {
+                var_name: var,
+                original_value: std::env::var(var).ok(),
+            })
+            .collect();
+
+        std::env::set_var("FORGE_CLOUD_STORAGE_BACKEND", "gcs");
+        std::env::set_var("FORGE_CLOUD_GCS_BUCKET", "test-bucket");
+        std::env::set_var("FORGE_CLOUD_GCS_PREFIX", "test-prefix/");
+        std::env::set_var("FORGE_CLOUD_GCP_PROJECT", "my-project");
+        std::env::set_var("FORGE_CLOUD_GCP_REGION", "europe-west1");
+        std::env::set_var("FORGE_CLOUD_GCP_SERVICE_ACCOUNT", "sa@proj.iam");
+
+        let mut config = ForgeConfig::default();
+        config.apply_env_overrides();
+
+        assert_eq!(config.cloud.storage_backend, "gcs");
+        assert_eq!(config.cloud.gcs_bucket, "test-bucket");
+        assert_eq!(config.cloud.gcs_prefix, "test-prefix/");
+        assert_eq!(config.cloud.gcp_project, "my-project");
+        assert_eq!(config.cloud.gcp_region, "europe-west1");
+        assert_eq!(config.cloud.gcp_service_account, "sa@proj.iam");
+
+        drop(guards);
+    }
+
+    #[test]
+    fn test_env_overrides_edge_gcs_fields() {
+        let _lock = ENV_TEST_LOCK.lock().unwrap();
+
+        let env_vars = [
+            "FORGE_EDGE_GCS_MODEL_BUCKET",
+            "FORGE_EDGE_GCS_MODEL_PREFIX",
+        ];
+        let guards: Vec<EnvironmentGuard> = env_vars
+            .iter()
+            .map(|&var| EnvironmentGuard {
+                var_name: var,
+                original_value: std::env::var(var).ok(),
+            })
+            .collect();
+
+        std::env::set_var("FORGE_EDGE_GCS_MODEL_BUCKET", "edge-bucket");
+        std::env::set_var("FORGE_EDGE_GCS_MODEL_PREFIX", "edge/models/");
+
+        let mut config = ForgeConfig::default();
+        config.apply_env_overrides();
+
+        assert_eq!(config.edge.gcs_model_bucket, "edge-bucket");
+        assert_eq!(config.edge.gcs_model_prefix, "edge/models/");
+
+        drop(guards);
+    }
+
+    #[test]
     fn test_default_config_is_valid() {
         let config = ForgeConfig::default();
         assert!(config.world.width >= config.world.min_dimension);

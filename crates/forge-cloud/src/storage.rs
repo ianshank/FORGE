@@ -14,7 +14,10 @@ use crate::error::{CloudResult, StorageError};
 use crate::traits;
 
 /// Sanitizes a storage key to prevent path traversal.
-fn sanitize_key(key: &str) -> Result<&str, StorageError> {
+///
+/// Rejects empty keys and keys containing `..`, `/`, `\`, or NUL.
+/// Used by both local and GCS storage backends.
+pub(crate) fn sanitize_key(key: &str) -> Result<&str, StorageError> {
     if key.contains("..") || key.contains('/') || key.contains('\\') || key.contains('\0') {
         return Err(StorageError::WriteFailed {
             path: key.to_string(),
