@@ -13,6 +13,9 @@ use crate::error::{CloudResult, TransportError};
 /// Maximum decompressed replay size (100 MB) to prevent memory exhaustion from crafted input.
 const MAX_DECOMPRESSED_SIZE: usize = 100 * 1024 * 1024;
 
+/// Maximum bytes encoded in a single literal or repeated run.
+const MAX_RUN_LEN: usize = 128;
+
 /// Frame header indicating RLE-compressed payload follows.
 const FRAME_COMPRESSED: u8 = 0xFE;
 /// Frame header indicating uncompressed (passthrough) payload follows.
@@ -44,27 +47,49 @@ pub fn compress_replay(data: &[u8], config: &ReplayTransportConfig) -> CloudResu
         );
     }
 
-    // Simple RLE compression: [byte, count] pairs for runs of 3+
-    // Header byte 0x00 = literal run, 0x01 = RLE run
+    // Simple RLE compression with literal-run framing.
+    // High-bit clear control bytes encode a literal run of 1..=128 bytes,
+    // followed by that many literal bytes. High-bit set control bytes encode
+    // a repeated run of 1..=128 copies of the next byte.
     let mut compressed = Vec::with_capacity(data.len());
     let mut i = 0;
     while i < data.len() {
-        let byte = data[i];
-        let mut run_len: usize = 1;
-        while i + run_len < data.len() && data[i + run_len] == byte && run_len < 255 {
-            run_len += 1;
+        let mut repeat_len = 1usize;
+        while i + repeat_len < data.len()
+            && data[i + repeat_len] == data[i]
+            && repeat_len < MAX_RUN_LEN
+        {
+            repeat_len += 1;
         }
-        if run_len >= 3 {
-            compressed.push(0x01); // RLE marker
-            compressed.push(byte);
-            compressed.push(run_len as u8);
+
+        if repeat_len >= 3 {
+            compressed.push(0x80 | ((repeat_len - 1) as u8));
+            compressed.push(data[i]);
+            i += repeat_len;
         } else {
-            for _ in 0..run_len {
-                compressed.push(0x00); // literal marker
-                compressed.push(byte);
+            let literal_start = i;
+            let mut literal_len = 0usize;
+            while i < data.len() && literal_len < MAX_RUN_LEN {
+                let mut next_repeat_len = 1usize;
+                while i + next_repeat_len < data.len()
+                    && data[i + next_repeat_len] == data[i]
+                    && next_repeat_len < MAX_RUN_LEN
+                {
+                    next_repeat_len += 1;
+                }
+
+                if next_repeat_len >= 3 {
+                    break;
+                }
+
+                let chunk_len = next_repeat_len.min(MAX_RUN_LEN - literal_len);
+                literal_len += chunk_len;
+                i += chunk_len;
             }
+
+            compressed.push((literal_len - 1) as u8);
+            compressed.extend_from_slice(&data[literal_start..literal_start + literal_len]);
         }
-        i += run_len;
     }
 
     // If compression expanded the data, fall back to uncompressed
@@ -136,7 +161,7 @@ pub fn decompress_replay(data: &[u8]) -> CloudResult<Vec<u8>> {
             );
             return Ok(payload.to_vec());
         }
-        FRAME_COMPRESSED => { /* fall through to RLE decode below */ }
+        FRAME_COMPRESSED => {}
         other => {
             return Err(TransportError::DeserializationFailed(format!(
                 "unknown frame header: 0x{other:02x}"
@@ -145,58 +170,43 @@ pub fn decompress_replay(data: &[u8]) -> CloudResult<Vec<u8>> {
         }
     }
 
-    // RLE decode the payload after the frame header
+    // RLE decode the payload after the frame header.
     let rle_data = &data[1..];
     let mut decompressed = Vec::with_capacity(rle_data.len());
     let mut i = 0;
     while i < rle_data.len() {
-        if i + 1 >= rle_data.len() {
-            return Err(TransportError::DeserializationFailed(
-                "truncated compressed data".to_string(),
-            )
-            .into());
-        }
-        match rle_data[i] {
-            0x00 => {
-                // Literal byte
-                decompressed.push(rle_data[i + 1]);
-                if decompressed.len() > MAX_DECOMPRESSED_SIZE {
-                    return Err(TransportError::PayloadTooLarge {
-                        size: decompressed.len(),
-                        max: MAX_DECOMPRESSED_SIZE,
-                    }
-                    .into());
-                }
-                i += 2;
-            }
-            0x01 => {
-                // RLE run
-                if i + 2 >= rle_data.len() {
-                    return Err(TransportError::DeserializationFailed(
-                        "truncated RLE data".to_string(),
-                    )
-                    .into());
-                }
-                let byte = rle_data[i + 1];
-                let count = rle_data[i + 2] as usize;
-                for _ in 0..count {
-                    decompressed.push(byte);
-                }
-                if decompressed.len() > MAX_DECOMPRESSED_SIZE {
-                    return Err(TransportError::PayloadTooLarge {
-                        size: decompressed.len(),
-                        max: MAX_DECOMPRESSED_SIZE,
-                    }
-                    .into());
-                }
-                i += 3;
-            }
-            marker => {
-                return Err(TransportError::DeserializationFailed(format!(
-                    "unknown compression marker: 0x{marker:02x}"
-                ))
+        let control = rle_data[i];
+        i += 1;
+
+        if control & 0x80 == 0 {
+            let literal_len = control as usize + 1;
+            if i + literal_len > rle_data.len() {
+                return Err(TransportError::DeserializationFailed(
+                    "truncated literal run".to_string(),
+                )
                 .into());
             }
+            decompressed.extend_from_slice(&rle_data[i..i + literal_len]);
+            i += literal_len;
+        } else {
+            let repeat_len = (control & 0x7F) as usize + 1;
+            if i >= rle_data.len() {
+                return Err(TransportError::DeserializationFailed(
+                    "truncated repeated run".to_string(),
+                )
+                .into());
+            }
+            let byte = rle_data[i];
+            i += 1;
+            decompressed.extend(std::iter::repeat(byte).take(repeat_len));
+        }
+
+        if decompressed.len() > MAX_DECOMPRESSED_SIZE {
+            return Err(TransportError::PayloadTooLarge {
+                size: decompressed.len(),
+                max: MAX_DECOMPRESSED_SIZE,
+            }
+            .into());
         }
     }
 
@@ -330,18 +340,39 @@ mod tests {
 
     #[test]
     fn test_decompress_truncated_literal() {
-        // FRAME_COMPRESSED header followed by a literal marker with missing byte
-        let data = vec![FRAME_COMPRESSED, 0x00];
+        // FRAME_COMPRESSED header followed by a literal run marker with no payload bytes.
+        let data = vec![FRAME_COMPRESSED, 0x02];
         let result = decompress_replay(&data);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_decompress_truncated_rle() {
-        // FRAME_COMPRESSED header followed by RLE marker with missing count byte
-        let data = vec![FRAME_COMPRESSED, 0x01, 0xAA];
+        // FRAME_COMPRESSED header followed by a repeated-run marker, but missing the repeated byte.
+        let data = vec![FRAME_COMPRESSED, 0x80];
         let result = decompress_replay(&data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_literal_run_encoding_falls_back_to_uncompressed_frame() {
+        let config = default_config();
+        let original: Vec<u8> = (0..32).map(|value| value as u8).collect();
+        let compressed = compress_replay(&original, &config).unwrap();
+
+        assert_eq!(compressed[0], FRAME_UNCOMPRESSED);
+        assert_eq!(compressed.len(), original.len() + 1);
+    }
+
+    #[test]
+    fn test_compress_mixed_literal_and_repeated_runs() {
+        let config = default_config();
+        let original = b"abcdefffffghij";
+        let compressed = compress_replay(original, &config).unwrap();
+        let decompressed = decompress_replay(&compressed).unwrap();
+
+        assert_eq!(decompressed, original);
+        assert_eq!(compressed[0], FRAME_COMPRESSED);
     }
 
     #[test]
