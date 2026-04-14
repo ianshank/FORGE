@@ -11,6 +11,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Cloud Training Pipeline & Edge Deployment (`forge-cloud`, `forge-edge`)
+
+- **`forge-cloud` crate** (125 tests): Distributed cloud training infrastructure.
+  - Config types: `CloudConfig`, `WorkerConfig`, `CoordinatorConfig`, `StorageConfig`, `ReplayTransportConfig`, `ModelRegistryConfig` with `AggregationStrategy`, `StorageBackend`, `FallbackPolicy` enums.
+  - Error types: `CloudError`, `WorkerError`, `TransportError`, `StorageError`, `ModelRegistryError` with `CloudResult<T>` alias.
+  - Core traits: `ReplayStore`, `ModelStore`, `WorkerManager` with `WorkerMetadata`, `WorkerInfo`, `WorkerStatus`, `SeedAssignment` data types.
+  - `InMemoryWorkerRegistry`: Thread-safe in-memory `WorkerManager` implementation for testing and single-node deployments.
+  - `LocalReplayStore`: Filesystem-backed `ReplayStore` for CompactReplay persistence.
+  - `LocalModelStore`: Filesystem-backed model store implementing both `forge-cloud::ModelStore` (u32 versions) and `forge-types::transport::ModelStore` (string versions).
+  - `TrajectoryReconstructor`: Reconstructs full `Trajectory` objects from `CompactReplay` via deterministic replay, with batch support producing `OfflineDataset`.
+  - Replay compression/decompression and `ReplayBatch` for transport.
+  - 22 constants with `DEFAULT_*` prefix and validation tests.
+
+- **`forge-edge` crate** (40 tests): Edge deployment runtime.
+  - `AdaptiveMctsSearch<M>`: Wraps `LatentMctsSearch` from forge-agent with latency budgeting. Estimates per-simulation cost via EMA, adjusts `num_simulations` per search call, clamps to `[min, max]` from `EdgeConfig`.
+  - `LatencyEstimator`: EMA-based per-simulation latency tracker with configurable alpha.
+  - `TelemetryCollector`: Bounded store-and-forward buffer for `CompactReplay` with flush via `ReplayTransport` trait.
+  - `EdgeAgent<M>`: Composite agent implementing `AgentInterface` — flattens observations, runs adaptive MCTS, falls back to Noop on error. Compatible with `EvalHarness`, `BatchRunner`, and all FORGE infrastructure.
+  - `AdaptiveSearchMetrics` and `TelemetrySnapshot` diagnostic types.
+
+- **Foundation types in `forge-types`**:
+  - `CloudConfig` and `EdgeConfig` added to `ForgeConfig` with `#[serde(default)]` for full backward compatibility.
+  - `CloudError` (7 variants) and `EdgeError` (5 variants) with `#[from]` conversions.
+  - `ReplayTransport` and `ModelStore` traits in new `transport` module.
+  - 25 `DEFAULT_CLOUD_*` and `DEFAULT_EDGE_*` constants with validation tests.
+  - Environment variable overrides for `cloud.*` and `edge.*` config sections.
+
+- **`EdgeReplayLoader` in `forge-data`** (18 tests): Implements `DatasetLoader` for edge telemetry ingestion — scans directory for `.bin` CompactReplay files, reconstructs trajectories, returns `OfflineDataset`.
+
+- **Integration test** (`tests/rust/integration_cloud_edge.rs`, 9 tests): Exercises full cloud-edge data loop including storage roundtrips, reconstruction determinism, EdgeAgent evaluation, telemetry flush, worker lifecycle, backward compatibility, and model version management.
+
+- **Distributed Docker** (`docker/docker-compose.distributed.yml`): Coordinator + scalable worker services with shared volumes and `FORGE_CLOUD_*` / `FORGE_EDGE_*` environment variable configuration.
+
+- **Training config** (`configs/training/distributed.toml`): Complete distributed training configuration with cloud and edge sections enabled.
+
+- **Proposal** (`docs/cloud_edge_proposal.md`): GCP-specific technical proposal with MouseDroidAGI flagship use case, architecture diagrams, cost analysis, and 4-phase implementation roadmap.
+
 #### MuZero Latent-Space Planning & ONNX Integration
 
 - Embedded a full `MuZeroWorldModel` across Python and Rust for evaluating search in latent-space environments.

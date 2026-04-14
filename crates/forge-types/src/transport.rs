@@ -142,7 +142,7 @@ mod tests {
             Ok(models
                 .iter()
                 .filter(|(n, _, _)| n == name)
-                .last()
+                .next_back()
                 .map(|(_, v, _)| v.clone()))
         }
 

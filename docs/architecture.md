@@ -72,6 +72,17 @@ Shows the major containers (deployable units) within FORGE.
 │  │  │ policies   │  │ curriculum │  │ live state │  │ throughput│  │   │
 │  │  └────────────┘  └────────────┘  └────────────┘  └───────────┘  │   │
 │  │                                                                  │   │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌───────────┐  │   │
+│  │  │forge-cloud │  │forge-edge  │  │forge-data  │  │forge-     │  │   │
+│  │  │            │  │            │  │            │  │replay     │  │   │
+│  │  │ Distributed│  │ Adaptive   │  │ Dataset    │  │           │  │   │
+│  │  │ training,  │  │ MCTS,      │  │ loaders,   │  │ Compact   │  │   │
+│  │  │ worker     │  │ telemetry, │  │ expert     │  │ replay,   │  │   │
+│  │  │ pool,      │  │ EdgeAgent, │  │ demos,     │  │ trajectory│  │   │
+│  │  │ storage    │  │ latency    │  │ edge       │  │ export    │  │   │
+│  │  │ backends   │  │ estimator  │  │ replay     │  │           │  │   │
+│  │  └────────────┘  └────────────┘  └────────────┘  └───────────┘  │   │
+│  │                                                                  │   │
 │  │  ┌────────────┐  ┌────────────┐                                  │   │
 │  │  │forge-python│  │forge-wasm  │                                  │   │
 │  │  │            │  │            │                                  │   │
