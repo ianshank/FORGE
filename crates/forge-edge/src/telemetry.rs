@@ -1,8 +1,8 @@
 //! Store-and-forward telemetry buffer for edge devices.
 //!
-//! Accumulates [`CompactReplay`] objects in a bounded buffer. When
-//! [`flush()`](TelemetryCollector::flush) is called, serializes each replay
-//! and sends raw bytes via a [`ReplayTransport`] backend.
+//! Accumulates serialized [`CompactReplay`] payloads in a bounded buffer.
+//! When [`flush()`](TelemetryCollector::flush) is called, sends the stored
+//! raw bytes via a [`ReplayTransport`] backend.
 
 use forge_replay::compact::CompactReplay;
 use forge_types::config::EdgeConfig;
@@ -12,16 +12,21 @@ use tracing::{debug, info, instrument, warn};
 
 use crate::metrics::TelemetrySnapshot;
 
+struct BufferedReplay {
+    seed: u64,
+    payload: Vec<u8>,
+}
+
 /// Store-and-forward telemetry buffer for edge devices.
 ///
-/// Accumulates [`CompactReplay`] objects in a bounded buffer. When
-/// [`flush()`](TelemetryCollector::flush) is called, serializes and
-/// sends via a [`ReplayTransport`] backend. If the buffer is full,
+/// Accumulates serialized [`CompactReplay`] payloads in a bounded buffer.
+/// When [`flush()`](TelemetryCollector::flush) is called, sends the stored
+/// bytes via a [`ReplayTransport`] backend. If the buffer is full,
 /// [`record()`](TelemetryCollector::record) returns an error rather than
 /// flushing automatically.
 pub struct TelemetryCollector {
-    /// Buffered replays waiting to be flushed.
-    buffer: Vec<CompactReplay>,
+    /// Buffered replay payloads waiting to be flushed.
+    buffer: Vec<BufferedReplay>,
     /// Current estimated buffer size in bytes.
     buffer_bytes: u64,
     /// Maximum buffer capacity in bytes.
@@ -63,13 +68,11 @@ impl TelemetryCollector {
     /// Returns an error if the buffer would exceed its byte capacity.
     #[instrument(skip_all)]
     pub fn record(&mut self, replay: CompactReplay) -> ForgeResult<()> {
-        // Estimate replay size without full serialization.
-        // Each tick has ~(num_agents * 4 bytes) for actions, plus ~200 bytes overhead
-        // for config hash, seed, metadata. This avoids the cost of full bincode serialization.
-        let estimated_bytes = (replay.actions.len() as u64)
-            * (replay.actions.first().map_or(1, |a| a.len()) as u64 * 4)
-            + 512; // overhead for config, metadata, format fields
-        let replay_bytes = estimated_bytes;
+        let seed = replay.seed;
+        let payload = replay
+            .to_bytes()
+            .map_err(|error| ForgeError::Edge(EdgeError::Telemetry(error)))?;
+        let replay_bytes = payload.len() as u64;
 
         if self.buffer_bytes + replay_bytes > self.max_buffer_bytes {
             warn!(
@@ -84,7 +87,7 @@ impl TelemetryCollector {
         }
 
         self.buffer_bytes += replay_bytes;
-        self.buffer.push(replay);
+    self.buffer.push(BufferedReplay { seed, payload });
         self.total_recorded += 1;
 
         debug!(
@@ -122,16 +125,8 @@ impl TelemetryCollector {
 
         for (i, replay) in replays.into_iter().enumerate() {
             let key = format!("edge_replay_{}_{}", replay.seed, i);
-            let payload = match replay.to_bytes() {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    warn!(error = %e, "Failed to serialize replay, skipping");
-                    self.total_flush_failures += 1;
-                    continue;
-                }
-            };
 
-            match transport.send(&key, &payload) {
+            match transport.send(&key, &replay.payload) {
                 Ok(()) => {
                     sent += 1;
                     self.total_flushed += 1;
@@ -139,12 +134,8 @@ impl TelemetryCollector {
                 Err(e) => {
                     warn!(error = %e, "Transport send failed, re-queuing replay");
                     self.total_flush_failures += 1;
-                    let replay_size = payload.len() as u64;
-                    // Reconstruct replay from bytes for re-queue
-                    if let Ok(restored) = CompactReplay::from_bytes(&payload) {
-                        failed_bytes += replay_size;
-                        failed_replays.push(restored);
-                    }
+                    failed_bytes += replay.payload.len() as u64;
+                    failed_replays.push(replay);
                 }
             }
         }
@@ -291,6 +282,20 @@ mod tests {
         cfg.telemetry_buffer_bytes = 1; // 1 byte limit
         let mut collector = TelemetryCollector::new(&cfg);
         let replay = make_test_replay();
+
+        let result = collector.record(replay);
+        assert!(result.is_err());
+        assert_eq!(collector.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_record_uses_serialized_size_for_capacity() {
+        let replay = make_test_replay();
+        let replay_bytes = replay.to_bytes().unwrap().len() as u64;
+
+        let mut cfg = make_edge_config();
+        cfg.telemetry_buffer_bytes = replay_bytes.saturating_sub(1);
+        let mut collector = TelemetryCollector::new(&cfg);
 
         let result = collector.record(replay);
         assert!(result.is_err());

@@ -35,6 +35,7 @@ pub fn compress_replay(data: &[u8], config: &ReplayTransportConfig) -> CloudResu
             }
             .into());
         }
+<<<<<<< HEAD
         debug!(size = data.len(), "compression disabled, sending framed uncompressed");
         let mut out = Vec::with_capacity(1 + data.len());
         out.push(FRAME_UNCOMPRESSED);
@@ -319,12 +320,9 @@ mod tests {
         let config = disabled_compression_config();
         let original = b"some data";
         let result = compress_replay(original, &config).unwrap();
-        // When compression is disabled, output is framed with FRAME_UNCOMPRESSED header
-        assert_eq!(result[0], 0xFF); // FRAME_UNCOMPRESSED
+        assert_eq!(result[0], FRAME_UNCOMPRESSED);
         assert_eq!(&result[1..], original);
-        // Should roundtrip through decompress
-        let decompressed = decompress_replay(&result).unwrap();
-        assert_eq!(decompressed, original);
+        assert_eq!(decompress_replay(&result).unwrap(), original);
     }
 
     #[test]
