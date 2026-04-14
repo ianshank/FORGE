@@ -10,6 +10,9 @@ use tracing::{debug, instrument, warn};
 use crate::config::ReplayTransportConfig;
 use crate::error::{CloudResult, TransportError};
 
+/// Maximum decompressed replay size (100 MB) to prevent memory exhaustion from crafted input.
+const MAX_DECOMPRESSED_SIZE: usize = 100 * 1024 * 1024;
+
 /// Compresses serialized replay bytes using a simple run-length encoding
 /// when compression is enabled.
 ///
@@ -17,6 +20,13 @@ use crate::error::{CloudResult, TransportError};
 #[instrument(skip(data, config))]
 pub fn compress_replay(data: &[u8], config: &ReplayTransportConfig) -> CloudResult<Vec<u8>> {
     if !config.compression_enabled {
+        if data.len() > config.max_payload_bytes {
+            return Err(TransportError::PayloadTooLarge {
+                size: data.len(),
+                max: config.max_payload_bytes,
+            }
+            .into());
+        }
         debug!(size = data.len(), "compression disabled, passing through");
         return Ok(data.to_vec());
     }
@@ -87,6 +97,13 @@ pub fn decompress_replay(data: &[u8]) -> CloudResult<Vec<u8>> {
             0x00 => {
                 // Literal byte
                 decompressed.push(data[i + 1]);
+                if decompressed.len() > MAX_DECOMPRESSED_SIZE {
+                    return Err(TransportError::PayloadTooLarge {
+                        size: decompressed.len(),
+                        max: MAX_DECOMPRESSED_SIZE,
+                    }
+                    .into());
+                }
                 i += 2;
             }
             0x01 => {
@@ -101,6 +118,13 @@ pub fn decompress_replay(data: &[u8]) -> CloudResult<Vec<u8>> {
                 let count = data[i + 2] as usize;
                 for _ in 0..count {
                     decompressed.push(byte);
+                }
+                if decompressed.len() > MAX_DECOMPRESSED_SIZE {
+                    return Err(TransportError::PayloadTooLarge {
+                        size: decompressed.len(),
+                        max: MAX_DECOMPRESSED_SIZE,
+                    }
+                    .into());
                 }
                 i += 3;
             }

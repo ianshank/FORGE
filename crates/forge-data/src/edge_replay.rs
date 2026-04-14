@@ -159,7 +159,7 @@ impl DatasetLoader for EdgeReplayLoader {
         let mut bin_files: Vec<std::path::PathBuf> = entries
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
-            .filter(|p| p.extension().is_some_and(|ext| ext == "bin"))
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("bin"))
             .collect();
 
         // Sort for deterministic ordering.

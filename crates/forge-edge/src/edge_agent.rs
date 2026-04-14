@@ -52,17 +52,19 @@ fn flatten_observation(obs: &Observation) -> Vec<f32> {
     flat.push(obs.position.0 as f32);
     flat.push(obs.position.1 as f32);
 
-    // Messages
-    for &msg in &obs.messages {
-        flat.push(msg as f32);
+    // Messages (fixed size: DEFAULT_COMM_BUFFER_SIZE)
+    let max_messages = forge_types::constants::DEFAULT_COMM_BUFFER_SIZE as usize;
+    for i in 0..max_messages {
+        flat.push(obs.messages.get(i).copied().unwrap_or(0) as f32);
     }
 
     // Day phase
     flat.push(obs.day_phase as f32);
 
-    // Task progress
-    for &progress in &obs.task_progress {
-        flat.push(progress);
+    // Task progress (fixed size: DEFAULT_MAX_PREDICATES)
+    let max_predicates = forge_types::constants::DEFAULT_MAX_PREDICATES as usize;
+    for i in 0..max_predicates {
+        flat.push(obs.task_progress.get(i).copied().unwrap_or(0.0));
     }
 
     // Drone fields

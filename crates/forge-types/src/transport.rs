@@ -138,21 +138,20 @@ mod tests {
         }
 
         fn latest_version(&self, name: &str) -> ForgeResult<Option<String>> {
-            let models = self.models.lock().unwrap();
-            Ok(models
-                .iter()
-                .filter(|(n, _, _)| n == name)
-                .next_back()
-                .map(|(_, v, _)| v.clone()))
+            let mut versions = self.list_versions(name)?;
+            versions.sort();
+            Ok(versions.last().cloned())
         }
 
         fn list_versions(&self, name: &str) -> ForgeResult<Vec<String>> {
             let models = self.models.lock().unwrap();
-            Ok(models
+            let mut versions: Vec<String> = models
                 .iter()
                 .filter(|(n, _, _)| n == name)
                 .map(|(_, v, _)| v.clone())
-                .collect())
+                .collect();
+            versions.sort();
+            Ok(versions)
         }
 
         fn backend_name(&self) -> &str {

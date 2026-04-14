@@ -51,7 +51,9 @@ impl TrajectoryReconstructor {
             // Build placeholder AgentResponse-like data: we only have
             // action IDs from the compact replay, no reasoning traces.
             let num_agents = observations.len();
-            let actions: Vec<u32> = action_tick.cloned().unwrap_or_else(|| vec![0; num_agents]);
+            let mut actions: Vec<u32> = action_tick.cloned().unwrap_or_else(|| vec![0; num_agents]);
+            actions.resize(num_agents, 0); // pad with Noop
+            actions.truncate(num_agents);
             let responses: Vec<forge_types::agent_interface::AgentResponse> = actions
                 .iter()
                 .map(|&a| forge_types::agent_interface::AgentResponse::from_action(a))
