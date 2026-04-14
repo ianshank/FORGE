@@ -13,8 +13,14 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 # Note: tests/ is intentionally excluded — not needed for cargo build --release
+#
+# When FEATURES is set (e.g. "gcs"), we build the whole workspace with the
+# qualified feature flag (forge-cloud/gcs) so that forge-cloud's feature-gated
+# code is compiled.  `cargo build -p forge-server --features gcs` would fail
+# because forge-server has no such feature — workspace-level features must use
+# the `<package>/<feature>` syntax without `-p`.
 RUN if [ -n "$FEATURES" ]; then \
-      cargo build --release -p forge-server --features "$FEATURES"; \
+      cargo build --release --workspace --features "forge-cloud/$FEATURES"; \
     else \
       cargo build --release -p forge-server; \
     fi

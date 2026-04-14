@@ -1,8 +1,10 @@
 //! Backend selection factory for runtime construction of storage backends.
 //!
 //! Reads the [`StorageConfig`](crate::config::StorageConfig) and constructs
-//! the appropriate trait implementations. When `storage_backend` is `"gcs"`,
-//! the `gcs` feature flag must be enabled at compile time.
+//! the appropriate trait implementations. When
+//! [`StorageConfig::backend`](crate::config::StorageConfig::backend) is
+//! [`StorageBackend::Gcs`](crate::config::StorageBackend::Gcs), the `gcs`
+//! feature flag must be enabled at compile time.
 
 use crate::config::{StorageBackend, StorageConfig};
 use crate::error::{CloudError, CloudResult, StorageError};
@@ -40,8 +42,8 @@ pub fn create_replay_store(config: &StorageConfig) -> CloudResult<Box<dyn traits
             #[cfg(not(feature = "gcs"))]
             {
                 let _ = (bucket, prefix);
-                Err(CloudError::Storage(StorageError::ReadFailed {
-                    path: "gcs".to_string(),
+                Err(CloudError::Storage(StorageError::FeatureNotEnabled {
+                    backend: "gcs".to_string(),
                     reason: "GCS backend requested but `gcs` feature is not enabled. \
                              Rebuild with `--features gcs`."
                         .to_string(),
@@ -80,8 +82,8 @@ pub fn create_model_store(config: &StorageConfig) -> CloudResult<Box<dyn traits:
             #[cfg(not(feature = "gcs"))]
             {
                 let _ = (bucket, prefix);
-                Err(CloudError::Storage(StorageError::ReadFailed {
-                    path: "gcs".to_string(),
+                Err(CloudError::Storage(StorageError::FeatureNotEnabled {
+                    backend: "gcs".to_string(),
                     reason: "GCS backend requested but `gcs` feature is not enabled. \
                              Rebuild with `--features gcs`."
                         .to_string(),
@@ -124,8 +126,8 @@ pub fn create_replay_transport(
             #[cfg(not(feature = "gcs"))]
             {
                 let _ = (bucket, prefix);
-                Err(CloudError::Storage(StorageError::ReadFailed {
-                    path: "gcs".to_string(),
+                Err(CloudError::Storage(StorageError::FeatureNotEnabled {
+                    backend: "gcs".to_string(),
                     reason: "GCS backend requested but `gcs` feature is not enabled. \
                              Rebuild with `--features gcs`."
                         .to_string(),

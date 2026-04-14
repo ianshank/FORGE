@@ -142,6 +142,15 @@ pub enum StorageError {
         /// Description of the format issue.
         reason: String,
     },
+
+    /// A required Cargo feature is not enabled.
+    #[error("feature not enabled for '{backend}': {reason}")]
+    FeatureNotEnabled {
+        /// Name of the storage backend that requires the feature.
+        backend: String,
+        /// Explanation of which feature to enable.
+        reason: String,
+    },
 }
 
 /// Errors that can occur in the model registry.

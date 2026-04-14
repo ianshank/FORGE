@@ -116,11 +116,18 @@ pub struct StorageConfig {
     pub model_registry_path: String,
     /// Path for checkpoint storage.
     pub checkpoint_path: String,
-    /// GCP project ID (used when backend is `Gcs`; empty = use ADC default).
+    /// GCP project ID (logged when backend is [`StorageBackend::Gcs`]; empty = use ADC default).
+    ///
+    /// `object_store` 0.11 infers the project from credentials/bucket ownership,
+    /// so this value is used for tracing only. It will be passed to the builder
+    /// once `GoogleCloudStorageBuilder` exposes a project-ID setter.
     pub gcp_project: String,
-    /// GCP region (used when backend is `Gcs`).
+    /// GCP region — reserved for future use (e.g. regional endpoint selection).
+    ///
+    /// Not currently consumed by the storage backend implementation.
     pub gcp_region: String,
-    /// GCP service account email (used when backend is `Gcs`; empty = use ADC).
+    /// GCP service account key JSON (used when backend is [`StorageBackend::Gcs`];
+    /// empty = use Application Default Credentials).
     pub gcp_service_account: String,
 }
 
