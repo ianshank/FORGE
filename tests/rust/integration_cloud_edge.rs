@@ -462,6 +462,14 @@ fn test_cloud_edge_config_backward_compat() {
         constants::DEFAULT_EDGE_MCTS_MIN_SIMULATIONS
     );
 
+    // Test with a TOML that sets a ForgeConfig field but omits cloud/edge
+    let partial_toml = "[world]\nwidth = 48\nheight = 48\n";
+    let partial_config: ForgeConfig =
+        toml::from_str(partial_toml).expect("partial TOML should parse");
+    assert_eq!(partial_config.world.width, 48);
+    assert!(!partial_config.cloud.enabled, "cloud still disabled");
+    assert!(!partial_config.edge.enabled, "edge still disabled");
+
     // Test that a TOML with explicit cloud/edge sections also parses correctly
     let extended_toml = format!(
         "{}\n\n[cloud]\nenabled = true\nnum_workers = 8\n\n[edge]\nenabled = true\nmcts_latency_budget_ms = 100\n",

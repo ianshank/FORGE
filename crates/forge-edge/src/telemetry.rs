@@ -124,8 +124,13 @@ impl TelemetryCollector {
         let mut failed_replays = Vec::new();
         let mut failed_bytes = 0u64;
 
+        let flush_nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+
         for (i, replay) in replays.into_iter().enumerate() {
-            let key = format!("edge_replay_{}_{}", replay.seed, i);
+            let key = format!("edge_replay_{}_{}_{}", replay.seed, flush_nonce, i);
 
             match transport.send(&key, &replay.payload) {
                 Ok(()) => {

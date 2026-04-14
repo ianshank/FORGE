@@ -136,9 +136,11 @@ impl DatasetLoader for EdgeReplayLoader {
     ///
     /// # Errors
     ///
-    /// Returns [`DatasetError::Io`] if the directory cannot be read, or if
-    /// any individual replay file fails to load. Files that fail
-    /// deserialization are logged as warnings and skipped.
+    /// Returns [`DatasetError::Io`] if `path` is not a directory or if the
+    /// directory itself cannot be read. Individual replay files are loaded
+    /// on a best-effort basis: files that cannot be read, deserialized, or
+    /// reconstructed are logged as warnings and skipped, so the returned
+    /// dataset may be partial.
     ///
     /// [`CompactReplay`]: forge_replay::compact::CompactReplay
     /// [`OfflineDataset`]: crate::loader::OfflineDataset

@@ -210,12 +210,18 @@ impl traits::ModelStore for LocalModelStore {
             path: file.display().to_string(),
             reason: e.to_string(),
         })?;
-        // Update latest.txt
+        // Update latest.txt only if this version is newer than the current latest.
         let latest = self.latest_file(model_id);
-        fs::write(&latest, version_str).map_err(|e| StorageError::WriteFailed {
-            path: latest.display().to_string(),
-            reason: e.to_string(),
-        })?;
+        let should_update = match fs::read_to_string(&latest) {
+            Ok(current) => current.trim().parse::<u32>().map_or(true, |v| version > v),
+            Err(_) => true,
+        };
+        if should_update {
+            fs::write(&latest, version_str).map_err(|e| StorageError::WriteFailed {
+                path: latest.display().to_string(),
+                reason: e.to_string(),
+            })?;
+        }
         debug!(
             model_id,
             version,
@@ -323,14 +329,22 @@ impl forge_types::transport::ModelStore for LocalModelStore {
                 file.display()
             )))
         })?;
-        // Update latest.txt
+        // Update latest.txt only if this version sorts after the current latest.
         let latest = self.latest_file(name);
-        fs::write(&latest, version).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(format!(
-                "failed to write {}: {e}",
-                latest.display()
-            )))
-        })?;
+        let should_update = match fs::read_to_string(&latest) {
+            Ok(current) => version > current.trim(),
+            Err(_) => true,
+        };
+        if should_update {
+            fs::write(&latest, version).map_err(|e| {
+                forge_types::error::ForgeError::Cloud(
+                    forge_types::error::CloudError::Storage(format!(
+                        "failed to write {}: {e}",
+                        latest.display()
+                    )),
+                )
+            })?;
+        }
         debug!(
             name,
             version,
