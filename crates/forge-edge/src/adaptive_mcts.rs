@@ -44,7 +44,16 @@ impl<M: LatentForwardModel + Clone> AdaptiveMctsSearch<M> {
     pub fn new(model: M, edge_config: &EdgeConfig, mcts_config: LatentMctsConfig) -> Self {
         let estimator = LatencyEstimator::new(edge_config.latency_ema_alpha);
         let min = edge_config.mcts_min_simulations;
-        let max = edge_config.mcts_max_simulations.max(min); // ensure max >= min
+        let max = if edge_config.mcts_max_simulations < min {
+            warn!(
+                min_simulations = min,
+                max_simulations = edge_config.mcts_max_simulations,
+                "edge config had inverted simulation bounds; normalizing max to min"
+            );
+            min
+        } else {
+            edge_config.mcts_max_simulations
+        };
         Self {
             model,
             estimator,
@@ -205,6 +214,20 @@ mod tests {
         // Second search: estimator now has data, huge budget -> clamped to max (50)
         let (_, metrics) = search.search(&obs).unwrap();
         assert_eq!(metrics.simulations_used, 50);
+    }
+
+    #[test]
+    fn test_new_normalizes_inverted_simulation_bounds() {
+        let model = StubLatentModel::new(4, 32);
+        let mut edge_cfg = make_edge_config();
+        edge_cfg.mcts_min_simulations = 20;
+        edge_cfg.mcts_max_simulations = 4;
+        let mcts_cfg = make_mcts_config(4);
+        let mut search = AdaptiveMctsSearch::new(model, &edge_cfg, mcts_cfg);
+
+        let obs = vec![0.0; 50];
+        let (_, metrics) = search.search(&obs).unwrap();
+        assert_eq!(metrics.simulations_used, 20);
     }
 
     #[test]

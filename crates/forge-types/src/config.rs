@@ -507,7 +507,10 @@ pub struct EdgeConfig {
     pub telemetry_interval_s: u32,
     /// Maximum telemetry buffer size in bytes.
     pub telemetry_buffer_bytes: u64,
-    /// Whether to compress telemetry before upload.
+    /// Reserved flag for future telemetry compression support.
+    ///
+    /// The built-in telemetry collector currently uploads raw compact replay
+    /// bytes regardless of this setting.
     pub compress_telemetry: bool,
     /// ONNX inference batch size on edge.
     pub onnx_batch_size: u32,

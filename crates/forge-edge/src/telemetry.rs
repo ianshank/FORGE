@@ -1,8 +1,8 @@
 //! Store-and-forward telemetry buffer for edge devices.
 //!
 //! Accumulates [`CompactReplay`] objects in a bounded buffer. When
-//! [`flush()`](TelemetryCollector::flush) is called, serializes and
-//! sends via a [`ReplayTransport`] backend.
+//! [`flush()`](TelemetryCollector::flush) is called, serializes each replay
+//! and sends raw bytes via a [`ReplayTransport`] backend.
 
 use forge_replay::compact::CompactReplay;
 use forge_types::config::EdgeConfig;
@@ -41,6 +41,12 @@ pub struct TelemetryCollector {
 impl TelemetryCollector {
     /// Creates a new telemetry collector from an [`EdgeConfig`].
     pub fn new(config: &EdgeConfig) -> Self {
+        if config.compress_telemetry {
+            warn!(
+                "compress_telemetry is reserved for future transport-level support; built-in telemetry uploads raw compact replay bytes"
+            );
+        }
+
         Self {
             buffer: Vec::new(),
             buffer_bytes: 0,
