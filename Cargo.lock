@@ -518,6 +518,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-cloud"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "chrono",
+ "forge-core",
+ "forge-data",
+ "forge-replay",
+ "forge-types",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-cognitive"
 version = "0.1.0"
 dependencies = [
@@ -573,6 +591,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-edge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "forge-agent",
+ "forge-replay",
+ "forge-types",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-eval"
 version = "0.1.0"
 dependencies = [
@@ -609,11 +643,17 @@ dependencies = [
 name = "forge-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "bincode",
+ "forge-agent",
+ "forge-cloud",
  "forge-cognitive",
  "forge-core",
+ "forge-data",
+ "forge-edge",
  "forge-integration-layer",
  "forge-memory",
  "forge-proposal",
+ "forge-replay",
  "forge-social",
  "forge-task",
  "forge-types",
@@ -621,6 +661,8 @@ dependencies = [
  "rand 0.8.5",
  "rand_pcg",
  "serde_json",
+ "tempfile",
+ "toml",
 ]
 
 [[package]]

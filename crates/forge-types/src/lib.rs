@@ -30,6 +30,7 @@ pub mod observation;
 pub mod prelude;
 pub mod resource;
 pub mod task;
+pub mod transport;
 pub mod validation;
 
 // Re-export commonly used types at crate root
@@ -43,3 +44,4 @@ pub use intent::{AgentIntent, IntentDeclaration, IntentLabel};
 pub use observation::{Observation, StepResult};
 pub use resource::{CraftingRecipe, ItemType, RecipeBook, ResourceNode};
 pub use task::{ActiveTask, Predicate, TaskComposition, TaskDefinition, TaskTier};
+pub use transport::{ModelStore, ReplayTransport};

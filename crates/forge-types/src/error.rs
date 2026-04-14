@@ -27,6 +27,14 @@ pub enum ForgeError {
     /// An error occurred in the task system.
     #[error("task error: {0}")]
     Task(#[from] TaskError),
+
+    /// An error occurred in the cloud training pipeline.
+    #[error("cloud error: {0}")]
+    Cloud(#[from] CloudError),
+
+    /// An error occurred in the edge runtime.
+    #[error("edge error: {0}")]
+    Edge(#[from] EdgeError),
 }
 
 /// Errors that can occur during world generation.
@@ -137,6 +145,77 @@ pub enum TaskError {
     InvalidDifficulty(u8),
 }
 
+/// Errors in the cloud training pipeline.
+#[derive(Debug, Error)]
+pub enum CloudError {
+    /// An error occurred with cloud storage operations.
+    #[error("storage error: {0}")]
+    Storage(String),
+
+    /// An error occurred during replay transport.
+    #[error("transport error: {0}")]
+    Transport(String),
+
+    /// An error occurred with worker management.
+    #[error("worker error: {0}")]
+    Worker(String),
+
+    /// An error occurred in the model registry.
+    #[error("model registry error: {0}")]
+    ModelRegistry(String),
+
+    /// An error occurred in the training coordinator.
+    #[error("coordinator error: {0}")]
+    Coordinator(String),
+
+    /// An error occurred during replay compression.
+    #[error("compression error: {0}")]
+    Compression(String),
+
+    /// Replay payload exceeds the configured maximum size.
+    #[error("replay payload too large: {size} bytes exceeds limit of {max} bytes")]
+    PayloadTooLarge {
+        /// Actual payload size in bytes.
+        size: u64,
+        /// Maximum allowed payload size in bytes.
+        max: u64,
+    },
+}
+
+/// Errors in the edge runtime.
+#[derive(Debug, Error)]
+pub enum EdgeError {
+    /// An error occurred during neural network inference.
+    #[error("inference error: {0}")]
+    Inference(String),
+
+    /// An error occurred in the telemetry subsystem.
+    #[error("telemetry error: {0}")]
+    Telemetry(String),
+
+    /// An error occurred during model update.
+    #[error("model update error: {0}")]
+    ModelUpdate(String),
+
+    /// MCTS planning exceeded the configured latency budget.
+    #[error("latency budget exceeded: budget={budget_ms}ms, actual={actual_ms}ms")]
+    LatencyBudgetExceeded {
+        /// Configured latency budget in milliseconds.
+        budget_ms: u32,
+        /// Actual latency in milliseconds.
+        actual_ms: u32,
+    },
+
+    /// Telemetry buffer is full and cannot accept more data.
+    #[error("telemetry buffer full: {current_bytes} bytes of {max_bytes} bytes used")]
+    TelemetryBufferFull {
+        /// Current buffer usage in bytes.
+        current_bytes: u64,
+        /// Maximum buffer capacity in bytes.
+        max_bytes: u64,
+    },
+}
+
 /// Result type alias for FORGE operations.
 pub type ForgeResult<T> = Result<T, ForgeError>;
 
@@ -198,5 +277,108 @@ mod tests {
         let result: ForgeResult<u32> = Err(ForgeError::Serialization("bad data".to_string()));
         assert!(result.is_err());
         assert!(matches!(result, Err(ForgeError::Serialization(_))));
+    }
+
+    // ---- Cloud error tests ----
+
+    #[test]
+    fn test_cloud_error_display() {
+        let err = CloudError::Storage("bucket not found".to_string());
+        assert!(err.to_string().contains("storage error"));
+        assert!(err.to_string().contains("bucket not found"));
+    }
+
+    #[test]
+    fn test_cloud_error_conversion_to_forge() {
+        let cloud_err = CloudError::Transport("connection refused".to_string());
+        let forge_err: ForgeError = cloud_err.into();
+        assert!(matches!(forge_err, ForgeError::Cloud(_)));
+        assert!(forge_err.to_string().contains("transport error"));
+    }
+
+    #[test]
+    fn test_cloud_payload_too_large_display() {
+        let err = CloudError::PayloadTooLarge {
+            size: 20_000_000,
+            max: 10_485_760,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("20000000"));
+        assert!(msg.contains("10485760"));
+    }
+
+    #[test]
+    fn test_cloud_error_all_variants() {
+        let variants: Vec<CloudError> = vec![
+            CloudError::Storage("s".to_string()),
+            CloudError::Transport("t".to_string()),
+            CloudError::Worker("w".to_string()),
+            CloudError::ModelRegistry("m".to_string()),
+            CloudError::Coordinator("c".to_string()),
+            CloudError::Compression("z".to_string()),
+            CloudError::PayloadTooLarge { size: 1, max: 0 },
+        ];
+        for err in &variants {
+            // All variants must produce non-empty display strings.
+            assert!(!err.to_string().is_empty());
+        }
+    }
+
+    // ---- Edge error tests ----
+
+    #[test]
+    fn test_edge_error_display() {
+        let err = EdgeError::Inference("ONNX model not loaded".to_string());
+        assert!(err.to_string().contains("inference error"));
+        assert!(err.to_string().contains("ONNX model not loaded"));
+    }
+
+    #[test]
+    fn test_edge_error_conversion_to_forge() {
+        let edge_err = EdgeError::Telemetry("buffer overflow".to_string());
+        let forge_err: ForgeError = edge_err.into();
+        assert!(matches!(forge_err, ForgeError::Edge(_)));
+        assert!(forge_err.to_string().contains("telemetry error"));
+    }
+
+    #[test]
+    fn test_edge_latency_budget_exceeded_display() {
+        let err = EdgeError::LatencyBudgetExceeded {
+            budget_ms: 50,
+            actual_ms: 120,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("budget=50ms"));
+        assert!(msg.contains("actual=120ms"));
+    }
+
+    #[test]
+    fn test_edge_telemetry_buffer_full_display() {
+        let err = EdgeError::TelemetryBufferFull {
+            current_bytes: 1_048_576,
+            max_bytes: 1_048_576,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("1048576"));
+    }
+
+    #[test]
+    fn test_edge_error_all_variants() {
+        let variants: Vec<EdgeError> = vec![
+            EdgeError::Inference("i".to_string()),
+            EdgeError::Telemetry("t".to_string()),
+            EdgeError::ModelUpdate("m".to_string()),
+            EdgeError::LatencyBudgetExceeded {
+                budget_ms: 50,
+                actual_ms: 100,
+            },
+            EdgeError::TelemetryBufferFull {
+                current_bytes: 500,
+                max_bytes: 1000,
+            },
+        ];
+        for err in &variants {
+            assert!(!err.to_string().is_empty());
+        }
     }
 }

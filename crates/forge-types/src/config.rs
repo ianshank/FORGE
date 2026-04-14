@@ -44,6 +44,10 @@ pub struct ForgeConfig {
     pub drone: DroneConfig,
     /// Agricultural simulation parameters.
     pub agri: AgriConfig,
+    /// Cloud training pipeline parameters.
+    pub cloud: CloudConfig,
+    /// Edge deployment runtime parameters.
+    pub edge: EdgeConfig,
 }
 
 /// World generation configuration.
@@ -428,6 +432,120 @@ impl Default for AgriConfig {
     }
 }
 
+/// Cloud training pipeline configuration.
+///
+/// When `enabled` is false (default), all cloud training features are inactive
+/// and the simulation behaves identically to pre-cloud versions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CloudConfig {
+    /// Whether cloud training pipeline is enabled.
+    pub enabled: bool,
+    /// Number of rollout workers.
+    pub num_workers: u32,
+    /// Replay batch size (replays collected before syncing to coordinator).
+    pub replay_batch_size: u32,
+    /// Worker heartbeat interval in seconds.
+    pub heartbeat_interval_s: u32,
+    /// Worker heartbeat timeout in seconds before marking as dead.
+    pub heartbeat_timeout_s: u32,
+    /// Maximum replay payload size in bytes.
+    pub max_replay_size_bytes: u64,
+    /// Compression setting for replay transport. 0 disables compression;
+    /// non-zero values enable the built-in compression scheme.
+    pub compression_level: u8,
+    /// Port for worker coordination service.
+    pub coordinator_port: u16,
+    /// Path for replay archive (local storage backend).
+    pub replay_archive_path: String,
+    /// Path for model registry (local storage backend).
+    pub model_registry_path: String,
+    /// Path for training checkpoint persistence.
+    pub checkpoint_path: String,
+    /// Maximum model versions retained in the registry.
+    pub model_version_retention: u32,
+    /// Checkpoint interval in training steps.
+    pub checkpoint_interval_steps: u64,
+}
+
+impl Default for CloudConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            num_workers: constants::DEFAULT_CLOUD_NUM_WORKERS,
+            replay_batch_size: constants::DEFAULT_CLOUD_REPLAY_BATCH_SIZE,
+            heartbeat_interval_s: constants::DEFAULT_CLOUD_HEARTBEAT_INTERVAL_S,
+            heartbeat_timeout_s: constants::DEFAULT_CLOUD_HEARTBEAT_TIMEOUT_S,
+            max_replay_size_bytes: constants::DEFAULT_CLOUD_MAX_REPLAY_SIZE_BYTES,
+            compression_level: constants::DEFAULT_CLOUD_COMPRESSION_LEVEL,
+            coordinator_port: constants::DEFAULT_CLOUD_COORDINATOR_PORT,
+            replay_archive_path: constants::DEFAULT_CLOUD_REPLAY_ARCHIVE_PATH.to_string(),
+            model_registry_path: constants::DEFAULT_CLOUD_MODEL_REGISTRY_PATH.to_string(),
+            checkpoint_path: constants::DEFAULT_CLOUD_CHECKPOINT_PATH.to_string(),
+            model_version_retention: constants::DEFAULT_CLOUD_MODEL_VERSION_RETENTION,
+            checkpoint_interval_steps: constants::DEFAULT_CLOUD_CHECKPOINT_INTERVAL_STEPS,
+        }
+    }
+}
+
+/// Edge deployment runtime configuration.
+///
+/// When `enabled` is false (default), all edge-specific features are inactive
+/// and agents use standard MCTS without latency budgeting.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EdgeConfig {
+    /// Whether edge runtime features are enabled.
+    pub enabled: bool,
+    /// MCTS latency budget in milliseconds for edge planning.
+    pub mcts_latency_budget_ms: u32,
+    /// Minimum MCTS simulations (floor even under time pressure).
+    pub mcts_min_simulations: u32,
+    /// Maximum MCTS simulations (cap for battery saving).
+    pub mcts_max_simulations: u32,
+    /// Telemetry upload interval in seconds (store-and-forward).
+    pub telemetry_interval_s: u32,
+    /// Maximum telemetry buffer size in bytes.
+    pub telemetry_buffer_bytes: u64,
+    /// Reserved flag for future telemetry compression support.
+    ///
+    /// The built-in telemetry collector currently uploads raw compact replay
+    /// bytes regardless of this setting.
+    pub compress_telemetry: bool,
+    /// ONNX inference batch size on edge.
+    pub onnx_batch_size: u32,
+    /// ONNX thread count on edge.
+    pub onnx_num_threads: u32,
+    /// Model update check interval in seconds.
+    pub model_update_interval_s: u32,
+    /// Exponential moving average alpha for latency estimation.
+    pub latency_ema_alpha: f32,
+    /// Number of upload retries for edge telemetry.
+    pub upload_retry_count: u32,
+    /// Base delay in milliseconds for exponential backoff retries.
+    pub upload_retry_base_ms: u64,
+}
+
+impl Default for EdgeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mcts_latency_budget_ms: constants::DEFAULT_EDGE_MCTS_LATENCY_BUDGET_MS,
+            mcts_min_simulations: constants::DEFAULT_EDGE_MCTS_MIN_SIMULATIONS,
+            mcts_max_simulations: constants::DEFAULT_EDGE_MCTS_MAX_SIMULATIONS,
+            telemetry_interval_s: constants::DEFAULT_EDGE_TELEMETRY_INTERVAL_S,
+            telemetry_buffer_bytes: constants::DEFAULT_EDGE_TELEMETRY_BUFFER_BYTES,
+            compress_telemetry: constants::DEFAULT_EDGE_COMPRESS_TELEMETRY,
+            onnx_batch_size: constants::DEFAULT_EDGE_ONNX_BATCH_SIZE,
+            onnx_num_threads: constants::DEFAULT_EDGE_ONNX_NUM_THREADS,
+            model_update_interval_s: constants::DEFAULT_EDGE_MODEL_UPDATE_INTERVAL_S,
+            latency_ema_alpha: constants::DEFAULT_EDGE_LATENCY_EMA_ALPHA,
+            upload_retry_count: constants::DEFAULT_EDGE_UPLOAD_RETRY_COUNT,
+            upload_retry_base_ms: constants::DEFAULT_EDGE_UPLOAD_RETRY_BASE_MS,
+        }
+    }
+}
+
 /// Environment variable prefix for config overrides.
 const ENV_PREFIX: &str = "FORGE_";
 
@@ -539,6 +657,47 @@ impl ForgeConfig {
         env_override!(agri.num_soil_nodes, u16);
         env_override!(agri.cropland_density, f32);
         env_override!(agri.pasture_density, f32);
+
+        // Cloud overrides
+        env_override!(cloud.enabled, bool);
+        env_override!(cloud.num_workers, u32);
+        env_override!(cloud.replay_batch_size, u32);
+        env_override!(cloud.heartbeat_interval_s, u32);
+        env_override!(cloud.heartbeat_timeout_s, u32);
+        env_override!(cloud.max_replay_size_bytes, u64);
+        env_override!(cloud.compression_level, u8);
+        env_override!(cloud.coordinator_port, u16);
+        env_override!(cloud.model_version_retention, u32);
+        env_override!(cloud.checkpoint_interval_steps, u64);
+
+        // Cloud string path overrides
+        if let Ok(val) = std::env::var("FORGE_CLOUD_REPLAY_ARCHIVE_PATH") {
+            debug!(key = "FORGE_CLOUD_REPLAY_ARCHIVE_PATH", value = %val, "applying env override");
+            self.cloud.replay_archive_path = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_CLOUD_MODEL_REGISTRY_PATH") {
+            debug!(key = "FORGE_CLOUD_MODEL_REGISTRY_PATH", value = %val, "applying env override");
+            self.cloud.model_registry_path = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_CLOUD_CHECKPOINT_PATH") {
+            debug!(key = "FORGE_CLOUD_CHECKPOINT_PATH", value = %val, "applying env override");
+            self.cloud.checkpoint_path = val;
+        }
+
+        // Edge overrides
+        env_override!(edge.enabled, bool);
+        env_override!(edge.mcts_latency_budget_ms, u32);
+        env_override!(edge.mcts_min_simulations, u32);
+        env_override!(edge.mcts_max_simulations, u32);
+        env_override!(edge.telemetry_interval_s, u32);
+        env_override!(edge.telemetry_buffer_bytes, u64);
+        env_override!(edge.compress_telemetry, bool);
+        env_override!(edge.onnx_batch_size, u32);
+        env_override!(edge.onnx_num_threads, u32);
+        env_override!(edge.model_update_interval_s, u32);
+        env_override!(edge.latency_ema_alpha, f32);
+        env_override!(edge.upload_retry_count, u32);
+        env_override!(edge.upload_retry_base_ms, u64);
     }
 }
 
@@ -864,6 +1023,8 @@ num_agents = 4
         let _curriculum = CurriculumConfig::default();
         let _render = RenderConfig::default();
         let _agri = AgriConfig::default();
+        let _cloud = CloudConfig::default();
+        let _edge = EdgeConfig::default();
         let _forge = ForgeConfig::default();
         let _team = TeamStructure::default();
 
@@ -988,6 +1149,123 @@ num_agents = 4
     fn test_forge_config_default_has_agri() {
         let config = ForgeConfig::default();
         assert!(!config.agri.enabled);
+    }
+
+    // ---- Cloud config tests ----
+
+    #[test]
+    fn test_cloud_config_default_disabled() {
+        let config = CloudConfig::default();
+        assert!(!config.enabled);
+    }
+
+    #[test]
+    fn test_cloud_config_default_values_match_constants() {
+        let config = CloudConfig::default();
+        assert_eq!(config.num_workers, constants::DEFAULT_CLOUD_NUM_WORKERS);
+        assert_eq!(
+            config.replay_batch_size,
+            constants::DEFAULT_CLOUD_REPLAY_BATCH_SIZE
+        );
+        assert_eq!(
+            config.compression_level,
+            constants::DEFAULT_CLOUD_COMPRESSION_LEVEL
+        );
+        assert_eq!(
+            config.coordinator_port,
+            constants::DEFAULT_CLOUD_COORDINATOR_PORT
+        );
+        assert_eq!(
+            config.model_version_retention,
+            constants::DEFAULT_CLOUD_MODEL_VERSION_RETENTION
+        );
+    }
+
+    #[test]
+    fn test_cloud_config_serde_roundtrip() {
+        let config = CloudConfig {
+            enabled: true,
+            num_workers: 16,
+            compression_level: 6,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: CloudConfig = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.enabled);
+        assert_eq!(deserialized.num_workers, 16);
+        assert_eq!(deserialized.compression_level, 6);
+    }
+
+    #[test]
+    fn test_forge_config_default_has_cloud() {
+        let config = ForgeConfig::default();
+        assert!(!config.cloud.enabled);
+    }
+
+    // ---- Edge config tests ----
+
+    #[test]
+    fn test_edge_config_default_disabled() {
+        let config = EdgeConfig::default();
+        assert!(!config.enabled);
+    }
+
+    #[test]
+    fn test_edge_config_default_values_match_constants() {
+        let config = EdgeConfig::default();
+        assert_eq!(
+            config.mcts_latency_budget_ms,
+            constants::DEFAULT_EDGE_MCTS_LATENCY_BUDGET_MS
+        );
+        assert_eq!(
+            config.mcts_min_simulations,
+            constants::DEFAULT_EDGE_MCTS_MIN_SIMULATIONS
+        );
+        assert_eq!(
+            config.mcts_max_simulations,
+            constants::DEFAULT_EDGE_MCTS_MAX_SIMULATIONS
+        );
+        assert_eq!(
+            config.onnx_batch_size,
+            constants::DEFAULT_EDGE_ONNX_BATCH_SIZE
+        );
+        assert_eq!(
+            config.latency_ema_alpha,
+            constants::DEFAULT_EDGE_LATENCY_EMA_ALPHA
+        );
+    }
+
+    #[test]
+    fn test_edge_config_serde_roundtrip() {
+        let config = EdgeConfig {
+            enabled: true,
+            mcts_latency_budget_ms: 100,
+            mcts_max_simulations: 500,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: EdgeConfig = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.enabled);
+        assert_eq!(deserialized.mcts_latency_budget_ms, 100);
+        assert_eq!(deserialized.mcts_max_simulations, 500);
+    }
+
+    #[test]
+    fn test_forge_config_default_has_edge() {
+        let config = ForgeConfig::default();
+        assert!(!config.edge.enabled);
+    }
+
+    #[test]
+    fn test_cloud_edge_backward_compatible_deserialization() {
+        // Existing TOML without cloud/edge sections should still parse
+        let json = r#"{"world": {"width": 32}, "agents": {"num_agents": 2}}"#;
+        let config: ForgeConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.world.width, 32);
+        assert_eq!(config.agents.num_agents, 2);
+        // Cloud and edge should be disabled by default
+        assert!(!config.cloud.enabled);
+        assert!(!config.edge.enabled);
     }
 
     #[test]

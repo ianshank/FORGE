@@ -29,6 +29,10 @@
 //!   generate high-quality, natively-labeled trajectory corpora with zero external
 //!   dependencies.
 //!
+//! - **[`edge_replay`]**: [`EdgeReplayLoader`] — reads compact replay files
+//!   uploaded from edge devices, deterministically reconstructs full trajectories
+//!   for the cloud-edge offline RL pipeline.
+//!
 //! # Quick-start
 //!
 //! ```rust,no_run
@@ -41,6 +45,7 @@
 //! println!("Generated {} trajectories", dataset.len());
 //! ```
 
+pub mod edge_replay;
 pub mod generator;
 pub mod loader;
 pub mod maze;
