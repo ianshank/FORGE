@@ -7,7 +7,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    command: ["forge-server", "--cloud-enabled"]
+    # forge-server reads FORGE_CLOUD_* env vars via ForgeConfig::apply_env_overrides()
+    command: ["forge-server"]
     ports:
       - "127.0.0.1:${FORGE_SERVER_PORT:-8080}:8080"
       - "127.0.0.1:${FORGE_CLOUD_COORDINATOR_PORT:-9090}:9090"
@@ -46,7 +47,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    command: ["forge-server", "--worker-mode"]
+    # Workers run the same binary; cloud config enables distributed behavior
+    command: ["forge-server"]
     volumes:
       - ../forge.toml:/app/forge.toml:ro
       - ../configs:/app/configs:ro

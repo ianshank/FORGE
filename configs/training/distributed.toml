@@ -5,9 +5,10 @@
 # features. All values can be overridden via environment variables with
 # the FORGE_ prefix (e.g. FORGE_CLOUD_NUM_WORKERS=16).
 #
-# Usage:
-#   cargo run -p forge-server -- --config configs/training/distributed.toml
+# Usage (Docker):
 #   docker compose -f docker/docker-compose.distributed.yml up --scale worker=4
+# Usage (env vars override — server reads FORGE_* from environment):
+#   FORGE_CLOUD_ENABLED=true FORGE_CLOUD_NUM_WORKERS=8 cargo run -p forge-server
 
 [hardware]
 # Number of parallel simulation workers per node.

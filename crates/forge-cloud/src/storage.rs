@@ -42,7 +42,8 @@ pub struct LocalReplayStore {
 impl LocalReplayStore {
     /// Creates a new local replay store rooted at `base_path`.
     ///
-    /// The directory is created if it does not already exist.
+    /// The directory is created lazily on the first `store` call, not at
+    /// construction time.
     pub fn new(base_path: impl Into<PathBuf>) -> Self {
         let base_path = base_path.into();
         info!(path = %base_path.display(), "Creating local replay store");

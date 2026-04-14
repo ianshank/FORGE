@@ -24,19 +24,22 @@ const FRAME_UNCOMPRESSED: u8 = 0xFF;
 /// Compresses serialized replay bytes using a simple run-length encoding
 /// when compression is enabled.
 ///
-/// If compression is disabled in the config, returns the input unchanged.
+/// If compression is disabled in the config, returns a framed uncompressed payload.
 #[instrument(skip(data, config))]
 pub fn compress_replay(data: &[u8], config: &ReplayTransportConfig) -> CloudResult<Vec<u8>> {
     if !config.compression_enabled {
-        if data.len() > config.max_payload_bytes {
+        if data.len() + 1 > config.max_payload_bytes {
             return Err(TransportError::PayloadTooLarge {
-                size: data.len(),
+                size: data.len() + 1,
                 max: config.max_payload_bytes,
             }
             .into());
         }
-        debug!(size = data.len(), "compression disabled, passing through");
-        return Ok(data.to_vec());
+        debug!(size = data.len(), "compression disabled, sending framed uncompressed");
+        let mut out = Vec::with_capacity(1 + data.len());
+        out.push(FRAME_UNCOMPRESSED);
+        out.extend_from_slice(data);
+        return Ok(out);
     }
 
     if data.len() > config.max_payload_bytes {
@@ -316,7 +319,12 @@ mod tests {
         let config = disabled_compression_config();
         let original = b"some data";
         let result = compress_replay(original, &config).unwrap();
-        assert_eq!(result, original);
+        // When compression is disabled, output is framed with FRAME_UNCOMPRESSED header
+        assert_eq!(result[0], 0xFF); // FRAME_UNCOMPRESSED
+        assert_eq!(&result[1..], original);
+        // Should roundtrip through decompress
+        let decompressed = decompress_replay(&result).unwrap();
+        assert_eq!(decompressed, original);
     }
 
     #[test]
