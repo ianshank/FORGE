@@ -56,6 +56,20 @@ fn hex_move_target(
     }
 }
 
+/// Projects a hex direction onto the nearest cardinal heading.
+///
+/// This preserves compatibility with the existing `Agent.heading: Direction`
+/// field until heading becomes topology-aware.
+#[inline]
+fn heading_from_hex(dir: HexDirection) -> Direction {
+    match dir {
+        HexDirection::NE | HexDirection::NW => Direction::Up,
+        HexDirection::E => Direction::Right,
+        HexDirection::SE | HexDirection::SW => Direction::Down,
+        HexDirection::W => Direction::Left,
+    }
+}
+
 /// Looks up the vehicle-specific terrain cost for a given terrain type.
 ///
 /// Returns the fixed-point movement cost multiplier from `DroneConfig::vehicle_terrain_costs`,
@@ -371,9 +385,17 @@ pub(crate) fn process_movements_with_scratch(
             agent.stamina = (agent.stamina - total_cost).max(0);
         }
 
-        // Update heading for Move actions (MoveHex does not update heading)
-        if let Action::Move(dir) = action {
-            agent.heading = *dir;
+        // Update heading for successful movement actions.
+        // Hex headings are projected to cardinal directions for compatibility
+        // with the current `Direction`-typed heading field.
+        match action {
+            Action::Move(dir) => {
+                agent.heading = *dir;
+            }
+            Action::MoveHex(dir) => {
+                agent.heading = heading_from_hex(*dir);
+            }
+            _ => {}
         }
 
         // Clear old position on grid (only for ground-level agents)
@@ -539,12 +561,16 @@ pub fn process_pushes(
 mod tests {
     use super::*;
     use forge_civ::grid_topology::GridTopologyKind;
-    use forge_civ::SquareTopology;
+    use forge_civ::{HexTopology, SquareTopology};
     use forge_types::config::AgentConfig;
     use forge_types::grid::{Direction, TerrainType};
 
     fn topo() -> GridTopologyKind {
         GridTopologyKind::Square(SquareTopology)
+    }
+
+    fn hex_topo() -> GridTopologyKind {
+        GridTopologyKind::Hex(HexTopology)
     }
 
     fn make_test_grid(width: u16, height: u16) -> Grid {
@@ -611,6 +637,65 @@ mod tests {
                 MoveResult::Moved(expected),
                 "direction: {:?}",
                 dir
+            );
+        }
+    }
+
+    #[test]
+    fn test_move_updates_heading() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_test_agent(0, 5, 5)];
+        agents[0].heading = Direction::Down;
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let actions = vec![Action::Move(Direction::Left)];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
+
+        assert_eq!(results[0], MoveResult::Moved(Position::new(4, 5)));
+        assert_eq!(agents[0].heading, Direction::Left);
+    }
+
+    #[test]
+    fn test_movehex_updates_heading_via_cardinal_projection() {
+        for (hex_dir, expected_heading) in [
+            (HexDirection::NE, Direction::Up),
+            (HexDirection::E, Direction::Right),
+            (HexDirection::SE, Direction::Down),
+            (HexDirection::SW, Direction::Down),
+            (HexDirection::W, Direction::Left),
+            (HexDirection::NW, Direction::Up),
+        ] {
+            let mut grid = make_test_grid(16, 16);
+            let mut agents = [make_test_agent(0, 5, 5)];
+            agents[0].heading = Direction::Right;
+            grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+            let actions = vec![Action::MoveHex(hex_dir)];
+            let results = process_movements(
+                &mut agents,
+                &mut grid,
+                &actions,
+                &default_physics(),
+                None,
+                &hex_topo(),
+            );
+
+            assert!(
+                matches!(results[0], MoveResult::Moved(_)),
+                "hex direction {:?} should move",
+                hex_dir
+            );
+            assert_eq!(
+                agents[0].heading, expected_heading,
+                "hex direction {:?} should map to {:?}",
+                hex_dir, expected_heading
             );
         }
     }

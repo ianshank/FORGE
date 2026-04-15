@@ -90,6 +90,9 @@ pub struct Observation {
     #[serde(default)]
     pub morphology: u8,
     /// Agent's current heading direction (0=Up, 1=Down, 2=Left, 3=Right).
+    ///
+    /// On hex grids, 6-direction movement is projected to the nearest
+    /// cardinal heading before observation export.
     #[serde(default)]
     pub heading: u8,
     /// Latest crop scan results (NDVI/thermal readings). Empty when agri disabled.
