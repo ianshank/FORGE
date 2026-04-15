@@ -28,7 +28,7 @@ chrono = { workspace = true }
 
 # Optional: GCS backend via Apache Arrow object_store
 object_store = { workspace = true, features = ["gcp"], optional = true }
-tokio = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["rt-multi-thread"] }
 futures = { workspace = true, optional = true }
 
 [dev-dependencies]

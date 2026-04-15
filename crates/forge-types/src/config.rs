@@ -476,7 +476,10 @@ pub struct CloudConfig {
     pub gcp_project: String,
     /// GCP region for storage and compute.
     pub gcp_region: String,
-    /// GCP service account email (empty = use ADC).
+    /// GCP service account credentials for the GCS backend.
+    /// Expected value: service account key JSON contents or a key-file path
+    /// (passed to `GoogleCloudStorageBuilder::with_service_account_key`).
+    /// Empty = use Application Default Credentials.
     pub gcp_service_account: String,
 }
 

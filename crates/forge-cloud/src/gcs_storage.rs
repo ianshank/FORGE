@@ -3,8 +3,8 @@
 //!
 //! All types in this module are gated behind the `gcs` Cargo feature flag.
 //! They use the Apache Arrow `object_store` crate for async GCS operations,
-//! wrapped in a shared blocking Tokio runtime (via [`gcs_runtime`]) for
-//! compatibility with FORGE's synchronous trait interfaces.
+//! wrapped in a [`GcsExecutor`] that safely dispatches work whether or not
+//! the caller is already inside a Tokio runtime (see [`gcs_runtime`]).
 //!
 //! Authentication uses Application Default Credentials (ADC) by default.
 //! For local development and CI, set `STORAGE_EMULATOR_HOST` to point at
@@ -36,14 +36,42 @@ use crate::storage::sanitize_key;
 use crate::traits;
 use forge_replay::compact::CompactReplay;
 
-/// Returns a shared [`tokio::runtime::Runtime`] for blocking on async
-/// `object_store` calls within FORGE's synchronous trait methods.
+/// A thin executor whose [`block_on`](Self::block_on) method is safe to call
+/// regardless of whether the current thread is already inside a Tokio runtime.
 ///
-/// A single current-thread runtime is created once and reused for the
-/// lifetime of the process.  This avoids the panic that occurs when
-/// `Runtime::block_on` is called from within an existing Tokio runtime
-/// (e.g. when `forge-server` embeds these stores inside an `axum` handler).
-fn gcs_runtime() -> &'static tokio::runtime::Runtime {
+/// All GCS trait methods obtain an instance via [`gcs_runtime()`] and call
+/// `block_on` to drive `object_store` futures synchronously.
+struct GcsExecutor;
+
+/// Returns a [`GcsExecutor`] whose [`block_on`](GcsExecutor::block_on) method
+/// handles nested-runtime detection automatically.
+///
+/// Call sites use `gcs_runtime().block_on(future)` uniformly — the executor
+/// picks the correct strategy at run time.
+fn gcs_runtime() -> GcsExecutor {
+    GcsExecutor
+}
+
+impl GcsExecutor {
+    /// Drives `future` to completion on the current thread.
+    ///
+    /// * If called from within an existing **multi-threaded** Tokio runtime
+    ///   (e.g. an `axum` handler), uses [`tokio::task::block_in_place`] +
+    ///   [`tokio::runtime::Handle::block_on`] to avoid the nested-runtime
+    ///   panic.
+    /// * Otherwise, creates (once) and reuses a lightweight current-thread
+    ///   runtime via [`fallback_runtime`].
+    fn block_on<F: std::future::Future>(&self, future: F) -> F::Output {
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
+            Err(_) => fallback_runtime().block_on(future),
+        }
+    }
+}
+
+/// Shared fallback runtime for when no Tokio runtime is active on the
+/// current thread (e.g. standalone CLI usage).
+fn fallback_runtime() -> &'static tokio::runtime::Runtime {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RT.get_or_init(|| {
         tokio::runtime::Builder::new_current_thread()
@@ -383,6 +411,7 @@ impl GcsModelStore {
 impl traits::ModelStore for GcsModelStore {
     #[instrument(skip(self, data), fields(model_id = %model_id, version))]
     fn store_model(&self, model_id: &str, version: u32, data: &[u8]) -> CloudResult<()> {
+        sanitize_key(model_id)?;
         let version_str = version.to_string();
         let path = self.model_path(model_id, &version_str);
         gcs_runtime()
@@ -407,6 +436,7 @@ impl traits::ModelStore for GcsModelStore {
 
     #[instrument(skip(self), fields(model_id = %model_id, version))]
     fn load_model(&self, model_id: &str, version: u32) -> CloudResult<Vec<u8>> {
+        sanitize_key(model_id)?;
         let version_str = version.to_string();
         let path = self.model_path(model_id, &version_str);
         let result = gcs_runtime()
@@ -429,6 +459,7 @@ impl traits::ModelStore for GcsModelStore {
 
     #[instrument(skip(self), fields(model_id = %model_id))]
     fn latest_version(&self, model_id: &str) -> CloudResult<Option<u32>> {
+        sanitize_key(model_id)?;
         match self.read_latest(model_id)? {
             Some(s) => {
                 let version: u32 =
@@ -446,6 +477,7 @@ impl traits::ModelStore for GcsModelStore {
 
     #[instrument(skip(self), fields(model_id = %model_id))]
     fn list_versions(&self, model_id: &str) -> CloudResult<Vec<u32>> {
+        sanitize_key(model_id)?;
         let list_prefix =
             ObjectPath::from(format!("{}models/{}/", self.prefix, model_id));
         let objects: Vec<Result<ObjectMeta, _>> = gcs_runtime().block_on(async {
@@ -497,6 +529,16 @@ impl forge_types::transport::ModelStore for GcsModelStore {
         version: &str,
         data: &[u8],
     ) -> forge_types::error::ForgeResult<()> {
+        sanitize_key(name).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(
+                forge_types::error::CloudError::Storage(e.to_string()),
+            )
+        })?;
+        sanitize_key(version).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(
+                forge_types::error::CloudError::Storage(e.to_string()),
+            )
+        })?;
         let path = self.model_path(name, version);
         gcs_runtime()
             .block_on(self.store.put(&path, data.to_vec().into()))
@@ -540,6 +582,16 @@ impl forge_types::transport::ModelStore for GcsModelStore {
         name: &str,
         version: &str,
     ) -> forge_types::error::ForgeResult<Vec<u8>> {
+        sanitize_key(name).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(
+                forge_types::error::CloudError::Storage(e.to_string()),
+            )
+        })?;
+        sanitize_key(version).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(
+                forge_types::error::CloudError::Storage(e.to_string()),
+            )
+        })?;
         let path = self.model_path(name, version);
         let result = gcs_runtime().block_on(self.store.get(&path)).map_err(|e| {
             match e {
@@ -572,6 +624,11 @@ impl forge_types::transport::ModelStore for GcsModelStore {
         &self,
         name: &str,
     ) -> forge_types::error::ForgeResult<Option<String>> {
+        sanitize_key(name).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(
+                forge_types::error::CloudError::Storage(e.to_string()),
+            )
+        })?;
         self.read_latest(name).map_err(|e| {
             forge_types::error::ForgeError::Cloud(
                 forge_types::error::CloudError::Storage(e.to_string()),
@@ -584,6 +641,11 @@ impl forge_types::transport::ModelStore for GcsModelStore {
         &self,
         name: &str,
     ) -> forge_types::error::ForgeResult<Vec<String>> {
+        sanitize_key(name).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(
+                forge_types::error::CloudError::Storage(e.to_string()),
+            )
+        })?;
         let list_prefix =
             ObjectPath::from(format!("{}models/{}/", self.prefix, name));
         let objects: Vec<Result<ObjectMeta, _>> = gcs_runtime().block_on(async {
@@ -680,6 +742,11 @@ impl GcsReplayTransport {
 impl forge_types::transport::ReplayTransport for GcsReplayTransport {
     #[instrument(skip(self, payload), fields(key = %key))]
     fn send(&self, key: &str, payload: &[u8]) -> forge_types::error::ForgeResult<()> {
+        sanitize_key(key).map_err(|e| {
+            forge_types::error::ForgeError::Cloud(
+                forge_types::error::CloudError::Storage(e.to_string()),
+            )
+        })?;
         let path = self.transport_path(key);
         gcs_runtime()
             .block_on(self.store.put(&path, payload.to_vec().into()))
@@ -699,7 +766,8 @@ impl forge_types::transport::ReplayTransport for GcsReplayTransport {
     fn receive(&self) -> forge_types::error::ForgeResult<Option<(String, Vec<u8>)>> {
         let list_prefix = ObjectPath::from(format!("{}transport/", self.prefix));
 
-        // Find the oldest object (by last_modified), failing fast on errors.
+        // Find the oldest .bin object (by last_modified), failing fast on errors.
+        // Non-.bin objects are skipped to avoid processing unexpected files.
         let oldest: Option<ObjectMeta> = gcs_runtime().block_on(async {
             let mut stream = self.store.list(Some(&list_prefix));
             let mut oldest: Option<ObjectMeta> = None;
@@ -711,6 +779,10 @@ impl forge_types::transport::ReplayTransport for GcsReplayTransport {
                         )),
                     )
                 })?;
+                let filename = meta.location.filename().unwrap_or_default();
+                if !filename.ends_with(".bin") {
+                    continue;
+                }
                 if oldest
                     .as_ref()
                     .map_or(true, |o| meta.last_modified < o.last_modified)
@@ -747,14 +819,16 @@ impl forge_types::transport::ReplayTransport for GcsReplayTransport {
             )
         })?;
 
-        // Extract key from filename.
-        let key = meta
-            .location
-            .filename()
-            .unwrap_or_default()
+        // Extract key from filename (guaranteed to end with .bin by the filter).
+        let filename = meta.location.filename().unwrap_or_default();
+        let key = filename
             .strip_suffix(".bin")
-            .unwrap_or_default()
+            .unwrap_or(filename)
             .to_string();
+        if key.is_empty() {
+            warn!(path = %meta.location, "Skipping transport object with empty key");
+            return Ok(None);
+        }
 
         // Delete after successful download (at-most-once delivery).
         // Propagate delete errors — if deletion fails, the message may be
@@ -1028,6 +1102,59 @@ mod tests {
     fn test_transport_backend_name() {
         let transport = GcsReplayTransport::with_object_store(mem_store(), "forge/");
         assert_eq!(TypesReplayTransport::backend_name(&transport), "gcs");
+    }
+
+    // --- Path-traversal validation -------------------------------------------
+
+    #[test]
+    fn test_model_store_rejects_traversal_in_model_id() {
+        let store = GcsModelStore::with_object_store(mem_store(), "forge/");
+        assert!(ModelStore::store_model(&store, "../escape", 1, b"x").is_err());
+        assert!(ModelStore::load_model(&store, "a/b", 1).is_err());
+        assert!(ModelStore::latest_version(&store, "a\\b").is_err());
+        assert!(ModelStore::list_versions(&store, "../up").is_err());
+    }
+
+    #[test]
+    fn test_model_store_str_rejects_traversal_in_name_or_version() {
+        let store = GcsModelStore::with_object_store(mem_store(), "forge/");
+        assert!(TypesModelStore::store_model(&store, "../x", "v1", b"d").is_err());
+        assert!(TypesModelStore::store_model(&store, "ok", "../v", b"d").is_err());
+        assert!(TypesModelStore::load_model(&store, "a/b", "v1").is_err());
+        assert!(TypesModelStore::load_model(&store, "ok", "a/b").is_err());
+        assert!(TypesModelStore::latest_version(&store, "../x").is_err());
+        assert!(TypesModelStore::list_versions(&store, "../x").is_err());
+    }
+
+    #[test]
+    fn test_transport_send_rejects_traversal_key() {
+        let transport = GcsReplayTransport::with_object_store(mem_store(), "forge/");
+        assert!(TypesReplayTransport::send(&transport, "../escape", b"x").is_err());
+        assert!(TypesReplayTransport::send(&transport, "a/b", b"x").is_err());
+    }
+
+    // --- receive() .bin filtering --------------------------------------------
+
+    #[test]
+    fn test_transport_receive_ignores_non_bin_objects() {
+        let bucket = mem_store();
+        let transport = GcsReplayTransport::with_object_store(Arc::clone(&bucket), "forge/");
+
+        // Manually write a non-.bin file under the transport prefix.
+        let non_bin = ObjectPath::from("forge/transport/stray.txt");
+        fallback_runtime()
+            .block_on(bucket.put(&non_bin, b"junk".to_vec().into()))
+            .unwrap();
+
+        // Also write a valid .bin file.
+        TypesReplayTransport::send(&transport, "valid-key", b"payload").unwrap();
+
+        // receive should return the .bin file, not the .txt file.
+        let (key, data) = TypesReplayTransport::receive(&transport)
+            .unwrap()
+            .expect("should receive valid .bin object");
+        assert_eq!(key, "valid-key");
+        assert_eq!(data, b"payload");
     }
 }
 
