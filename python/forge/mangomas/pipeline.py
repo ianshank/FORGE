@@ -206,7 +206,7 @@ class MangoMASDroneTrainingPipeline:
         """Resolve the filesystem directory used for a pipeline-aligned run."""
         return self._resolve_run_dir(base_seed, run_name)
 
-    def run(  # noqa: PLR0911, PLR0912
+    def run(
         self,
         collected_data: CollectedTrainingData,
         *,

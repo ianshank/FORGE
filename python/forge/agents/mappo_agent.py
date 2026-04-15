@@ -128,7 +128,7 @@ class MAPPOAgent(BaseAgent):
         Returns:
             (action_id, info_dict) where info_dict contains log_prob and value.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         self.network.eval_mode()
         with torch.no_grad():
@@ -161,7 +161,7 @@ class MAPPOAgent(BaseAgent):
             entropies: Shape (batch,).
             values: Shape (batch,).
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         self.network.eval_mode()
         with torch.no_grad():
@@ -192,7 +192,7 @@ class MAPPOAgent(BaseAgent):
         Returns:
             Dict of training metrics.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         self.network.train_mode()
         device = torch.device(self._device)

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 ALPHAGALERKIN_AVAILABLE = False
 try:
-    from src.games.interface import GameInterface  # noqa: F401
+    from src.games.interface import GameInterface
 
     ALPHAGALERKIN_AVAILABLE = True
 except ImportError:
@@ -201,7 +201,7 @@ class AlphaGalerkinAgent(BaseAgent):
             ``(action_id, info)`` where *info* contains the raw logits and
             computed probabilities.
         """
-        import torch  # lazy import — torch is optional at module level  # noqa: PLC0415
+        import torch  # lazy import — torch is optional at module level
 
         obs_tensor = torch.tensor(observation, dtype=torch.float32).unsqueeze(0)
         with torch.no_grad():

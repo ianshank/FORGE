@@ -27,10 +27,10 @@ except ImportError:
     logger.debug("Native forge_env module not available; running in pure-Python mode.")
 
 # Convenience re-exports
-from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: E402
-from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: E402
-from forge_env.utils import benchmark_fps, check_env, make_env, seed_everything  # noqa: E402
-from forge_env.vecenv import ForgeAsyncVecEnv, ForgeSyncVecEnv, make_forge_vec_env  # noqa: E402
+from forge_env.gymnasium_env import ForgeGymnasiumEnv
+from forge_env.pettingzoo_env import ForgeParallelEnv
+from forge_env.utils import benchmark_fps, check_env, make_env, seed_everything
+from forge_env.vecenv import ForgeAsyncVecEnv, ForgeSyncVecEnv, make_forge_vec_env
 
 # Optional imports — guarded so forge_env remains importable without SB3/torch.
 ForgeGridCnnExtractor = None

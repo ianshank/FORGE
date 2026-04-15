@@ -93,7 +93,7 @@ class AnthropicProvider(CognitiveProvider):
         """Return a cached Anthropic client instance (lazy initialization)."""
         if self._client is None:
             try:
-                import anthropic  # noqa: PLC0415
+                import anthropic
             except ImportError as exc:
                 msg = "anthropic package required for AnthropicProvider"
                 raise ImportError(msg) from exc
@@ -136,7 +136,7 @@ class OpenAIProvider(CognitiveProvider):
         """Return a cached OpenAI client instance (lazy initialization)."""
         if self._client is None:
             try:
-                import openai  # noqa: PLC0415
+                import openai
             except ImportError as exc:
                 msg = "openai package required for OpenAIProvider"
                 raise ImportError(msg) from exc

@@ -328,9 +328,9 @@ class MangoMASBridgeConfig:
     def from_toml(cls, path: str | Path) -> MangoMASBridgeConfig:
         """Load configuration from a TOML file."""
         try:
-            import tomllib  # noqa: PLC0415
+            import tomllib
         except ModuleNotFoundError:
-            import tomli as tomllib  # noqa: PLC0415
+            import tomli as tomllib
 
         path = Path(path)
         with path.open("rb") as f:

@@ -209,10 +209,12 @@ def _parse_forge_jsonl_step(raw: dict[str, Any], tick: int) -> ForgeStep | None:
     """Parse one line of a forge-replay JSONL export into a :class:`ForgeStep`.
 
     Fields that are absent receive safe defaults so the loader is lenient
-    about partial exports.
+    about partial exports. Malformed data (type mismatches) causes the step
+    to be skipped and None is returned.
     """
     try:
         obs_list = raw.get("observations", [{}])
+        # Validate observations is list-like; malformed data raises and returns None
         obs: dict[str, Any] = obs_list[0] if obs_list else {}
         actions: list[int] = raw.get("actions", [0])
         rewards: list[float] = raw.get("rewards", [0.0])
@@ -275,7 +277,7 @@ def _parse_forge_jsonl_step(raw: dict[str, Any], tick: int) -> ForgeStep | None:
             terminated=bool(raw.get("terminated", False)),
             truncated=bool(raw.get("truncated", False)),
         )
-    except (KeyError, ValueError, TypeError, IndexError) as exc:
+    except (KeyError, ValueError, TypeError, IndexError, AttributeError) as exc:
         logger.debug("Skipping malformed step at tick %d: %s", tick, exc)
         return None
 

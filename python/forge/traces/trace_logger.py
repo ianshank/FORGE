@@ -38,9 +38,9 @@ class TraceLogger:
         """Open the output file for writing."""
         Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
         if self.compress:
-            self._file = gzip.open(self.output_path, "wt", encoding="utf-8")  # noqa: SIM115
+            self._file = gzip.open(self.output_path, "wt", encoding="utf-8")
         else:
-            self._file = Path(self.output_path).open("w", encoding="utf-8")  # noqa: SIM115
+            self._file = Path(self.output_path).open("w", encoding="utf-8")
         logger.info("TraceLogger opened %s (compress=%s)", self.output_path, self.compress)
 
     def log(self, trace: DecisionTrace) -> None:

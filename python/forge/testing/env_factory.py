@@ -323,7 +323,7 @@ def create_env(
         Passed through to ``ForgeGymnasiumEnv`` when the native env is used.
     """
     if NATIVE_AVAILABLE and not force_fake:
-        from forge_env.gymnasium_env import (  # noqa: PLC0415
+        from forge_env.gymnasium_env import (
             ForgeGymnasiumEnv,
         )
 
