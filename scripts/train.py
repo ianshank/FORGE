@@ -39,7 +39,10 @@ _DEFAULT_DASHBOARD_URL = ""
 _DEFAULT_EVAL_INTERVAL = 0
 _DEFAULT_EVAL_EPISODES = 10
 _DEFAULT_EARLY_STOP_PATIENCE = 0
-_AGENT_CHOICES = ("random", "mcts", "mappo")
+_DEFAULT_COLLECTION_POLICY = "random"
+_DEFAULT_OPTIONAL_PATH = ""
+_AGENT_CHOICES = ("random", "mcts", "mappo", "mangomas", "mangomas-collect")
+_COLLECTION_POLICY_CHOICES = ("random", "mcts")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -120,6 +123,43 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=_DEFAULT_EARLY_STOP_PATIENCE,
         help="Stop training if reward doesn't improve for N evals (0=disabled)",
     )
+    parser.add_argument(
+        "--collection-policy",
+        type=str,
+        default=_DEFAULT_COLLECTION_POLICY,
+        choices=list(_COLLECTION_POLICY_CHOICES),
+        help="Action policy to use when collecting MangoMAS training data",
+    )
+    parser.add_argument(
+        "--scenario",
+        action="append",
+        default=[],
+        help="Scenario id or TOML path for MangoMAS collection; repeat to collect multiple scenarios",
+    )
+    parser.add_argument(
+        "--mangomas-config",
+        action="append",
+        default=[],
+        help="Path to a MangoMAS bridge TOML config; repeatable, last one wins",
+    )
+    parser.add_argument(
+        "--pipeline-run-name",
+        type=str,
+        default=_DEFAULT_OPTIONAL_PATH,
+        help="Optional MangoMAS pipeline run directory name override",
+    )
+    parser.add_argument(
+        "--pipeline-output-root",
+        type=str,
+        default=_DEFAULT_OPTIONAL_PATH,
+        help="Optional MangoMAS pipeline output root override",
+    )
+    parser.add_argument(
+        "--collection-report-path",
+        type=str,
+        default=_DEFAULT_OPTIONAL_PATH,
+        help="Optional JSON report path for MangoMAS collection summaries",
+    )
     args = parser.parse_args(argv)
 
     if args.eval_interval < 0:
@@ -130,6 +170,90 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--early-stopping-patience must be non-negative")
 
     return args
+
+
+def _load_mangomas_bridge_config(config_paths: list[str]) -> Any:
+    """Load the MangoMAS bridge config, defaulting to in-code dataclass defaults."""
+    from forge.mangomas.config import MangoMASBridgeConfig  # noqa: PLC0415
+
+    bridge_config = MangoMASBridgeConfig()
+    for path in config_paths:
+        bridge_config = MangoMASBridgeConfig.from_toml(path)
+    return bridge_config
+
+
+def _resolve_mangomas_scenarios(args: argparse.Namespace, bridge_config: Any) -> list[str]:
+    """Resolve scenario refs from CLI or curriculum defaults."""
+    if args.scenario:
+        return [str(scenario) for scenario in args.scenario]
+
+    scenarios: list[str] = []
+    for tier in bridge_config.curriculum.resolved_tiers(bridge_config.platform):
+        scenario = tier.get("forge_scenario")
+        if scenario is not None:
+            scenario_ref = str(scenario)
+            if scenario_ref not in scenarios:
+                scenarios.append(scenario_ref)
+
+    if scenarios:
+        return scenarios
+
+    raise ValueError(
+        "No MangoMAS scenarios were provided and the bridge curriculum does not define defaults"
+    )
+
+
+def _apply_mangomas_cli_overrides(bridge_config: Any, args: argparse.Namespace) -> None:
+    """Apply CLI overrides to the loaded MangoMAS bridge configuration."""
+    if args.pipeline_run_name:
+        bridge_config.pipeline.paths.run_name = args.pipeline_run_name
+    if args.pipeline_output_root:
+        bridge_config.pipeline.paths.output_root = args.pipeline_output_root
+
+
+def _maybe_write_mangomas_report(
+    collection_result: Any,
+    scenario_refs: list[str],
+    args: argparse.Namespace,
+    bridge_config: Any,
+) -> None:
+    """Persist the optional MangoMAS collection report when requested."""
+    if not args.collection_report_path:
+        return
+
+    from forge.mangomas.collector import write_collection_report  # noqa: PLC0415
+
+    write_collection_report(
+        collection_result,
+        args.collection_report_path,
+        mode=args.agent,
+        platform=bridge_config.platform,
+        policy_name=args.collection_policy,
+        base_seed=args.seed,
+        scenario_refs=scenario_refs,
+        config_paths=[args.config, *args.mangomas_config],
+        run_name=args.pipeline_run_name or bridge_config.pipeline.paths.run_name or args.agent,
+    )
+
+
+def _collect_mangomas_training_data(config: Any, args: argparse.Namespace) -> tuple[Any, Any, list[str]]:
+    """Collect MangoMAS training data using the configured FORGE scenarios."""
+    from forge.mangomas.collector import collect_training_data_from_scenarios  # noqa: PLC0415
+
+    bridge_config = _load_mangomas_bridge_config(args.mangomas_config)
+    _apply_mangomas_cli_overrides(bridge_config, args)
+    scenario_refs = _resolve_mangomas_scenarios(args, bridge_config)
+
+    collection_result = collect_training_data_from_scenarios(
+        base_forge_config=config.to_rust_config(),
+        mangomas_config=bridge_config,
+        scenario_refs=scenario_refs,
+        total_episodes=args.episodes,
+        base_seed=args.seed,
+        policy_name=args.collection_policy,
+    )
+    _maybe_write_mangomas_report(collection_result, scenario_refs, args, bridge_config)
+    return bridge_config, collection_result, scenario_refs
 
 
 def _create_env(config: Any) -> Any:
@@ -414,38 +538,73 @@ def main(argv: list[str] | None = None) -> None:
         args.config,
     )
 
-    env = _create_env(config)
-
     try:
-        if args.agent == "mappo":
-            _train_mappo(env, config, args)
-        elif args.agent == "random":
-            from forge.agents.base_agent import AgentConfig  # noqa: PLC0415
-            from forge.agents.random_agent import RandomAgent  # noqa: PLC0415
-
-            action_dim: int = env.action_space.n
-            agent = RandomAgent(
-                config=AgentConfig(name="random"),
-                action_space_size=action_dim,
-                seed=args.seed,
+        if args.agent == "mangomas-collect":
+            _bridge_config, collection_result, scenario_refs = _collect_mangomas_training_data(
+                config, args
             )
-            _train_basic(env, agent, args)
-        elif args.agent == "mcts":
-            from forge.agents.mcts_agent import MCTSAgent, MCTSConfig  # noqa: PLC0415
-
-            action_dim = env.action_space.n
-            mcts_agent = MCTSAgent(
-                config=MCTSConfig(name="mcts"),
-                action_space_size=action_dim,
-                seed=args.seed,
+            logger.info(
+                "MangoMAS collection complete: scenarios=%d episodes=%d steps=%d",
+                len(scenario_refs),
+                collection_result.total_episodes(),
+                collection_result.total_steps(),
             )
-            _train_basic(env, mcts_agent, args)
+        elif args.agent == "mangomas":
+            from forge.mangomas.pipeline import (  # noqa: PLC0415
+                MangoMASDroneTrainingPipeline,
+            )
+
+            bridge_config, collection_result, scenario_refs = _collect_mangomas_training_data(
+                config, args
+            )
+            pipeline = MangoMASDroneTrainingPipeline(
+                bridge_config,
+                base_output_dir=args.pipeline_output_root or None,
+            )
+            pipeline_result = pipeline.run(
+                collection_result.training_data,
+                base_seed=args.seed,
+                curriculum_outcomes=collection_result.curriculum_outcomes,
+                run_name=args.pipeline_run_name or None,
+            )
+            logger.info(
+                "MangoMAS pipeline complete: scenarios=%d episodes=%d manifest=%s",
+                len(scenario_refs),
+                collection_result.total_episodes(),
+                pipeline_result.manifest_path,
+            )
+        else:
+            env = _create_env(config)
+            try:
+                if args.agent == "mappo":
+                    _train_mappo(env, config, args)
+                elif args.agent == "random":
+                    from forge.agents.base_agent import AgentConfig  # noqa: PLC0415
+                    from forge.agents.random_agent import RandomAgent  # noqa: PLC0415
+
+                    action_dim: int = env.action_space.n
+                    agent = RandomAgent(
+                        config=AgentConfig(name="random"),
+                        action_space_size=action_dim,
+                        seed=args.seed,
+                    )
+                    _train_basic(env, agent, args)
+                elif args.agent == "mcts":
+                    from forge.agents.mcts_agent import MCTSAgent, MCTSConfig  # noqa: PLC0415
+
+                    action_dim = env.action_space.n
+                    mcts_agent = MCTSAgent(
+                        config=MCTSConfig(name="mcts"),
+                        action_space_size=action_dim,
+                        seed=args.seed,
+                    )
+                    _train_basic(env, mcts_agent, args)
+            finally:
+                env.close()
+                logger.info("Environment closed")
     except Exception:
         logger.exception("Training failed")
         sys.exit(1)
-    finally:
-        env.close()
-        logger.info("Environment closed")
 
 
 if __name__ == "__main__":

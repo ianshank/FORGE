@@ -86,6 +86,7 @@ maturin_out.txt
 maturin_err.txt
 coverage.json
 e2e_results.json
+artifacts/
 runs/
 wandb/
 mlruns/

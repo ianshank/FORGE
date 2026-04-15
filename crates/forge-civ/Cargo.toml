@@ -1,5 +1,5 @@
 [package]
-name = "forge-core"
+name = "forge-civ"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -8,23 +8,14 @@ repository.workspace = true
 rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Core simulation engine for the FORGE platform"
+description = "Grid topology abstraction (square + hex) and pathfinding for FORGE"
 
 [dependencies]
 forge-types = { workspace = true }
-forge-civ = { workspace = true }
-forge-worldgen = { workspace = true }
-forge-task = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-bincode = { workspace = true }
-tracing = { workspace = true }
-rand = { workspace = true }
-rand_pcg = { workspace = true }
-fixed = { workspace = true }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-tracing-subscriber = { workspace = true }

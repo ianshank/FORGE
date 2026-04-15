@@ -111,8 +111,15 @@ impl ForgeWasmEnv {
     #[instrument(skip_all)]
     pub fn step(&mut self, action: u32) -> String {
         let comm_vocab = self.config.agents.comm_vocab_size;
-        let decoded = Action::from_discrete(action, comm_vocab, self.config.drone.enabled)
-            .unwrap_or(Action::Noop);
+        let hex_enabled = self.config.world.grid_type == forge_types::config::GridType::Hex;
+        let decoded = Action::from_discrete_full(
+            action,
+            comm_vocab,
+            self.config.drone.enabled,
+            self.config.agri.enabled && self.config.drone.enabled,
+            hex_enabled,
+        )
+        .unwrap_or(Action::Noop);
         let result = self.world.step(&[decoded]);
         let response = StepResponse {
             observations: result.observations,
@@ -198,9 +205,12 @@ impl ForgeWasmEnv {
     /// of human-readable action names indexed by action ID.
     #[instrument(skip_all)]
     pub fn action_space_json(&self) -> String {
-        let space = ActionSpace::new(
+        let hex_enabled = self.config.world.grid_type == forge_types::config::GridType::Hex;
+        let space = ActionSpace::new_full(
             self.config.agents.comm_vocab_size,
             self.config.drone.enabled,
+            self.config.agri.enabled && self.config.drone.enabled,
+            hex_enabled,
         );
         serde_json::to_string(&space).expect("failed to serialize action space")
     }
@@ -436,9 +446,12 @@ mod tests {
         let json = env.action_space_json();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         let n = value["n"].as_u64().unwrap();
-        let expected = forge_types::Action::space_size(
+        let hex_enabled = env.config.world.grid_type == forge_types::config::GridType::Hex;
+        let expected = forge_types::Action::space_size_full(
             env.config.agents.comm_vocab_size,
             env.config.drone.enabled,
+            env.config.agri.enabled && env.config.drone.enabled,
+            hex_enabled,
         ) as u64;
         assert_eq!(n, expected);
     }

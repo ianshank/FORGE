@@ -29,8 +29,13 @@ from forge.mangomas.config import (
     CurriculumConfig,
     MangoMASBridgeConfig,
     ObservationAdapterConfig,
+    PipelineConfig,
+    PipelineExecutionConfig,
+    PipelineLoggingConfig,
+    PipelinePathsConfig,
     RSSMPreTrainConfig,
     SweepConfig,
+    TransferConfig,
 )
 from forge.mangomas.constitutional_trainer import (
     ConstitutionalDataset,
@@ -73,6 +78,10 @@ __all__ = [
     "MangoMASBridgeConfig",
     "ObservationAdapter",
     "ObservationAdapterConfig",
+    "PipelineConfig",
+    "PipelineExecutionConfig",
+    "PipelineLoggingConfig",
+    "PipelinePathsConfig",
     "PlatformCurriculumController",
     "RSSMPreTrainConfig",
     "RSSMPreTrainer",
@@ -82,5 +91,6 @@ __all__ = [
     "SweepReport",
     "SweepResult",
     "TierStatus",
+    "TransferConfig",
     "WeightExporter",
 ]

@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::entity::CommToken;
-use crate::grid::Direction;
+use crate::grid::{Direction, HexDirection};
 
 /// An action that an agent can take in a single tick.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +54,8 @@ pub enum Action {
     RelaySoilData,
     /// Generate an agronomic field report from collected scan data.
     GenerateReport,
+    /// Move one tile in a hex direction (hex grid only; Noop on square grid).
+    MoveHex(HexDirection),
 }
 
 impl Action {
@@ -78,21 +80,34 @@ impl Action {
         comm_vocab_size: u16,
         drone_actions_enabled: bool,
     ) -> Option<Action> {
-        Self::from_discrete_full(action_id, comm_vocab_size, drone_actions_enabled, false)
+        Self::from_discrete_full(
+            action_id,
+            comm_vocab_size,
+            drone_actions_enabled,
+            false,
+            false,
+        )
     }
 
     /// Converts a flat integer action index to an Action, with agricultural action support.
     ///
     /// Agricultural actions are encoded after drone actions when `agri_actions_enabled` is true.
+    /// Hex movement actions are encoded after agricultural actions when `hex_actions_enabled` is true.
     pub fn from_discrete_full(
         action_id: u32,
         comm_vocab_size: u16,
         drone_actions_enabled: bool,
         agri_actions_enabled: bool,
+        hex_actions_enabled: bool,
     ) -> Option<Action> {
         // Early bounds check
         if action_id
-            >= Self::space_size_full(comm_vocab_size, drone_actions_enabled, agri_actions_enabled)
+            >= Self::space_size_full(
+                comm_vocab_size,
+                drone_actions_enabled,
+                agri_actions_enabled,
+                hex_actions_enabled,
+            )
         {
             return None;
         }
@@ -114,11 +129,13 @@ impl Action {
             n if n >= 40 && (n - 40) < comm_vocab_size as u32 => {
                 Some(Action::Communicate((n - 40) as CommToken))
             }
-            n if drone_actions_enabled && n >= 40 + comm_vocab_size as u32 => {
+            n if n >= 40 + comm_vocab_size as u32 => {
                 let drone_base = 40 + comm_vocab_size as u32;
-                let drone_offset = n - drone_base;
-                if drone_offset < crate::constants::DRONE_ACTION_COUNT {
-                    match drone_offset {
+                let offset = n - drone_base;
+
+                // Drone actions block
+                if drone_actions_enabled && offset < crate::constants::DRONE_ACTION_COUNT {
+                    return match offset {
                         0 => Some(Action::Ascend),
                         1 => Some(Action::Descend),
                         2 => Some(Action::Hover),
@@ -130,20 +147,43 @@ impl Action {
                         8 => Some(Action::Scan(Direction::Right)),
                         d @ 9..=18 => Some(Action::DropPayload((d - 9) as u8)),
                         _ => None,
-                    }
-                } else if agri_actions_enabled {
-                    let agri_offset = drone_offset - crate::constants::DRONE_ACTION_COUNT;
-                    match agri_offset {
+                    };
+                }
+
+                // Agri actions block
+                let agri_base_offset = if drone_actions_enabled {
+                    crate::constants::DRONE_ACTION_COUNT
+                } else {
+                    0
+                };
+                let agri_offset = offset.checked_sub(agri_base_offset)?;
+                if agri_actions_enabled
+                    && drone_actions_enabled
+                    && agri_offset < crate::constants::AGRI_ACTION_COUNT
+                {
+                    return match agri_offset {
                         d @ 0..=9 => Some(Action::Spray(d as u8)),
                         10 => Some(Action::ScanMultispectral),
                         11 => Some(Action::ScanThermal),
                         12 => Some(Action::RelaySoilData),
                         13 => Some(Action::GenerateReport),
                         _ => None,
-                    }
-                } else {
-                    None
+                    };
                 }
+
+                // Hex movement actions block
+                let hex_base_offset = agri_base_offset
+                    + if agri_actions_enabled && drone_actions_enabled {
+                        crate::constants::AGRI_ACTION_COUNT
+                    } else {
+                        0
+                    };
+                let hex_offset = offset.checked_sub(hex_base_offset)?;
+                if hex_actions_enabled && hex_offset < crate::constants::HEX_ACTION_COUNT {
+                    return HexDirection::from_index(hex_offset as u8).map(Action::MoveHex);
+                }
+
+                None
             }
             _ => None,
         }
@@ -192,6 +232,9 @@ impl Action {
             | Action::GenerateReport => {
                 panic!("agricultural actions require to_discrete_full(comm_vocab_size)")
             }
+            Action::MoveHex(_) => {
+                panic!("hex move actions require to_discrete_full(comm_vocab_size)")
+            }
         }
     }
 
@@ -199,9 +242,39 @@ impl Action {
     ///
     /// Drone actions are encoded after communication tokens at offset `40 + comm_vocab_size`.
     /// This is the canonical encoding method that produces non-colliding IDs for all actions
-    /// including drone actions. Use this instead of [`to_discrete`] when drone actions are possible.
+    /// including drone actions.
+    ///
+    /// For configuration-dependent spaces that enable agricultural or hex actions conditionally,
+    /// prefer [`to_discrete_configured`] so offsets match the active action space layout.
     pub fn to_discrete_full(&self, comm_vocab_size: u16) -> u32 {
+        self.to_discrete_configured(comm_vocab_size, true, true, true)
+    }
+
+    /// Converts an Action to its discrete integer representation for a specific action-space layout.
+    ///
+    /// This is the correct encoder when the active action space is controlled by configuration,
+    /// because agricultural actions depend on drone support and hex actions are only appended when
+    /// hex movement is enabled.
+    pub fn to_discrete_configured(
+        &self,
+        comm_vocab_size: u16,
+        drone_actions_enabled: bool,
+        agri_actions_enabled: bool,
+        hex_actions_enabled: bool,
+    ) -> u32 {
         let drone_base = 40 + comm_vocab_size as u32;
+        let agri_base = drone_base
+            + if drone_actions_enabled {
+                crate::constants::DRONE_ACTION_COUNT
+            } else {
+                0
+            };
+        let hex_base = agri_base
+            + if agri_actions_enabled && drone_actions_enabled {
+                crate::constants::AGRI_ACTION_COUNT
+            } else {
+                0
+            };
         match self {
             Action::Noop => 0,
             Action::Move(Direction::Up) => 1,
@@ -229,11 +302,43 @@ impl Action {
             Action::Scan(Direction::Right) => drone_base + 8,
             Action::DropPayload(slot) => drone_base + 9 + *slot as u32,
             // Agricultural actions: after drone actions
-            Action::Spray(slot) => drone_base + crate::constants::DRONE_ACTION_COUNT + *slot as u32,
-            Action::ScanMultispectral => drone_base + crate::constants::DRONE_ACTION_COUNT + 10,
-            Action::ScanThermal => drone_base + crate::constants::DRONE_ACTION_COUNT + 11,
-            Action::RelaySoilData => drone_base + crate::constants::DRONE_ACTION_COUNT + 12,
-            Action::GenerateReport => drone_base + crate::constants::DRONE_ACTION_COUNT + 13,
+            Action::Spray(slot) => {
+                if !(drone_actions_enabled && agri_actions_enabled) {
+                    panic!("agricultural actions require drone and agri support")
+                }
+                agri_base + *slot as u32
+            }
+            Action::ScanMultispectral => {
+                if !(drone_actions_enabled && agri_actions_enabled) {
+                    panic!("agricultural actions require drone and agri support")
+                }
+                agri_base + 10
+            }
+            Action::ScanThermal => {
+                if !(drone_actions_enabled && agri_actions_enabled) {
+                    panic!("agricultural actions require drone and agri support")
+                }
+                agri_base + 11
+            }
+            Action::RelaySoilData => {
+                if !(drone_actions_enabled && agri_actions_enabled) {
+                    panic!("agricultural actions require drone and agri support")
+                }
+                agri_base + 12
+            }
+            Action::GenerateReport => {
+                if !(drone_actions_enabled && agri_actions_enabled) {
+                    panic!("agricultural actions require drone and agri support")
+                }
+                agri_base + 13
+            }
+            // Hex movement actions: after agricultural actions
+            Action::MoveHex(dir) => {
+                if !hex_actions_enabled {
+                    panic!("hex move actions require hex movement support")
+                }
+                hex_base + *dir as u32
+            }
         }
     }
 
@@ -242,17 +347,19 @@ impl Action {
     /// When `drone_actions_enabled` is true, includes 19 additional actions
     /// for drone control (Ascend, Descend, Hover, TakeOff, Land, 4 Scan, 10 DropPayload).
     pub fn space_size(comm_vocab_size: u16, drone_actions_enabled: bool) -> u32 {
-        Self::space_size_full(comm_vocab_size, drone_actions_enabled, false)
+        Self::space_size_full(comm_vocab_size, drone_actions_enabled, false, false)
     }
 
-    /// Returns the total size of the discrete action space with agricultural actions.
+    /// Returns the total size of the discrete action space with agricultural and hex actions.
     ///
     /// Agricultural actions are appended after drone actions and require
     /// `drone_actions_enabled` to be true (they depend on drone infrastructure).
+    /// Hex movement actions are appended after agricultural actions when enabled.
     pub fn space_size_full(
         comm_vocab_size: u16,
         drone_actions_enabled: bool,
         agri_actions_enabled: bool,
+        hex_actions_enabled: bool,
     ) -> u32 {
         let base = 40 + comm_vocab_size as u32;
         let drone = if drone_actions_enabled {
@@ -265,7 +372,12 @@ impl Action {
         } else {
             0
         };
-        base + drone + agri
+        let hex = if hex_actions_enabled {
+            crate::constants::HEX_ACTION_COUNT
+        } else {
+            0
+        };
+        base + drone + agri + hex
     }
 }
 
@@ -445,6 +557,35 @@ mod tests {
                 "roundtrip failed for action {:?} (expected id={}, got id={})",
                 action, id, roundtrip_id
             );
+        }
+    }
+
+    #[test]
+    fn test_hex_roundtrip_without_optional_drone_blocks() {
+        let vocab_size = 8u16;
+        let base = 40 + vocab_size as u32;
+        for (index, dir) in HexDirection::ALL.iter().copied().enumerate() {
+            let action = Action::MoveHex(dir);
+            let id = action.to_discrete_configured(vocab_size, false, false, true);
+            assert_eq!(id, base + index as u32);
+            let decoded = Action::from_discrete_full(id, vocab_size, false, false, true).unwrap();
+            assert_eq!(decoded, action);
+        }
+    }
+
+    #[test]
+    fn test_hex_roundtrip_after_drone_and_agri_blocks() {
+        let vocab_size = 8u16;
+        let base = 40
+            + vocab_size as u32
+            + crate::constants::DRONE_ACTION_COUNT
+            + crate::constants::AGRI_ACTION_COUNT;
+        for (index, dir) in HexDirection::ALL.iter().copied().enumerate() {
+            let action = Action::MoveHex(dir);
+            let id = action.to_discrete_configured(vocab_size, true, true, true);
+            assert_eq!(id, base + index as u32);
+            let decoded = Action::from_discrete_full(id, vocab_size, true, true, true).unwrap();
+            assert_eq!(decoded, action);
         }
     }
 

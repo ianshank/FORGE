@@ -536,6 +536,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-civ"
+version = "0.1.0"
+dependencies = [
+ "forge-types",
+ "proptest",
+ "serde",
+ "smallvec",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-cloud"
 version = "0.1.0"
 dependencies = [
@@ -576,6 +588,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "fixed",
+ "forge-civ",
  "forge-task",
  "forge-types",
  "forge-worldgen",

@@ -11,8 +11,12 @@ from forge.mangomas.config import (
     CurriculumConfig,
     MangoMASBridgeConfig,
     ObservationAdapterConfig,
+    PipelineConfig,
+    PipelineExecutionConfig,
+    PipelinePathsConfig,
     RSSMPreTrainConfig,
     SweepConfig,
+    TransferConfig,
 )
 
 
@@ -67,6 +71,7 @@ class TestBDITrainerConfig:
         assert c.num_intentions == 8
         assert c.log_interval == 10
         assert c.default_intention == 7
+        assert c.seed == 42
 
 
 class TestConstitutionalTrainerConfig:
@@ -103,6 +108,36 @@ class TestRSSMPreTrainConfig:
         c = RSSMPreTrainConfig()
         assert c.reward_loss_scale == 0.01
         assert c.log_interval == 20
+        assert c.seed == 42
+
+
+class TestTransferConfig:
+    """Tests for MangoMAS transfer overrides."""
+
+    def test_defaults(self) -> None:
+        c = TransferConfig()
+        assert c.bdi_mapping_overrides == {}
+
+
+class TestPipelineConfig:
+    """Tests for pipeline path and execution defaults."""
+
+    def test_paths_defaults(self) -> None:
+        c = PipelinePathsConfig()
+        assert c.output_root == "artifacts/mangomas"
+        assert c.export_dir_name == "export"
+        assert c.manifest_name == "pipeline_manifest.json"
+
+    def test_execution_defaults(self) -> None:
+        c = PipelineExecutionConfig()
+        assert c.resume is False
+        assert c.fail_fast is True
+        assert c.stop_after_stage == ""
+
+    def test_top_level_defaults(self) -> None:
+        c = PipelineConfig()
+        assert isinstance(c.paths, PipelinePathsConfig)
+        assert isinstance(c.execution, PipelineExecutionConfig)
 
 
 class TestCurriculumConfig:
@@ -166,6 +201,8 @@ class TestMangoMASBridgeConfig:
         assert c.curriculum is not None
         assert c.batch_collector is not None
         assert c.curiosity_optimizer is not None
+        assert c.transfer is not None
+        assert c.pipeline is not None
 
 
 class TestMangoMASBridgeConfigToml:
@@ -219,3 +256,22 @@ class TestMangoMASBridgeConfigToml:
         config = MangoMASBridgeConfig.from_toml(path)
         assert config.platform == "car"
         assert config.action_adapter.bins_per_axis == 10
+
+    def test_from_dict_with_transfer_and_pipeline(self) -> None:
+        config = MangoMASBridgeConfig._from_dict(
+            {
+                "transfer": {"bdi_mapping_overrides": {"39": 4}},
+                "pipeline": {
+                    "paths": {
+                        "output_root": "artifacts/custom",
+                        "run_name": "smoke-run",
+                    },
+                    "execution": {"resume": True, "stop_after_stage": "rssm"},
+                },
+            }
+        )
+        assert config.transfer.bdi_mapping_overrides == {39: 4}
+        assert config.pipeline.paths.output_root == "artifacts/custom"
+        assert config.pipeline.paths.run_name == "smoke-run"
+        assert config.pipeline.execution.resume is True
+        assert config.pipeline.execution.stop_after_stage == "rssm"

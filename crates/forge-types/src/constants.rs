@@ -355,6 +355,8 @@ pub const DEFAULT_AGRI_PASTURE_DENSITY: f32 = 0.1;
 /// Number of discrete agricultural action slots in the action space.
 /// Spray(10 slots) + ScanMultispectral + ScanThermal + RelaySoilData + GenerateReport = 14.
 pub const AGRI_ACTION_COUNT: u32 = 14;
+/// Number of discrete hex movement action slots (6 directions: NE, E, SE, SW, W, NW).
+pub const HEX_ACTION_COUNT: u32 = 6;
 /// Number of additional observation fields when agriculture is enabled.
 /// (disease_detections, area_surveyed_frac, soil_nodes_collected, report_ready).
 pub const OBS_AGRI_FIELDS_COUNT: usize = 4;

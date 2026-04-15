@@ -87,6 +87,110 @@ impl Direction {
     }
 }
 
+/// The six directions on a hexagonal grid.
+///
+/// Layout assumes **odd-r offset** (flat-top hexes with odd rows shifted right).
+///
+/// ```text
+///     NW  NE
+///   W  ·  E
+///     SW  SE
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum HexDirection {
+    /// Northeast (upper-right).
+    NE = 0,
+    /// East (right).
+    E = 1,
+    /// Southeast (lower-right).
+    SE = 2,
+    /// Southwest (lower-left).
+    SW = 3,
+    /// West (left).
+    W = 4,
+    /// Northwest (upper-left).
+    NW = 5,
+}
+
+impl HexDirection {
+    /// All six hex directions in canonical order.
+    pub const ALL: [HexDirection; 6] = [
+        HexDirection::NE,
+        HexDirection::E,
+        HexDirection::SE,
+        HexDirection::SW,
+        HexDirection::W,
+        HexDirection::NW,
+    ];
+
+    /// Returns the (dx, dy) offset for this direction on an **even** row.
+    ///
+    /// Odd-r layout: even rows (y % 2 == 0) have one offset table,
+    /// odd rows (y % 2 == 1) have another.
+    #[inline]
+    pub fn offset_even_row(self) -> (i32, i32) {
+        match self {
+            HexDirection::NE => (0, -1),
+            HexDirection::E => (1, 0),
+            HexDirection::SE => (0, 1),
+            HexDirection::SW => (-1, 1),
+            HexDirection::W => (-1, 0),
+            HexDirection::NW => (-1, -1),
+        }
+    }
+
+    /// Returns the (dx, dy) offset for this direction on an **odd** row.
+    #[inline]
+    pub fn offset_odd_row(self) -> (i32, i32) {
+        match self {
+            HexDirection::NE => (1, -1),
+            HexDirection::E => (1, 0),
+            HexDirection::SE => (1, 1),
+            HexDirection::SW => (0, 1),
+            HexDirection::W => (-1, 0),
+            HexDirection::NW => (0, -1),
+        }
+    }
+
+    /// Returns the (dx, dy) offset for the given row parity.
+    #[inline]
+    pub fn offset_for_parity(self, odd_row: bool) -> (i32, i32) {
+        if odd_row {
+            self.offset_odd_row()
+        } else {
+            self.offset_even_row()
+        }
+    }
+
+    /// Constructs from a `u8` index (0–5).
+    #[inline]
+    pub fn from_index(index: u8) -> Option<HexDirection> {
+        match index {
+            0 => Some(HexDirection::NE),
+            1 => Some(HexDirection::E),
+            2 => Some(HexDirection::SE),
+            3 => Some(HexDirection::SW),
+            4 => Some(HexDirection::W),
+            5 => Some(HexDirection::NW),
+            _ => None,
+        }
+    }
+
+    /// Returns the opposite direction.
+    #[inline]
+    pub fn opposite(self) -> HexDirection {
+        match self {
+            HexDirection::NE => HexDirection::SW,
+            HexDirection::E => HexDirection::W,
+            HexDirection::SE => HexDirection::NW,
+            HexDirection::SW => HexDirection::NE,
+            HexDirection::W => HexDirection::E,
+            HexDirection::NW => HexDirection::SE,
+        }
+    }
+}
+
 /// Terrain types that make up the world grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]

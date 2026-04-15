@@ -170,9 +170,19 @@ impl EvalHarness {
             let response = agent.select_action(&current_obs[0], 0);
             total_decision_time_ms += response.decision_time_ms;
 
-            // Convert to FORGE action
-            let action = Action::from_discrete(response.action_id, comm_vocab, drone_enabled)
-                .unwrap_or(Action::Noop);
+            let agri_enabled = current_world.config.agri.enabled && drone_enabled;
+            let hex_enabled =
+                current_world.config.world.grid_type == forge_types::config::GridType::Hex;
+
+            // Convert to FORGE action using the active action-space layout.
+            let action = Action::from_discrete_full(
+                response.action_id,
+                comm_vocab,
+                drone_enabled,
+                agri_enabled,
+                hex_enabled,
+            )
+            .unwrap_or(Action::Noop);
 
             // Build full action vector (pad with Noop for other agents)
             let num_agents = current_world.agents.len();
@@ -183,7 +193,14 @@ impl EvalHarness {
             if let Some(ref mut builder) = replay_builder {
                 let action_ids: Vec<u32> = actions
                     .iter()
-                    .map(|a| a.to_discrete_full(comm_vocab))
+                    .map(|a| {
+                        a.to_discrete_configured(
+                            comm_vocab,
+                            drone_enabled,
+                            agri_enabled,
+                            hex_enabled,
+                        )
+                    })
                     .collect();
                 builder.record_tick(action_ids);
             }

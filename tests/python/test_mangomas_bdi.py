@@ -142,6 +142,7 @@ class TestBDIPreTrainer:
         loaded = np.load(str(path))
         assert "gru_w_ih" in loaded
         assert "mlp_w_out" in loaded
+        assert loaded["mlp_w_out"].shape == (config.num_intentions, 18)
 
     def test_export_before_train_raises(self, tmp_path: Any) -> None:
         trainer = BDIPreTrainer()

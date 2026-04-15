@@ -22,6 +22,7 @@ members = [
     "crates/forge-proposal",
     "crates/forge-cloud",
     "crates/forge-edge",
+    "crates/forge-civ",
 ]
 resolver = "2"
 
@@ -97,6 +98,7 @@ forge-proposal = { path = "crates/forge-proposal" }
 forge-cloud = { path = "crates/forge-cloud" }
 forge-edge = { path = "crates/forge-edge" }
 forge-data = { path = "crates/forge-data" }
+forge-civ = { path = "crates/forge-civ" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

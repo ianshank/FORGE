@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Hex Grid Topology & Dynamic Action Spaces
+
+- Added **`forge-civ`** as a dedicated topology crate for square and hex grids, including:
+  - `GridTopology` / `GridTopologyKind` dispatch for square and odd-r hex worlds
+  - shared neighbor lookup, distance, line-of-sight, disk queries, and A* pathfinding
+  - topology-focused unit and property coverage for square and hex behaviors
+- Added `GridType` to world config plus `MoveHex(HexDirection)` support in `forge-types`
+- Added config-aware action encoding/decoding across Rust, Python, WASM, evaluation, and MangoMAS runners so discrete action IDs match the active grid/drone/agri layout
+- Added `configs/scenarios/hex_patrol.toml` as a reusable hex-grid scenario fixture
+
+#### MangoMAS Collection & Pipeline Control Plane
+
+- Added `python/forge/mangomas/collector.py` for scenario resolution, batch FORGE rollout collection, and JSON collection-report generation
+- Added `python/forge/mangomas/pipeline.py` for stage-based MangoMAS orchestration covering BDI, constitutional, RSSM, curiosity, sweep, curriculum, and export stages
+- Added missing MangoMAS config surfaces for pipeline paths/logging/execution and transfer overrides, with TOML parsing support
+- Added MangoMAS CLI entry points in `scripts/train.py`:
+  - `--agent mangomas-collect` for collection-only workflows
+  - `--agent mangomas` for collection plus stage-pipeline execution
+  - scenario, collection-policy, pipeline output, and collection-report flags
+
+#### Regression Coverage
+
+- Added focused Python regression coverage for MangoMAS config parsing, collector decoding, pipeline manifests, and training CLI argument parsing
+- Added targeted hex-grid action-space and visibility regressions in Rust and Python so square-only assumptions fail fast during review
+
 #### Cloud Training Pipeline & Edge Deployment (`forge-cloud`, `forge-edge`)
 
 - **`forge-cloud` crate** (125 tests): Distributed cloud training infrastructure.

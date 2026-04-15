@@ -135,7 +135,7 @@ class BDIPreTrainer:
         The GRU weights are initialized randomly and trained via simple
         cross-entropy minimization with gradient descent.
         """
-        rng = np.random.default_rng(42)
+        rng = np.random.default_rng(self.config.seed)
         state_dim = dataset.observations.shape[1] if dataset.num_samples > 0 else 18
         h_dim = self.config.hidden_size
         n_cls = self.config.num_intentions
@@ -143,11 +143,11 @@ class BDIPreTrainer:
         # Initialize weights (Xavier uniform)
         scale_ih = np.sqrt(6.0 / (state_dim + h_dim))
         scale_hh = np.sqrt(6.0 / (h_dim + h_dim))
-        scale_out = np.sqrt(6.0 / (h_dim + n_cls))
+        scale_out = np.sqrt(6.0 / (state_dim + n_cls))
 
         w_ih = rng.uniform(-scale_ih, scale_ih, (3 * h_dim, state_dim)).astype(np.float32)
         w_hh = rng.uniform(-scale_hh, scale_hh, (3 * h_dim, h_dim)).astype(np.float32)
-        w_out = rng.uniform(-scale_out, scale_out, (n_cls, h_dim)).astype(np.float32)
+        w_out = rng.uniform(-scale_out, scale_out, (n_cls, state_dim)).astype(np.float32)
         b_out = np.zeros(n_cls, dtype=np.float32)
 
         loss_history: list[float] = []
@@ -166,7 +166,7 @@ class BDIPreTrainer:
                 y = dataset.intentions[batch_idx]
 
                 # Simple linear classifier (GRU unrolling omitted for numpy impl)
-                logits = x @ w_out[:, :state_dim].T + b_out  # (B, n_cls)
+                logits = x @ w_out.T + b_out  # (B, n_cls)
 
                 # Softmax + cross-entropy
                 logits_max = logits.max(axis=1, keepdims=True)
@@ -185,12 +185,6 @@ class BDIPreTrainer:
                 grad /= len(y)
                 dw = grad.T @ x  # (n_cls, state_dim)
                 db = grad.sum(axis=0)
-
-                # Pad or truncate gradient to match w_out shape
-                if dw.shape[1] < w_out.shape[1]:
-                    dw = np.pad(dw, ((0, 0), (0, w_out.shape[1] - dw.shape[1])))
-                else:
-                    dw = dw[:, :w_out.shape[1]]
 
                 w_out -= self.config.learning_rate * dw
                 b_out -= self.config.learning_rate * db

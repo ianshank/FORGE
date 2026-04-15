@@ -222,19 +222,21 @@ pub struct ActionSpace {
 impl ActionSpace {
     /// Creates an action space with the given communication vocabulary size.
     pub fn new(comm_vocab_size: u16, drone_actions_enabled: bool) -> Self {
-        Self::new_full(comm_vocab_size, drone_actions_enabled, false)
+        Self::new_full(comm_vocab_size, drone_actions_enabled, false, false)
     }
 
-    /// Creates an action space with drone and agricultural action support.
+    /// Creates an action space with drone, agricultural, and hex action support.
     pub fn new_full(
         comm_vocab_size: u16,
         drone_actions_enabled: bool,
         agri_actions_enabled: bool,
+        hex_actions_enabled: bool,
     ) -> Self {
         let n = crate::action::Action::space_size_full(
             comm_vocab_size,
             drone_actions_enabled,
             agri_actions_enabled,
+            hex_actions_enabled,
         );
         let mut names = vec![
             "Noop".to_string(),
@@ -283,6 +285,14 @@ impl ActionSpace {
             names.push("Scan Thermal".to_string());
             names.push("Relay Soil Data".to_string());
             names.push("Generate Report".to_string());
+        }
+        if hex_actions_enabled {
+            names.push("Move NE".to_string());
+            names.push("Move E".to_string());
+            names.push("Move SE".to_string());
+            names.push("Move SW".to_string());
+            names.push("Move W".to_string());
+            names.push("Move NW".to_string());
         }
         Self {
             n,

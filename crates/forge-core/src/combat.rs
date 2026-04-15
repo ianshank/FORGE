@@ -3,9 +3,10 @@
 //! Handles melee combat (sword attacks), health tracking, agent death,
 //! and environmental damage from hazardous terrain such as lava.
 
+use forge_civ::grid_topology::{GridTopology, GridTopologyKind};
 use forge_types::constants::{DEFAULT_LAVA_DAMAGE, DEFAULT_SWORD_DAMAGE};
 use forge_types::entity::Agent;
-use forge_types::grid::{Direction, Grid, TerrainType};
+use forge_types::grid::{Grid, TerrainType};
 use forge_types::resource::ItemType;
 use forge_types::Action;
 use tracing::{instrument, trace};
@@ -21,7 +22,12 @@ use tracing::{instrument, trace};
 /// Adjacent tiles are checked in a fixed deterministic order to ensure
 /// reproducible behavior.
 #[instrument(skip_all)]
-pub fn process_combat(agents: &mut [Agent], grid: &Grid, actions: &[Action]) {
+pub fn process_combat(
+    agents: &mut [Agent],
+    grid: &Grid,
+    actions: &[Action],
+    topology: &GridTopologyKind,
+) {
     // Collect attack intents first to avoid borrow issues
     let mut attacks: Vec<(usize, usize)> = Vec::new(); // (attacker_idx, target_idx)
 
@@ -50,22 +56,19 @@ pub fn process_combat(agents: &mut [Agent], grid: &Grid, actions: &[Action]) {
             continue;
         }
 
-        // Check all 4 adjacent tiles for a target agent
+        // Check all adjacent tiles for a target agent (4 for square, 6 for hex)
         let attacker_pos = agent.position;
         let mut target_idx = None;
 
-        for dir in Direction::all() {
-            if let Some(adj_pos) = attacker_pos.offset(dir, grid.width, grid.height) {
-                if let Some(tile) = grid.get(adj_pos.x, adj_pos.y) {
-                    if let Some(target_id) = tile.agent_id {
-                        // Find the agent index for this target
-                        if let Some(idx) = agents.iter().position(|a| a.id == target_id && a.alive)
-                        {
-                            // Don't attack yourself
-                            if idx != i {
-                                target_idx = Some(idx);
-                                break;
-                            }
+        for adj_pos in topology.neighbors(attacker_pos, grid.width, grid.height) {
+            if let Some(tile) = grid.get(adj_pos.x, adj_pos.y) {
+                if let Some(target_id) = tile.agent_id {
+                    // Find the agent index for this target
+                    if let Some(idx) = agents.iter().position(|a| a.id == target_id && a.alive) {
+                        // Don't attack yourself
+                        if idx != i {
+                            target_idx = Some(idx);
+                            break;
                         }
                     }
                 }
@@ -151,8 +154,14 @@ pub fn apply_environmental_damage(agents: &mut [Agent], grid: &Grid) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_civ::grid_topology::GridTopologyKind;
+    use forge_civ::SquareTopology;
     use forge_types::config::AgentConfig;
     use forge_types::grid::Position;
+
+    fn topo() -> GridTopologyKind {
+        GridTopologyKind::Square(SquareTopology)
+    }
 
     fn make_test_agent(id: u32, x: u16, y: u16) -> Agent {
         let config = AgentConfig::default();
@@ -182,7 +191,7 @@ mod tests {
         let initial_health = agents[1].health;
         let actions = vec![Action::Use(0), Action::Noop];
 
-        process_combat(&mut agents, &grid, &actions);
+        process_combat(&mut agents, &grid, &actions, &topo());
 
         assert!(agents[1].health < initial_health);
         assert_eq!(initial_health - agents[1].health, DEFAULT_SWORD_DAMAGE);
@@ -201,7 +210,7 @@ mod tests {
 
         let actions = vec![Action::Use(0), Action::Noop];
 
-        process_combat(&mut agents, &grid, &actions);
+        process_combat(&mut agents, &grid, &actions, &topo());
 
         assert_eq!(agents[1].health, 0);
         assert!(!agents[1].alive);
@@ -220,7 +229,7 @@ mod tests {
         let initial_health = agents[1].health;
         let actions = vec![Action::Use(0), Action::Noop];
 
-        process_combat(&mut agents, &grid, &actions);
+        process_combat(&mut agents, &grid, &actions, &topo());
 
         assert_eq!(agents[1].health, initial_health);
     }
@@ -240,7 +249,7 @@ mod tests {
         let initial_health = agents[1].health;
         let actions = vec![Action::Use(0), Action::Noop];
 
-        process_combat(&mut agents, &grid, &actions);
+        process_combat(&mut agents, &grid, &actions, &topo());
 
         assert_eq!(agents[1].health, initial_health);
     }
@@ -258,7 +267,7 @@ mod tests {
         let initial_health = agents[1].health;
         let actions = vec![Action::Use(0), Action::Noop];
 
-        process_combat(&mut agents, &grid, &actions);
+        process_combat(&mut agents, &grid, &actions, &topo());
 
         assert_eq!(agents[1].health, initial_health);
     }
@@ -276,7 +285,7 @@ mod tests {
         let initial_health = agents[1].health;
         let actions = vec![Action::Use(0), Action::Noop];
 
-        process_combat(&mut agents, &grid, &actions);
+        process_combat(&mut agents, &grid, &actions, &topo());
 
         assert_eq!(agents[1].health, initial_health);
     }
@@ -293,7 +302,7 @@ mod tests {
         let initial_health = agents[1].health;
         let actions = vec![Action::Use(0), Action::Noop];
 
-        process_combat(&mut agents, &grid, &actions);
+        process_combat(&mut agents, &grid, &actions, &topo());
 
         assert_eq!(agents[1].health, initial_health);
     }
@@ -318,7 +327,7 @@ mod tests {
         let initial_health_2 = agents[2].health;
         let actions = vec![Action::Use(0), Action::Noop, Action::Noop];
 
-        process_combat(&mut agents, &grid, &actions);
+        process_combat(&mut agents, &grid, &actions, &topo());
 
         // Agent 1 (Up) should be attacked, agent 2 (Down) should be unharmed
         assert!(agents[1].health < initial_health_1);
@@ -339,7 +348,7 @@ mod tests {
         let initial_health_1 = agents[1].health;
         let actions = vec![Action::Use(0), Action::Use(0)]; // both attack
 
-        process_combat(&mut agents, &grid, &actions);
+        process_combat(&mut agents, &grid, &actions, &topo());
 
         // Both should take damage
         assert!(agents[0].health < initial_health_0);
@@ -493,7 +502,7 @@ mod tests {
                     grid.get_mut(attacker_x, target_y).unwrap().agent_id = Some(1);
 
                     let actions = vec![Action::Use(0), Action::Noop];
-                    process_combat(&mut agents, &grid, &actions);
+                    process_combat(&mut agents, &grid, &actions, &topo());
                     (agents[0].health, agents[1].health, agents[1].alive)
                 };
                 let r1 = run();

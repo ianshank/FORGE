@@ -50,10 +50,23 @@ pub struct ForgeConfig {
     pub edge: EdgeConfig,
 }
 
+/// Grid topology type for the simulation world.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GridType {
+    /// Standard 4-neighbor square grid (cardinal directions).
+    #[default]
+    Square,
+    /// 6-neighbor hexagonal grid (odd-r offset layout).
+    Hex,
+}
+
 /// World generation configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorldConfig {
+    /// Grid topology type (square or hex).
+    pub grid_type: GridType,
     /// Grid width in tiles.
     pub width: u16,
     /// Grid height in tiles.
@@ -83,6 +96,7 @@ pub struct WorldConfig {
 impl Default for WorldConfig {
     fn default() -> Self {
         Self {
+            grid_type: GridType::default(),
             width: constants::DEFAULT_WORLD_WIDTH,
             height: constants::DEFAULT_WORLD_HEIGHT,
             seed: constants::DEFAULT_SEED,

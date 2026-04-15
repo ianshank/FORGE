@@ -15,6 +15,8 @@ gpu_memory_fraction = 0.9
 [simulation]
 # Grid dimensions (width × height).
 grid_size = 64
+# Grid topology: "Square" (4-directional) or "Hex" (6-directional, odd-r offset).
+grid_type = "Square"
 # Maximum agents per team.
 max_agents_per_team = 16
 # Random seed (0 = random).
