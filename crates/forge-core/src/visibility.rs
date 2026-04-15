@@ -126,14 +126,17 @@ fn has_line_of_sight_topo(
             // Reached the target — line of sight is clear
             return true;
         }
-        if let Some(tile) = grid.get(cell.x, cell.y) {
-            if tile.terrain.blocks_vision() {
-                return false;
-            }
+        let Some(tile) = grid.get(cell.x, cell.y) else {
+            // Out-of-bounds cells in the traced path block visibility.
+            return false;
+        };
+        if tile.terrain.blocks_vision() {
+            return false;
         }
     }
 
-    true
+    // If the line trace never reaches the target, fail closed.
+    false
 }
 
 /// Generates an ego-centric visibility mask for an agent.

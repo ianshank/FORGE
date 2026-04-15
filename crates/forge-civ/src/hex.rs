@@ -55,6 +55,14 @@ fn cube_to_offset(cube: CubeCoord) -> (i32, i32) {
     (col, row)
 }
 
+/// Converts offset coordinates to a bounded [`Position`].
+#[inline]
+fn offset_to_position(col: i32, row: i32) -> Option<Position> {
+    let x = u16::try_from(col).ok()?;
+    let y = u16::try_from(row).ok()?;
+    Some(Position::new(x, y))
+}
+
 /// Rounds fractional cube coordinates to the nearest cube hex.
 #[inline]
 fn cube_round(fq: f64, fr: f64, fs: f64) -> CubeCoord {
@@ -153,9 +161,9 @@ impl GridTopology for HexTopology {
 
         cube_cells
             .into_iter()
-            .map(|c| {
+            .filter_map(|c| {
                 let (col, row) = cube_to_offset(c);
-                Position::new(col as u16, row as u16)
+                offset_to_position(col, row)
             })
             .collect()
     }

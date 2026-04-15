@@ -68,7 +68,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: target/criterion/current
-          key: bench-baseline-${{ runner.os }}-${{ github.sha }}
+          key: bench-baseline-${{ runner.os }}
 
   coverage:
     name: Rust Coverage (tarpaulin)

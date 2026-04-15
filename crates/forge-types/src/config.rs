@@ -56,8 +56,10 @@ pub struct ForgeConfig {
 pub enum GridType {
     /// Standard 4-neighbor square grid (cardinal directions).
     #[default]
+    #[serde(alias = "Square")]
     Square,
     /// 6-neighbor hexagonal grid (odd-r offset layout).
+    #[serde(alias = "Hex")]
     Hex,
 }
 
@@ -849,6 +851,27 @@ num_agents = 4
         // Defaults should fill in
         assert_eq!(config.world.seed, constants::DEFAULT_SEED);
         assert!(config.physics.collision_enabled);
+    }
+
+    #[test]
+    fn test_grid_type_parses_lower_and_pascal_case() {
+        let lower = ForgeConfig::from_toml_str(
+            r#"
+[world]
+grid_type = "hex"
+"#,
+        )
+        .unwrap();
+        assert_eq!(lower.world.grid_type, GridType::Hex);
+
+        let pascal = ForgeConfig::from_toml_str(
+            r#"
+[world]
+grid_type = "Hex"
+"#,
+        )
+        .unwrap();
+        assert_eq!(pascal.world.grid_type, GridType::Hex);
     }
 
     #[test]
