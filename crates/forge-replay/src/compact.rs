@@ -559,4 +559,94 @@ mod tests {
         assert_eq!(iter.current_tick(), 0);
         assert!(!iter.world().terminated);
     }
+
+    #[test]
+    fn test_replay_iterator_tick_advances() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0]);
+        builder.record_tick(vec![0]);
+        builder.record_tick(vec![0]);
+        let replay = builder.build();
+
+        let mut iter = replay.replay().unwrap();
+        iter.next();
+        assert_eq!(iter.current_tick(), 1);
+        iter.next();
+        assert_eq!(iter.current_tick(), 2);
+        iter.next();
+        assert_eq!(iter.current_tick(), 3);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_replay_corrupted_hash_prevents_replay() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0]);
+        let mut replay = builder.build();
+        replay.config_hash = 0xDEADBEEF;
+        assert!(replay.replay().is_none());
+    }
+
+    #[test]
+    fn test_replay_metadata_defaults() {
+        let meta = ReplayMetadata::default();
+        assert!(meta.agent_names.is_empty());
+        assert!(meta.agent_metadata.is_empty());
+        assert_eq!(meta.total_ticks, 0);
+        assert!(meta.final_rewards.is_empty());
+        assert!(meta.completed_tasks.is_empty());
+        assert!(meta.scenario_id.is_none());
+    }
+
+    #[test]
+    fn test_replay_builder_agent_metadata() {
+        let config = test_config();
+        let meta = AgentMetadata::heuristic("TestBot");
+        let replay = CompactReplay::builder(config, 42)
+            .agent_metadata(vec![meta.clone()])
+            .build();
+        assert_eq!(replay.metadata.agent_metadata.len(), 1);
+        assert_eq!(replay.metadata.agent_metadata[0].model_name, "TestBot");
+    }
+
+    #[test]
+    fn test_replay_different_configs_different_hashes() {
+        let c1 = test_config();
+        let mut c2 = test_config();
+        c2.world.width = 64;
+        assert_ne!(hash_config(&c1), hash_config(&c2));
+    }
+
+    #[test]
+    fn test_replay_large_action_ids() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![u32::MAX]);
+        let replay = builder.build();
+
+        let bytes = replay.to_bytes().unwrap();
+        let deser = CompactReplay::from_bytes(&bytes).unwrap();
+        assert_eq!(deser.actions[0][0], u32::MAX);
+    }
+
+    #[test]
+    fn test_replay_json_bincode_cross_validation() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0, 1]);
+        builder.record_tick(vec![2, 3]);
+        let replay = builder.build();
+
+        let json = replay.to_json().unwrap();
+        let from_json = CompactReplay::from_json(&json).unwrap();
+
+        let bytes = replay.to_bytes().unwrap();
+        let from_bytes = CompactReplay::from_bytes(&bytes).unwrap();
+
+        assert_eq!(from_json.seed, from_bytes.seed);
+        assert_eq!(from_json.actions, from_bytes.actions);
+        assert_eq!(from_json.config_hash, from_bytes.config_hash);
+    }
 }

@@ -3,6 +3,7 @@
 High-level Python interface for collecting episodes from FORGE
 in batch mode for pre-training data generation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,9 +23,9 @@ class EpisodeData:
     """Data from a single collected episode."""
 
     observations: np.ndarray  # (T, state_dim)
-    actions: np.ndarray       # (T,)
-    rewards: np.ndarray       # (T,)
-    dones: np.ndarray         # (T,)
+    actions: np.ndarray  # (T,)
+    rewards: np.ndarray  # (T,)
+    dones: np.ndarray  # (T,)
     total_reward: float = 0.0
     length: int = 0
     seed: int = 0

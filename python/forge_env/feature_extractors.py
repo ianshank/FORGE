@@ -67,8 +67,7 @@ _SKIP_KEYS: frozenset[str] = frozenset({"messages"})
 def _require_torch_sb3() -> None:
     if not HAS_TORCH:
         raise ImportError(
-            "PyTorch is required for FORGE feature extractors. "
-            "Install with: pip install torch"
+            "PyTorch is required for FORGE feature extractors. Install with: pip install torch"
         )
     if not HAS_SB3:
         raise ImportError(
@@ -100,9 +99,7 @@ def _build_cnn(
     if len(strides) == 1 and len(cnn_channels) > 1:
         strides = strides * len(cnn_channels)
     if len(cnn_channels) != len(kernel_sizes) or len(cnn_channels) != len(strides):
-        raise ValueError(
-            "cnn_channels, kernel_sizes, and strides must have matching lengths"
-        )
+        raise ValueError("cnn_channels, kernel_sizes, and strides must have matching lengths")
 
     layers: list[nn.Module] = []
     current_channels = in_channels
@@ -208,14 +205,16 @@ class ForgeGridCnnExtractor(BaseFeaturesExtractor):
 
         # Determine CNN flat output size.
         device = torch.device("cpu")
-        cnn_out_dim = _cnn_output_dim(
-            self._cnn, grid_h, grid_w, in_channels, device
-        )
+        cnn_out_dim = _cnn_output_dim(self._cnn, grid_h, grid_w, in_channels, device)
 
         self._linear = nn.Linear(cnn_out_dim, features_dim)
         logger.debug(
             "ForgeGridCnnExtractor: grid=(%d,%d,%d) cnn_out=%d features_dim=%d",
-            grid_h, grid_w, in_channels, cnn_out_dim, features_dim,
+            grid_h,
+            grid_w,
+            in_channels,
+            cnn_out_dim,
+            features_dim,
         )
 
     def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -286,9 +285,7 @@ class ForgeObsExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, features_dim=declared_features_dim)
 
         self._scalar_keys: list[str] = sorted(
-            k
-            for k in observation_space.spaces
-            if k not in _GRID_KEYS and k not in _SKIP_KEYS
+            k for k in observation_space.spaces if k not in _GRID_KEYS and k not in _SKIP_KEYS
         )
         self._scalar_dims: dict[str, int] = {
             key: int(math.prod(observation_space.spaces[key].shape))
@@ -304,9 +301,7 @@ class ForgeObsExtractor(BaseFeaturesExtractor):
                 in_channels, cnn_channels, cnn_kernel_sizes, cnn_strides
             )
             device = torch.device("cpu")
-            raw_cnn_dim = _cnn_output_dim(
-                self._cnn, grid_h, grid_w, in_channels, device
-            )
+            raw_cnn_dim = _cnn_output_dim(self._cnn, grid_h, grid_w, in_channels, device)
             self._cnn_linear: nn.Module = nn.Linear(raw_cnn_dim, cnn_out_dim)
             self._has_grid = True
         else:
@@ -323,7 +318,10 @@ class ForgeObsExtractor(BaseFeaturesExtractor):
 
         logger.debug(
             "ForgeObsExtractor: scalar_in=%d mlp_out=%d cnn_out=%d features_dim=%d",
-            scalar_in, mlp_out, cnn_out_dim if self._has_grid else 0, self._features_dim,
+            scalar_in,
+            mlp_out,
+            cnn_out_dim if self._has_grid else 0,
+            self._features_dim,
         )
 
     def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -369,7 +367,5 @@ class ForgeObsExtractor(BaseFeaturesExtractor):
             # Observation space has neither a grid nor any scalar fields.
             # Return a zero tensor of the declared features_dim so callers
             # always receive a consistently-shaped output.
-            return torch.zeros(
-                batch_size, self._features_dim, device=batch_device
-            )
+            return torch.zeros(batch_size, self._features_dim, device=batch_device)
         return torch.cat(parts, dim=-1)

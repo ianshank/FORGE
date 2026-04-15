@@ -17,6 +17,7 @@ Usage::
     agent.load_from_hub()
     action, info = agent.act(observation)
 """
+
 from __future__ import annotations
 
 import json
@@ -112,9 +113,7 @@ class MouseDroidConfig(AgentConfig):
     desire_dim: int = DEFAULT_DESIRE_DIM
     intention_dim: int = DEFAULT_INTENTION_DIM
     affect_dim: int = DEFAULT_AFFECT_DIM
-    bdi_hidden_sizes: list[int] = field(
-        default_factory=lambda: list(DEFAULT_BDI_HIDDEN_SIZES)
-    )
+    bdi_hidden_sizes: list[int] = field(default_factory=lambda: list(DEFAULT_BDI_HIDDEN_SIZES))
 
     # MCTS policy
     policy_hidden_sizes: list[int] = field(
@@ -339,12 +338,8 @@ class MouseDroidAgent(BaseAgent):
         dev = torch.device(self._device)
         obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=dev)
         actions = torch.as_tensor(batch["actions"], dtype=torch.long, device=dev)
-        old_log_probs = torch.as_tensor(
-            batch["old_log_probs"], dtype=torch.float32, device=dev
-        )
-        advantages = torch.as_tensor(
-            batch["advantages"], dtype=torch.float32, device=dev
-        )
+        old_log_probs = torch.as_tensor(batch["old_log_probs"], dtype=torch.float32, device=dev)
+        advantages = torch.as_tensor(batch["advantages"], dtype=torch.float32, device=dev)
         returns = torch.as_tensor(batch["returns"], dtype=torch.float32, device=dev)
 
         # Forward through constitutional policy
@@ -435,9 +430,7 @@ class MouseDroidAgent(BaseAgent):
         loaded = 0
         for key, param in zip(sorted_keys, all_policy_params):
             arr = policy_data[key]
-            tensor = torch.as_tensor(
-                arr, dtype=torch.float32, device=torch.device(self._device)
-            )
+            tensor = torch.as_tensor(arr, dtype=torch.float32, device=torch.device(self._device))
             if tensor.shape == param.shape:
                 with torch.no_grad():
                     param.copy_(tensor)
@@ -445,11 +438,11 @@ class MouseDroidAgent(BaseAgent):
             else:
                 logger.warning(
                     "Shape mismatch for policy param %s: npz=%s, param=%s — skipping",
-                    key, tensor.shape, param.shape,
+                    key,
+                    tensor.shape,
+                    param.shape,
                 )
-        logger.info(
-            "Constitutional policy: loaded %d/%d arrays", loaded, len(sorted_keys)
-        )
+        logger.info("Constitutional policy: loaded %d/%d arrays", loaded, len(sorted_keys))
 
         # Load value weights into critic head
         value_data = loader.load_npz("value.npz")
@@ -467,9 +460,7 @@ class MouseDroidAgent(BaseAgent):
         loaded_v = 0
         for key, param in zip(sorted_value_keys, critic_params):
             arr = value_data[key]
-            tensor = torch.as_tensor(
-                arr, dtype=torch.float32, device=torch.device(self._device)
-            )
+            tensor = torch.as_tensor(arr, dtype=torch.float32, device=torch.device(self._device))
             if tensor.shape == param.shape:
                 with torch.no_grad():
                     param.copy_(tensor)
@@ -477,11 +468,11 @@ class MouseDroidAgent(BaseAgent):
             else:
                 logger.warning(
                     "Shape mismatch for value param %s: npz=%s, param=%s — skipping",
-                    key, tensor.shape, param.shape,
+                    key,
+                    tensor.shape,
+                    param.shape,
                 )
-        logger.info(
-            "Constitutional value: loaded %d/%d arrays", loaded_v, len(sorted_value_keys)
-        )
+        logger.info("Constitutional value: loaded %d/%d arrays", loaded_v, len(sorted_value_keys))
 
     # ----- Save / Load -----
 

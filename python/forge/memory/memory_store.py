@@ -3,6 +3,7 @@
 This module provides a Python-native memory store that mirrors the Rust
 InMemoryStore API, enabling agents to accumulate experience across episodes.
 """
+
 from __future__ import annotations
 
 import json
@@ -127,14 +128,10 @@ class MemoryStore:
     def query_facts(self, prefix: str = "", min_strength: float = 0.0) -> list[SemanticFact]:
         """Query semantic facts by key prefix and minimum strength."""
         return [
-            f
-            for f in self._semantic
-            if f.key.startswith(prefix) and f.strength >= min_strength
+            f for f in self._semantic if f.key.startswith(prefix) and f.strength >= min_strength
         ]
 
-    def query_episodes(
-        self, agent_id: int | None = None, tag: str | None = None
-    ) -> list[Episode]:
+    def query_episodes(self, agent_id: int | None = None, tag: str | None = None) -> list[Episode]:
         """Query episodes by agent ID or tag."""
         results = self._episodic
         if agent_id is not None:
@@ -167,22 +164,37 @@ class MemoryStore:
         data: dict[str, Any] = {
             "agent_id": self.agent_id,
             "semantic": [
-                {"key": f.key, "value": f.value, "confidence": f.confidence,
-                 "source_tick": f.source_tick, "strength": f.strength,
-                 "reinforcement_count": f.reinforcement_count}
+                {
+                    "key": f.key,
+                    "value": f.value,
+                    "confidence": f.confidence,
+                    "source_tick": f.source_tick,
+                    "strength": f.strength,
+                    "reinforcement_count": f.reinforcement_count,
+                }
                 for f in self._semantic
             ],
             "episodic": [
-                {"tick_start": e.tick_start, "tick_end": e.tick_end,
-                 "agent_ids": e.agent_ids, "location": list(e.location),
-                 "event_summaries": e.event_summaries, "outcome": e.outcome,
-                 "reward": e.reward, "tags": e.tags, "strength": e.strength}
+                {
+                    "tick_start": e.tick_start,
+                    "tick_end": e.tick_end,
+                    "agent_ids": e.agent_ids,
+                    "location": list(e.location),
+                    "event_summaries": e.event_summaries,
+                    "outcome": e.outcome,
+                    "reward": e.reward,
+                    "tags": e.tags,
+                    "strength": e.strength,
+                }
                 for e in self._episodic
             ],
             "preferences": [
-                {"context_key": p.context_key,
-                 "action_weights": {str(k): v for k, v in p.action_weights.items()},
-                 "update_count": p.update_count, "strength": p.strength}
+                {
+                    "context_key": p.context_key,
+                    "action_weights": {str(k): v for k, v in p.action_weights.items()},
+                    "update_count": p.update_count,
+                    "strength": p.strength,
+                }
                 for p in self._preferences.values()
             ],
         }
@@ -202,12 +214,8 @@ class MemoryStore:
             if key not in known_top_keys:
                 logger.warning("Unknown field '%s' in memory store file %s", key, path)
 
-        self._semantic = [
-            dataclass_from_dict(SemanticFact, f) for f in data.get("semantic", [])
-        ]
-        self._episodic = [
-            dataclass_from_dict(Episode, e) for e in data.get("episodic", [])
-        ]
+        self._semantic = [dataclass_from_dict(SemanticFact, f) for f in data.get("semantic", [])]
+        self._episodic = [dataclass_from_dict(Episode, e) for e in data.get("episodic", [])]
         self._preferences = {}
         for p in data.get("preferences", []):
             pref = Preference(

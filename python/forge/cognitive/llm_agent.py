@@ -2,6 +2,7 @@
 
 Uses a CognitiveProvider to select actions through structured reasoning.
 """
+
 from __future__ import annotations
 
 import logging
@@ -57,9 +58,7 @@ class LLMAgent(BaseAgent):
         self.llm_config = config
         self.provider = provider or MockProvider()
         self._reasoning_history: list[dict[str, Any]] = []
-        logger.info(
-            "LLMAgent initialized with provider=%s", self.provider.name()
-        )
+        logger.info("LLMAgent initialized with provider=%s", self.provider.name())
 
     def act(self, observation: np.ndarray) -> tuple[int, dict[str, Any]]:
         """Select an action using the LLM provider.
@@ -96,7 +95,9 @@ class LLMAgent(BaseAgent):
     def _build_prompt(self, observation: np.ndarray) -> str:
         """Build a text prompt from a numerical observation."""
         preview_dim = self.llm_config.obs_preview_dim
-        obs_summary = f"Observation vector (dim={observation.shape}): {observation[:preview_dim]}..."
+        obs_summary = (
+            f"Observation vector (dim={observation.shape}): {observation[:preview_dim]}..."
+        )
         return f"{self.llm_config.system_prompt}\n{obs_summary}\nSelect an action ID (integer)."
 
     def _parse_action(self, text: str) -> int:

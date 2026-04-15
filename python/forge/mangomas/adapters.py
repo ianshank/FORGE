@@ -3,6 +3,7 @@
 ActionSpaceAdapter: continuous (MangoMAS) ↔ discrete (FORGE) action mapping.
 ObservationAdapter: FORGE grid observations → flat state vectors.
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,9 +36,7 @@ class ActionSpaceAdapter:
         self._bins = self.config.bins_per_axis
         self._lo = self.config.continuous_range_min
         self._hi = self.config.continuous_range_max
-        logger.debug(
-            "ActionSpaceAdapter: platform=%s, bins=%d", platform, self._bins
-        )
+        logger.debug("ActionSpaceAdapter: platform=%s, bins=%d", platform, self._bins)
 
     @property
     def continuous_dims(self) -> int:
@@ -69,9 +68,7 @@ class ActionSpaceAdapter:
     def _quantize(self, values: np.ndarray) -> list[int]:
         """Quantize continuous values to bin indices."""
         normalized = (values - self._lo) / (self._hi - self._lo)
-        indices = np.clip(
-            (normalized * self._bins).astype(int), 0, self._bins - 1
-        )
+        indices = np.clip((normalized * self._bins).astype(int), 0, self._bins - 1)
         return indices.tolist()  # type: ignore[no-any-return]
 
     def _bin_center(self, bin_idx: int) -> float:
@@ -83,7 +80,7 @@ class ActionSpaceAdapter:
     @property
     def total_action_space(self) -> int:
         """Total number of discrete actions in the mapped space."""
-        return self._bins ** self.continuous_dims  # type: ignore[no-any-return]
+        return self._bins**self.continuous_dims  # type: ignore[no-any-return]
 
 
 class ObservationAdapter:

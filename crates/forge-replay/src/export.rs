@@ -219,4 +219,96 @@ mod tests {
 
         let _ = std::fs::remove_file(&path);
     }
+
+    #[test]
+    fn test_export_jsonl_invalid_path() {
+        let traj = make_test_trajectory();
+        let result = export_to_jsonl(&traj, Path::new("/nonexistent/dir/file.jsonl"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_export_metadata_invalid_path() {
+        let traj = make_test_trajectory();
+        let result = export_metadata(&traj, Path::new("/nonexistent/dir/meta.json"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_export_csv_multi_agent() {
+        let mut builder = TrajectoryBuilder::new();
+        let obs = make_test_observation();
+        let responses = vec![AgentResponse::from_action(1), AgentResponse::from_action(2)];
+
+        builder.record_step(
+            0,
+            vec![obs.clone(), obs],
+            &responses,
+            vec![0.5, 0.3],
+            false,
+            false,
+        );
+        let traj = builder
+            .agent_names(vec!["A".into(), "B".into()])
+            .build(vec![0.5, 0.3]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("multi_agent.csv");
+
+        export_to_csv(&traj, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        // Header + 2 agents × 1 step = 3 lines
+        assert_eq!(lines.len(), 3);
+        assert!(lines[1].contains(",0,")); // agent_idx 0
+        assert!(lines[2].contains(",1,")); // agent_idx 1
+    }
+
+    #[test]
+    fn test_export_jsonl_roundtrip() {
+        use crate::trajectory::TrajectoryStep;
+
+        let traj = make_test_trajectory();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("roundtrip.jsonl");
+
+        export_to_jsonl(&traj, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        for (i, line) in content.lines().enumerate() {
+            let step: TrajectoryStep = serde_json::from_str(line).unwrap();
+            assert_eq!(step.tick, traj.steps[i].tick);
+            assert_eq!(step.actions, traj.steps[i].actions);
+        }
+    }
+
+    #[test]
+    fn test_export_metadata_roundtrip() {
+        use crate::trajectory::TrajectoryMetadata;
+
+        let traj = make_test_trajectory();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("meta_rt.json");
+
+        export_metadata(&traj, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let meta: TrajectoryMetadata = serde_json::from_str(&content).unwrap();
+        assert_eq!(meta.seed, traj.metadata.seed);
+        assert_eq!(meta.total_steps, traj.metadata.total_steps);
+        assert_eq!(meta.final_rewards, traj.metadata.final_rewards);
+    }
+
+    #[test]
+    fn test_export_empty_jsonl() {
+        let traj = Trajectory::new();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.jsonl");
+
+        export_to_jsonl(&traj, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.is_empty());
+    }
 }

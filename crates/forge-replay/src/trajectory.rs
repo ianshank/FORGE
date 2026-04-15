@@ -392,4 +392,88 @@ mod tests {
         assert!((traj.total_reward(0) - 0.5).abs() < f32::EPSILON);
         assert!((traj.total_reward(1) - 0.3).abs() < f32::EPSILON);
     }
+
+    #[test]
+    fn test_trajectory_builder_chaining() {
+        let traj = TrajectoryBuilder::new()
+            .seed(123)
+            .agent_names(vec!["Alpha".into(), "Beta".into()])
+            .scenario_id("patrol".to_string())
+            .build(vec![1.0, 2.0]);
+
+        assert_eq!(traj.metadata.seed, 123);
+        assert_eq!(traj.metadata.agent_names, vec!["Alpha", "Beta"]);
+        assert_eq!(traj.metadata.scenario_id.as_deref(), Some("patrol"));
+        assert_eq!(traj.metadata.final_rewards, vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn test_trajectory_default_is_empty() {
+        let traj = Trajectory::default();
+        assert!(traj.is_empty());
+        assert_eq!(traj.metadata.seed, 0);
+        assert!(traj.metadata.agent_names.is_empty());
+    }
+
+    #[test]
+    fn test_trajectory_metadata_timestamp_not_empty() {
+        let traj = TrajectoryBuilder::new().build(vec![]);
+        assert!(
+            !traj.metadata.timestamp.is_empty(),
+            "Timestamp should be auto-populated"
+        );
+    }
+
+    #[test]
+    fn test_trajectory_multi_step_reward_isolation() {
+        let mut builder = TrajectoryBuilder::new();
+        let obs = make_test_observation();
+        let responses = vec![AgentResponse::from_action(0), AgentResponse::from_action(1)];
+
+        builder.record_step(
+            0,
+            vec![obs.clone(), obs.clone()],
+            &responses,
+            vec![1.0, 0.0],
+            false,
+            false,
+        );
+        builder.record_step(
+            1,
+            vec![obs.clone(), obs],
+            &responses,
+            vec![0.0, 2.0],
+            false,
+            false,
+        );
+
+        let traj = builder.build(vec![1.0, 2.0]);
+        assert_eq!(traj.steps[0].rewards[0], 1.0);
+        assert_eq!(traj.steps[0].rewards[1], 0.0);
+        assert_eq!(traj.steps[1].rewards[0], 0.0);
+        assert_eq!(traj.steps[1].rewards[1], 2.0);
+    }
+
+    #[test]
+    fn test_empty_trajectory_serde_roundtrip() {
+        let traj = Trajectory::new();
+        let json = serde_json::to_string(&traj).unwrap();
+        let deser: Trajectory = serde_json::from_str(&json).unwrap();
+        assert!(deser.is_empty());
+        assert_eq!(deser.metadata.seed, 0);
+    }
+
+    #[test]
+    fn test_trajectory_step_terminated_flag() {
+        let mut builder = TrajectoryBuilder::new();
+        let obs = make_test_observation();
+        let responses = vec![AgentResponse::from_action(0)];
+
+        builder.record_step(0, vec![obs.clone()], &responses, vec![0.1], false, false);
+        builder.record_step(1, vec![obs], &responses, vec![0.2], true, false);
+
+        let traj = builder.build(vec![0.3]);
+        assert!(!traj.steps[0].terminated);
+        assert!(traj.steps[1].terminated);
+    }
 }

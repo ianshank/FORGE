@@ -84,8 +84,10 @@ test_results.txt
 pytest_out.txt
 maturin_out.txt
 maturin_err.txt
+clippy_output.txt
 coverage.json
 e2e_results.json
+demo_results.md
 artifacts/
 runs/
 wandb/

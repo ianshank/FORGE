@@ -224,8 +224,7 @@ class TensorBoardLogger(ForgeLogger):
             self._writer = SummaryWriter(log_dir=log_dir, comment=comment)
         except ImportError as exc:
             raise ImportError(
-                "PyTorch is required for TensorBoardLogger. "
-                "Install with: pip install torch"
+                "PyTorch is required for TensorBoardLogger. Install with: pip install torch"
             ) from exc
 
         logger.info("TensorBoardLogger: writing to %s", log_dir)
@@ -335,7 +334,6 @@ def make_logger(
     """
     if backend not in _LOGGER_REGISTRY:
         raise ValueError(
-            f"Unknown logger backend '{backend}'. "
-            f"Available: {sorted(_LOGGER_REGISTRY)}"
+            f"Unknown logger backend '{backend}'. Available: {sorted(_LOGGER_REGISTRY)}"
         )
     return _LOGGER_REGISTRY[backend](**kwargs)

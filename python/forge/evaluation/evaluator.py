@@ -119,9 +119,7 @@ class Evaluator:
 
         for ep in range(cfg.num_episodes):
             ep_seed = cfg.seed + ep
-            ep_reward, ep_length, ep_tier_successes = self._run_episode(
-                env, agent, seed=ep_seed
-            )
+            ep_reward, ep_length, ep_tier_successes = self._run_episode(env, agent, seed=ep_seed)
             episode_rewards.append(ep_reward)
             episode_lengths.append(ep_length)
             total_steps += ep_length
@@ -233,9 +231,7 @@ class Evaluator:
         tolerance), ``False`` otherwise.
         """
         try:
-            reward, _length, _tiers = self._run_episode(
-                env, agent, seed=self.config.seed
-            )
+            reward, _length, _tiers = self._run_episode(env, agent, seed=self.config.seed)
             passed = abs(reward - expected_reward) < 1e-6
             if not passed:
                 logger.warning(

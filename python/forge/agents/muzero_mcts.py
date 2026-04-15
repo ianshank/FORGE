@@ -16,6 +16,7 @@ Usage::
 
     action, info = mcts.search(observation)
 """
+
 from __future__ import annotations
 
 __all__ = ["MuZeroMCTS", "MuZeroMCTSConfig"]
@@ -272,9 +273,7 @@ class MuZeroMCTS:
         # Backpropagation
         self._backpropagate(search_path, value, min_max)
 
-    def _select_child(
-        self, node: _MCTSNode, min_max: _MinMaxStats
-    ) -> tuple[int, _MCTSNode]:
+    def _select_child(self, node: _MCTSNode, min_max: _MinMaxStats) -> tuple[int, _MCTSNode]:
         """Select the child with highest PUCT score.
 
         PUCT formula:
@@ -296,10 +295,7 @@ class MuZeroMCTS:
         for action_id, child in node.children.items():
             q_value = min_max.normalize(child.value) if child.visit_count > 0 else 0.0
             exploration = (
-                self._config.c_puct
-                * child.prior
-                * parent_visits_sqrt
-                / (1 + child.visit_count)
+                self._config.c_puct * child.prior * parent_visits_sqrt / (1 + child.visit_count)
             )
             score = q_value + exploration
 
@@ -334,9 +330,7 @@ class MuZeroMCTS:
             child.prior = (1 - epsilon) * child.prior + epsilon * float(noise[action_id])
 
     @staticmethod
-    def _visit_counts_to_probs(
-        visit_counts: np.ndarray, temperature: float
-    ) -> np.ndarray:
+    def _visit_counts_to_probs(visit_counts: np.ndarray, temperature: float) -> np.ndarray:
         """Convert visit counts to a probability distribution.
 
         Args:
@@ -350,22 +344,22 @@ class MuZeroMCTS:
             probs = np.zeros_like(visit_counts)
             best = np.argmax(visit_counts)
             probs[best] = 1.0
-            return probs
+            return probs  # type: ignore[no-any-return]
 
         # Temperature-scaled softmax over log visit counts
         total = visit_counts.sum()
         if total == 0:
-            return np.ones_like(visit_counts) / len(visit_counts)
+            return np.ones_like(visit_counts) / len(visit_counts)  # type: ignore[no-any-return]
 
         counts_temp = visit_counts ** (1.0 / temperature)
         total_temp = counts_temp.sum()
         if total_temp == 0:
-            return np.ones_like(visit_counts) / len(visit_counts)
-        return counts_temp / total_temp
+            return np.ones_like(visit_counts) / len(visit_counts)  # type: ignore[no-any-return]
+        return counts_temp / total_temp  # type: ignore[no-any-return]
 
 
 def _softmax(logits: np.ndarray) -> np.ndarray:
     """Numerically stable softmax over a 1D array."""
     shifted = logits - logits.max()
     exp_vals = np.exp(shifted)
-    return exp_vals / exp_vals.sum()
+    return exp_vals / exp_vals.sum()  # type: ignore[no-any-return]

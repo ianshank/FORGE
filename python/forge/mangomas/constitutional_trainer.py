@@ -3,6 +3,7 @@
 Maps FORGE safety constraints to MangoMAS's 5 constitutional principles
 and trains constraint-aware policy/value networks.
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,11 +39,11 @@ class ConstraintViolation:
 class ConstitutionalDataset:
     """Dataset for constitutional RL training."""
 
-    observations: np.ndarray        # (N, state_dim)
-    actions: np.ndarray             # (N,)
-    rewards: np.ndarray             # (N,)
+    observations: np.ndarray  # (N, state_dim)
+    actions: np.ndarray  # (N,)
+    rewards: np.ndarray  # (N,)
     constraint_violations: np.ndarray  # (N, num_constraints) binary
-    penalties: np.ndarray           # (N,)
+    penalties: np.ndarray  # (N,)
 
     @property
     def num_samples(self) -> int:
@@ -87,9 +88,7 @@ class ConstitutionalPreTrainer:
             self.config.penalty_weight,
         )
 
-    def check_violations(
-        self, obs: dict[str, float]
-    ) -> list[ConstraintViolation]:
+    def check_violations(self, obs: dict[str, float]) -> list[ConstraintViolation]:
         """Check which constraints are violated in a given observation."""
         violations = []
         for c in self.constraints:
@@ -210,7 +209,9 @@ class ConstitutionalPreTrainer:
             if (epoch + 1) % self.config.log_interval == 0:
                 logger.debug(
                     "Constitutional epoch %d/%d: loss=%.4f",
-                    epoch + 1, self.config.num_epochs, epoch_loss,
+                    epoch + 1,
+                    self.config.num_epochs,
+                    epoch_loss,
                 )
 
         self._weights = {

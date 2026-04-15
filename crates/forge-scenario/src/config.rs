@@ -369,4 +369,86 @@ max_agents = 4
         assert_eq!(MIN_DIFFICULTY_TIER, 1);
         assert_eq!(MAX_DIFFICULTY_TIER, 6);
     }
+
+    #[test]
+    fn test_scenario_config_all_optional_fields() {
+        let toml = r#"
+[scenario]
+id = "full"
+name = "Full Scenario"
+description = "A fully specified scenario"
+tags = ["combat", "navigation"]
+difficulty_tier = 5
+min_agents = 2
+max_agents = 8
+author = "tester"
+version = "2.0"
+
+[forge.world]
+width = 128
+height = 128
+seed = 999
+"#;
+        let config = ScenarioConfig::from_toml(toml).unwrap();
+        assert_eq!(config.scenario.id, "full");
+        assert_eq!(config.scenario.description, "A fully specified scenario");
+        assert_eq!(config.scenario.tags, vec!["combat", "navigation"]);
+        assert_eq!(config.scenario.difficulty_tier, 5);
+        assert_eq!(config.scenario.min_agents, 2);
+        assert_eq!(config.scenario.max_agents, 8);
+        assert_eq!(config.scenario.author, "tester");
+        assert_eq!(config.scenario.version, "2.0");
+        assert!(config.is_valid());
+    }
+
+    #[test]
+    fn test_validate_tier_boundary_valid() {
+        for tier in [MIN_DIFFICULTY_TIER, MAX_DIFFICULTY_TIER] {
+            let toml = format!(
+                r#"
+[scenario]
+id = "test"
+name = "Test"
+difficulty_tier = {tier}
+"#
+            );
+            let config = ScenarioConfig::from_toml(&toml).unwrap();
+            let errors = config.validate();
+            assert!(
+                !errors.iter().any(|e| e.contains("difficulty_tier")),
+                "tier {tier} should be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn test_effective_config_preserves_defaults() {
+        let toml = r#"
+[scenario]
+id = "minimal"
+name = "Minimal"
+"#;
+        let config = ScenarioConfig::from_toml(toml).unwrap();
+        let effective = config.effective_config();
+        let default_forge = ForgeConfig::default();
+        assert_eq!(effective.world.width, default_forge.world.width);
+        assert_eq!(effective.world.height, default_forge.world.height);
+    }
+
+    #[test]
+    fn test_scenario_to_toml_roundtrip() {
+        let toml = r#"
+[scenario]
+id = "roundtrip"
+name = "Roundtrip Test"
+difficulty_tier = 3
+min_agents = 1
+max_agents = 4
+"#;
+        let config = ScenarioConfig::from_toml(toml).unwrap();
+        let serialized = config.to_toml().unwrap();
+        let deser = ScenarioConfig::from_toml(&serialized).unwrap();
+        assert_eq!(deser.scenario.id, "roundtrip");
+        assert_eq!(deser.scenario.difficulty_tier, 3);
+    }
 }

@@ -3,6 +3,7 @@
 Manages car/drone curriculum with adaptive difficulty progression
 through 5 tiers of increasing complexity.
 """
+
 from __future__ import annotations
 
 import json
@@ -63,8 +64,7 @@ class PlatformCurriculumController:
 
         # Per-tier outcome tracking
         self._tier_outcomes: dict[int, deque[bool]] = {
-            t["tier"]: deque(maxlen=self.config.window_size)
-            for t in self._tiers
+            t["tier"]: deque(maxlen=self.config.window_size) for t in self._tiers
         }
         self._total_episodes = 0
 

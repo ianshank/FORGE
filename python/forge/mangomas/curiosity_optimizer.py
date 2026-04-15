@@ -3,6 +3,7 @@
 Meta-learns optimal curiosity channel weights (social, epistemic,
 perceptual, metacognitive) via FORGE multi-agent scenarios.
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,12 +62,14 @@ class CuriosityWeightOptimizer:
     ) -> None:
         self._config = config or CuriosityOptimizerConfig()
         self.channels = list(channels or self._config.channels)
-        self._initial = np.array(
-            initial_weights or self._config.initial_weights, dtype=np.float32
+        self._initial = np.array(initial_weights or self._config.initial_weights, dtype=np.float32)
+        self.population_size = (
+            population_size if population_size is not None else self._config.population_size
         )
-        self.population_size = population_size if population_size is not None else self._config.population_size
         self.sigma = sigma if sigma is not None else self._config.sigma
-        self.learning_rate = learning_rate if learning_rate is not None else self._config.learning_rate
+        self.learning_rate = (
+            learning_rate if learning_rate is not None else self._config.learning_rate
+        )
         self._rng = np.random.default_rng(seed if seed is not None else self._config.seed)
         logger.info(
             "CuriosityWeightOptimizer: %d channels, pop=%d, sigma=%.2f",
@@ -105,15 +108,10 @@ class CuriosityWeightOptimizer:
         for iteration in range(num_iterations):
             # Generate population via Gaussian perturbation
             noise = self._rng.normal(0, self.sigma, (self.population_size, len(self.channels)))
-            population = np.array([
-                self._normalize(current + n) for n in noise
-            ])
+            population = np.array([self._normalize(current + n) for n in noise])
 
             # Evaluate fitness
-            fitnesses = np.array([
-                evaluate_fn(dict(zip(self.channels, w)))
-                for w in population
-            ])
+            fitnesses = np.array([evaluate_fn(dict(zip(self.channels, w))) for w in population])
 
             # Update via fitness-weighted mean
             advantages = fitnesses - fitnesses.mean()
@@ -136,7 +134,9 @@ class CuriosityWeightOptimizer:
             if (iteration + 1) % self._config.log_interval == 0:
                 logger.debug(
                     "Curiosity ES iter %d/%d: best_fitness=%.4f",
-                    iteration + 1, num_iterations, best_fitness,
+                    iteration + 1,
+                    num_iterations,
+                    best_fitness,
                 )
 
         result = CuriosityWeights(

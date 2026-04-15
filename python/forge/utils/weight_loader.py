@@ -12,6 +12,7 @@ Usage::
     checkpoint = loader.load_pt("rssm/final.pt", device="cpu")
     arrays = loader.load_npz("mcts/policy_init.npz")
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,8 +30,7 @@ _HF_MISSING_MSG = (
 )
 
 _TORCH_MISSING_MSG = (
-    "torch is required to load PyTorch checkpoints. "
-    "Install it with: pip install torch>=2.0"
+    "torch is required to load PyTorch checkpoints. Install it with: pip install torch>=2.0"
 )
 
 DEFAULT_REPO_ID = "ianshank/mousedroid-weights"
@@ -148,9 +148,7 @@ class WeightLoader:
             raise ImportError(_TORCH_MISSING_MSG) from exc
 
         path = self.resolve_path(filename)
-        checkpoint: dict[str, Any] = torch.load(
-            str(path), map_location=device, weights_only=True
-        )
+        checkpoint: dict[str, Any] = torch.load(str(path), map_location=device, weights_only=True)
         logger.info("Loaded .pt %s on device=%s", filename, device)
         return checkpoint
 

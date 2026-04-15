@@ -11,6 +11,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### v0.2 Implementation Hardening
+
+- Added **5 hex-grid integration tests** covering full episode cycle, deterministic replay, multi-agent episodes, square-move rejection, and serialization roundtrip (`tests/rust/integration_tests.rs` — 29 total passing)
+- Added **2 hex benchmark groups** (`bench_step_hex_single_agent`, `bench_step_hex_multi_agent`) to `forge-bench` Criterion benchmarks (7 groups total)
+- Added **22 new `forge-replay` tests** across compact replay, trajectory, export, and config modules (36 → 58 tests)
+- Added **16 new `forge-scenario` tests** across registry, compose, and config modules (43 → 59 tests)
+- Added **`tests/python/test_mangomas_smoke.py`** with 21 end-to-end smoke tests covering:
+  - TOML config loading for all 8 `configs/mangomas/*.toml` files
+  - Config-to-episode wiring for action adapters, observation adapters, and batch collection
+  - Pipeline stage integration for BDI, constitutional, RSSM, curiosity, and curriculum controllers
+  - Export pipeline integrity with full roundtrip and weight loading verification
+  - End-to-end pipeline execution through the BDI stage
+- Added **`python-test-fast` CI job** — runs pure-Python tests without maturin/native extension build for faster PR feedback
+- Added **Docker GHCR publishing job** with multi-arch support (`linux/amd64` + `linux/arm64`), Docker Buildx, semver tag extraction, and GitHub Actions cache
+
+### Changed
+
+- **Benchmark regression gate**: `critcmp` comparison changed from warning to hard failure — regressions >5% now block PRs
+- **Python type compliance**: Fixed all 10 mypy errors across `muzero_buffer.py`, `wrappers.py`, `muzero_mcts.py`, and `pyproject.toml` override configuration — 86 source files pass mypy strict
+- **Python formatting**: Applied `ruff format` across 40 Python files; resolved all E501 line-length violations
+- **`.gitignore`**: Added entries for stale build artifacts (`clippy_output.txt`, `demo_results.md`)
+
+### Fixed
+
+- Fixed `forge-scenario` registry tests using incorrect data assumptions (OR-logic for tag matching, correct scenario names)
+- Fixed `compose_scenarios` test expecting `Result` when function returns `Option`
+- Fixed mypy `# type: ignore[return-value]` → `[no-any-return]` for 5 return statements in `muzero_mcts.py`
+- Fixed `numpy.signedinteger` → `int` cast in `muzero_buffer.py` for mypy compliance
+- Removed stale `# type: ignore[no-any-return]` from `wrappers.py` after numpy stub alignment
+
+---
+
+### Added
+
 #### Hex Grid Topology & Dynamic Action Spaces
 
 - Added **`forge-civ`** as a dedicated topology crate for square and hex grids, including:

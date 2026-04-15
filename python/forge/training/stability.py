@@ -88,8 +88,7 @@ class EarlyStopping:
             if self._counter >= self.config.patience:
                 self._should_stop = True
                 logger.info(
-                    "Early stopping triggered after %d evaluations without "
-                    "improvement (best=%.6f)",
+                    "Early stopping triggered after %d evaluations without improvement (best=%.6f)",
                     self.config.patience,
                     self._best_value,
                 )

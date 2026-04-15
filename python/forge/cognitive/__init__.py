@@ -1,4 +1,5 @@
 """FORGE cognitive module: LLM-backed agent with provider-agnostic architecture."""
+
 from __future__ import annotations
 
 from forge.cognitive.llm_agent import LLMAgent, LLMAgentConfig

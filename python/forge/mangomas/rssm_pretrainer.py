@@ -3,6 +3,7 @@
 Pre-trains RSSM components (GRU transition, reward head, value head, prior)
 on FORGE transition sequences for transfer to MangoMAS's world model.
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,11 +21,11 @@ logger = logging.getLogger(__name__)
 class SequenceDataset:
     """Dataset of (state, action, next_state, reward) transition sequences."""
 
-    states: np.ndarray       # (N, seq_len, state_dim)
-    actions: np.ndarray      # (N, seq_len)
+    states: np.ndarray  # (N, seq_len, state_dim)
+    actions: np.ndarray  # (N, seq_len)
     next_states: np.ndarray  # (N, seq_len, state_dim)
-    rewards: np.ndarray      # (N, seq_len)
-    dones: np.ndarray        # (N, seq_len)
+    rewards: np.ndarray  # (N, seq_len)
+    dones: np.ndarray  # (N, seq_len)
 
     @property
     def num_sequences(self) -> int:
@@ -97,7 +98,9 @@ class RSSMPreTrainer:
                 all_dones.append(dones[start:end])
 
         if not all_states:
-            state_dim = episode_observations[0].shape[1] if episode_observations else self.config.state_dim
+            state_dim = (
+                episode_observations[0].shape[1] if episode_observations else self.config.state_dim
+            )
             return SequenceDataset(
                 states=np.zeros((0, seq_len, state_dim), dtype=np.float32),
                 actions=np.zeros((0, seq_len), dtype=np.int64),
@@ -126,38 +129,44 @@ class RSSMPreTrainer:
         scale_ih = np.sqrt(6.0 / (input_dim + h_dim))
         scale_hh = np.sqrt(6.0 / (h_dim + h_dim))
 
-        self._weights["gru_w_ih"] = rng.uniform(
-            -scale_ih, scale_ih, (3 * h_dim, input_dim)
-        ).astype(np.float32)
-        self._weights["gru_w_hh"] = rng.uniform(
-            -scale_hh, scale_hh, (3 * h_dim, h_dim)
-        ).astype(np.float32)
+        self._weights["gru_w_ih"] = rng.uniform(-scale_ih, scale_ih, (3 * h_dim, input_dim)).astype(
+            np.float32
+        )
+        self._weights["gru_w_hh"] = rng.uniform(-scale_hh, scale_hh, (3 * h_dim, h_dim)).astype(
+            np.float32
+        )
         self._weights["gru_b_ih"] = np.zeros(3 * h_dim, dtype=np.float32)
         self._weights["gru_b_hh"] = np.zeros(3 * h_dim, dtype=np.float32)
 
         # Reward head
         for i, (in_d, out_d) in enumerate(
-            zip([h_dim, *self.config.reward_head_hidden],
-                [*self.config.reward_head_hidden, 1])
+            zip([h_dim, *self.config.reward_head_hidden], [*self.config.reward_head_hidden, 1])
         ):
             scale = np.sqrt(6.0 / (in_d + out_d))
-            self._weights[f"reward_w{i}"] = rng.uniform(-scale, scale, (out_d, in_d)).astype(np.float32)
+            self._weights[f"reward_w{i}"] = rng.uniform(-scale, scale, (out_d, in_d)).astype(
+                np.float32
+            )
             self._weights[f"reward_b{i}"] = np.zeros(out_d, dtype=np.float32)
 
         # Value head
         for i, (in_d, out_d) in enumerate(
-            zip([h_dim, *self.config.value_head_hidden],
-                [*self.config.value_head_hidden, 1])
+            zip([h_dim, *self.config.value_head_hidden], [*self.config.value_head_hidden, 1])
         ):
             scale = np.sqrt(6.0 / (in_d + out_d))
-            self._weights[f"value_w{i}"] = rng.uniform(-scale, scale, (out_d, in_d)).astype(np.float32)
+            self._weights[f"value_w{i}"] = rng.uniform(-scale, scale, (out_d, in_d)).astype(
+                np.float32
+            )
             self._weights[f"value_b{i}"] = np.zeros(out_d, dtype=np.float32)
 
         # Prior: h_t → mean, logvar of z_t
         scale_p = np.sqrt(6.0 / (h_dim + l_dim))
-        self._weights["prior_mean_w"] = rng.uniform(-scale_p, scale_p, (l_dim, h_dim)).astype(np.float32)
+        self._weights["prior_mean_w"] = rng.uniform(-scale_p, scale_p, (l_dim, h_dim)).astype(
+            np.float32
+        )
         self._weights["prior_mean_b"] = np.zeros(l_dim, dtype=np.float32)
-        self._weights["prior_logvar_w"] = rng.uniform(-scale_p, scale_p, (l_dim, h_dim)).astype(np.float32)
+        self._weights["prior_logvar_w"] = rng.uniform(-scale_p, scale_p, (l_dim, h_dim)).astype(
+            np.float32
+        )
         self._weights["prior_logvar_b"] = np.zeros(l_dim, dtype=np.float32)
 
         # Simple training loop: MSE on next-state prediction
@@ -184,7 +193,7 @@ class RSSMPreTrainer:
                     # Simplified: predict next state from current state
                     pred_ns = s  # placeholder — real impl would use GRU
                     t_loss = float(np.mean((pred_ns - ns) ** 2))
-                    r_loss = float(np.mean(r ** 2)) * self.config.reward_loss_scale
+                    r_loss = float(np.mean(r**2)) * self.config.reward_loss_scale
                     epoch_loss += t_loss + r_loss
 
                 epoch_loss /= max(dataset.num_sequences // self.config.batch_size, 1)
@@ -193,7 +202,9 @@ class RSSMPreTrainer:
                 if (epoch + 1) % self.config.log_interval == 0:
                     logger.debug(
                         "RSSM epoch %d/%d: loss=%.4f",
-                        epoch + 1, self.config.num_epochs, epoch_loss,
+                        epoch + 1,
+                        self.config.num_epochs,
+                        epoch_loss,
                     )
 
             transition_loss = loss_history[-1] if loss_history else 0.0

@@ -99,7 +99,7 @@ The stage pipeline writes manifests, logs, and exported weight bundles under `ar
 
 ## Architecture
 
-FORGE is a 20-crate Rust workspace organized in six layers, from shared foundations through cognitive systems to bindings and deployment targets.
+FORGE is a 23-crate Rust workspace organized in six layers, from shared foundations through cognitive systems to bindings and deployment targets.
 
 ```mermaid
 graph TD
@@ -171,7 +171,7 @@ graph TD
 
 ```
 FORGE/
-├── crates/          # 20 Rust crates (see diagram above)
+├── crates/          # 23 Rust crates (see diagram above)
 ├── python/          # forge_env wrappers, forge training package
 ├── configs/         # TOML configuration files
 ├── scripts/         # CLI tools (train, evaluate, demo, replay, export)
@@ -382,7 +382,7 @@ FORGE includes a Python-side MangoMAS bridge for training and evaluation workflo
 # Build all crates
 cargo build --workspace
 
-# Run all tests (614 Rust tests)
+# Run all tests (2,186+ Rust library tests + 29 integration tests)
 cargo test --workspace
 
 # Lint (must pass with zero warnings)
@@ -449,9 +449,15 @@ FORGE uses TOML configuration files under `configs/`:
 
 ```
 configs/
-├── agents/          # Agent configs (mappo_default, mcts_default, hybrid_default)
+├── agents/          # Agent configs (mappo_default, mcts_default, hybrid_default, mousedroid)
+├── cognitive/       # Cognitive system configs
 ├── curriculum/      # Curriculum tiers (beginner, intermediate, advanced)
-└── scenarios/       # Scenario configs (patrol, escort, search_and_rescue, etc.)
+├── integration/     # Integration layer configs
+├── mangomas/        # MangoMAS bridge configs (curriculum, constitutional, sweep)
+├── memory/          # Memory system configs
+├── scenarios/       # Scenario configs (patrol, escort, search_and_rescue, adversarial_recon, area_denial)
+├── social/          # Social system configs
+└── training/        # Training configs
 ```
 
 All config structs derive `Clone, Debug, Serialize, Deserialize` and implement `Default` for programmatic use without config files.
@@ -502,10 +508,13 @@ docker build -f docker/Dockerfile.demo -t forge-demo .
 
 | | |
 |---|---|
-| Rust workspace | 10 primary crates plus server, bindings, and benchmark surfaces |
+| Rust workspace | 23 crates (2,186+ unit tests, 29 integration tests) |
+| Rust coverage | `cargo-tarpaulin` gated at 85% line coverage |
 | Python surface | `forge_env` wrappers plus `forge` training, MangoMAS bridge, traces, and utilities |
-| Validation | Rust unit/integration coverage plus Python package, wrapper, and training-surface pytest coverage |
-| Deployment | Local demo UI, dashboard, and simulation server with Docker Compose orchestration |
+| Python tests | 21 MangoMAS smoke tests, coverage-gated at 85% |
+| Python lint | `ruff` + `mypy --strict` — 86 source files, 0 errors |
+| CI pipeline | 10 GitHub Actions jobs (fmt, clippy, test, bench, coverage, python-lint, python-test, python-test-fast, demo-ui, docker) |
+| Deployment | Docker Compose (3 services), GHCR multi-arch images (amd64 + arm64) |
 | Dependencies | See [`Cargo.toml`](Cargo.toml) for full list |
 
 ## Developed By

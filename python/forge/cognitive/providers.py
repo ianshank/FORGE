@@ -2,6 +2,7 @@
 
 Supports multiple backends: mock (for testing), Anthropic, OpenAI, and local.
 """
+
 from __future__ import annotations
 
 import logging

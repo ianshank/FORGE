@@ -3,6 +3,7 @@
 Collects FORGE episodes, maps actions to BDI intention classes (0-7),
 and trains a GRU+MLP intention predictor whose weights transfer to MangoMAS.
 """
+
 from __future__ import annotations
 
 import logging
@@ -17,19 +18,37 @@ logger = logging.getLogger(__name__)
 
 # Default action → intention mapping (matches Rust BdiIntentionMapper)
 DEFAULT_ACTION_INTENTION_MAP: dict[str, int] = {
-    "Move": 0, "MoveUp": 0, "MoveDown": 0, "MoveLeft": 0, "MoveRight": 0,
-    "Ascend": 0, "Descend": 0, "TakeOff": 0, "Land": 0,
-    "PickUp": 1, "Drop": 1, "DropPayload": 1,
+    "Move": 0,
+    "MoveUp": 0,
+    "MoveDown": 0,
+    "MoveLeft": 0,
+    "MoveRight": 0,
+    "Ascend": 0,
+    "Descend": 0,
+    "TakeOff": 0,
+    "Land": 0,
+    "PickUp": 1,
+    "Drop": 1,
+    "DropPayload": 1,
     "Craft": 2,
-    "Push": 3, "Use": 3, "Interact": 3,
+    "Push": 3,
+    "Use": 3,
+    "Interact": 3,
     "Communicate": 4,
     "Scan": 6,
-    "Noop": 7, "Hover": 7,
+    "Noop": 7,
+    "Hover": 7,
 }
 
 INTENTION_NAMES = {
-    0: "Navigate", 1: "Gather", 2: "Plan", 3: "Manipulate",
-    4: "Cooperate", 5: "Evade", 6: "Track", 7: "Idle",
+    0: "Navigate",
+    1: "Gather",
+    2: "Plan",
+    3: "Manipulate",
+    4: "Cooperate",
+    5: "Evade",
+    6: "Track",
+    7: "Idle",
 }
 
 
@@ -38,8 +57,8 @@ class BDIDataset:
     """Dataset of (observation, intention, reward) samples for BDI training."""
 
     observations: np.ndarray  # (N, state_dim)
-    intentions: np.ndarray    # (N,) int
-    rewards: np.ndarray       # (N,)
+    intentions: np.ndarray  # (N,) int
+    rewards: np.ndarray  # (N,)
     episode_lengths: list[int] = field(default_factory=list)
 
     @property
@@ -53,8 +72,7 @@ class BDIDataset:
         if total == 0:
             return dict.fromkeys(INTENTION_NAMES.values(), 0.0)
         return {
-            INTENTION_NAMES[i]: float(counts[i]) / float(total)
-            for i in range(len(INTENTION_NAMES))
+            INTENTION_NAMES[i]: float(counts[i]) / float(total) for i in range(len(INTENTION_NAMES))
         }
 
 
@@ -111,9 +129,7 @@ class BDIPreTrainer:
         all_rewards = []
         episode_lengths = []
 
-        for ep_obs, ep_actions, ep_rewards in zip(
-            observations, action_names, rewards
-        ):
+        for ep_obs, ep_actions, ep_rewards in zip(observations, action_names, rewards):
             ep_len = min(len(ep_obs), len(ep_actions), len(ep_rewards))
             episode_lengths.append(ep_len)
             for t in range(ep_len):
@@ -173,9 +189,7 @@ class BDIPreTrainer:
                 exp_logits = np.exp(logits - logits_max)
                 probs = exp_logits / exp_logits.sum(axis=1, keepdims=True)
 
-                batch_loss = -np.mean(
-                    np.log(probs[np.arange(len(y)), y] + 1e-8)
-                )
+                batch_loss = -np.mean(np.log(probs[np.arange(len(y)), y] + 1e-8))
                 epoch_loss += float(batch_loss) * len(y)
                 epoch_correct += np.sum(np.argmax(probs, axis=1) == y)
 
@@ -197,7 +211,10 @@ class BDIPreTrainer:
             if (epoch + 1) % self.config.log_interval == 0:
                 logger.debug(
                     "BDI epoch %d/%d: loss=%.4f, acc=%.4f",
-                    epoch + 1, self.config.num_epochs, epoch_loss, epoch_acc,
+                    epoch + 1,
+                    self.config.num_epochs,
+                    epoch_loss,
+                    epoch_acc,
                 )
 
         self._weights = {

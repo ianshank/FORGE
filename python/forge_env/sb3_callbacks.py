@@ -93,9 +93,7 @@ class ForgeCurriculumCallback(BaseCallback):
         super().__init__(verbose=verbose)
 
         if not (0.0 < target_success_rate <= 1.0):
-            raise ValueError(
-                f"target_success_rate must be in (0, 1], got {target_success_rate}"
-            )
+            raise ValueError(f"target_success_rate must be in (0, 1], got {target_success_rate}")
         if window_size < 1:
             raise ValueError(f"window_size must be >= 1, got {window_size}")
         if adjustment_rate < 1:

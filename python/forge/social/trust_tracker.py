@@ -1,4 +1,5 @@
 """Trust and reputation tracking for multi-agent training."""
+
 from __future__ import annotations
 
 import logging
@@ -29,9 +30,7 @@ class TrustTracker:
         self.trust_matrix: np.ndarray = np.full(
             (num_agents, num_agents), self.config.trust_initial, dtype=np.float32
         )
-        self.interaction_count: np.ndarray = np.zeros(
-            (num_agents, num_agents), dtype=np.int32
-        )
+        self.interaction_count: np.ndarray = np.zeros((num_agents, num_agents), dtype=np.int32)
         self.reputation: np.ndarray = np.zeros(num_agents, dtype=np.float32)
         self._coop_counts: np.ndarray = np.zeros(num_agents, dtype=np.int32)
         self._hostile_counts: np.ndarray = np.zeros(num_agents, dtype=np.int32)
@@ -40,12 +39,8 @@ class TrustTracker:
     def record_cooperation(self, agent_a: int, agent_b: int) -> None:
         """Record a cooperative interaction."""
         lr = self.config.trust_update_rate
-        self.trust_matrix[agent_a, agent_b] = min(
-            1.0, self.trust_matrix[agent_a, agent_b] + lr
-        )
-        self.trust_matrix[agent_b, agent_a] = min(
-            1.0, self.trust_matrix[agent_b, agent_a] + lr
-        )
+        self.trust_matrix[agent_a, agent_b] = min(1.0, self.trust_matrix[agent_a, agent_b] + lr)
+        self.trust_matrix[agent_b, agent_a] = min(1.0, self.trust_matrix[agent_b, agent_a] + lr)
         self.interaction_count[agent_a, agent_b] += 1
         self.interaction_count[agent_b, agent_a] += 1
         self._coop_counts[agent_a] += 1
@@ -56,12 +51,8 @@ class TrustTracker:
     def record_hostility(self, attacker: int, defender: int) -> None:
         """Record a hostile interaction."""
         lr = self.config.trust_update_rate
-        self.trust_matrix[attacker, defender] = max(
-            0.0, self.trust_matrix[attacker, defender] - lr
-        )
-        self.trust_matrix[defender, attacker] = max(
-            0.0, self.trust_matrix[defender, attacker] - lr
-        )
+        self.trust_matrix[attacker, defender] = max(0.0, self.trust_matrix[attacker, defender] - lr)
+        self.trust_matrix[defender, attacker] = max(0.0, self.trust_matrix[defender, attacker] - lr)
         self.interaction_count[attacker, defender] += 1
         self.interaction_count[defender, attacker] += 1
         self._hostile_counts[attacker] += 1

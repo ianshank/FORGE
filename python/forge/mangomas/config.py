@@ -2,6 +2,7 @@
 
 All values flow through config — no hard-coded constants.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,10 +41,30 @@ DEFAULT_PIPELINE_MANIFEST = "pipeline_manifest.json"
 # Canonical constraint definitions for constitutional RL
 DEFAULT_CONSTITUTIONAL_CONSTRAINTS: list[dict[str, Any]] = [
     {"name": "battery_minimum", "forge_field": "battery", "threshold": 0.2, "is_lower_bound": True},
-    {"name": "altitude_ceiling", "forge_field": "altitude", "threshold": 0.9, "is_lower_bound": False},
-    {"name": "speed_ceiling", "forge_field": "stamina_inverse", "threshold": 0.8, "is_lower_bound": False},
-    {"name": "geofence", "forge_field": "boundary_distance", "threshold": 0.1, "is_lower_bound": True},
-    {"name": "threat_exclusion", "forge_field": "threat_proximity", "threshold": 0.3, "is_lower_bound": True},
+    {
+        "name": "altitude_ceiling",
+        "forge_field": "altitude",
+        "threshold": 0.9,
+        "is_lower_bound": False,
+    },
+    {
+        "name": "speed_ceiling",
+        "forge_field": "stamina_inverse",
+        "threshold": 0.8,
+        "is_lower_bound": False,
+    },
+    {
+        "name": "geofence",
+        "forge_field": "boundary_distance",
+        "threshold": 0.1,
+        "is_lower_bound": True,
+    },
+    {
+        "name": "threat_exclusion",
+        "forge_field": "threat_proximity",
+        "threshold": 0.3,
+        "is_lower_bound": True,
+    },
 ]
 
 # Canonical tier definitions for platform curriculum
@@ -52,14 +73,29 @@ DEFAULT_CAR_TIERS: list[dict[str, Any]] = [
     {"tier": 2, "name": "Obstacle Avoidance", "forge_scenario": "patrol", "success_threshold": 0.7},
     {"tier": 3, "name": "Multi-Waypoint", "forge_scenario": "patrol", "success_threshold": 0.6},
     {"tier": 4, "name": "Dynamic Traffic", "forge_scenario": "escort", "success_threshold": 0.5},
-    {"tier": 5, "name": "Full Mission", "forge_scenario": "search_and_rescue", "success_threshold": 0.4},
+    {
+        "tier": 5,
+        "name": "Full Mission",
+        "forge_scenario": "search_and_rescue",
+        "success_threshold": 0.4,
+    },
 ]
 
 DEFAULT_DRONE_TIERS: list[dict[str, Any]] = [
     {"tier": 1, "name": "Hover and Altitude", "forge_scenario": "patrol", "success_threshold": 0.7},
-    {"tier": 2, "name": "Waypoint Navigation", "forge_scenario": "patrol", "success_threshold": 0.6},
+    {
+        "tier": 2,
+        "name": "Waypoint Navigation",
+        "forge_scenario": "patrol",
+        "success_threshold": 0.6,
+    },
     {"tier": 3, "name": "Patrol Pattern", "forge_scenario": "patrol", "success_threshold": 0.5},
-    {"tier": 4, "name": "Search and Rescue", "forge_scenario": "search_and_rescue", "success_threshold": 0.4},
+    {
+        "tier": 4,
+        "name": "Search and Rescue",
+        "forge_scenario": "search_and_rescue",
+        "success_threshold": 0.4,
+    },
     {"tier": 5, "name": "Multi-Drone Escort", "forge_scenario": "escort", "success_threshold": 0.3},
 ]
 
@@ -192,9 +228,7 @@ class CurriculumConfig:
             return [dict(tier) for tier in self.tiers]
 
         selected_platform = platform or self.platform
-        default_tiers = (
-            DEFAULT_DRONE_TIERS if selected_platform == "drone" else DEFAULT_CAR_TIERS
-        )
+        default_tiers = DEFAULT_DRONE_TIERS if selected_platform == "drone" else DEFAULT_CAR_TIERS
         return [dict(tier) for tier in default_tiers]
 
 
@@ -214,9 +248,7 @@ class CuriosityOptimizerConfig:
     """Curiosity weight optimizer configuration."""
 
     channels: list[str] = field(default_factory=lambda: list(DEFAULT_CURIOSITY_CHANNELS))
-    initial_weights: list[float] = field(
-        default_factory=lambda: list(DEFAULT_CURIOSITY_WEIGHTS)
-    )
+    initial_weights: list[float] = field(default_factory=lambda: list(DEFAULT_CURIOSITY_WEIGHTS))
     population_size: int = 20
     sigma: float = 0.1
     learning_rate: float = 0.05
@@ -303,13 +335,9 @@ class MangoMASBridgeConfig:
 
     platform: str = "drone"  # "car" or "drone"
     action_adapter: ActionAdapterConfig = field(default_factory=ActionAdapterConfig)
-    observation_adapter: ObservationAdapterConfig = field(
-        default_factory=ObservationAdapterConfig
-    )
+    observation_adapter: ObservationAdapterConfig = field(default_factory=ObservationAdapterConfig)
     sweep: SweepConfig = field(default_factory=SweepConfig)
-    surprise_validator: SurpriseValidatorConfig = field(
-        default_factory=SurpriseValidatorConfig
-    )
+    surprise_validator: SurpriseValidatorConfig = field(default_factory=SurpriseValidatorConfig)
     bdi_trainer: BDITrainerConfig = field(default_factory=BDITrainerConfig)
     constitutional_trainer: ConstitutionalTrainerConfig = field(
         default_factory=ConstitutionalTrainerConfig
@@ -317,9 +345,7 @@ class MangoMASBridgeConfig:
     rssm_pretrain: RSSMPreTrainConfig = field(default_factory=RSSMPreTrainConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     batch_collector: BatchCollectorConfig = field(default_factory=BatchCollectorConfig)
-    curiosity_optimizer: CuriosityOptimizerConfig = field(
-        default_factory=CuriosityOptimizerConfig
-    )
+    curiosity_optimizer: CuriosityOptimizerConfig = field(default_factory=CuriosityOptimizerConfig)
     muzero_trainer: MuZeroTrainerConfig = field(default_factory=MuZeroTrainerConfig)
     transfer: TransferConfig = field(default_factory=TransferConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
@@ -346,9 +372,7 @@ class MangoMASBridgeConfig:
         if "action_adapter" in data:
             config.action_adapter = ActionAdapterConfig(**data["action_adapter"])
         if "observation_adapter" in data:
-            config.observation_adapter = ObservationAdapterConfig(
-                **data["observation_adapter"]
-            )
+            config.observation_adapter = ObservationAdapterConfig(**data["observation_adapter"])
         if "sweep" in data:
             sweep_data = dict(data["sweep"])
             # Handle range fields that come as lists from TOML
@@ -386,9 +410,7 @@ class MangoMASBridgeConfig:
         if "batch_collector" in data:
             config.batch_collector = BatchCollectorConfig(**data["batch_collector"])
         if "curiosity_optimizer" in data:
-            config.curiosity_optimizer = CuriosityOptimizerConfig(
-                **data["curiosity_optimizer"]
-            )
+            config.curiosity_optimizer = CuriosityOptimizerConfig(**data["curiosity_optimizer"])
         if "muzero_trainer" in data:
             config.muzero_trainer = MuZeroTrainerConfig(**data["muzero_trainer"])
         if "transfer" in data:
@@ -403,9 +425,7 @@ class MangoMASBridgeConfig:
             pipeline_data = data["pipeline"]
             config.pipeline = PipelineConfig(
                 paths=PipelinePathsConfig(**pipeline_data.get("paths", {})),
-                execution=PipelineExecutionConfig(
-                    **pipeline_data.get("execution", {})
-                ),
+                execution=PipelineExecutionConfig(**pipeline_data.get("execution", {})),
                 logging=PipelineLoggingConfig(**pipeline_data.get("logging", {})),
             )
         logger.debug("MangoMASBridgeConfig loaded: platform=%s", config.platform)
