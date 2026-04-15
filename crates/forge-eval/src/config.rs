@@ -139,8 +139,10 @@ mod tests {
 
     #[test]
     fn test_validate_zero_episodes() {
-        let mut config = EvalConfig::default();
-        config.episodes_per_scenario = 0;
+        let config = EvalConfig {
+            episodes_per_scenario: 0,
+            ..EvalConfig::default()
+        };
         let errors = config.validate();
         assert!(!errors.is_empty());
         assert!(errors[0].contains("episodes_per_scenario"));
@@ -148,23 +150,29 @@ mod tests {
 
     #[test]
     fn test_validate_zero_max_steps() {
-        let mut config = EvalConfig::default();
-        config.max_steps_per_episode = 0;
+        let config = EvalConfig {
+            max_steps_per_episode: 0,
+            ..EvalConfig::default()
+        };
         assert!(!config.is_valid());
     }
 
     #[test]
     fn test_validate_invalid_tier() {
-        let mut config = EvalConfig::default();
-        config.tiers = vec![0, 7];
+        let config = EvalConfig {
+            tiers: vec![0, 7],
+            ..EvalConfig::default()
+        };
         let errors = config.validate();
         assert_eq!(errors.len(), 2);
     }
 
     #[test]
     fn test_validate_valid_tiers() {
-        let mut config = EvalConfig::default();
-        config.tiers = vec![1, 3, 6];
+        let config = EvalConfig {
+            tiers: vec![1, 3, 6],
+            ..EvalConfig::default()
+        };
         assert!(config.is_valid());
     }
 
@@ -180,5 +188,72 @@ mod tests {
         let mut config = EvalConfig::default();
         config.base_forge_config.agents.num_agents = 0;
         assert!(!config.is_valid());
+    }
+
+    #[test]
+    fn test_validate_empty_tiers_is_valid() {
+        let config = EvalConfig {
+            tiers: vec![],
+            ..EvalConfig::default()
+        };
+        assert!(
+            config.is_valid(),
+            "empty tiers means 'all tiers' and is valid"
+        );
+    }
+
+    #[test]
+    fn test_validate_multiple_errors_accumulate() {
+        let mut config = EvalConfig {
+            episodes_per_scenario: 0,
+            max_steps_per_episode: 0,
+            tiers: vec![0],
+            ..EvalConfig::default()
+        };
+        config.base_forge_config.world.width = 0;
+        config.base_forge_config.agents.num_agents = 0;
+        let errors = config.validate();
+        assert!(
+            errors.len() >= 4,
+            "should collect multiple errors: got {}",
+            errors.len()
+        );
+    }
+
+    #[test]
+    fn test_validate_all_valid_tiers_boundary() {
+        let config = EvalConfig {
+            tiers: vec![1, 2, 3, 4, 5, 6],
+            ..EvalConfig::default()
+        };
+        assert!(config.is_valid(), "all valid tier values should pass");
+    }
+
+    #[test]
+    fn test_base_seed_max_value() {
+        let config = EvalConfig {
+            base_seed: u64::MAX,
+            ..EvalConfig::default()
+        };
+        assert!(config.is_valid(), "max seed should be valid");
+    }
+
+    #[test]
+    fn test_parallelism_zero_is_valid() {
+        let config = EvalConfig {
+            parallelism: 0,
+            ..EvalConfig::default()
+        };
+        assert!(config.is_valid(), "zero parallelism means rayon default");
+    }
+
+    #[test]
+    fn test_config_toml_roundtrip() {
+        let config = EvalConfig::default();
+        let toml_str = toml::to_string(&config).unwrap();
+        let deser: EvalConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(deser.episodes_per_scenario, config.episodes_per_scenario);
+        assert_eq!(deser.max_steps_per_episode, config.max_steps_per_episode);
+        assert_eq!(deser.base_seed, config.base_seed);
     }
 }

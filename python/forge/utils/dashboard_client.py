@@ -37,7 +37,7 @@ class DashboardClient:
     def _get_session(self) -> Any:
         """Lazily create an httpx.Client (avoids import at module level)."""
         if self._session is None:
-            import httpx  # noqa: PLC0415
+            import httpx
 
             self._session = httpx.Client(timeout=self.timeout)
         return self._session
@@ -69,7 +69,7 @@ class DashboardClient:
     def _post(self, path: str, payload: Any) -> bool:
         """Send a POST request and return whether it succeeded."""
         try:
-            import httpx  # noqa: PLC0415
+            import httpx
 
             _http_errors: tuple[type[Exception], ...] = (httpx.HTTPError, OSError)
         except ImportError:

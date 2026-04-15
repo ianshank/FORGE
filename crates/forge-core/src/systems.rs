@@ -51,6 +51,7 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
         &state.config.physics,
         drone_config_ref,
         &mut state.physics_scratch,
+        &state.topology,
     );
 
     // 2b. Physics: push processing — extract minimal data to avoid cloning
@@ -93,7 +94,12 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     );
 
     // 6. Combat system
-    combat::process_combat(&mut state.agents, &state.grid, &validated_actions);
+    combat::process_combat(
+        &mut state.agents,
+        &state.grid,
+        &validated_actions,
+        &state.topology,
+    );
     combat::apply_environmental_damage(&mut state.agents, &state.grid);
 
     // 6b. Drone systems (altitude, battery, payload) — only when enabled
@@ -121,6 +127,7 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
             &state.config.agri,
             state.tick,
             &mut state.agri_scratch.disease_spread_candidates,
+            &state.topology,
         );
         crate::agriculture::process_spraying(
             &mut state.agents,
@@ -179,7 +186,12 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     state.day_phase = day_night::compute_day_phase(state.tick, &state.config.world);
 
     // 9. Visibility system (applies day/night vision modifier)
-    visibility::update_visibility(&state.agents, &mut state.grid, state.day_phase);
+    visibility::update_visibility(
+        &state.agents,
+        &mut state.grid,
+        state.day_phase,
+        &state.topology,
+    );
 
     // 10. Task evaluation and reward computation
     if !state.tasks.is_empty() {

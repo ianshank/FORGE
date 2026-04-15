@@ -6,6 +6,14 @@ Post-demo-UI priorities, roughly in order of impact.
 
 ## Immediate (v0.2)
 
+### 0. Hex Grid Rollout Hardening
+
+This branch introduces a reusable topology layer (`forge-civ`) plus hex-grid movement, visibility, and scenario support. The next hardening pass should focus on parity and integration, not more feature sprawl.
+
+- Add one end-to-end Rust integration path that runs a real hex episode through movement, combat, visibility, and replay/eval surfaces
+- Finish removing remaining square-only helpers such as push resolution and visibility-mask assumptions
+- Add a small benchmark comparison for square vs hex hot-path throughput so topology dispatch regressions are visible in PR review
+
 ### 1. MangoMAS Bridge End-to-End Smoke Paths
 
 The branch now has stronger unit coverage for MangoMAS config resolution, curriculum control, constitutional shaping, curiosity optimization, and MCTS sweep reporting, but the next gap is end-to-end execution.
@@ -15,6 +23,7 @@ Immediate follow-through work:
 - Add one reproducible smoke workflow that wires `python/forge/mangomas/*` components through a minimal FORGE episode loop
 - Exercise config loading from TOML instead of only dataclass construction in tests
 - Add artifact export checks for sweep reports and curriculum snapshots in CI
+- Extend the new `scripts/train.py --agent mangomas` and `--agent mangomas-collect` paths with one CLI smoke test that validates manifests and collection reports on disk
 
 ### 2. Python Validation Split In CI
 

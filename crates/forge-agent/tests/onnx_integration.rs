@@ -1,5 +1,3 @@
-use std::process::Command;
-
 #[cfg(feature = "onnx")]
 #[test]
 fn test_onnx_pipeline_integration() {

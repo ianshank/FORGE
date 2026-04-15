@@ -342,12 +342,9 @@ impl forge_types::transport::ModelStore for LocalModelStore {
         };
         if should_update {
             fs::write(&latest, version).map_err(|e| {
-                forge_types::error::ForgeError::Cloud(
-                    forge_types::error::CloudError::Storage(format!(
-                        "failed to write {}: {e}",
-                        latest.display()
-                    )),
-                )
+                forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                    format!("failed to write {}: {e}", latest.display()),
+                ))
             })?;
         }
         debug!(

@@ -1,14 +1,74 @@
 //! Physics system for the FORGE simulation.
 //!
 //! Handles movement, collision detection, stamina costs, and projectile
-//! trajectories. Uses the grid directly for position tracking.
+//! trajectories. Uses the grid topology abstraction for neighbor lookups
+//! so that both square and hex grids are supported.
 //! All arithmetic is integer-based for determinism.
 
+use forge_civ::grid_topology::{GridTopology, GridTopologyKind};
 use forge_types::config::{DroneConfig, PhysicsConfig};
 use forge_types::entity::{Agent, AgentMorphology};
-use forge_types::grid::{Grid, Position, TerrainType};
+use forge_types::grid::{Direction, Grid, HexDirection, Position, TerrainType};
 use forge_types::Action;
 use tracing::{instrument, trace, warn};
+
+/// Converts a cardinal Direction to a target position using the topology.
+///
+/// On square grids, maps Direction to the corresponding topology direction index.
+/// On hex grids, returns None — 4-direction Move is invalid; use MoveHex instead.
+#[inline]
+fn move_target(
+    pos: Position,
+    dir: Direction,
+    topology: &GridTopologyKind,
+    width: u16,
+    height: u16,
+) -> Option<Position> {
+    match topology {
+        GridTopologyKind::Square(_) => {
+            let idx = match dir {
+                Direction::Up => 0,
+                Direction::Down => 1,
+                Direction::Left => 2,
+                Direction::Right => 3,
+            };
+            topology.neighbor(pos, idx, width, height)
+        }
+        GridTopologyKind::Hex(_) => None,
+    }
+}
+
+/// Converts a hex direction to a target position using the topology.
+///
+/// On hex grids, maps HexDirection to the corresponding topology direction index.
+/// On square grids, returns None — 6-direction MoveHex is invalid; use Move instead.
+#[inline]
+fn hex_move_target(
+    pos: Position,
+    dir: HexDirection,
+    topology: &GridTopologyKind,
+    width: u16,
+    height: u16,
+) -> Option<Position> {
+    match topology {
+        GridTopologyKind::Hex(_) => topology.neighbor(pos, dir as u8, width, height),
+        GridTopologyKind::Square(_) => None,
+    }
+}
+
+/// Projects a hex direction onto the nearest cardinal heading.
+///
+/// This preserves compatibility with the existing `Agent.heading: Direction`
+/// field until heading becomes topology-aware.
+#[inline]
+fn heading_from_hex(dir: HexDirection) -> Direction {
+    match dir {
+        HexDirection::NE | HexDirection::NW => Direction::Up,
+        HexDirection::E => Direction::Right,
+        HexDirection::SE | HexDirection::SW => Direction::Down,
+        HexDirection::W => Direction::Left,
+    }
+}
 
 /// Looks up the vehicle-specific terrain cost for a given terrain type.
 ///
@@ -96,9 +156,18 @@ pub fn process_movements(
     actions: &[Action],
     config: &PhysicsConfig,
     drone_config: Option<&DroneConfig>,
+    topology: &GridTopologyKind,
 ) -> Vec<MoveResult> {
     let mut scratch = PhysicsScratch::default();
-    process_movements_with_scratch(agents, grid, actions, config, drone_config, &mut scratch);
+    process_movements_with_scratch(
+        agents,
+        grid,
+        actions,
+        config,
+        drone_config,
+        &mut scratch,
+        topology,
+    );
     std::mem::take(&mut scratch.results)
 }
 
@@ -114,6 +183,7 @@ pub(crate) fn process_movements_with_scratch(
     config: &PhysicsConfig,
     drone_config: Option<&DroneConfig>,
     scratch: &mut PhysicsScratch,
+    topology: &GridTopologyKind,
 ) {
     scratch.results.clear();
     scratch.desired_positions.clear();
@@ -126,7 +196,12 @@ pub(crate) fn process_movements_with_scratch(
             None
         } else {
             match action {
-                Action::Move(dir) => agent.position.offset(*dir, grid.width, grid.height),
+                Action::Move(dir) => {
+                    move_target(agent.position, *dir, topology, grid.width, grid.height)
+                }
+                Action::MoveHex(dir) => {
+                    hex_move_target(agent.position, *dir, topology, grid.width, grid.height)
+                }
                 _ => None,
             }
         };
@@ -157,8 +232,13 @@ pub(crate) fn process_movements_with_scratch(
         }
 
         let action = &actions[i];
-        let direction = match action {
-            Action::Move(dir) => *dir,
+        let target_pos = match action {
+            Action::Move(dir) => {
+                move_target(agent.position, *dir, topology, grid.width, grid.height)
+            }
+            Action::MoveHex(dir) => {
+                hex_move_target(agent.position, *dir, topology, grid.width, grid.height)
+            }
             _ => {
                 scratch.results.push(MoveResult::Blocked);
                 continue;
@@ -182,13 +262,12 @@ pub(crate) fn process_movements_with_scratch(
         }
 
         // Get target position
-        let target = match agent.position.offset(direction, grid.width, grid.height) {
+        let target = match target_pos {
             Some(pos) => pos,
             None => {
                 trace!(
                     agent_id = agent.id,
-                    ?direction,
-                    "movement blocked: boundary"
+                    "movement blocked: boundary or invalid grid type"
                 );
                 scratch.results.push(MoveResult::Blocked);
                 continue;
@@ -306,8 +385,18 @@ pub(crate) fn process_movements_with_scratch(
             agent.stamina = (agent.stamina - total_cost).max(0);
         }
 
-        // Update heading for all morphologies
-        agent.heading = direction;
+        // Update heading for successful movement actions.
+        // Hex headings are projected to cardinal directions for compatibility
+        // with the current `Direction`-typed heading field.
+        match action {
+            Action::Move(dir) => {
+                agent.heading = *dir;
+            }
+            Action::MoveHex(dir) => {
+                agent.heading = heading_from_hex(*dir);
+            }
+            _ => {}
+        }
 
         // Clear old position on grid (only for ground-level agents)
         if !is_airborne {
@@ -471,8 +560,18 @@ pub fn process_pushes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_civ::grid_topology::GridTopologyKind;
+    use forge_civ::{HexTopology, SquareTopology};
     use forge_types::config::AgentConfig;
     use forge_types::grid::{Direction, TerrainType};
+
+    fn topo() -> GridTopologyKind {
+        GridTopologyKind::Square(SquareTopology)
+    }
+
+    fn hex_topo() -> GridTopologyKind {
+        GridTopologyKind::Hex(HexTopology)
+    }
 
     fn make_test_grid(width: u16, height: u16) -> Grid {
         Grid::new(width, height)
@@ -496,7 +595,14 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert_eq!(results[0], MoveResult::Moved(Position::new(5, 4)));
         assert_eq!(agents[0].position, Position::new(5, 4));
@@ -517,14 +623,79 @@ mod tests {
             grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
             let actions = vec![Action::Move(dir)];
-            let results =
-                process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+            let results = process_movements(
+                &mut agents,
+                &mut grid,
+                &actions,
+                &default_physics(),
+                None,
+                &topo(),
+            );
 
             assert_eq!(
                 results[0],
                 MoveResult::Moved(expected),
                 "direction: {:?}",
                 dir
+            );
+        }
+    }
+
+    #[test]
+    fn test_move_updates_heading() {
+        let mut grid = make_test_grid(16, 16);
+        let mut agents = [make_test_agent(0, 5, 5)];
+        agents[0].heading = Direction::Down;
+        grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let actions = vec![Action::Move(Direction::Left)];
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
+
+        assert_eq!(results[0], MoveResult::Moved(Position::new(4, 5)));
+        assert_eq!(agents[0].heading, Direction::Left);
+    }
+
+    #[test]
+    fn test_movehex_updates_heading_via_cardinal_projection() {
+        for (hex_dir, expected_heading) in [
+            (HexDirection::NE, Direction::Up),
+            (HexDirection::E, Direction::Right),
+            (HexDirection::SE, Direction::Down),
+            (HexDirection::SW, Direction::Down),
+            (HexDirection::W, Direction::Left),
+            (HexDirection::NW, Direction::Up),
+        ] {
+            let mut grid = make_test_grid(16, 16);
+            let mut agents = [make_test_agent(0, 5, 5)];
+            agents[0].heading = Direction::Right;
+            grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+            let actions = vec![Action::MoveHex(hex_dir)];
+            let results = process_movements(
+                &mut agents,
+                &mut grid,
+                &actions,
+                &default_physics(),
+                None,
+                &hex_topo(),
+            );
+
+            assert!(
+                matches!(results[0], MoveResult::Moved(_)),
+                "hex direction {:?} should move",
+                hex_dir
+            );
+            assert_eq!(
+                agents[0].heading, expected_heading,
+                "hex direction {:?} should map to {:?}",
+                hex_dir, expected_heading
             );
         }
     }
@@ -537,7 +708,14 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert_eq!(results[0], MoveResult::Impassable);
         assert_eq!(agents[0].position, Position::new(5, 5)); // didn't move
@@ -550,7 +728,14 @@ mod tests {
         grid.get_mut(0, 0).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert_eq!(results[0], MoveResult::Blocked);
         assert_eq!(agents[0].position, Position::new(0, 0));
@@ -564,7 +749,14 @@ mod tests {
         grid.get_mut(5, 4).unwrap().agent_id = Some(1);
 
         let actions = vec![Action::Move(Direction::Up), Action::Noop];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert_eq!(results[0], MoveResult::Blocked);
         assert_eq!(agents[0].position, Position::new(5, 5));
@@ -578,7 +770,14 @@ mod tests {
 
         let initial_stamina = agents[0].stamina;
         let actions = vec![Action::Move(Direction::Up)];
-        process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert!(agents[0].stamina < initial_stamina);
     }
@@ -591,7 +790,14 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert_eq!(results[0], MoveResult::NoStamina);
     }
@@ -626,7 +832,14 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert_eq!(results[0], MoveResult::Blocked);
         assert_eq!(agents[0].position, Position::new(5, 5));
@@ -640,7 +853,14 @@ mod tests {
 
         let initial_stamina = agents[0].stamina;
         let actions = vec![Action::Noop];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert_eq!(results[0], MoveResult::Blocked);
         assert_eq!(agents[0].position, Position::new(5, 5));
@@ -657,7 +877,14 @@ mod tests {
 
         let initial_stamina = agents[0].stamina;
         let actions = vec![Action::Move(Direction::Up)];
-        process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         let stamina_used = initial_stamina - agents[0].stamina;
 
@@ -674,6 +901,7 @@ mod tests {
             &actions2,
             &default_physics(),
             None,
+            &topo(),
         );
 
         let normal_stamina_used = initial_stamina - agents2[0].stamina;
@@ -690,7 +918,14 @@ mod tests {
         grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(Direction::Up)];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert_eq!(results[0], MoveResult::Impassable);
     }
@@ -706,7 +941,14 @@ mod tests {
             Action::Move(Direction::Right),
             Action::Move(Direction::Left),
         ];
-        let results = process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+        let results = process_movements(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &default_physics(),
+            None,
+            &topo(),
+        );
 
         assert_eq!(results[0], MoveResult::Moved(Position::new(3, 2)));
         assert_eq!(results[1], MoveResult::Moved(Position::new(7, 8)));
@@ -1047,6 +1289,7 @@ mod tests {
             &actions,
             &default_physics(),
             Some(&dc),
+            &topo(),
         );
 
         // Airborne agents should ignore wall terrain
@@ -1068,6 +1311,7 @@ mod tests {
             &actions,
             &default_physics(),
             Some(&dc),
+            &topo(),
         );
 
         assert_eq!(
@@ -1094,6 +1338,7 @@ mod tests {
             &actions,
             &default_physics(),
             Some(&dc),
+            &topo(),
         );
 
         assert_eq!(results[0], MoveResult::NoStamina);
@@ -1113,6 +1358,7 @@ mod tests {
             &actions,
             &default_physics(),
             Some(&dc),
+            &topo(),
         );
 
         assert_eq!(
@@ -1137,6 +1383,7 @@ mod tests {
             &actions,
             &default_physics(),
             Some(&dc),
+            &topo(),
         );
 
         assert_eq!(
@@ -1162,6 +1409,7 @@ mod tests {
             &actions,
             &default_physics(),
             Some(&dc),
+            &topo(),
         );
 
         assert_eq!(results[0], MoveResult::Impassable);
@@ -1184,6 +1432,7 @@ mod tests {
             &actions,
             &default_physics(),
             Some(&dc),
+            &topo(),
         );
 
         let vehicle_cost = initial_stamina - agents[0].stamina;
@@ -1200,6 +1449,7 @@ mod tests {
             &actions2,
             &default_physics(),
             None,
+            &topo(),
         );
         let ground_cost = initial_stamina - agents2[0].stamina;
 
@@ -1263,7 +1513,7 @@ mod tests {
                     grid.get_mut(x, y).unwrap().agent_id = Some(0);
                     let actions = vec![Action::Move(dir)];
                     let results = process_movements(
-                        &mut agents, &mut grid, &actions, &default_physics(), None,
+                        &mut agents, &mut grid, &actions, &default_physics(), None, &topo(),
                     );
                     (results, agents[0].position, agents[0].stamina)
                 };
@@ -1285,7 +1535,7 @@ mod tests {
                 let mut agents = [make_test_agent(0, x, y)];
                 grid.get_mut(x, y).unwrap().agent_id = Some(0);
                 let actions = vec![Action::Move(dir)];
-                process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+                process_movements(&mut agents, &mut grid, &actions, &default_physics(), None, &topo());
                 prop_assert!(agents[0].position.x < 16);
                 prop_assert!(agents[0].position.y < 16);
             }
@@ -1301,7 +1551,7 @@ mod tests {
                 agents[0].stamina = stamina;
                 grid.get_mut(8, 8).unwrap().agent_id = Some(0);
                 let actions = vec![Action::Move(dir)];
-                process_movements(&mut agents, &mut grid, &actions, &default_physics(), None);
+                process_movements(&mut agents, &mut grid, &actions, &default_physics(), None, &topo());
                 prop_assert!(agents[0].stamina >= 0);
             }
 

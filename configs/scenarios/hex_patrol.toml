@@ -1,0 +1,25 @@
+# Hex Patrol scenario: agents patrol waypoints on a hexagonal grid.
+# Demonstrates hex grid support with 6-directional movement.
+[scenario]
+name = "hex_patrol"
+description = "Agents patrol waypoints on a hex grid using 6-directional movement"
+min_agents = 1
+max_agents = 4
+
+[scenario.map]
+grid_size = 48
+grid_type = "Hex"
+terrain_type = "mixed"
+num_waypoints = 6
+waypoint_radius = 3
+
+[scenario.objectives]
+type = "sequence"
+time_limit = 2000
+reward_per_waypoint = 1.0
+completion_bonus = 5.0
+
+[scenario.difficulty]
+base_tier = 2
+fog_of_war = true
+enemy_patrols = false

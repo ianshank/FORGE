@@ -13,6 +13,7 @@ A high-performance simulation platform for training and evaluating AI agents, bu
 - **Blazing fast**: 130K+ steps/sec from Python, <8 μs/step including PyO3 overhead
 - **Deterministic**: Same seed + actions = byte-identical results. Uses fixed-point arithmetic and `rand_pcg` for RNG
 - **Procedural worlds**: Perlin noise terrain with biome classification, resource distribution, and object placement
+- **Topology-aware worlds**: Configurable square and hex grids via `forge-civ`, with shared line-of-sight, distance, and pathfinding primitives
 - **Rich interaction**: 6 resource types, 9 crafting recipes, combat, push mechanics, day/night cycle
 - **Multi-agent**: PettingZoo Parallel API for cooperative/competitive scenarios with communication
 - **Task curriculum**: Composable task DSL with 6 difficulty tiers and adaptive difficulty scaling
@@ -73,14 +74,38 @@ python examples/forge_demo.py --quick      # CI mode (no delays)
 python examples/forge_demo.py --section crafting  # Single section
 ```
 
+### MangoMAS Collection And Pipeline
+
+```bash
+# Collect FORGE episodes for MangoMAS transfer
+python scripts/train.py \
+    --agent mangomas-collect \
+    --episodes 8 \
+    --scenario hex_patrol \
+    --collection-policy mcts \
+    --mangomas-config configs/mangomas/default.toml \
+    --collection-report-path artifacts/mangomas/collection.json
+
+# Collect episodes and run the stage-based MangoMAS pipeline
+python scripts/train.py \
+    --agent mangomas \
+    --episodes 12 \
+    --scenario patrol \
+    --mangomas-config configs/mangomas/default.toml \
+    --pipeline-run-name drone-smoke
+```
+
+The stage pipeline writes manifests, logs, and exported weight bundles under `artifacts/mangomas/` by default.
+
 ## Architecture
 
-FORGE is a 19-crate Rust workspace organized in six layers, from shared foundations through cognitive systems to bindings and deployment targets.
+FORGE is a 20-crate Rust workspace organized in six layers, from shared foundations through cognitive systems to bindings and deployment targets.
 
 ```mermaid
 graph TD
     subgraph "Foundation"
         forge_types["forge-types<br/><i>shared types & configs</i>"]
+        forge_civ["forge-civ<br/><i>grid topology & pathfinding</i>"]
     end
 
     subgraph "Core Simulation"
@@ -118,11 +143,13 @@ graph TD
 
     forge_types --> forge_worldgen
     forge_types --> forge_task
+    forge_types --> forge_civ
     forge_types --> forge_memory
     forge_types --> forge_social
     forge_types --> forge_procgen
     forge_types --> forge_scenario
 
+    forge_civ --> forge_core
     forge_worldgen --> forge_core
     forge_task --> forge_core
     forge_core --> forge_agent
@@ -144,7 +171,7 @@ graph TD
 
 ```
 FORGE/
-├── crates/          # 19 Rust crates (see diagram above)
+├── crates/          # 20 Rust crates (see diagram above)
 ├── python/          # forge_env wrappers, forge training package
 ├── configs/         # TOML configuration files
 ├── scripts/         # CLI tools (train, evaluate, demo, replay, export)
@@ -188,6 +215,8 @@ For full C4 architecture diagrams, see [`docs/architecture.md`](docs/architectur
 | `39` | Interact with adjacent object |
 | `40+` | Communicate token (vocabulary-sized) |
 
+When `world.grid_type = "Hex"`, the action space appends 6 hex-movement actions after any enabled drone and agricultural action blocks, so the final discrete size is configuration-dependent.
+
 ### Configuration
 
 ```python
@@ -195,6 +224,7 @@ config = {
     "world": {
         "width": 64,              # Grid width
         "height": 64,             # Grid height
+        "grid_type": "Square",   # "Square" or "Hex"
         "seed": 42,               # World generation seed
         "biome_scale": 0.1,       # Noise frequency (higher = more detail)
         "resource_density": 0.3,  # Resource spawn probability

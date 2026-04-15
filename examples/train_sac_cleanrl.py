@@ -39,7 +39,10 @@ import sys
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 logging.basicConfig(
     level=logging.INFO,
@@ -202,8 +205,8 @@ class _ReplayBuffer:
 
     def add(
         self,
-        obs: np.ndarray,
-        next_obs: np.ndarray,
+        obs: NDArray[np.float32],
+        next_obs: NDArray[np.float32],
         action: int,
         reward: float,
         done: float,
@@ -320,7 +323,7 @@ class _Actor(nn.Module):
 # ---------------------------------------------------------------------------
 
 
-def _flatten_obs(raw: Any, n_envs: int = 1) -> np.ndarray:
+def _flatten_obs(raw: Any, n_envs: int = 1) -> NDArray[np.float32]:
     """Flatten a (possibly dict) observation to a 1-D float32 array."""
     _ = n_envs  # kept for API compatibility; currently unused
     if isinstance(raw, dict):

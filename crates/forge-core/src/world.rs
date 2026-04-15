@@ -5,8 +5,10 @@
 
 use std::sync::Arc;
 
+use forge_civ::grid_topology::{GridTopology, GridTopologyKind};
+use forge_civ::{HexTopology, SquareTopology};
 use forge_types::agriculture::{AgriScratch, CropState, SoilSensorNode};
-use forge_types::config::ForgeConfig;
+use forge_types::config::{ForgeConfig, GridType};
 use forge_types::constants::{OBS_EMPTY_SLOT_ITEM, OBS_NO_OBJECT, OBS_NO_RESOURCE};
 use forge_types::entity::{Agent, Object};
 use forge_types::grid::{Grid, Position};
@@ -59,6 +61,8 @@ pub struct WorldState {
     /// Pre-allocated scratch buffers for the physics system, avoiding
     /// per-tick heap allocations on the hot path.
     pub(crate) physics_scratch: PhysicsScratch,
+    /// Grid topology dispatcher (square or hex). Used by all spatial systems.
+    pub topology: GridTopologyKind,
     /// Per-tile crop state, parallel to `grid.tiles`. Only populated when `agri.enabled`.
     pub crop_states: Vec<CropState>,
     /// Ground-deployed IoT soil sensor nodes. Only populated when `agri.enabled`.
@@ -131,6 +135,12 @@ impl WorldState {
         let mut physics_scratch = PhysicsScratch::default();
         physics_scratch.ensure_capacity(agents.len());
 
+        // Select grid topology based on configuration
+        let topology = match config.world.grid_type {
+            GridType::Square => GridTopologyKind::Square(SquareTopology),
+            GridType::Hex => GridTopologyKind::Hex(HexTopology),
+        };
+
         // Initialize agricultural state when enabled
         let (crop_states, soil_nodes, agri_scratch) = if config.agri.enabled {
             let crops = forge_worldgen::agriculture::generate_crop_states(&grid, &config.agri);
@@ -163,6 +173,7 @@ impl WorldState {
             truncated: false,
             last_task_rewards: None,
             physics_scratch,
+            topology,
             crop_states,
             soil_nodes,
             agri_scratch,
@@ -243,6 +254,7 @@ impl WorldState {
         self.terminated = false;
         self.truncated = false;
         self.last_task_rewards = None;
+        self.topology = new_state.topology;
         self.crop_states = new_state.crop_states;
         self.soil_nodes = new_state.soil_nodes;
         self.agri_scratch.clear();
@@ -276,14 +288,30 @@ impl WorldState {
         let vr = agent.vision_radius as i32;
         let view_side = (2 * vr + 1) as u16;
         let mut grid_view = Vec::with_capacity((view_side as usize) * (view_side as usize));
+        let is_hex = matches!(self.topology, GridTopologyKind::Hex(_));
 
         for dy in -vr..=vr {
             for dx in -vr..=vr {
                 let wx = agent.position.x as i32 + dx;
                 let wy = agent.position.y as i32 + dy;
 
-                if wx >= 0 && wx < self.grid.width as i32 && wy >= 0 && wy < self.grid.height as i32
-                {
+                let in_bounds = wx >= 0
+                    && wx < self.grid.width as i32
+                    && wy >= 0
+                    && wy < self.grid.height as i32;
+
+                // On hex grids, positions inside the bounding box but outside the
+                // axial-radius view are treated as out of bounds (shown as walls).
+                let in_disk = if in_bounds && is_hex {
+                    self.topology.distance(
+                        agent.position,
+                        forge_types::grid::Position::new(wx as u16, wy as u16),
+                    ) <= u32::from(agent.vision_radius)
+                } else {
+                    in_bounds
+                };
+
+                if in_disk {
                     let tile = self.grid.get(wx as u16, wy as u16).unwrap();
                     grid_view.push(TileObservation {
                         terrain: tile.terrain as u8,
@@ -505,6 +533,10 @@ impl WorldState {
 
         let mut physics_scratch = PhysicsScratch::default();
         physics_scratch.ensure_capacity(deserialized.agents.len());
+        let topology = match config.world.grid_type {
+            GridType::Square => GridTopologyKind::Square(SquareTopology),
+            GridType::Hex => GridTopologyKind::Hex(HexTopology),
+        };
         Ok(WorldState {
             tick: deserialized.tick,
             grid: deserialized.grid,
@@ -520,6 +552,7 @@ impl WorldState {
             truncated: deserialized.truncated,
             last_task_rewards: None,
             physics_scratch,
+            topology,
             crop_states: Vec::new(),
             soil_nodes: Vec::new(),
             agri_scratch: AgriScratch::default(),
@@ -554,6 +587,10 @@ impl WorldState {
 
         let mut physics_scratch = PhysicsScratch::default();
         physics_scratch.ensure_capacity(deserialized.agents.len());
+        let topology = match config.world.grid_type {
+            GridType::Square => GridTopologyKind::Square(SquareTopology),
+            GridType::Hex => GridTopologyKind::Hex(HexTopology),
+        };
         Ok(WorldState {
             tick: deserialized.tick,
             grid: deserialized.grid,
@@ -569,6 +606,7 @@ impl WorldState {
             truncated: deserialized.truncated,
             last_task_rewards: None,
             physics_scratch,
+            topology,
             crop_states: Vec::new(),
             soil_nodes: Vec::new(),
             agri_scratch: AgriScratch::default(),
@@ -579,7 +617,7 @@ impl WorldState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_types::config::ForgeConfig;
+    use forge_types::config::{ForgeConfig, GridType};
     use forge_types::grid::Direction;
 
     fn make_test_world() -> WorldState {
@@ -818,6 +856,36 @@ mod tests {
         // should be out of bounds (wall)
         let first_tile = &obs.grid_view[0];
         assert_eq!(first_tile.terrain, forge_types::TerrainType::Wall as u8);
+    }
+
+    #[test]
+    fn test_hex_observation_filters_positions_outside_hex_radius() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.grid_type = GridType::Hex;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        config.agents.default_vision_radius = 1;
+        let mut world = WorldState::new(config).unwrap();
+
+        let old_pos = world.agents[0].position;
+        if let Some(tile) = world.grid.get_mut(old_pos.x, old_pos.y) {
+            tile.agent_id = None;
+        }
+        world.agents[0].position = Position::new(5, 5);
+        world.grid.get_mut(5, 5).unwrap().agent_id = Some(0);
+
+        let obs = world.generate_observation(&world.agents[0]);
+
+        assert_eq!(obs.view_width, 3);
+        assert_eq!(obs.view_height, 3);
+        assert_eq!(obs.grid_view.len(), 9);
+        assert_eq!(
+            obs.grid_view[0].terrain,
+            forge_types::TerrainType::Wall as u8,
+            "hex view should treat cells outside the hex radius as walls"
+        );
     }
 
     #[test]
@@ -1208,8 +1276,8 @@ mod proptests {
             ];
 
             for action in &actions {
-                world1.step(&[action.clone()]);
-                world2.step(&[action.clone()]);
+                world1.step(std::slice::from_ref(action));
+                world2.step(std::slice::from_ref(action));
             }
 
             prop_assert_eq!(world1.tick, world2.tick);

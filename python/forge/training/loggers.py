@@ -98,7 +98,7 @@ class WandbLogger(ForgeLogger):
         **kwargs: Any,
     ) -> None:
         try:
-            import wandb  # noqa: PLC0415
+            import wandb
 
             self._wandb = wandb
         except ImportError as exc:
@@ -159,7 +159,7 @@ class MLflowLogger(ForgeLogger):
         params: dict[str, Any] | None = None,
     ) -> None:
         try:
-            import mlflow  # noqa: PLC0415
+            import mlflow
 
             self._mlflow = mlflow
         except ImportError as exc:
@@ -219,7 +219,7 @@ class TensorBoardLogger(ForgeLogger):
         comment: str = "",
     ) -> None:
         try:
-            from torch.utils.tensorboard import SummaryWriter  # noqa: PLC0415
+            from torch.utils.tensorboard import SummaryWriter
 
             self._writer = SummaryWriter(log_dir=log_dir, comment=comment)
         except ImportError as exc:

@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_default_impl() {
-        let loader = EdgeReplayLoader::default();
+        let loader = EdgeReplayLoader;
         assert_eq!(loader.source_name(), "EdgeReplayLoader");
     }
 

@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np  # noqa: TC002 (used at runtime in _build_prompt)
+import numpy as np
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.cognitive.providers import (

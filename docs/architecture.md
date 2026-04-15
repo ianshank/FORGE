@@ -14,7 +14,7 @@ Shows FORGE and its external actors.
 │    Fast Open-source Runtime for Generalist Environments                 │
 │                                                                         │
 │  Deterministic grid-world simulation for training AI agents.            │
-│  Procedural worlds, crafting, combat, multi-agent, task curriculum.     │
+│  Procedural square/hex worlds, crafting, combat, multi-agent, tasks.    │
 │  130K+ steps/sec from Python, <8 μs/step.                              │
 └──────┬──────────────┬──────────────────┬──────────────┬────────────────┘
        │              │                  │              │
@@ -133,6 +133,7 @@ Shows the major containers (deployable units) within FORGE.
 | Container | Technology | Purpose |
 |-----------|-----------|---------|
 | **forge-types** | Rust crate | Shared types, config structs, error types. Zero heavy dependencies. |
+| **forge-civ** | Rust crate | Grid topology primitives for square and hex worlds: neighbors, distance, LOS, disk queries, and A* pathfinding. |
 | **forge-core** | Rust crate | Deterministic simulation engine. `WorldState::step()` is the hot path. |
 | **forge-worldgen** | Rust crate | Procedural world generation: Perlin noise terrain, biome classification, resource/object placement. |
 | **forge-task** | Rust crate | Composable task DSL with 7 operators, 10 predicates, 6 tiers, and adaptive curriculum. |
@@ -145,7 +146,38 @@ Shows the major containers (deployable units) within FORGE.
 | **Python wrappers** | Python package (forge_env) | Gymnasium, PettingZoo, JAX wrappers, observation/reward transforms. |
 | **Python framework** | Python package (forge) | Training pipeline, agent implementations, policy networks, MangoMAS bridge modules, decision traces, TOML config loader, utility modules. |
 
-The current PR surface also expands the Python control plane with a MangoMAS bridge layer inside `python/forge/mangomas/`. That layer sits above `forge_env` and below experiment code, providing curriculum progression, constitutional safety shaping, curiosity-weight search, batch episode collection, and repeatable MCTS sweep orchestration without changing the deterministic Rust core.
+The current PR surface adds two control layers around the deterministic core:
+
+- `forge-civ` centralizes all topology-specific behavior so square and hex grids share one simulation pipeline without duplicating movement, visibility, or pathfinding logic.
+- `python/forge/mangomas/` expands the Python control plane with scenario collection, curriculum progression, constitutional safety shaping, curiosity-weight search, stage-based artifact export, and repeatable MCTS sweep orchestration.
+
+### 2.2 Topology Subsystem
+
+```
+         ┌───────────────────────────┐
+         │       forge-types         │
+         │                           │
+         │ GridType, Action,         │
+         │ HexDirection, config      │
+         └─────────────┬─────────────┘
+                       │
+         ┌─────────────▼─────────────┐
+         │        forge-civ          │
+         │                           │
+         │ GridTopology trait        │
+         │ SquareTopology            │
+         │ HexTopology               │
+         │ A* pathfinding            │
+         └─────────────┬─────────────┘
+                       │
+         ┌─────────────▼─────────────┐
+         │        forge-core         │
+         │                           │
+         │ physics, combat, agri,    │
+         │ visibility, observation   │
+         │ consume GridTopologyKind  │
+         └───────────────────────────┘
+```
 
 ---
 
@@ -276,9 +308,9 @@ The core engine executes a deterministic pipeline of systems every tick.
          │  ┌───────────┐ ┌────────────┐ ┌──────────────┐   │
          │  │   Comms   │ │ Visibility │ │  Day/Night   │   │
          │  │           │ │            │ │              │   │
-         │  │ Broadcast │ │ Bresenham  │ │ 4-phase      │   │
-         │  │ tokens to │ │ raycasting │ │ cycle from   │   │
-         │  │ agents in │ │ per agent, │ │ tick count   │   │
+         │  │ Broadcast │ │ Topology-  │ │ 4-phase      │   │
+         │  │ tokens to │ │ aware LOS  │ │ cycle from   │   │
+         │  │ agents in │ │ and fog of │ │ tick count   │   │
          │  │ radius    │ │ fog of war │ │              │   │
          │  └───────────┘ └────────────┘ └──────────────┘   │
          └──────────────────────┬───────────────────────────┘
@@ -293,6 +325,40 @@ The core engine executes a deterministic pipeline of systems every tick.
                 │  Per-agent ego-centric grid view   │
                 │  → StepResult                      │
                 └───────────────────────────────────┘
+```
+
+### 3.2 forge-worldgen — World Generation Pipeline
+
+### 3.1a forge-civ — Topology & Pathfinding
+
+```
+         ┌──────────────────────────────────────┐
+         │             forge-civ                │
+         │                                      │
+         │  ┌────────────────────────────────┐  │
+         │  │ GridTopology                   │  │
+         │  │                                │  │
+         │  │ neighbor()                     │  │
+         │  │ neighbors()                    │  │
+         │  │ distance()                     │  │
+         │  │ line_of_sight()                │  │
+         │  │ disk()                         │  │
+         │  └───────────────┬────────────────┘  │
+         │                  │                   │
+         │  ┌───────────────▼───────────────┐   │
+         │  │ GridTopologyKind              │   │
+         │  │                               │   │
+         │  │ SquareTopology                │   │
+         │  │ HexTopology (odd-r offset)    │   │
+         │  └───────────────┬───────────────┘   │
+         │                  │                   │
+         │  ┌───────────────▼───────────────┐   │
+         │  │ A* Pathfinding                │   │
+         │  │                               │   │
+         │  │ terrain-aware weighted search │   │
+         │  │ for square + hex worlds       │   │
+         │  └───────────────────────────────┘   │
+         └──────────────────────────────────────┘
 ```
 
 ### 3.2 forge-worldgen — World Generation Pipeline

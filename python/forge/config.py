@@ -190,7 +190,7 @@ class ForgeConfig:
         """Return simulation config, overridden by dry_run if enabled."""
         if not self.dry_run.enabled:
             return self.simulation
-        from dataclasses import replace  # noqa: PLC0415
+        from dataclasses import replace
 
         return replace(
             self.simulation,

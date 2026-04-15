@@ -50,10 +50,25 @@ pub struct ForgeConfig {
     pub edge: EdgeConfig,
 }
 
+/// Grid topology type for the simulation world.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GridType {
+    /// Standard 4-neighbor square grid (cardinal directions).
+    #[default]
+    #[serde(alias = "Square")]
+    Square,
+    /// 6-neighbor hexagonal grid (odd-r offset layout).
+    #[serde(alias = "Hex")]
+    Hex,
+}
+
 /// World generation configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorldConfig {
+    /// Grid topology type (square or hex).
+    pub grid_type: GridType,
     /// Grid width in tiles.
     pub width: u16,
     /// Grid height in tiles.
@@ -83,6 +98,7 @@ pub struct WorldConfig {
 impl Default for WorldConfig {
     fn default() -> Self {
         Self {
+            grid_type: GridType::default(),
             width: constants::DEFAULT_WORLD_WIDTH,
             height: constants::DEFAULT_WORLD_HEIGHT,
             seed: constants::DEFAULT_SEED,
@@ -838,6 +854,27 @@ num_agents = 4
     }
 
     #[test]
+    fn test_grid_type_parses_lower_and_pascal_case() {
+        let lower = ForgeConfig::from_toml_str(
+            r#"
+[world]
+grid_type = "hex"
+"#,
+        )
+        .unwrap();
+        assert_eq!(lower.world.grid_type, GridType::Hex);
+
+        let pascal = ForgeConfig::from_toml_str(
+            r#"
+[world]
+grid_type = "Hex"
+"#,
+        )
+        .unwrap();
+        assert_eq!(pascal.world.grid_type, GridType::Hex);
+    }
+
+    #[test]
     fn test_from_toml_str_empty() {
         let config = ForgeConfig::from_toml_str("").unwrap();
         let defaults = ForgeConfig::default();
@@ -959,10 +996,7 @@ num_agents = 4
     fn test_env_overrides_edge_gcs_fields() {
         let _lock = ENV_TEST_LOCK.lock().unwrap();
 
-        let env_vars = [
-            "FORGE_EDGE_GCS_MODEL_BUCKET",
-            "FORGE_EDGE_GCS_MODEL_PREFIX",
-        ];
+        let env_vars = ["FORGE_EDGE_GCS_MODEL_BUCKET", "FORGE_EDGE_GCS_MODEL_PREFIX"];
         let guards: Vec<EnvironmentGuard> = env_vars
             .iter()
             .map(|&var| EnvironmentGuard {

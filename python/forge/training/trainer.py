@@ -220,7 +220,7 @@ class PPOTrainer:
                 episode_steps = 0
 
         # Bootstrap value for GAE computation
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             obs_tensor = torch.as_tensor(

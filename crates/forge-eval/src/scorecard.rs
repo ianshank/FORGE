@@ -340,9 +340,9 @@ mod tests {
 
     #[test]
     fn test_episode_result_fields() {
-        let ep = make_episode(42, 3.14, true, 100);
+        let ep = make_episode(42, 3.5, true, 100);
         assert_eq!(ep.seed, 42);
-        assert!((ep.total_reward - 3.14).abs() < f64::EPSILON);
+        assert!((ep.total_reward - 3.5).abs() < f64::EPSILON);
         assert!(ep.success);
         assert_eq!(ep.steps, 100);
         assert!(ep.terminated);
@@ -355,6 +355,181 @@ mod tests {
         assert_eq!(tier.tier, 0);
         assert_eq!(tier.success_rate, 0.0);
         assert_eq!(tier.episodes_evaluated, 0);
+    }
+
+    #[test]
+    fn test_overall_score_all_tiers_equal() {
+        let tiers: Vec<TierScore> = (1..=6)
+            .map(|t| TierScore {
+                tier: t,
+                success_rate: 0.5,
+                ..Default::default()
+            })
+            .collect();
+        let score = Scorecard::compute_overall_score(&tiers);
+        assert!(
+            (score - 0.5).abs() < f64::EPSILON,
+            "equal success rates should yield that rate as overall"
+        );
+    }
+
+    #[test]
+    fn test_overall_score_higher_tiers_weighted_more() {
+        let tiers = vec![
+            TierScore {
+                tier: 1,
+                success_rate: 0.0,
+                ..Default::default()
+            },
+            TierScore {
+                tier: 6,
+                success_rate: 1.0,
+                ..Default::default()
+            },
+        ];
+        let score = Scorecard::compute_overall_score(&tiers);
+        // Weighted: (1*0.0 + 6*1.0) / (1+6) = 6/7 ≈ 0.857
+        assert!(
+            (score - 6.0 / 7.0).abs() < 0.001,
+            "higher tier should dominate: got {score}"
+        );
+    }
+
+    #[test]
+    fn test_overall_score_zero_tier_returns_zero() {
+        let tiers = vec![TierScore {
+            tier: 0,
+            success_rate: 1.0,
+            ..Default::default()
+        }];
+        // tier 0 has weight 0, so total weight is 0
+        assert_eq!(Scorecard::compute_overall_score(&tiers), 0.0);
+    }
+
+    #[test]
+    fn test_scenario_result_decision_time_aggregation() {
+        let episodes = vec![
+            EpisodeResult {
+                seed: 0,
+                total_reward: 0.0,
+                success: false,
+                steps: 10,
+                terminated: false,
+                truncated: true,
+                mean_decision_time_ms: 2.0,
+            },
+            EpisodeResult {
+                seed: 1,
+                total_reward: 0.0,
+                success: false,
+                steps: 10,
+                terminated: false,
+                truncated: true,
+                mean_decision_time_ms: 4.0,
+            },
+            EpisodeResult {
+                seed: 2,
+                total_reward: 0.0,
+                success: false,
+                steps: 10,
+                terminated: false,
+                truncated: true,
+                mean_decision_time_ms: 6.0,
+            },
+        ];
+        let result = ScenarioResult::from_episodes("test".into(), 1, episodes);
+        assert!(
+            (result.mean_decision_time_ms - 4.0).abs() < f64::EPSILON,
+            "mean of [2,4,6] should be 4.0, got {}",
+            result.mean_decision_time_ms
+        );
+    }
+
+    #[test]
+    fn test_scenario_result_all_success() {
+        let episodes = vec![
+            make_episode(0, 1.0, true, 50),
+            make_episode(1, 1.0, true, 60),
+        ];
+        let result = ScenarioResult::from_episodes("all_pass".into(), 2, episodes);
+        assert!((result.success_rate - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_scenario_result_all_failure() {
+        let episodes = vec![
+            make_episode(0, 0.0, false, 100),
+            make_episode(1, 0.0, false, 100),
+        ];
+        let result = ScenarioResult::from_episodes("all_fail".into(), 3, episodes);
+        assert!((result.success_rate - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_scorecard_json_special_characters() {
+        let mut meta = AgentMetadata::heuristic("Agent \"with quotes\"");
+        meta.agent_type = "test <type>".to_string();
+        let sc = Scorecard {
+            agent_metadata: meta,
+            timestamp: "2026-04-14".to_string(),
+            overall_score: 0.5,
+            tier_scores: vec![],
+            scenario_results: vec![],
+            summary: SummaryStats::default(),
+        };
+        let json = sc.to_json().unwrap();
+        let deser = Scorecard::from_json(&json).unwrap();
+        assert_eq!(deser.agent_metadata.model_name, "Agent \"with quotes\"");
+    }
+
+    #[test]
+    fn test_scorecard_markdown_contains_all_sections() {
+        let sc = Scorecard {
+            agent_metadata: AgentMetadata::heuristic("MarkdownAgent"),
+            timestamp: "2026-04-14".to_string(),
+            overall_score: 0.75,
+            tier_scores: vec![
+                TierScore {
+                    tier: 1,
+                    success_rate: 0.8,
+                    mean_reward: 2.0,
+                    mean_steps_to_completion: 30.0,
+                    episodes_evaluated: 10,
+                    scenarios_count: 1,
+                },
+                TierScore {
+                    tier: 2,
+                    success_rate: 0.6,
+                    mean_reward: 1.5,
+                    mean_steps_to_completion: 50.0,
+                    episodes_evaluated: 10,
+                    scenarios_count: 1,
+                },
+            ],
+            scenario_results: vec![],
+            summary: SummaryStats {
+                total_episodes: 20,
+                total_steps: 800,
+                wall_clock_seconds: 2.5,
+                mean_decision_latency_ms: 0.3,
+            },
+        };
+        let md = sc.to_markdown();
+        assert!(md.contains("MarkdownAgent"));
+        assert!(md.contains("75.0%"));
+        assert!(md.contains("Per-Tier Results"));
+        assert!(md.contains("Summary"));
+        assert!(md.contains("Total Episodes"));
+        assert!(md.contains("20"));
+    }
+
+    #[test]
+    fn test_summary_stats_default() {
+        let s = SummaryStats::default();
+        assert_eq!(s.total_episodes, 0);
+        assert_eq!(s.total_steps, 0);
+        assert_eq!(s.wall_clock_seconds, 0.0);
+        assert_eq!(s.mean_decision_latency_ms, 0.0);
     }
 }
 

@@ -57,7 +57,7 @@ class WeightLoaderConfig:
 def _require_huggingface_hub() -> Any:
     """Import and return ``huggingface_hub``, raising a clear error if missing."""
     try:
-        import huggingface_hub  # noqa: PLC0415
+        import huggingface_hub
     except ImportError as exc:
         raise ImportError(_HF_MISSING_MSG) from exc
     return huggingface_hub
@@ -143,7 +143,7 @@ class WeightLoader:
             ImportError: If ``torch`` is not installed.
         """
         try:
-            import torch  # noqa: PLC0415
+            import torch
         except ImportError as exc:
             raise ImportError(_TORCH_MISSING_MSG) from exc
 

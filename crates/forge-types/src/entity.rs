@@ -73,6 +73,9 @@ pub struct Agent {
     #[serde(default = "default_battery")]
     pub battery: i32,
     /// Current heading direction (for vehicle turn radius).
+    ///
+    /// On hex grids, 6-direction movement is projected to the nearest
+    /// cardinal direction for compatibility with this field.
     #[serde(default)]
     pub heading: crate::grid::Direction,
 }

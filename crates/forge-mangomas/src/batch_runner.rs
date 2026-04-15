@@ -166,6 +166,9 @@ impl BatchRunner {
         let comm_vocab = world.config.agents.comm_vocab_size;
         let drone_enabled = world.config.drone.enabled;
 
+        let agri_enabled = world.config.agri.enabled && drone_enabled;
+        let hex_enabled = world.config.world.grid_type == forge_types::config::GridType::Hex;
+
         let mut transitions = Vec::with_capacity(self.config.max_episode_steps as usize);
         let mut total_reward = 0.0f32;
 
@@ -184,18 +187,25 @@ impl BatchRunner {
                 .enumerate()
                 .map(|(idx, o)| {
                     let action_id = policy.select_action(o, idx);
-                    Action::from_discrete(action_id, comm_vocab, drone_enabled).unwrap_or_else(
-                        || {
-                            warn!(action_id, "Invalid action ID, falling back to Noop");
-                            Action::Noop
-                        },
+                    Action::from_discrete_full(
+                        action_id,
+                        comm_vocab,
+                        drone_enabled,
+                        agri_enabled,
+                        hex_enabled,
                     )
+                    .unwrap_or_else(|| {
+                        warn!(action_id, "Invalid action ID, falling back to Noop");
+                        Action::Noop
+                    })
                 })
                 .collect();
 
             let action_ids: Vec<u32> = actions
                 .iter()
-                .map(|a: &Action| a.to_discrete_full(comm_vocab))
+                .map(|a: &Action| {
+                    a.to_discrete_configured(comm_vocab, drone_enabled, agri_enabled, hex_enabled)
+                })
                 .collect();
 
             let step_result = world.step(&actions);

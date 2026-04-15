@@ -113,7 +113,7 @@ class MuZeroTrainer:
         config: MuZeroTrainerConfig,
         model: MuZeroWorldModel,
     ) -> None:
-        import torch  # noqa: PLC0415
+        import torch
 
         self._config = config
         self._model = model
@@ -244,10 +244,10 @@ class MuZeroTrainer:
         Returns:
             Training metrics dictionary.
         """
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
-        from forge.models.muzero_networks import scalar_to_support  # noqa: PLC0415
+        from forge.models.muzero_networks import scalar_to_support
 
         c = self._model.config
         tc = self._config

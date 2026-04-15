@@ -1,0 +1,19 @@
+# Cargo workspace configuration for FORGE
+#
+# Windows GNU target notes:
+# - ort (ONNX Runtime) doesn't provide prebuilt binaries for x86_64-pc-windows-gnu
+# - Use x86_64-pc-windows-msvc target or compile ort from source
+# - ONNX feature is optional and not enabled by default
+
+[target.'cfg(all(target_os = "windows", target_env = "gnu"))']
+# No special handling needed - onnx feature is optional and disabled by default
+
+[alias]
+# Lint without problematic optional features for Windows GNU
+ck = "check --workspace"
+clippy-safe = "clippy --workspace --all-targets -- -D warnings"
+test-safe = "test --workspace --lib"
+
+[build]
+# Parallel compilation for faster builds
+jobs = 8

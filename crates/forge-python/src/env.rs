@@ -78,10 +78,17 @@ impl ForgeEnv {
     ///     Tuple of (observation_dict, reward, terminated, truncated, info_dict)
     fn step(&mut self, py: Python<'_>, action: u32) -> PyResult<PyObject> {
         let comm_vocab_size = self.config.agents.comm_vocab_size;
-        let action = Action::from_discrete(action, comm_vocab_size, self.config.drone.enabled)
-            .ok_or_else(|| {
-                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid action: {action}"))
-            })?;
+        let hex_enabled = self.config.world.grid_type == forge_types::config::GridType::Hex;
+        let action = Action::from_discrete_full(
+            action,
+            comm_vocab_size,
+            self.config.drone.enabled,
+            self.config.agri.enabled && self.config.drone.enabled,
+            hex_enabled,
+        )
+        .ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid action: {action}"))
+        })?;
 
         // Release GIL during computation
         let result = py.allow_threads(|| self.state.step(&[action]));

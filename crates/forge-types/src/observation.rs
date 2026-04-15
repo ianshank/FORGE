@@ -90,6 +90,9 @@ pub struct Observation {
     #[serde(default)]
     pub morphology: u8,
     /// Agent's current heading direction (0=Up, 1=Down, 2=Left, 3=Right).
+    ///
+    /// On hex grids, 6-direction movement is projected to the nearest
+    /// cardinal heading before observation export.
     #[serde(default)]
     pub heading: u8,
     /// Latest crop scan results (NDVI/thermal readings). Empty when agri disabled.
@@ -222,19 +225,21 @@ pub struct ActionSpace {
 impl ActionSpace {
     /// Creates an action space with the given communication vocabulary size.
     pub fn new(comm_vocab_size: u16, drone_actions_enabled: bool) -> Self {
-        Self::new_full(comm_vocab_size, drone_actions_enabled, false)
+        Self::new_full(comm_vocab_size, drone_actions_enabled, false, false)
     }
 
-    /// Creates an action space with drone and agricultural action support.
+    /// Creates an action space with drone, agricultural, and hex action support.
     pub fn new_full(
         comm_vocab_size: u16,
         drone_actions_enabled: bool,
         agri_actions_enabled: bool,
+        hex_actions_enabled: bool,
     ) -> Self {
         let n = crate::action::Action::space_size_full(
             comm_vocab_size,
             drone_actions_enabled,
             agri_actions_enabled,
+            hex_actions_enabled,
         );
         let mut names = vec![
             "Noop".to_string(),
@@ -283,6 +288,14 @@ impl ActionSpace {
             names.push("Scan Thermal".to_string());
             names.push("Relay Soil Data".to_string());
             names.push("Generate Report".to_string());
+        }
+        if hex_actions_enabled {
+            names.push("Move NE".to_string());
+            names.push("Move E".to_string());
+            names.push("Move SE".to_string());
+            names.push("Move SW".to_string());
+            names.push("Move W".to_string());
+            names.push("Move NW".to_string());
         }
         Self {
             n,

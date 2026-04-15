@@ -50,6 +50,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from numpy.typing import NDArray
+
 import numpy as np
 
 # ---------------------------------------------------------------------------
@@ -93,13 +95,13 @@ class ForgeStep:
     """
 
     # Observation components
-    grid_view: np.ndarray    # shape (view_h, view_w, 7), dtype uint8
-    inventory: np.ndarray    # shape (10, 2), dtype uint16
+    grid_view: NDArray[np.uint8]    # shape (view_h, view_w, 7)
+    inventory: NDArray[np.uint16]    # shape (10, 2)
     health: float
     stamina: float
     position: tuple[int, int]
     day_phase: int
-    task_progress: np.ndarray  # shape (n_predicates,), dtype float32
+    task_progress: NDArray[np.float32]  # shape (n_predicates,)
 
     # Transition
     action: int              # discrete action id
@@ -146,7 +148,7 @@ class ForgeDataset:
 
     def to_arrays(
         self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[NDArray[np.float32], NDArray[np.int32], NDArray[np.float32], NDArray[np.bool_]]:
         """Export dataset as flat NumPy arrays.
 
         Returns
@@ -207,10 +209,12 @@ def _parse_forge_jsonl_step(raw: dict[str, Any], tick: int) -> ForgeStep | None:
     """Parse one line of a forge-replay JSONL export into a :class:`ForgeStep`.
 
     Fields that are absent receive safe defaults so the loader is lenient
-    about partial exports.
+    about partial exports. Malformed data (type mismatches) causes the step
+    to be skipped and None is returned.
     """
     try:
         obs_list = raw.get("observations", [{}])
+        # Validate observations is list-like; malformed data raises and returns None
         obs: dict[str, Any] = obs_list[0] if obs_list else {}
         actions: list[int] = raw.get("actions", [0])
         rewards: list[float] = raw.get("rewards", [0.0])
@@ -273,7 +277,7 @@ def _parse_forge_jsonl_step(raw: dict[str, Any], tick: int) -> ForgeStep | None:
             terminated=bool(raw.get("terminated", False)),
             truncated=bool(raw.get("truncated", False)),
         )
-    except (KeyError, ValueError, TypeError, IndexError) as exc:
+    except (KeyError, ValueError, TypeError, IndexError, AttributeError) as exc:
         logger.debug("Skipping malformed step at tick %d: %s", tick, exc)
         return None
 

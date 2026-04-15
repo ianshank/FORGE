@@ -158,7 +158,7 @@ class MouseDroidAgent(BaseAgent):
 
         device = config.device
         if device == "auto":
-            from forge.utils.device import get_device  # noqa: PLC0415
+            from forge.utils.device import get_device
 
             device = get_device()
         self._device = device
@@ -198,7 +198,7 @@ class MouseDroidAgent(BaseAgent):
         )
 
         # Constitutional RL policy (actor-critic for PPO fine-tuning)
-        from forge.models.policy_network import ActorCriticNetwork  # noqa: PLC0415
+        from forge.models.policy_network import ActorCriticNetwork
 
         self._constitutional = ActorCriticNetwork(
             obs_dim=config.obs_dim,
@@ -333,8 +333,8 @@ class MouseDroidAgent(BaseAgent):
         Returns:
             Dictionary of training metrics.
         """
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         dev = torch.device(self._device)
         obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=dev)
@@ -351,7 +351,7 @@ class MouseDroidAgent(BaseAgent):
         action_logits, values = self._constitutional.forward(obs)
         values = values.squeeze(-1)
 
-        from torch.distributions import Categorical  # noqa: PLC0415
+        from torch.distributions import Categorical
 
         dist = Categorical(logits=action_logits)
         new_log_probs = dist.log_prob(actions)
@@ -415,7 +415,7 @@ class MouseDroidAgent(BaseAgent):
 
     def _load_constitutional_from_hub(self, loader: WeightLoader) -> None:
         """Load constitutional RL policy and value weights from .npz files."""
-        import torch  # noqa: PLC0415
+        import torch
 
         # Load policy weights into encoder + actor head
         policy_data = loader.load_npz("policy.npz")

@@ -14,10 +14,10 @@
 //! - Worker ID generation and in-memory registry
 //! - Replay compression and batching for transport
 
+pub mod backend;
 pub mod config;
 pub mod constants;
 pub mod error;
-pub mod backend;
 pub mod reconstruct;
 pub mod replay_transport;
 pub mod storage;
@@ -28,6 +28,7 @@ pub mod worker;
 pub mod gcs_storage;
 
 // Re-export commonly used types at crate root
+pub use backend::{create_model_store, create_replay_store, create_replay_transport};
 pub use config::{
     AggregationStrategy, CloudConfig, CoordinatorConfig, EdgeConfig, FallbackPolicy,
     ModelRegistryConfig, ReplayTransportConfig, StorageBackend, StorageConfig, WorkerConfig,
@@ -35,7 +36,6 @@ pub use config::{
 pub use error::{
     CloudError, CloudResult, ModelRegistryError, StorageError, TransportError, WorkerError,
 };
-pub use backend::{create_model_store, create_replay_store, create_replay_transport};
 pub use reconstruct::TrajectoryReconstructor;
 pub use replay_transport::ReplayBatch;
 pub use storage::{LocalModelStore, LocalReplayStore};

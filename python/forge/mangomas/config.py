@@ -32,6 +32,10 @@ DEFAULT_MAX_STEPS = 1000
 DEFAULT_NUM_ENVS = 8
 DEFAULT_SWEEP_EPISODES = 50
 DEFAULT_SWEEP_WORKERS = 4
+DEFAULT_PIPELINE_OUTPUT_ROOT = "artifacts/mangomas"
+DEFAULT_PIPELINE_EXPORT_DIR = "export"
+DEFAULT_PIPELINE_LOG_FILE = "pipeline.log"
+DEFAULT_PIPELINE_MANIFEST = "pipeline_manifest.json"
 
 # Canonical constraint definitions for constitutional RL
 DEFAULT_CONSTITUTIONAL_CONSTRAINTS: list[dict[str, Any]] = [
@@ -125,6 +129,7 @@ class BDITrainerConfig:
     sequence_length: int = 50
     log_interval: int = 10
     default_intention: int = 7  # Idle
+    seed: int = DEFAULT_SEED
 
 
 @dataclass
@@ -165,6 +170,7 @@ class RSSMPreTrainConfig:
     value_discount: float = 0.99
     reward_loss_scale: float = 0.01
     log_interval: int = 20
+    seed: int = DEFAULT_SEED
 
 
 @dataclass
@@ -216,6 +222,50 @@ class CuriosityOptimizerConfig:
     learning_rate: float = 0.05
     seed: int = DEFAULT_SEED
     log_interval: int = 10
+
+
+@dataclass
+class TransferConfig:
+    """Transfer-time overrides for MangoMAS weight initialization."""
+
+    bdi_mapping_overrides: dict[int, int] = field(default_factory=dict)
+
+
+@dataclass
+class PipelinePathsConfig:
+    """Filesystem layout for MangoMAS pipeline artifacts."""
+
+    output_root: str = DEFAULT_PIPELINE_OUTPUT_ROOT
+    run_name: str = ""
+    export_dir_name: str = DEFAULT_PIPELINE_EXPORT_DIR
+    log_file_name: str = DEFAULT_PIPELINE_LOG_FILE
+    manifest_name: str = DEFAULT_PIPELINE_MANIFEST
+
+
+@dataclass
+class PipelineExecutionConfig:
+    """Execution controls for the stage-based MangoMAS pipeline."""
+
+    resume: bool = False
+    fail_fast: bool = True
+    stop_after_stage: str = ""
+
+
+@dataclass
+class PipelineLoggingConfig:
+    """Logging options for MangoMAS pipeline runs."""
+
+    level: str = "INFO"
+    json_format: bool = False
+
+
+@dataclass
+class PipelineConfig:
+    """Top-level pipeline configuration."""
+
+    paths: PipelinePathsConfig = field(default_factory=PipelinePathsConfig)
+    execution: PipelineExecutionConfig = field(default_factory=PipelineExecutionConfig)
+    logging: PipelineLoggingConfig = field(default_factory=PipelineLoggingConfig)
 
 
 @dataclass
@@ -271,14 +321,16 @@ class MangoMASBridgeConfig:
         default_factory=CuriosityOptimizerConfig
     )
     muzero_trainer: MuZeroTrainerConfig = field(default_factory=MuZeroTrainerConfig)
+    transfer: TransferConfig = field(default_factory=TransferConfig)
+    pipeline: PipelineConfig = field(default_factory=PipelineConfig)
 
     @classmethod
     def from_toml(cls, path: str | Path) -> MangoMASBridgeConfig:
         """Load configuration from a TOML file."""
         try:
-            import tomllib  # noqa: PLC0415
+            import tomllib
         except ModuleNotFoundError:
-            import tomli as tomllib  # noqa: PLC0415
+            import tomli as tomllib
 
         path = Path(path)
         with path.open("rb") as f:
@@ -298,7 +350,7 @@ class MangoMASBridgeConfig:
                 **data["observation_adapter"]
             )
         if "sweep" in data:
-            sweep_data = data["sweep"]
+            sweep_data = dict(data["sweep"])
             # Handle range fields that come as lists from TOML
             if "c_puct" in sweep_data:
                 cp = sweep_data.pop("c_puct")
@@ -319,5 +371,42 @@ class MangoMASBridgeConfig:
             # Remove surprise sub-table handled separately
             sweep_data.pop("surprise", None)
             config.sweep = SweepConfig(**sweep_data)
+        if "surprise_validator" in data:
+            config.surprise_validator = SurpriseValidatorConfig(**data["surprise_validator"])
+        if "bdi_trainer" in data:
+            config.bdi_trainer = BDITrainerConfig(**data["bdi_trainer"])
+        if "constitutional_trainer" in data:
+            config.constitutional_trainer = ConstitutionalTrainerConfig(
+                **data["constitutional_trainer"]
+            )
+        if "rssm_pretrain" in data:
+            config.rssm_pretrain = RSSMPreTrainConfig(**data["rssm_pretrain"])
+        if "curriculum" in data:
+            config.curriculum = CurriculumConfig(**data["curriculum"])
+        if "batch_collector" in data:
+            config.batch_collector = BatchCollectorConfig(**data["batch_collector"])
+        if "curiosity_optimizer" in data:
+            config.curiosity_optimizer = CuriosityOptimizerConfig(
+                **data["curiosity_optimizer"]
+            )
+        if "muzero_trainer" in data:
+            config.muzero_trainer = MuZeroTrainerConfig(**data["muzero_trainer"])
+        if "transfer" in data:
+            transfer_data = dict(data["transfer"])
+            overrides = transfer_data.get("bdi_mapping_overrides")
+            if isinstance(overrides, dict):
+                transfer_data["bdi_mapping_overrides"] = {
+                    int(key): int(value) for key, value in overrides.items()
+                }
+            config.transfer = TransferConfig(**transfer_data)
+        if "pipeline" in data:
+            pipeline_data = data["pipeline"]
+            config.pipeline = PipelineConfig(
+                paths=PipelinePathsConfig(**pipeline_data.get("paths", {})),
+                execution=PipelineExecutionConfig(
+                    **pipeline_data.get("execution", {})
+                ),
+                logging=PipelineLoggingConfig(**pipeline_data.get("logging", {})),
+            )
         logger.debug("MangoMASBridgeConfig loaded: platform=%s", config.platform)
         return config

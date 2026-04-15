@@ -4,11 +4,12 @@
 //! soil relay, and report generation. All systems are opt-in via `AgriConfig`
 //! and use fixed-point arithmetic for deterministic simulation.
 
+use forge_civ::grid_topology::{GridTopology, GridTopologyKind};
 use forge_types::agriculture::{CropScanResult, CropState, SoilReading, SoilSensorNode};
 use forge_types::config::AgriConfig;
 use forge_types::constants::FIXED_POINT_ONE;
 use forge_types::entity::{Agent, AgentMorphology};
-use forge_types::grid::{Grid, TerrainType};
+use forge_types::grid::{Grid, Position, TerrainType};
 use forge_types::resource::ItemType;
 use forge_types::Action;
 use tracing::{instrument, trace};
@@ -26,6 +27,7 @@ pub fn process_crop_growth(
     config: &AgriConfig,
     tick: u64,
     disease_spread_candidates: &mut Vec<(u16, u16)>,
+    topology: &GridTopologyKind,
 ) {
     let width = grid.width as usize;
     let height = grid.height as usize;
@@ -97,19 +99,13 @@ pub fn process_crop_growth(
         }
     }
 
-    // Disease spread: each diseased tile can infect cardinal neighbors
+    // Disease spread: each diseased tile can infect adjacent neighbors
     // We use a simple seeded iteration to maintain determinism
     for &(x, y) in disease_spread_candidates.iter() {
-        let neighbors = [
-            (x.wrapping_sub(1), y),
-            (x + 1, y),
-            (x, y.wrapping_sub(1)),
-            (x, y + 1),
-        ];
-        for &(nx, ny) in &neighbors {
-            if nx >= grid.width || ny >= grid.height {
-                continue;
-            }
+        let neighbors = topology.neighbors(Position::new(x, y), grid.width, grid.height);
+        for adj in &neighbors {
+            let nx = adj.x;
+            let ny = adj.y;
             let n_idx = ny as usize * width + nx as usize;
             if n_idx >= crop_states.len() {
                 continue;
@@ -458,8 +454,14 @@ pub fn process_report_generation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_civ::grid_topology::GridTopologyKind;
+    use forge_civ::SquareTopology;
     use forge_types::config::AgentConfig;
     use forge_types::grid::Position;
+
+    fn topo() -> GridTopologyKind {
+        GridTopologyKind::Square(SquareTopology)
+    }
 
     fn make_agri_config() -> AgriConfig {
         AgriConfig {
@@ -499,7 +501,7 @@ mod tests {
 
         // Run enough ticks for growth
         for tick in 0..100 {
-            process_crop_growth(&mut states, &grid, &config, tick, &mut candidates);
+            process_crop_growth(&mut states, &grid, &config, tick, &mut candidates, &topo());
         }
 
         // At least some crops should have advanced
@@ -515,7 +517,7 @@ mod tests {
         let initial_moisture = states[0].moisture;
         let mut candidates = Vec::new();
 
-        process_crop_growth(&mut states, &grid, &config, 0, &mut candidates);
+        process_crop_growth(&mut states, &grid, &config, 0, &mut candidates, &topo());
 
         assert!(
             states[0].moisture < initial_moisture,
@@ -531,7 +533,7 @@ mod tests {
         let mut states = make_crop_states(1);
         let mut candidates = Vec::new();
 
-        process_crop_growth(&mut states, &grid, &config, 0, &mut candidates);
+        process_crop_growth(&mut states, &grid, &config, 0, &mut candidates, &topo());
 
         assert_eq!(states[0].moisture, 0, "moisture must not go below 0");
     }
@@ -547,7 +549,7 @@ mod tests {
 
         // Run several ticks
         for tick in 0..10 {
-            process_crop_growth(&mut states, &grid, &config, tick, &mut candidates);
+            process_crop_growth(&mut states, &grid, &config, tick, &mut candidates, &topo());
         }
 
         // At least some neighbors should be infected

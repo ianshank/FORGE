@@ -458,7 +458,7 @@ mod tests {
             #[test]
             fn prop_subcontract_percentage_bounded(vol in arb_cost_volume()) {
                 let pct = vol.subcontract_percentage();
-                prop_assert!(pct >= 0.0 && pct <= 100.0);
+                prop_assert!((0.0..=100.0).contains(&pct));
             }
 
             #[test]
