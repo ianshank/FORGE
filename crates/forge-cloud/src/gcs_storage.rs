@@ -97,11 +97,13 @@ fn build_gcs_store(
     gcp_project: &str,
     gcp_service_account: &str,
 ) -> CloudResult<Arc<dyn ObjectStore>> {
-    let mut builder = GoogleCloudStorageBuilder::from_env()
-        .with_bucket_name(bucket);
+    let mut builder = GoogleCloudStorageBuilder::from_env().with_bucket_name(bucket);
     // object_store 0.11 has no project-ID setter; log it for traceability.
     if !gcp_project.is_empty() {
-        debug!(gcp_project, "GCS project configured (informational — project is determined by credentials/bucket)");
+        debug!(
+            gcp_project,
+            "GCS project configured (informational — project is determined by credentials/bucket)"
+        );
     }
     if !gcp_service_account.is_empty() {
         builder = builder.with_service_account_key(gcp_service_account);
@@ -204,11 +206,9 @@ impl traits::ReplayStore for GcsReplayStore {
     fn store(&self, replay: &CompactReplay, key: &str) -> CloudResult<()> {
         sanitize_key(key)?;
         let path = self.object_path(key);
-        let bytes = replay.to_bytes().map_err(|e| {
-            StorageError::WriteFailed {
-                path: path.to_string(),
-                reason: e,
-            }
+        let bytes = replay.to_bytes().map_err(|e| StorageError::WriteFailed {
+            path: path.to_string(),
+            reason: e,
         })?;
         gcs_runtime()
             .block_on(self.store.put(&path, bytes.into()))
@@ -235,12 +235,11 @@ impl traits::ReplayStore for GcsReplayStore {
                 reason: e.to_string(),
             })
         })?;
-        let replay = CompactReplay::from_bytes(&bytes).map_err(|e| {
-            StorageError::InvalidFormat {
+        let replay =
+            CompactReplay::from_bytes(&bytes).map_err(|e| StorageError::InvalidFormat {
                 path: path.to_string(),
                 reason: e,
-            }
-        })?;
+            })?;
         debug!(path = %path, "Loaded replay from GCS");
         Ok(replay)
     }
@@ -248,15 +247,14 @@ impl traits::ReplayStore for GcsReplayStore {
     #[instrument(skip(self), fields(prefix = %prefix))]
     fn list(&self, prefix: &str) -> CloudResult<Vec<String>> {
         let list_prefix = ObjectPath::from(format!("{}replays/", self.prefix));
-        let objects: Vec<Result<ObjectMeta, _>> = gcs_runtime()
-            .block_on(async {
-                let mut items = Vec::new();
-                let mut stream = self.store.list(Some(&list_prefix));
-                while let Some(meta) = stream.next().await {
-                    items.push(meta);
-                }
-                items
-            });
+        let objects: Vec<Result<ObjectMeta, _>> = gcs_runtime().block_on(async {
+            let mut items = Vec::new();
+            let mut stream = self.store.list(Some(&list_prefix));
+            while let Some(meta) = stream.next().await {
+                items.push(meta);
+            }
+            items
+        });
         let mut keys = Vec::new();
         for item in objects {
             let meta = item.map_err(|e| {
@@ -381,9 +379,7 @@ impl GcsModelStore {
                         reason: e.to_string(),
                     })
                 })?;
-                Ok(Some(
-                    String::from_utf8_lossy(&bytes).trim().to_string(),
-                ))
+                Ok(Some(String::from_utf8_lossy(&bytes).trim().to_string()))
             }
             Err(object_store::Error::NotFound { .. }) => Ok(None),
             Err(e) => Err(CloudError::Storage(StorageError::ReadFailed {
@@ -462,13 +458,12 @@ impl traits::ModelStore for GcsModelStore {
         sanitize_key(model_id)?;
         match self.read_latest(model_id)? {
             Some(s) => {
-                let version: u32 =
-                    s.parse().map_err(|e: std::num::ParseIntError| {
-                        CloudError::Storage(StorageError::InvalidFormat {
-                            path: self.latest_path(model_id).to_string(),
-                            reason: e.to_string(),
-                        })
-                    })?;
+                let version: u32 = s.parse().map_err(|e: std::num::ParseIntError| {
+                    CloudError::Storage(StorageError::InvalidFormat {
+                        path: self.latest_path(model_id).to_string(),
+                        reason: e.to_string(),
+                    })
+                })?;
                 Ok(Some(version))
             }
             None => Ok(None),
@@ -478,8 +473,7 @@ impl traits::ModelStore for GcsModelStore {
     #[instrument(skip(self), fields(model_id = %model_id))]
     fn list_versions(&self, model_id: &str) -> CloudResult<Vec<u32>> {
         sanitize_key(model_id)?;
-        let list_prefix =
-            ObjectPath::from(format!("{}models/{}/", self.prefix, model_id));
+        let list_prefix = ObjectPath::from(format!("{}models/{}/", self.prefix, model_id));
         let objects: Vec<Result<ObjectMeta, _>> = gcs_runtime().block_on(async {
             let mut items = Vec::new();
             let mut stream = self.store.list(Some(&list_prefix));
@@ -530,25 +524,22 @@ impl forge_types::transport::ModelStore for GcsModelStore {
         data: &[u8],
     ) -> forge_types::error::ForgeResult<()> {
         sanitize_key(name).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(e.to_string()),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
         })?;
         sanitize_key(version).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(e.to_string()),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
         })?;
         let path = self.model_path(name, version);
         gcs_runtime()
             .block_on(self.store.put(&path, data.to_vec().into()))
             .map_err(|e| {
-                forge_types::error::ForgeError::Cloud(
-                    forge_types::error::CloudError::Storage(format!(
-                        "GCS write failed for {}: {e}",
-                        path
-                    )),
-                )
+                forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                    format!("GCS write failed for {}: {e}", path),
+                ))
             })?;
         // Update latest.txt only if this version sorts after the current latest.
         // For purely numeric version strings, compare numerically to avoid
@@ -565,89 +556,84 @@ impl forge_types::transport::ModelStore for GcsModelStore {
         };
         if should_update {
             self.write_latest(name, version).map_err(|e| {
-                forge_types::error::ForgeError::Cloud(
-                    forge_types::error::CloudError::Storage(format!(
-                        "GCS latest.txt update failed for model {name} version {version}: {e}"
-                    )),
-                )
+                forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                    format!("GCS latest.txt update failed for model {name} version {version}: {e}"),
+                ))
             })?;
         }
-        debug!(name, version, size = data.len(), "Stored model to GCS (str)");
+        debug!(
+            name,
+            version,
+            size = data.len(),
+            "Stored model to GCS (str)"
+        );
         Ok(())
     }
 
     #[instrument(skip(self), fields(name = %name, version = %version))]
-    fn load_model(
-        &self,
-        name: &str,
-        version: &str,
-    ) -> forge_types::error::ForgeResult<Vec<u8>> {
+    fn load_model(&self, name: &str, version: &str) -> forge_types::error::ForgeResult<Vec<u8>> {
         sanitize_key(name).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(e.to_string()),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
         })?;
         sanitize_key(version).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(e.to_string()),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
         })?;
         let path = self.model_path(name, version);
-        let result = gcs_runtime().block_on(self.store.get(&path)).map_err(|e| {
-            match e {
+        let result = gcs_runtime()
+            .block_on(self.store.get(&path))
+            .map_err(|e| match e {
                 object_store::Error::NotFound { .. } => forge_types::error::ForgeError::Cloud(
                     forge_types::error::CloudError::ModelRegistry(format!(
                         "model {name}@{version} not found at {path}"
                     )),
                 ),
-                _ => forge_types::error::ForgeError::Cloud(
-                    forge_types::error::CloudError::Storage(format!(
-                        "GCS read failed for {path}: {e}"
-                    )),
-                ),
-            }
-        })?;
+                _ => {
+                    forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                        format!("GCS read failed for {path}: {e}"),
+                    ))
+                }
+            })?;
         let bytes = gcs_runtime().block_on(result.bytes()).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(format!(
-                    "GCS read failed for {}: {e}",
-                    path
-                )),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(format!(
+                "GCS read failed for {}: {e}",
+                path
+            )))
         })?;
-        debug!(name, version, size = bytes.len(), "Loaded model from GCS (str)");
+        debug!(
+            name,
+            version,
+            size = bytes.len(),
+            "Loaded model from GCS (str)"
+        );
         Ok(bytes.to_vec())
     }
 
     #[instrument(skip(self), fields(name = %name))]
-    fn latest_version(
-        &self,
-        name: &str,
-    ) -> forge_types::error::ForgeResult<Option<String>> {
+    fn latest_version(&self, name: &str) -> forge_types::error::ForgeResult<Option<String>> {
         sanitize_key(name).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(e.to_string()),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
         })?;
         self.read_latest(name).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(e.to_string()),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
         })
     }
 
     #[instrument(skip(self), fields(name = %name))]
-    fn list_versions(
-        &self,
-        name: &str,
-    ) -> forge_types::error::ForgeResult<Vec<String>> {
+    fn list_versions(&self, name: &str) -> forge_types::error::ForgeResult<Vec<String>> {
         sanitize_key(name).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(e.to_string()),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
         })?;
-        let list_prefix =
-            ObjectPath::from(format!("{}models/{}/", self.prefix, name));
+        let list_prefix = ObjectPath::from(format!("{}models/{}/", self.prefix, name));
         let objects: Vec<Result<ObjectMeta, _>> = gcs_runtime().block_on(async {
             let mut items = Vec::new();
             let mut stream = self.store.list(Some(&list_prefix));
@@ -659,27 +645,26 @@ impl forge_types::transport::ModelStore for GcsModelStore {
         let mut versions = Vec::new();
         for item in objects {
             let meta = item.map_err(|e| {
-                forge_types::error::ForgeError::Cloud(
-                    forge_types::error::CloudError::Storage(format!(
-                        "GCS list failed for {}: {e}",
-                        list_prefix
-                    )),
-                )
+                forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                    format!("GCS list failed for {}: {e}", list_prefix),
+                ))
             })?;
             let parts: Vec<_> = meta.location.as_ref().split('/').collect();
             if let Some(pos) = parts.iter().rposition(|&p| p == name) {
                 if let Some(ver_str) = parts.get(pos + 1) {
                     let v = (*ver_str).to_string();
-                    if !versions.contains(&v)
-                        && v != crate::constants::LATEST_VERSION_FILENAME
-                    {
+                    if !versions.contains(&v) && v != crate::constants::LATEST_VERSION_FILENAME {
                         versions.push(v);
                     }
                 }
             }
         }
         versions.sort();
-        debug!(name, count = versions.len(), "Listed model versions from GCS (str)");
+        debug!(
+            name,
+            count = versions.len(),
+            "Listed model versions from GCS (str)"
+        );
         Ok(versions)
     }
 
@@ -743,20 +728,17 @@ impl forge_types::transport::ReplayTransport for GcsReplayTransport {
     #[instrument(skip(self, payload), fields(key = %key))]
     fn send(&self, key: &str, payload: &[u8]) -> forge_types::error::ForgeResult<()> {
         sanitize_key(key).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(e.to_string()),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                e.to_string(),
+            ))
         })?;
         let path = self.transport_path(key);
         gcs_runtime()
             .block_on(self.store.put(&path, payload.to_vec().into()))
             .map_err(|e| {
-                forge_types::error::ForgeError::Cloud(
-                    forge_types::error::CloudError::Storage(format!(
-                        "GCS transport send failed for {}: {e}",
-                        path
-                    )),
-                )
+                forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                    format!("GCS transport send failed for {}: {e}", path),
+                ))
             })?;
         debug!(path = %path, size = payload.len(), "Sent replay via GCS transport");
         Ok(())
@@ -773,11 +755,9 @@ impl forge_types::transport::ReplayTransport for GcsReplayTransport {
             let mut oldest: Option<ObjectMeta> = None;
             while let Some(result) = stream.next().await {
                 let meta = result.map_err(|e| {
-                    forge_types::error::ForgeError::Cloud(
-                        forge_types::error::CloudError::Storage(format!(
-                            "GCS transport list failed for {list_prefix}: {e}"
-                        )),
-                    )
+                    forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                        format!("GCS transport list failed for {list_prefix}: {e}"),
+                    ))
                 })?;
                 let filename = meta.location.filename().unwrap_or_default();
                 if !filename.ends_with(".bin") {
@@ -799,24 +779,18 @@ impl forge_types::transport::ReplayTransport for GcsReplayTransport {
         };
 
         // Download the object.
-        let result =
-            gcs_runtime()
-                .block_on(self.store.get(&meta.location))
-                .map_err(|e| {
-                    forge_types::error::ForgeError::Cloud(
-                        forge_types::error::CloudError::Storage(format!(
-                            "GCS transport receive failed for {}: {e}",
-                            meta.location
-                        )),
-                    )
-                })?;
+        let result = gcs_runtime()
+            .block_on(self.store.get(&meta.location))
+            .map_err(|e| {
+                forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                    format!("GCS transport receive failed for {}: {e}", meta.location),
+                ))
+            })?;
         let bytes = gcs_runtime().block_on(result.bytes()).map_err(|e| {
-            forge_types::error::ForgeError::Cloud(
-                forge_types::error::CloudError::Storage(format!(
-                    "GCS transport read failed for {}: {e}",
-                    meta.location
-                )),
-            )
+            forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(format!(
+                "GCS transport read failed for {}: {e}",
+                meta.location
+            )))
         })?;
 
         // Extract key from filename (guaranteed to end with .bin by the filter).
@@ -837,12 +811,9 @@ impl forge_types::transport::ReplayTransport for GcsReplayTransport {
             .block_on(self.store.delete(&meta.location))
             .map_err(|e| {
                 warn!(path = %meta.location, error = %e, "GCS transport delete failed");
-                forge_types::error::ForgeError::Cloud(
-                    forge_types::error::CloudError::Storage(format!(
-                        "GCS transport delete failed for {}: {e}",
-                        meta.location
-                    )),
-                )
+                forge_types::error::ForgeError::Cloud(forge_types::error::CloudError::Storage(
+                    format!("GCS transport delete failed for {}: {e}", meta.location),
+                ))
             })?;
 
         debug!(key = %key, size = bytes.len(), "Received replay via GCS transport");
@@ -989,9 +960,15 @@ mod tests {
     fn test_model_store_latest_version_updates_on_store() {
         let store = GcsModelStore::with_object_store(mem_store(), "forge/");
         ModelStore::store_model(&store, "policy", 1, b"v1").unwrap();
-        assert_eq!(ModelStore::latest_version(&store, "policy").unwrap(), Some(1));
+        assert_eq!(
+            ModelStore::latest_version(&store, "policy").unwrap(),
+            Some(1)
+        );
         ModelStore::store_model(&store, "policy", 3, b"v3").unwrap();
-        assert_eq!(ModelStore::latest_version(&store, "policy").unwrap(), Some(3));
+        assert_eq!(
+            ModelStore::latest_version(&store, "policy").unwrap(),
+            Some(3)
+        );
     }
 
     #[test]
@@ -999,7 +976,10 @@ mod tests {
         let store = GcsModelStore::with_object_store(mem_store(), "forge/");
         ModelStore::store_model(&store, "policy", 5, b"v5").unwrap();
         ModelStore::store_model(&store, "policy", 2, b"v2").unwrap();
-        assert_eq!(ModelStore::latest_version(&store, "policy").unwrap(), Some(5));
+        assert_eq!(
+            ModelStore::latest_version(&store, "policy").unwrap(),
+            Some(5)
+        );
     }
 
     #[test]
@@ -1157,4 +1137,3 @@ mod tests {
         assert_eq!(data, b"payload");
     }
 }
-

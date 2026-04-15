@@ -50,6 +50,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from numpy.typing import NDArray
+
 import numpy as np
 
 # ---------------------------------------------------------------------------
@@ -93,13 +95,13 @@ class ForgeStep:
     """
 
     # Observation components
-    grid_view: np.ndarray    # shape (view_h, view_w, 7), dtype uint8
-    inventory: np.ndarray    # shape (10, 2), dtype uint16
+    grid_view: NDArray[np.uint8]    # shape (view_h, view_w, 7)
+    inventory: NDArray[np.uint16]    # shape (10, 2)
     health: float
     stamina: float
     position: tuple[int, int]
     day_phase: int
-    task_progress: np.ndarray  # shape (n_predicates,), dtype float32
+    task_progress: NDArray[np.float32]  # shape (n_predicates,)
 
     # Transition
     action: int              # discrete action id
@@ -146,7 +148,7 @@ class ForgeDataset:
 
     def to_arrays(
         self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[NDArray[np.float32], NDArray[np.int32], NDArray[np.float32], NDArray[np.bool_]]:
         """Export dataset as flat NumPy arrays.
 
         Returns

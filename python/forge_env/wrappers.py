@@ -20,7 +20,10 @@ from __future__ import annotations
 
 import logging
 import time as _time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +104,7 @@ class FlattenObservationWrapper(_BaseWrapper):
 
     # -- public helpers -----------------------------------------------------
 
-    def flatten_obs(self, obs_dict: dict[str, Any]) -> np.ndarray:
+    def flatten_obs(self, obs_dict: dict[str, Any]) -> NDArray[np.float32]:
         """Flatten a dict observation into a 1-D float32 numpy array.
 
         Delegates to :func:`forge.utils.observation.flatten_obs` when

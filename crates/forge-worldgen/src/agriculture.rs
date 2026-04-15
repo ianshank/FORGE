@@ -221,7 +221,7 @@ mod tests {
         let config = AgriConfig::default();
         let states = generate_crop_states(&grid, &config);
 
-        let idx = 1 + 1 * 4; // x=1, y=1 in a 4-wide grid
+        let idx = 1 + 4; // x=1, y=1 in a 4-wide grid
         assert_eq!(
             states[idx].health, config.initial_crop_health,
             "cropland tiles should use initial_crop_health"

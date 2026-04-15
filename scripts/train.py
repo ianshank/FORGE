@@ -17,7 +17,11 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
 
 # Add python/ to path so forge and forge_env packages are importable.
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
@@ -182,7 +186,6 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
         config: A ForgeConfig instance.
         args: Parsed CLI arguments.
     """
-    import numpy as np  # noqa: PLC0415, TC002
     from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig  # noqa: PLC0415
     from forge.training.checkpointing import CheckpointManager  # noqa: PLC0415
     from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
@@ -200,11 +203,11 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
 
     checkpoint_mgr = CheckpointManager(args.checkpoint_dir)
 
-    def reset_fn() -> np.ndarray:
+    def reset_fn() -> NDArray[np.float32]:
         obs, _info = env.reset()
         return flatten_obs(obs)
 
-    def step_fn(action: int) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def step_fn(action: int) -> tuple[NDArray[np.float32], float, bool, bool, dict[str, Any]]:
         obs, reward, terminated, truncated, info = env.step(action)
         return flatten_obs(obs), reward, terminated, truncated, info
 

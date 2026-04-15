@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from numpy.typing import NDArray
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -189,8 +191,8 @@ class ForgeSyncVecEnv:
 
     def step(
         self,
-        actions: np.ndarray,
-    ) -> tuple[dict[str, Any], np.ndarray, np.ndarray, np.ndarray, list[dict[str, Any]]]:
+        actions: NDArray[np.intp],
+    ) -> tuple[dict[str, Any], NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_], list[dict[str, Any]]]:
         """Step all environments with the given per-env actions.
 
         Args:
@@ -337,8 +339,8 @@ class ForgeAsyncVecEnv:
 
     def step(
         self,
-        actions: np.ndarray,
-    ) -> tuple[dict[str, Any], np.ndarray, np.ndarray, np.ndarray, list[dict[str, Any]]]:
+        actions: NDArray[np.intp],
+    ) -> tuple[dict[str, Any], NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_], list[dict[str, Any]]]:
         """Step all environments asynchronously.
 
         Args:

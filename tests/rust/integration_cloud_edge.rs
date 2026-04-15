@@ -433,7 +433,10 @@ fn test_cloud_edge_config_backward_compat() {
         toml::from_str(toml_content).expect("Failed to deserialize inline TOML into ForgeConfig");
 
     // The non-default field we set must round-trip.
-    assert_eq!(config.world.width, 32, "world.width should be 32 from inline TOML");
+    assert_eq!(
+        config.world.width, 32,
+        "world.width should be 32 from inline TOML"
+    );
 
     // Cloud and edge should default to disabled
     assert!(

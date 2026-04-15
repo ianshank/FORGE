@@ -326,7 +326,7 @@ mod tests {
         // Top-left is a wall
         assert!(!grid[0]);
         // Position (1,1) should be walkable
-        assert!(grid[1 * 5 + 1]);
+        assert!(grid[5 + 1]);
     }
 
     #[test]

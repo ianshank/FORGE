@@ -35,7 +35,10 @@ pub fn compress_replay(data: &[u8], config: &ReplayTransportConfig) -> CloudResu
             }
             .into());
         }
-        debug!(size = data.len(), "compression disabled, sending framed uncompressed");
+        debug!(
+            size = data.len(),
+            "compression disabled, sending framed uncompressed"
+        );
         let mut out = Vec::with_capacity(1 + data.len());
         out.push(FRAME_UNCOMPRESSED);
         out.extend_from_slice(data);

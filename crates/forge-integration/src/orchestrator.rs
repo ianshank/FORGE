@@ -352,5 +352,303 @@ mod proptests {
                 "trust should not decrease after cooperation"
             );
         }
+
+        /// Hostility always decreases reputation.
+        #[test]
+        fn hostility_decreases_reputation(n in 2_usize..6, reps in 1_usize..10) {
+            let mut orch = IntegrationOrchestrator::new(n, valid_config());
+            let initial = orch.reputation.reputation(0);
+            for _ in 0..reps {
+                orch.record_hostility(0, 1);
+            }
+            prop_assert!(
+                orch.reputation.reputation(0) <= initial,
+                "reputation should not increase after hostility"
+            );
+        }
+
+        /// Metrics JSON round-trip preserves all fields.
+        #[test]
+        fn metrics_serde_roundtrip(
+            entries in 0_usize..1000,
+            trust in 0.0_f32..=1.0,
+            rep in 0.0_f32..=1.0,
+            alliances in 0_usize..50,
+            tick in 0_u64..100_000,
+        ) {
+            use crate::metrics::IntegrationMetrics;
+            let m = IntegrationMetrics {
+                total_memory_entries: entries,
+                mean_trust: trust,
+                mean_reputation: rep,
+                active_alliances: alliances,
+                social_reward_fraction: 0.0,
+                tick,
+            };
+            let json = serde_json::to_string(&m).unwrap();
+            let deser: IntegrationMetrics = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(deser.total_memory_entries, entries);
+            prop_assert_eq!(deser.tick, tick);
+        }
+    }
+}
+
+#[cfg(test)]
+mod extended_tests {
+    use super::*;
+
+    fn enabled_config() -> IntegrationConfig {
+        IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 5,
+            memory: forge_memory::config::MemoryConfig {
+                enabled: true,
+                ..forge_memory::config::MemoryConfig::default()
+            },
+            social: forge_social::config::SocialConfig {
+                enabled: true,
+                ..forge_social::config::SocialConfig::default()
+            },
+            ..IntegrationConfig::default()
+        }
+    }
+
+    #[test]
+    fn test_orchestrator_agent_idx_values() {
+        let orch = IntegrationOrchestrator::new(10, enabled_config());
+        for i in 0..10 {
+            let state = orch.agent_memory(i);
+            assert!(state.is_some(), "agent {i} should exist");
+        }
+        assert!(orch.agent_memory(10).is_none());
+    }
+
+    #[test]
+    fn test_memory_write_interval_zero_no_panic() {
+        let config = IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 0,
+            memory: forge_memory::config::MemoryConfig {
+                enabled: true,
+                ..forge_memory::config::MemoryConfig::default()
+            },
+            ..IntegrationConfig::default()
+        };
+        let mut orch = IntegrationOrchestrator::new(2, config);
+        for _ in 0..100 {
+            orch.tick();
+        }
+        assert_eq!(orch.current_tick(), 100);
+    }
+
+    #[test]
+    fn test_memory_decay_triggers_at_exact_intervals() {
+        let config = IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 5,
+            memory: forge_memory::config::MemoryConfig {
+                enabled: true,
+                ..forge_memory::config::MemoryConfig::default()
+            },
+            ..IntegrationConfig::default()
+        };
+        let mut orch = IntegrationOrchestrator::new(2, config);
+        // Ticks 1-4 should not trigger decay; tick 5 should.
+        for _ in 0..4 {
+            orch.tick();
+        }
+        assert_eq!(orch.current_tick(), 4);
+        // Tick 5 triggers decay — should not panic.
+        orch.tick();
+        assert_eq!(orch.current_tick(), 5);
+        // Continue to verify periodic triggers at 10, 15, ...
+        for _ in 0..10 {
+            orch.tick();
+        }
+        assert_eq!(orch.current_tick(), 15);
+    }
+
+    #[test]
+    fn test_disabled_memory_skips_decay() {
+        let config = IntegrationConfig {
+            enabled: true,
+            memory_write_interval: 1,
+            memory: forge_memory::config::MemoryConfig {
+                enabled: false,
+                ..forge_memory::config::MemoryConfig::default()
+            },
+            ..IntegrationConfig::default()
+        };
+        let mut orch = IntegrationOrchestrator::new(2, config);
+        // Even with interval=1, disabled memory should skip the decay branch.
+        for _ in 0..20 {
+            orch.tick();
+        }
+        assert_eq!(orch.current_tick(), 20);
+    }
+
+    #[test]
+    fn test_blend_rewards_with_disabled_social_returns_passthrough() {
+        let config = IntegrationConfig {
+            enabled: true,
+            social_reward_weight: 0.5,
+            social: forge_social::config::SocialConfig {
+                enabled: false,
+                ..forge_social::config::SocialConfig::default()
+            },
+            ..IntegrationConfig::default()
+        };
+        let orch = IntegrationOrchestrator::new(3, config);
+        let tasks = vec![1.0, 2.0, 3.0];
+        let blended = orch.blend_rewards(&tasks);
+        assert_eq!(blended, tasks, "disabled social should pass through tasks");
+    }
+
+    #[test]
+    fn test_blend_rewards_negative_task_rewards() {
+        let orch = IntegrationOrchestrator::new(2, enabled_config());
+        let tasks = vec![-1.0, -2.0];
+        let blended = orch.blend_rewards(&tasks);
+        assert_eq!(blended.len(), 2, "length must match");
+        // Negative tasks should produce negative or reduced blended values.
+        for val in &blended {
+            assert!(val.is_finite(), "blended reward must be finite");
+        }
+    }
+
+    #[test]
+    fn test_blend_rewards_all_zero_tasks() {
+        let orch = IntegrationOrchestrator::new(3, enabled_config());
+        let tasks = vec![0.0, 0.0, 0.0];
+        let blended = orch.blend_rewards(&tasks);
+        assert_eq!(blended.len(), 3);
+        for val in &blended {
+            assert!(val.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_blend_rewards_mismatched_length_shorter() {
+        let orch = IntegrationOrchestrator::new(4, enabled_config());
+        // Pass fewer rewards than agents — zip truncates to shorter.
+        let tasks = vec![1.0, 2.0];
+        let blended = orch.blend_rewards(&tasks);
+        // Result length is min(tasks.len(), social_rewards.len())
+        assert!(blended.len() <= 4);
+    }
+
+    #[test]
+    fn test_blend_rewards_formula_correctness() {
+        let config = IntegrationConfig {
+            enabled: true,
+            social_reward_weight: 0.3,
+            social: forge_social::config::SocialConfig {
+                enabled: true,
+                ..forge_social::config::SocialConfig::default()
+            },
+            ..IntegrationConfig::default()
+        };
+        let orch = IntegrationOrchestrator::new(2, config.clone());
+        let tasks = vec![10.0, 20.0];
+        let blended = orch.blend_rewards(&tasks);
+        // blended[i] = task[i] * (1 - w) + social[i] * w
+        let w = config.social_reward_weight;
+        for (i, val) in blended.iter().enumerate() {
+            // We can't predict social[i] exactly, but the formula holds:
+            // val = tasks[i] * 0.7 + social[i] * 0.3
+            // so val should differ from tasks[i] * 0.7 by at most |social[i] * 0.3|
+            let task_component = tasks[i] * (1.0 - w);
+            // Social rewards are bounded (trust/reputation in [0,1]) so social * 0.3 <= 0.3
+            assert!(
+                (*val - task_component).abs() <= 1.0,
+                "blended[{i}]={val} should be near task_component={task_component}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_cooperation_both_agents_gain_reputation() {
+        let mut orch = IntegrationOrchestrator::new(3, enabled_config());
+        let rep_a = orch.reputation.reputation(0);
+        let rep_b = orch.reputation.reputation(1);
+        orch.record_cooperation(0, 1);
+        assert!(
+            orch.reputation.reputation(0) >= rep_a,
+            "agent A reputation should increase after cooperation"
+        );
+        assert!(
+            orch.reputation.reputation(1) >= rep_b,
+            "agent B reputation should increase after cooperation"
+        );
+    }
+
+    #[test]
+    fn test_asymmetric_trust_after_cooperation() {
+        let mut orch = IntegrationOrchestrator::new(3, enabled_config());
+        orch.record_cooperation(0, 1);
+        let trust_01 = orch.trust.trust(0, 1);
+        let trust_10 = orch.trust.trust(1, 0);
+        // After cooperation, both directions should increase.
+        let initial = forge_social::config::SocialConfig::default().trust_initial;
+        assert!(trust_01 >= initial, "trust(0,1) should have increased");
+        assert!(trust_10 >= initial, "trust(1,0) should have increased");
+    }
+
+    #[test]
+    fn test_zero_agents_orchestrator() {
+        let orch = IntegrationOrchestrator::new(0, enabled_config());
+        assert_eq!(orch.num_agents(), 0);
+        assert!(orch.agent_memory(0).is_none());
+        let blended = orch.blend_rewards(&[]);
+        assert!(blended.is_empty());
+    }
+
+    #[test]
+    fn test_large_agent_count() {
+        let orch = IntegrationOrchestrator::new(100, enabled_config());
+        assert_eq!(orch.num_agents(), 100);
+        assert!(orch.agent_memory(99).is_some());
+        assert!(orch.agent_memory(100).is_none());
+    }
+
+    #[test]
+    fn test_config_accessor() {
+        let config = IntegrationConfig {
+            meta_lr: 0.123,
+            ..enabled_config()
+        };
+        let orch = IntegrationOrchestrator::new(2, config);
+        assert_eq!(orch.config().meta_lr, 0.123);
+    }
+
+    #[test]
+    fn test_current_tick_starts_at_zero() {
+        let orch = IntegrationOrchestrator::new(2, enabled_config());
+        assert_eq!(orch.current_tick(), 0);
+    }
+
+    #[test]
+    fn test_multiple_cooperations_accumulate_trust() {
+        let mut orch = IntegrationOrchestrator::new(3, enabled_config());
+        let t1 = orch.trust.trust(0, 1);
+        orch.record_cooperation(0, 1);
+        let t2 = orch.trust.trust(0, 1);
+        orch.record_cooperation(0, 1);
+        let t3 = orch.trust.trust(0, 1);
+        assert!(t2 >= t1, "first cooperation should increase trust");
+        assert!(t3 >= t2, "second cooperation should further increase trust");
+    }
+
+    #[test]
+    fn test_hostility_then_cooperation_recovery() {
+        let mut orch = IntegrationOrchestrator::new(3, enabled_config());
+        orch.record_hostility(0, 1);
+        let rep_after_hostility = orch.reputation.reputation(0);
+        orch.record_cooperation(0, 1);
+        let rep_after_coop = orch.reputation.reputation(0);
+        assert!(
+            rep_after_coop >= rep_after_hostility,
+            "cooperation should recover reputation"
+        );
     }
 }

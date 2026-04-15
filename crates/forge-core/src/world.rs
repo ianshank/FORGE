@@ -1208,8 +1208,8 @@ mod proptests {
             ];
 
             for action in &actions {
-                world1.step(&[action.clone()]);
-                world2.step(&[action.clone()]);
+                world1.step(std::slice::from_ref(action));
+                world2.step(std::slice::from_ref(action));
             }
 
             prop_assert_eq!(world1.tick, world2.tick);

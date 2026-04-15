@@ -48,9 +48,7 @@ impl TelemetryCollector {
     /// Creates a new telemetry collector from an [`EdgeConfig`].
     pub fn new(config: &EdgeConfig) -> Self {
         if config.compress_telemetry {
-            debug!(
-                "compress_telemetry enabled; compression is delegated to the transport layer"
-            );
+            debug!("compress_telemetry enabled; compression is delegated to the transport layer");
         }
 
         Self {
@@ -88,7 +86,7 @@ impl TelemetryCollector {
         }
 
         self.buffer_bytes += replay_bytes;
-    self.buffer.push(BufferedReplay { seed, payload });
+        self.buffer.push(BufferedReplay { seed, payload });
         self.total_recorded += 1;
 
         debug!(

@@ -959,10 +959,7 @@ num_agents = 4
     fn test_env_overrides_edge_gcs_fields() {
         let _lock = ENV_TEST_LOCK.lock().unwrap();
 
-        let env_vars = [
-            "FORGE_EDGE_GCS_MODEL_BUCKET",
-            "FORGE_EDGE_GCS_MODEL_PREFIX",
-        ];
+        let env_vars = ["FORGE_EDGE_GCS_MODEL_BUCKET", "FORGE_EDGE_GCS_MODEL_PREFIX"];
         let guards: Vec<EnvironmentGuard> = env_vars
             .iter()
             .map(|&var| EnvironmentGuard {

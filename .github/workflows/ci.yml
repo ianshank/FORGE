@@ -48,7 +48,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo bench --no-run -p forge-bench
+      - name: Install critcmp
+        run: cargo install critcmp --locked || true
+      - name: Restore baseline benchmarks
+        id: restore-bench
+        uses: actions/cache/restore@v4
+        with:
+          path: target/criterion-baseline
+          key: bench-baseline-${{ runner.os }}
+      - name: Run benchmarks
+        run: cargo bench -p forge-bench -- --save-baseline current
+      - name: Compare against baseline
+        if: steps.restore-bench.outputs.cache-hit == 'true'
+        run: |
+          critcmp target/criterion-baseline target/criterion/current \
+            --threshold 5 || echo "::warning::Benchmark regression detected (>5% threshold)"
+      - name: Save new baseline
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/cache/save@v4
+        with:
+          path: target/criterion/current
+          key: bench-baseline-${{ runner.os }}-${{ github.sha }}
 
   coverage:
     name: Rust Coverage (tarpaulin)
@@ -84,8 +104,25 @@ jobs:
           name: coverage-report
           path: coverage/cobertura.xml
 
-  python:
-    name: Python Lint & Tests
+  python-lint:
+    name: Python Lint (fast)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install lint tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy numpy
+      - name: Ruff lint
+        run: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
+      - name: Mypy type check
+        run: mypy python/ scripts/ --config-file pyproject.toml
+
+  python-test:
+    name: Python Tests (maturin)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,15 +134,11 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install maturin ruff mypy pytest pytest-cov numpy gymnasium httpx \
+          pip install maturin pytest pytest-cov numpy gymnasium httpx \
             stable-baselines3
           pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Build native extension
         run: maturin develop
-      - name: Ruff lint
-        run: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
-      - name: Mypy type check
-        run: mypy python/ scripts/ --config-file pyproject.toml
       - name: Pytest with coverage
         run: |
           pytest tests/python/ -v \

@@ -25,3 +25,4 @@ rayon = "1"
 proptest = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
+toml = { workspace = true }

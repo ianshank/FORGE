@@ -103,4 +103,76 @@ mod tests {
         let _soc = &config.social;
         let _cog = &config.cognitive;
     }
+
+    #[test]
+    fn test_default_memory_write_interval() {
+        let config = IntegrationConfig::default();
+        assert_eq!(config.memory_write_interval, 10);
+    }
+
+    #[test]
+    fn test_default_social_reward_weight() {
+        let config = IntegrationConfig::default();
+        assert!((config.social_reward_weight - 0.3).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_default_meta_lr() {
+        let config = IntegrationConfig::default();
+        assert!((config.meta_lr - 0.001).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_default_meta_learning_disabled() {
+        let config = IntegrationConfig::default();
+        assert!(!config.meta_learning_enabled);
+    }
+
+    #[test]
+    fn test_curriculum_domains_default_content() {
+        let config = IntegrationConfig::default();
+        assert!(config
+            .curriculum_domains
+            .contains(&"navigation".to_string()));
+        assert!(config.curriculum_domains.contains(&"crafting".to_string()));
+        assert!(config.curriculum_domains.contains(&"social".to_string()));
+        assert!(config.curriculum_domains.contains(&"combat".to_string()));
+    }
+
+    #[test]
+    fn test_config_with_empty_curriculum_roundtrips() {
+        let config = IntegrationConfig {
+            curriculum_domains: vec![],
+            ..IntegrationConfig::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: IntegrationConfig = serde_json::from_str(&json).unwrap();
+        assert!(deser.curriculum_domains.is_empty());
+    }
+
+    #[test]
+    fn test_config_extreme_values_roundtrip() {
+        let config = IntegrationConfig {
+            enabled: true,
+            memory_write_interval: u64::MAX,
+            social_reward_weight: 1.0,
+            meta_learning_enabled: true,
+            meta_lr: 0.0,
+            curriculum_domains: (0..100).map(|i| format!("domain_{i}")).collect(),
+            ..IntegrationConfig::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: IntegrationConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.memory_write_interval, u64::MAX);
+        assert_eq!(deser.curriculum_domains.len(), 100);
+    }
+
+    #[test]
+    fn test_config_toml_roundtrip() {
+        let config = IntegrationConfig::default();
+        let toml_str = toml::to_string(&config).unwrap();
+        let deser: IntegrationConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(deser.memory_write_interval, config.memory_write_interval);
+        assert_eq!(deser.social_reward_weight, config.social_reward_weight);
+    }
 }

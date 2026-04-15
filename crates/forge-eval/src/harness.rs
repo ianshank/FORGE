@@ -300,10 +300,12 @@ mod tests {
     }
 
     fn make_eval_config() -> EvalConfig {
-        let mut config = EvalConfig::default();
-        config.episodes_per_scenario = 3;
-        config.max_steps_per_episode = 20;
-        config.base_seed = 42;
+        let mut config = EvalConfig {
+            episodes_per_scenario: 3,
+            max_steps_per_episode: 20,
+            base_seed: 42,
+            ..EvalConfig::default()
+        };
         config.base_forge_config.world.width = 16;
         config.base_forge_config.world.height = 16;
         config.base_forge_config.agents.num_agents = 1;
@@ -413,5 +415,117 @@ mod tests {
         assert_eq!(result.seed, 42);
         assert!(result.steps > 0);
         assert!(result.truncated || result.terminated);
+    }
+
+    #[test]
+    fn test_eval_harness_config_accessor() {
+        let config = make_eval_config();
+        let harness = EvalHarness::new(config.clone());
+        assert_eq!(
+            harness.config().max_steps_per_episode,
+            config.max_steps_per_episode
+        );
+        assert_eq!(harness.config().base_seed, config.base_seed);
+    }
+
+    #[test]
+    fn test_eval_single_episode_determinism() {
+        let config = make_eval_config();
+        let harness = EvalHarness::new(config.clone());
+        let forge_config = &harness.config().base_forge_config.clone();
+
+        let r1 = harness.run_single_episode(99, forge_config, &|| Box::new(NoopEvalAgent));
+        let r2 = harness.run_single_episode(99, forge_config, &|| Box::new(NoopEvalAgent));
+
+        assert_eq!(r1.steps, r2.steps, "same seed should produce same steps");
+        assert!(
+            (r1.total_reward - r2.total_reward).abs() < f64::EPSILON,
+            "same seed should produce same reward"
+        );
+        assert_eq!(r1.success, r2.success);
+    }
+
+    #[test]
+    fn test_eval_different_seeds_differ() {
+        let config = make_eval_config();
+        let harness = EvalHarness::new(config.clone());
+        let forge_config = &harness.config().base_forge_config.clone();
+
+        let r1 = harness.run_single_episode(0, forge_config, &|| Box::new(NoopEvalAgent));
+        let r2 = harness.run_single_episode(12345, forge_config, &|| Box::new(NoopEvalAgent));
+
+        // With different seeds, results are likely different (not guaranteed but very probable).
+        // At minimum, the seed field should differ.
+        assert_ne!(r1.seed, r2.seed);
+    }
+
+    #[test]
+    fn test_eval_episode_result_fields_populated() {
+        let config = make_eval_config();
+        let harness = EvalHarness::new(config.clone());
+        let forge_config = &harness.config().base_forge_config.clone();
+
+        let result = harness.run_single_episode(42, forge_config, &|| Box::new(NoopEvalAgent));
+        assert!(result.mean_decision_time_ms >= 0.0);
+        assert!(result.total_reward.is_finite());
+    }
+
+    #[test]
+    fn test_eval_scorecard_scenario_results_nonempty() {
+        let config = make_eval_config();
+        let harness = EvalHarness::new(config);
+        let scorecard = harness.evaluate(&|| Box::new(NoopEvalAgent));
+
+        assert!(!scorecard.scenario_results.is_empty());
+        assert_eq!(scorecard.scenario_results[0].scenario_id, "default");
+        assert_eq!(scorecard.scenario_results[0].tier, 1);
+        assert_eq!(scorecard.scenario_results[0].episodes.len(), 3);
+    }
+
+    #[test]
+    fn test_eval_scorecard_tier_scores_sorted() {
+        let config = make_eval_config();
+        let harness = EvalHarness::new(config);
+        let scorecard = harness.evaluate(&|| Box::new(NoopEvalAgent));
+
+        for window in scorecard.tier_scores.windows(2) {
+            assert!(
+                window[0].tier <= window[1].tier,
+                "tier scores should be sorted ascending"
+            );
+        }
+    }
+
+    #[test]
+    fn test_eval_scorecard_wall_clock_positive() {
+        let config = make_eval_config();
+        let harness = EvalHarness::new(config);
+        let scorecard = harness.evaluate(&|| Box::new(NoopEvalAgent));
+
+        assert!(
+            scorecard.summary.wall_clock_seconds > 0.0,
+            "wall clock time should be positive"
+        );
+    }
+
+    #[test]
+    fn test_eval_single_episode_config() {
+        let mut config = make_eval_config();
+        config.episodes_per_scenario = 1;
+        let harness = EvalHarness::new(config);
+        let scorecard = harness.evaluate(&|| Box::new(NoopEvalAgent));
+
+        assert_eq!(scorecard.summary.total_episodes, 1);
+    }
+
+    #[test]
+    fn test_eval_harness_base_seed_wrapping() {
+        let mut config = make_eval_config();
+        config.base_seed = u64::MAX - 1;
+        config.episodes_per_scenario = 5;
+        let harness = EvalHarness::new(config);
+        // Should not panic — seeds wrap using wrapping_add.
+        let scorecard = harness.evaluate(&|| Box::new(NoopEvalAgent));
+        assert_eq!(scorecard.summary.total_episodes, 5);
     }
 }

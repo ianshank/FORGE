@@ -270,8 +270,10 @@ mod tests {
     use super::*;
 
     fn small_config() -> ExpertDemoConfig {
-        let mut cfg = ExpertDemoConfig::default();
-        cfg.max_steps = 15;
+        let mut cfg = ExpertDemoConfig {
+            max_steps: 15,
+            ..ExpertDemoConfig::default()
+        };
         cfg.forge_config.world.width = 16;
         cfg.forge_config.world.height = 16;
         cfg.mcts_config.num_simulations = 4;
