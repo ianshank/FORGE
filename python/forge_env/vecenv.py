@@ -55,6 +55,7 @@ __all__ = [
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _stack_obs(obs_list: list[dict[str, Any]]) -> dict[str, Any]:
     """Stack a list of per-env observation dicts into batched arrays.
 
@@ -192,7 +193,13 @@ class ForgeSyncVecEnv:
     def step(
         self,
         actions: NDArray[np.intp],
-    ) -> tuple[dict[str, Any], NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_], list[dict[str, Any]]]:
+    ) -> tuple[
+        dict[str, Any],
+        NDArray[np.float64],
+        NDArray[np.bool_],
+        NDArray[np.bool_],
+        list[dict[str, Any]],
+    ]:
         """Step all environments with the given per-env actions.
 
         Args:
@@ -340,7 +347,13 @@ class ForgeAsyncVecEnv:
     def step(
         self,
         actions: NDArray[np.intp],
-    ) -> tuple[dict[str, Any], NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_], list[dict[str, Any]]]:
+    ) -> tuple[
+        dict[str, Any],
+        NDArray[np.float64],
+        NDArray[np.bool_],
+        NDArray[np.bool_],
+        list[dict[str, Any]],
+    ]:
         """Step all environments asynchronously.
 
         Args:
@@ -473,7 +486,8 @@ def make_forge_vec_env(
         raise ValueError(f"n_envs must be >= 1, got {n_envs}")
     if ForgeGymnasiumEnv is None:
         raise ImportError(
-            "ForgeGymnasiumEnv is unavailable. Build with: cd crates/forge-python && maturin develop"
+            "ForgeGymnasiumEnv is unavailable. "
+            "Build with: cd crates/forge-python && maturin develop"
         )
 
     def _make_single(env_seed: int) -> Callable[[], Any]:

@@ -1,4 +1,5 @@
 """Stage-based MangoMAS drone training pipeline foundations."""
+
 from __future__ import annotations
 
 import json
@@ -238,7 +239,9 @@ class MangoMASDroneTrainingPipeline:
         if artifact is not None:
             stage_artifacts["bdi"] = artifact
         if self._should_stop(stage_result.name, stop_after_stage):
-            return self._finalize_run(run_dir, export_dir, resolved_seed, stage_results, stage_artifacts)
+            return self._finalize_run(
+                run_dir, export_dir, resolved_seed, stage_results, stage_artifacts
+            )
 
         stage_result, artifact = self._run_constitutional_stage(
             collected_data,
@@ -249,14 +252,18 @@ class MangoMASDroneTrainingPipeline:
         if artifact is not None:
             stage_artifacts["constitutional"] = artifact
         if self._should_stop(stage_result.name, stop_after_stage):
-            return self._finalize_run(run_dir, export_dir, resolved_seed, stage_results, stage_artifacts)
+            return self._finalize_run(
+                run_dir, export_dir, resolved_seed, stage_results, stage_artifacts
+            )
 
         stage_result, artifact = self._run_rssm_stage(collected_data, run_dir, resolved_seed)
         stage_results.append(stage_result)
         if artifact is not None:
             stage_artifacts["rssm"] = artifact
         if self._should_stop(stage_result.name, stop_after_stage):
-            return self._finalize_run(run_dir, export_dir, resolved_seed, stage_results, stage_artifacts)
+            return self._finalize_run(
+                run_dir, export_dir, resolved_seed, stage_results, stage_artifacts
+            )
 
         stage_result, artifact = self._run_curiosity_stage(
             run_dir,
@@ -267,14 +274,18 @@ class MangoMASDroneTrainingPipeline:
         if artifact is not None:
             stage_artifacts["curiosity"] = artifact
         if self._should_stop(stage_result.name, stop_after_stage):
-            return self._finalize_run(run_dir, export_dir, resolved_seed, stage_results, stage_artifacts)
+            return self._finalize_run(
+                run_dir, export_dir, resolved_seed, stage_results, stage_artifacts
+            )
 
         stage_result, artifact = self._run_sweep_stage(run_dir, resolved_seed, sweep_evaluate_fn)
         stage_results.append(stage_result)
         if artifact is not None:
             stage_artifacts["sweep"] = artifact
         if self._should_stop(stage_result.name, stop_after_stage):
-            return self._finalize_run(run_dir, export_dir, resolved_seed, stage_results, stage_artifacts)
+            return self._finalize_run(
+                run_dir, export_dir, resolved_seed, stage_results, stage_artifacts
+            )
 
         stage_result, artifact = self._run_curriculum_stage(
             run_dir,
@@ -285,9 +296,13 @@ class MangoMASDroneTrainingPipeline:
         if artifact is not None:
             stage_artifacts["curriculum"] = artifact
         if self._should_stop(stage_result.name, stop_after_stage):
-            return self._finalize_run(run_dir, export_dir, resolved_seed, stage_results, stage_artifacts)
+            return self._finalize_run(
+                run_dir, export_dir, resolved_seed, stage_results, stage_artifacts
+            )
 
-        return self._finalize_run(run_dir, export_dir, resolved_seed, stage_results, stage_artifacts)
+        return self._finalize_run(
+            run_dir, export_dir, resolved_seed, stage_results, stage_artifacts
+        )
 
     def _should_stop(self, stage_name: str, stop_after_stage: str) -> bool:
         return bool(stop_after_stage) and stage_name == stop_after_stage

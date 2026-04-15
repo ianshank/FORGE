@@ -105,7 +105,8 @@ class TaskTierCurriculum:
             raise ValueError(msg)
         self._rng = random.Random(self.config.seed)
         logger.info(
-            "TaskTierCurriculum initialised with %d stages", len(self._stages),
+            "TaskTierCurriculum initialised with %d stages",
+            len(self._stages),
         )
 
     def current_stage(self, step: int) -> CurriculumStage:
@@ -136,6 +137,8 @@ class TaskTierCurriculum:
         """
         stage = self.current_stage(current_step)
         chosen = self._rng.choices(
-            stage.task_tiers, weights=stage.tier_weights, k=1,
+            stage.task_tiers,
+            weights=stage.tier_weights,
+            k=1,
         )
         return chosen[0]

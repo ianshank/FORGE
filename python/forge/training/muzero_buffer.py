@@ -11,6 +11,7 @@ Usage::
     buffer.save_game(game_history)
     batch = buffer.sample_batch(batch_size=256, num_unroll_steps=5)
 """
+
 from __future__ import annotations
 
 __all__ = ["GameHistory", "MuZeroBufferConfig", "MuZeroReplayBuffer"]
@@ -69,7 +70,8 @@ class GameHistory:
         if n_obs != n_act + 1:
             logger.warning(
                 "GameHistory: observations (%d) != actions (%d) + 1",
-                n_obs, n_act,
+                n_obs,
+                n_act,
             )
             return False
         if len(self.rewards) != n_act:
@@ -157,7 +159,9 @@ class MuZeroReplayBuffer:
 
         logger.debug(
             "Saved game: length=%d, total_games=%d, total_steps=%d",
-            history.length, len(self._games), self._total_steps,
+            history.length,
+            len(self._games),
+            self._total_steps,
         )
 
     def sample_batch(
@@ -196,7 +200,7 @@ class MuZeroReplayBuffer:
 
         # Priority-based game selection
         priorities = np.array(self._priorities, dtype=np.float64)
-        priorities = priorities ** self._config.priority_alpha
+        priorities = priorities**self._config.priority_alpha
         game_probs = priorities / priorities.sum()
 
         observations = []
@@ -212,7 +216,7 @@ class MuZeroReplayBuffer:
             game = self._games[game_idx]
 
             # Select position within game
-            pos = self._rng.integers(0, max(1, game.length))
+            pos = int(self._rng.integers(0, max(1, game.length)))
 
             obs, game_actions, game_target_values, game_target_rewards, game_target_policies = (
                 self._sample_single_position(game, pos, num_unroll_steps, td_steps, discount)
@@ -242,9 +246,7 @@ class MuZeroReplayBuffer:
             "weights": weights_arr,
         }
 
-    def update_priorities(
-        self, game_indices: list[int], new_priorities: list[float]
-    ) -> None:
+    def update_priorities(self, game_indices: list[int], new_priorities: list[float]) -> None:
         """Update priorities for specific games.
 
         Args:
@@ -286,9 +288,7 @@ class MuZeroReplayBuffer:
             step = pos + k
 
             if step < game.length:
-                value = self._compute_n_step_return(
-                    game, step, td_steps, discount
-                )
+                value = self._compute_n_step_return(game, step, td_steps, discount)
                 game_target_values.append(value)
             else:
                 game_target_values.append(0.0)
@@ -307,14 +307,8 @@ class MuZeroReplayBuffer:
                 policy = visits / total if total > 0 else np.ones_like(visits) / len(visits)
                 game_target_policies.append(policy)
             else:
-                action_dim = (
-                    len(game.child_visits[0])
-                    if game.child_visits
-                    else 1
-                )
-                game_target_policies.append(
-                    np.ones(action_dim, dtype=np.float32) / action_dim
-                )
+                action_dim = len(game.child_visits[0]) if game.child_visits else 1
+                game_target_policies.append(np.ones(action_dim, dtype=np.float32) / action_dim)
 
         return obs, game_actions, game_target_values, game_target_rewards, game_target_policies
 
@@ -341,11 +335,11 @@ class MuZeroReplayBuffer:
             step = position + i
             if step >= game.length:
                 break
-            value += (discount ** i) * game.rewards[step]
+            value += (discount**i) * game.rewards[step]
 
         # Bootstrap from the value at the end of the n-step window
         bootstrap_pos = position + td_steps
         if bootstrap_pos < len(game.root_values):
-            value += (discount ** td_steps) * game.root_values[bootstrap_pos]
+            value += (discount**td_steps) * game.root_values[bootstrap_pos]
 
         return value

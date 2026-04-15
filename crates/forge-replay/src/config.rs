@@ -67,4 +67,42 @@ mod tests {
         assert!(deser.include_reasoning);
         assert_eq!(deser.format_version, 2);
     }
+
+    #[test]
+    fn test_config_bincode_roundtrip() {
+        let config = ReplayConfig {
+            record_compact: false,
+            record_trajectories: true,
+            include_reasoning: true,
+            format_version: 1,
+        };
+        let bytes = bincode::serialize(&config).unwrap();
+        let deser: ReplayConfig = bincode::deserialize(&bytes).unwrap();
+        assert!(!deser.record_compact);
+        assert!(deser.record_trajectories);
+        assert!(deser.include_reasoning);
+    }
+
+    #[test]
+    fn test_config_debug_impl() {
+        let config = ReplayConfig::default();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("ReplayConfig"));
+        assert!(debug_str.contains("record_compact"));
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config = ReplayConfig {
+            record_compact: false,
+            record_trajectories: true,
+            include_reasoning: true,
+            format_version: 42,
+        };
+        let cloned = config.clone();
+        assert_eq!(cloned.record_compact, config.record_compact);
+        assert_eq!(cloned.record_trajectories, config.record_trajectories);
+        assert_eq!(cloned.include_reasoning, config.include_reasoning);
+        assert_eq!(cloned.format_version, config.format_version);
+    }
 }

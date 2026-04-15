@@ -3,6 +3,7 @@
 Orchestrates parameter grid sweeps via FORGE's high-throughput simulation,
 evaluates configurations, and exports optimal settings.
 """
+
 from __future__ import annotations
 
 import json
@@ -134,9 +135,7 @@ class MCTSSweepRunner:
         results: list[SweepResult] = []
 
         for i, config in enumerate(param_grid):
-            mean_r, std_r, plan_t = evaluate_fn(
-                config, self.config.episodes_per_config
-            )
+            mean_r, std_r, plan_t = evaluate_fn(config, self.config.episodes_per_config)
             result = SweepResult(
                 config=config,
                 mean_reward=mean_r,
@@ -169,15 +168,23 @@ class MCTSSweepRunner:
         for config in grid:
             mr, sr, pt = evaluate_puct_fn(config, self.config.episodes_per_config)
             puct_results.append(
-                SweepResult(config=config, mean_reward=mr, std_reward=sr,
-                            mean_planning_time_us=pt,
-                            episodes_run=self.config.episodes_per_config)
+                SweepResult(
+                    config=config,
+                    mean_reward=mr,
+                    std_reward=sr,
+                    mean_planning_time_us=pt,
+                    episodes_run=self.config.episodes_per_config,
+                )
             )
             mr, sr, pt = evaluate_ucb1_fn(config, self.config.episodes_per_config)
             ucb1_results.append(
-                SweepResult(config=config, mean_reward=mr, std_reward=sr,
-                            mean_planning_time_us=pt,
-                            episodes_run=self.config.episodes_per_config)
+                SweepResult(
+                    config=config,
+                    mean_reward=mr,
+                    std_reward=sr,
+                    mean_planning_time_us=pt,
+                    episodes_run=self.config.episodes_per_config,
+                )
             )
 
         puct_best = max(puct_results, key=lambda r: r.mean_reward) if puct_results else None

@@ -90,9 +90,7 @@ class ForgeGymnasiumEnv:
                 ),
                 "health": spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32),
                 "stamina": spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32),
-                "position": spaces.Box(
-                    low=0, high=_UINT16_MAX, shape=(2,), dtype=np.uint16
-                ),
+                "position": spaces.Box(low=0, high=_UINT16_MAX, shape=(2,), dtype=np.uint16),
                 "messages": spaces.Box(
                     low=0,
                     high=_UINT16_MAX,

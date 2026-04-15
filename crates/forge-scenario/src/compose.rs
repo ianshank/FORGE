@@ -278,4 +278,79 @@ mod tests {
         assert!(merged["x"].is_null());
         assert_eq!(merged["y"], 2);
     }
+
+    #[test]
+    fn test_merge_json_values_deep_nested() {
+        let base = serde_json::json!({"a": {"b": {"c": 1, "d": 2}}});
+        let overrides = serde_json::json!({"a": {"b": {"c": 99}}});
+        let merged = merge_json_values(base, overrides);
+        assert_eq!(merged["a"]["b"]["c"], 99);
+        assert_eq!(merged["a"]["b"]["d"], 2);
+    }
+
+    #[test]
+    fn test_merge_json_values_empty_override() {
+        let base = serde_json::json!({"x": 1, "y": 2});
+        let overrides = serde_json::json!({});
+        let merged = merge_json_values(base, overrides);
+        assert_eq!(merged["x"], 1);
+        assert_eq!(merged["y"], 2);
+    }
+
+    #[test]
+    fn test_compose_empty_returns_none() {
+        let empty: Vec<ScenarioConfig> = vec![];
+        let result = compose_scenarios(&empty);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_compose_preserves_last_scenario_meta() {
+        let s1 = ScenarioConfig {
+            scenario: ScenarioMeta {
+                id: "first".into(),
+                name: "First".into(),
+                difficulty_tier: 1,
+                ..default_meta()
+            },
+            forge: ForgeConfig::default(),
+        };
+        let s2 = ScenarioConfig {
+            scenario: ScenarioMeta {
+                id: "second".into(),
+                name: "Second".into(),
+                difficulty_tier: 5,
+                ..default_meta()
+            },
+            forge: ForgeConfig::default(),
+        };
+        let result = compose_scenarios(&[s1, s2]).unwrap();
+        assert_eq!(result.scenario.id, "second");
+        assert_eq!(result.scenario.difficulty_tier, 5);
+    }
+
+    #[test]
+    fn test_merge_forge_configs_override_world_seed() {
+        let mut base = ForgeConfig::default();
+        base.world.seed = 10;
+        let mut overrides = ForgeConfig::default();
+        overrides.world.seed = 42;
+
+        let merged = merge_forge_configs(&base, &overrides);
+        assert_eq!(merged.world.seed, 42);
+    }
+
+    fn default_meta() -> ScenarioMeta {
+        ScenarioMeta {
+            id: String::new(),
+            name: String::new(),
+            description: String::new(),
+            tags: vec![],
+            difficulty_tier: 1,
+            min_agents: 1,
+            max_agents: 1,
+            author: String::new(),
+            version: "1.0".into(),
+        }
+    }
 }

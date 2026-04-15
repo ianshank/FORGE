@@ -6,7 +6,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use forge_core::WorldState;
 use forge_types::config::ForgeConfig;
-use forge_types::grid::Direction;
+use forge_types::grid::{Direction, HexDirection};
 use forge_types::Action;
 
 fn make_config(width: u16, height: u16, num_agents: u32) -> ForgeConfig {
@@ -118,12 +118,66 @@ fn bench_serialization(c: &mut Criterion) {
     group.finish();
 }
 
+fn make_hex_config(width: u16, height: u16, num_agents: u32) -> ForgeConfig {
+    let mut config = make_config(width, height, num_agents);
+    config.world.grid_type = forge_types::config::GridType::Hex;
+    config
+}
+
+fn bench_step_hex_single_agent(c: &mut Criterion) {
+    let mut group = c.benchmark_group("step_hex_single_agent");
+
+    for size in [16u16, 32, 64, 128] {
+        let config = make_hex_config(size, size, 1);
+        let mut world = WorldState::new(config).unwrap();
+        let actions = vec![Action::MoveHex(HexDirection::E)];
+
+        group.bench_with_input(
+            BenchmarkId::new("grid_size", format!("{}x{}", size, size)),
+            &size,
+            |b, _| {
+                b.iter(|| {
+                    black_box(world.step(&actions));
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_step_hex_multi_agent(c: &mut Criterion) {
+    let mut group = c.benchmark_group("step_hex_multi_agent");
+
+    for num_agents in [1u32, 2, 4, 8] {
+        let config = make_hex_config(64, 64, num_agents);
+        let mut world = WorldState::new(config).unwrap();
+        let actions: Vec<Action> = (0..num_agents)
+            .map(|i| Action::MoveHex(HexDirection::from_index((i % 6) as u8).unwrap()))
+            .collect();
+
+        group.bench_with_input(
+            BenchmarkId::new("num_agents", num_agents),
+            &num_agents,
+            |b, _| {
+                b.iter(|| {
+                    black_box(world.step(&actions));
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_step_single_agent,
     bench_step_multi_agent,
     bench_step_noop,
     bench_world_creation,
-    bench_serialization
+    bench_serialization,
+    bench_step_hex_single_agent,
+    bench_step_hex_multi_agent
 );
 criterion_main!(benches);

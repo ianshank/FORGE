@@ -9,8 +9,8 @@
 use std::sync::Arc;
 
 use forge_core::WorldState;
-use forge_types::config::ForgeConfig;
-use forge_types::grid::{Direction, Position};
+use forge_types::config::{ForgeConfig, GridType};
+use forge_types::grid::{Direction, HexDirection, Position};
 use forge_types::resource::{ItemType, RecipeBook, ResourceNode};
 use forge_types::task::{ActiveTask, Predicate, TaskComposition, TaskDefinition, TaskTier};
 use forge_types::validation::validate_config;
@@ -987,4 +987,188 @@ fn test_drone_observation_fields() {
     let obs = &result.observations[0];
     assert_eq!(obs.altitude, 1, "observation should reflect altitude 1");
     assert!(obs.battery < 1.0, "battery should have decreased");
+}
+
+// ---------------------------------------------------------------------------
+// Hex grid integration tests
+// ---------------------------------------------------------------------------
+
+/// Creates a hex-mode config with the given number of agents.
+fn make_hex_config(num_agents: u32, seed: u64) -> ForgeConfig {
+    let mut config = make_config(num_agents, seed);
+    config.world.grid_type = GridType::Hex;
+    config
+}
+
+/// Full episode on a hex grid: reset, step through all six hex directions,
+/// verify observations, rewards, and state consistency.
+#[test]
+fn test_hex_episode_full_cycle() {
+    let config = make_hex_config(1, 42);
+    let mut state = WorldState::new(config).unwrap();
+
+    let reset_result = state.reset(Some(42));
+    assert_eq!(reset_result.observations.len(), 1);
+    assert!(!reset_result.terminated);
+    assert!(!reset_result.truncated);
+
+    // Step through all six hex directions in order
+    for (tick, hex_dir) in HexDirection::ALL.iter().enumerate() {
+        let result = state.step(&[Action::MoveHex(*hex_dir)]);
+
+        assert_eq!(
+            result.observations.len(),
+            1,
+            "observation count mismatch at hex tick {}",
+            tick
+        );
+        assert_eq!(
+            result.rewards.len(),
+            1,
+            "reward count mismatch at hex tick {}",
+            tick
+        );
+        assert_eq!(state.tick, (tick + 1) as u64);
+        assert!(
+            state.agents[0].alive,
+            "agent died unexpectedly at hex tick {}",
+            tick
+        );
+    }
+
+    // Continue with Noop steps to verify stability
+    for _ in 0..50 {
+        let result = state.step(&[Action::Noop]);
+        assert_eq!(result.observations.len(), 1);
+        assert!(state.agents[0].alive);
+    }
+
+    assert!(!state.terminated);
+    assert!(!state.truncated);
+}
+
+/// Deterministic replay on hex grid: same seed + hex actions = identical state.
+#[test]
+fn test_hex_deterministic_replay() {
+    let seed = 54321u64;
+    let hex_actions: Vec<Vec<Action>> = vec![
+        vec![Action::MoveHex(HexDirection::NE)],
+        vec![Action::MoveHex(HexDirection::E)],
+        vec![Action::MoveHex(HexDirection::SE)],
+        vec![Action::MoveHex(HexDirection::SW)],
+        vec![Action::MoveHex(HexDirection::W)],
+        vec![Action::MoveHex(HexDirection::NW)],
+        vec![Action::Noop],
+    ];
+
+    // First run
+    let mut state1 = WorldState::new(make_hex_config(1, seed)).unwrap();
+    state1.reset(Some(seed));
+    let mut results1 = Vec::new();
+    for actions in &hex_actions {
+        results1.push(state1.step(actions));
+    }
+
+    // Second run
+    let mut state2 = WorldState::new(make_hex_config(1, seed)).unwrap();
+    state2.reset(Some(seed));
+    let mut results2 = Vec::new();
+    for actions in &hex_actions {
+        results2.push(state2.step(actions));
+    }
+
+    assert_eq!(state1.tick, state2.tick, "tick mismatch");
+    assert_eq!(
+        state1.agents[0].position, state2.agents[0].position,
+        "position mismatch"
+    );
+    assert_eq!(
+        state1.agents[0].health, state2.agents[0].health,
+        "health mismatch"
+    );
+    for (i, (r1, r2)) in results1.iter().zip(results2.iter()).enumerate() {
+        assert_eq!(
+            r1.terminated, r2.terminated,
+            "terminated mismatch at step {}",
+            i
+        );
+    }
+}
+
+/// Multi-agent hex episode: 3 agents each take different hex directions.
+#[test]
+fn test_hex_multi_agent_episode() {
+    let config = make_hex_config(3, 99);
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(99));
+
+    assert_eq!(state.agents.len(), 3);
+
+    let actions = vec![
+        Action::MoveHex(HexDirection::NE),
+        Action::MoveHex(HexDirection::SE),
+        Action::MoveHex(HexDirection::W),
+    ];
+
+    let result = state.step(&actions);
+
+    assert_eq!(result.observations.len(), 3);
+    assert_eq!(result.rewards.len(), 3);
+    assert_eq!(result.info.agents_alive.len(), 3);
+
+    for (i, obs) in result.observations.iter().enumerate() {
+        let expected_side = 2 * state.agents[i].vision_radius as u16 + 1;
+        assert_eq!(
+            obs.view_width, expected_side,
+            "view_width mismatch for hex agent {}",
+            i
+        );
+        assert_eq!(
+            obs.view_height, expected_side,
+            "view_height mismatch for hex agent {}",
+            i
+        );
+    }
+}
+
+/// Square Move actions on hex grid should be treated as Noop (no crash).
+#[test]
+fn test_hex_grid_ignores_square_move() {
+    let config = make_hex_config(1, 42);
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    let pos_before = state.agents[0].position;
+
+    // Square Move on hex grid should not crash and should not move
+    let result = state.step(&[Action::Move(Direction::Right)]);
+    assert!(result.observations.len() == 1);
+    assert_eq!(
+        state.agents[0].position, pos_before,
+        "square Move should be no-op on hex grid"
+    );
+}
+
+/// Hex serialization roundtrip preserves grid type.
+#[test]
+fn test_hex_serialization_roundtrip() {
+    let config = make_hex_config(1, 42);
+    let mut state = WorldState::new(config).unwrap();
+    state.reset(Some(42));
+
+    for hex_dir in &HexDirection::ALL {
+        state.step(&[Action::MoveHex(*hex_dir)]);
+    }
+
+    let bytes = state.to_bytes();
+    let config_arc = Arc::new(state.config.as_ref().clone());
+    let restored = WorldState::from_bytes(&bytes, config_arc).unwrap();
+
+    assert_eq!(restored.tick, state.tick);
+    assert_eq!(restored.agents[0].position, state.agents[0].position);
+    assert_eq!(
+        restored.config.world.grid_type,
+        GridType::Hex,
+        "restored config should preserve hex grid type"
+    );
 }

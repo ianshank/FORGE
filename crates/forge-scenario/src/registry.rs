@@ -464,4 +464,72 @@ difficulty_tier = 1
         });
         assert_eq!(results.len(), 1);
     }
+
+    #[test]
+    fn test_by_tier_no_matches() {
+        let reg = make_populated_registry();
+        let results = reg.by_tier(6);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_by_tag_no_matches() {
+        let reg = make_populated_registry();
+        let results = reg.by_tag("nonexistent_tag");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_empty_registry() {
+        let reg = ScenarioRegistry::new();
+        assert_eq!(reg.len(), 0);
+        assert!(reg.ids().is_empty());
+        assert!(reg.get("anything").is_none());
+    }
+
+    #[test]
+    fn test_search_tier_range() {
+        let reg = make_populated_registry();
+        let results = reg.search(&ScenarioQuery {
+            tier_range: Some((1, 2)),
+            ..Default::default()
+        });
+        // patrol=1, gather=2, coop=2 → 3
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_search_multiple_tags() {
+        let reg = make_populated_registry();
+        // Tags use OR logic — matches scenarios with ANY of the tags
+        let results = reg.search(&ScenarioQuery {
+            tags: vec!["navigation".into(), "cooperation".into()],
+            ..Default::default()
+        });
+        // patrol has "navigation", coop has "navigation" + "cooperation" → 2
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_register_and_get_all_scenarios() {
+        let reg = make_populated_registry();
+        let all = reg.search(&ScenarioQuery::default());
+        for entry in &all {
+            assert!(reg.get(&entry.scenario.id).is_some());
+        }
+    }
+
+    #[test]
+    fn test_by_tier_boundary_values() {
+        let reg = make_populated_registry();
+        // patrol=1, gather=2, coop=2, combat=3
+        let tier1 = reg.by_tier(1);
+        let tier2 = reg.by_tier(2);
+        let tier3 = reg.by_tier(3);
+        let tier4 = reg.by_tier(4);
+        assert_eq!(tier1.len(), 1); // patrol
+        assert_eq!(tier2.len(), 2); // gather + coop
+        assert_eq!(tier3.len(), 1); // combat
+        assert_eq!(tier4.len(), 0); // none
+    }
 }

@@ -925,19 +925,71 @@ Index:  0   1   2   3   4   5   6 ··· 15  16 ··· 25  26 ··· 34  35 36 3
 
 ## CI/CD Pipeline
 
+The CI pipeline runs on every push and pull request targeting `main`, `master`, or `develop`. All jobs run on `ubuntu-latest` with stable Rust and aggressive caching (`Swatinem/rust-cache`, `actions/cache`).
+
+### Job Dependency Graph
+
 ```
   git push / PR
        │
-       ▼
-  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
-  │   fmt    │  │  clippy  │  │   test   │  │  bench   │  │  python  │
-  │          │  │          │  │          │  │          │  │          │
-  │ cargo    │  │ cargo    │  │ cargo    │  │ cargo    │  │ ruff     │
-  │ fmt --   │  │ clippy   │  │ test     │  │ bench    │  │ mypy     │
-  │ check    │  │ -D warn  │  │ --verbose│  │ --no-run │  │ pytest   │
-  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘
-       All run on: ubuntu-latest, stable Rust, with caching
+       ├─────────────────────────────────────────────────────────┐
+       │  Parallel gate jobs (no inter-dependencies)             │
+       ▼                                                         ▼
+  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌──────────────┐  ┌───────────────┐
+  │   fmt    │  │  clippy  │  │   test    │  │    bench     │  │   coverage    │
+  │          │  │          │  │           │  │              │  │               │
+  │ cargo    │  │ cargo    │  │ cargo     │  │ cargo bench  │  │  tarpaulin    │
+  │ fmt --   │  │ clippy   │  │ test      │  │ critcmp Δ<5% │  │  --fail-under │
+  │ check    │  │ -D warn  │  │ --verbose │  │ baseline ↻   │  │  85           │
+  └──────────┘  └──────────┘  └───────────┘  └──────────────┘  └───────────────┘
+       │              │             │
+       │  ┌───────────┤  ┌──────────┤
+       │  │           │  │          │
+       ▼  ▼           ▼  ▼          ▼
+  ┌────────────┐  ┌────────────┐  ┌──────────────┐  ┌────────────────┐
+  │ python-    │  │ python-    │  │ python-test  │  │   demo-ui      │
+  │ lint       │  │ test-fast  │  │ (maturin)    │  │                │
+  │            │  │            │  │              │  │ pytest +       │
+  │ ruff       │  │ pytest     │  │ maturin dev  │  │ health smoke   │
+  │ mypy       │  │ (no native)│  │ --cov ≥85%   │  │                │
+  └────────────┘  └────────────┘  └──────┬───────┘  └────────────────┘
+                                         │
+                  needs: [test, clippy, fmt, python-test]
+                                         │
+                                         ▼
+                                  ┌──────────────┐
+                                  │    docker     │  Only on default
+                                  │              │  branch / tags
+                                  │ GHCR push    │
+                                  │ linux/amd64  │
+                                  │ linux/arm64  │
+                                  └──────────────┘
 ```
+
+### Benchmark Regression Gate
+
+The `bench` job uses `critcmp` to detect performance regressions:
+
+1. Restores the cached baseline from the previous default-branch run
+2. Runs all Criterion benchmarks (forge-bench) and saves as `current`
+3. Compares `current` vs `baseline` with a **5% regression threshold**
+4. On the default branch, the new results become the next baseline
+
+### Docker Multi-Arch Publishing
+
+The `docker` job runs only on the default branch or semantic version tags (`v*`). It builds multi-arch images (`linux/amd64`, `linux/arm64`) using Docker Buildx + QEMU, publishes to GHCR (`ghcr.io/<org>/forge`), and uses GitHub Actions cache (`type=gha`) for layer deduplication.
+
+### Test Infrastructure Summary
+
+| Suite | Tool | Count | Threshold |
+|-------|------|-------|-----------|
+| Rust unit + integration | `cargo test --workspace` | 2,186+ lib, 29 integration | — |
+| Rust coverage | `cargo-tarpaulin` | — | 85% line coverage |
+| Python (native) | `pytest` + `maturin develop` | — | 85% coverage |
+| Python (no native) | `pytest` (fast, no build) | 21+ smoke tests | — |
+| Python lint | `ruff` + `mypy --strict` | 86 source files | 0 errors |
+| Demo UI | `pytest` + health endpoint | — | 200 OK |
+| Benchmarks | `criterion` + `critcmp` | — | <5% regression |
 
 ---
 

@@ -109,6 +109,12 @@ module = [
     "mlflow.*",
     "huggingface_hub",
     "huggingface_hub.*",
+    "minari",
+    "minari.*",
+    "onnxruntime",
+    "onnxruntime.*",
+    "src",
+    "src.*",
 ]
 ignore_missing_imports = true
 # Prevent mypy from descending into third-party source files (e.g. torch uses

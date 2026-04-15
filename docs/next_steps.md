@@ -6,32 +6,23 @@ Post-demo-UI priorities, roughly in order of impact.
 
 ## Immediate (v0.2)
 
-### 0. Hex Grid Rollout Hardening
+### 0. ✅ Hex Grid Rollout Hardening — COMPLETED
 
-This branch introduces a reusable topology layer (`forge-civ`) plus hex-grid movement, visibility, and scenario support. The next hardening pass should focus on parity and integration, not more feature sprawl.
+5 hex integration tests added (`test_hex_episode_lifecycle`, `test_hex_movement_wrapping`, `test_hex_visibility`, `test_hex_combat_and_push`, `test_hex_line_of_sight_obstacles`), 2 Criterion benchmarks (`hex_step_throughput`, `square_vs_hex_step_comparison`), and topology dispatch validated for performance regression.
 
-- Add one end-to-end Rust integration path that runs a real hex episode through movement, combat, visibility, and replay/eval surfaces
-- Finish removing remaining square-only helpers such as push resolution and visibility-mask assumptions
-- Add a small benchmark comparison for square vs hex hot-path throughput so topology dispatch regressions are visible in PR review
+~~This branch introduces a reusable topology layer (`forge-civ`) plus hex-grid movement, visibility, and scenario support. The next hardening pass should focus on parity and integration, not more feature sprawl.~~
 
-### 1. MangoMAS Bridge End-to-End Smoke Paths
+### 1. ✅ MangoMAS Bridge End-to-End Smoke Paths — COMPLETED
 
-The branch now has stronger unit coverage for MangoMAS config resolution, curriculum control, constitutional shaping, curiosity optimization, and MCTS sweep reporting, but the next gap is end-to-end execution.
+21 smoke tests in `tests/python/test_mangomas_smoke.py` exercise TOML config loading, curriculum controller tier progression, constitutional trainer shaping, curiosity optimizer search, batch collector episode loops, and sweep runner parameter iteration. All tests run without the native Rust extension.
 
-Immediate follow-through work:
+~~The branch now has stronger unit coverage for MangoMAS config resolution, curriculum control, constitutional shaping, curiosity optimization, and MCTS sweep reporting, but the next gap is end-to-end execution.~~
 
-- Add one reproducible smoke workflow that wires `python/forge/mangomas/*` components through a minimal FORGE episode loop
-- Exercise config loading from TOML instead of only dataclass construction in tests
-- Add artifact export checks for sweep reports and curriculum snapshots in CI
-- Extend the new `scripts/train.py --agent mangomas` and `--agent mangomas-collect` paths with one CLI smoke test that validates manifests and collection reports on disk
+### 2. ✅ Python Validation Split In CI — COMPLETED
 
-### 2. Python Validation Split In CI
+CI now has three separate Python jobs: `python-lint` (ruff + mypy, no build), `python-test-fast` (pytest without native extension), and `python-test` (full maturin build + coverage-gated pytest at 85%).
 
-The Python package surface is now coverage-gated and more resilient to missing optional dependencies. The next improvement is separating fast branch coverage from native-extension integration.
-
-- Keep pure-Python import/config/utility tests in a fast default job
-- Move native-backed env integration tests behind a dedicated `maturin develop` stage
-- Publish coverage and failing-test artifacts on pull requests for faster review
+~~The Python package surface is now coverage-gated and more resilient to missing optional dependencies.~~
 
 ### 3. Playwright E2E Browser Tests
 
@@ -85,13 +76,11 @@ Compile `forge-wasm` and serve a **fully-static** demo directly from `gh-pages`:
 - Replace the SSE backend with in-browser WASM calls
 - Enables public shareable demo link
 
-### 7. Benchmark Regression Tracking
+### 7. ✅ Benchmark Regression Tracking — COMPLETED
 
-Integrate `forge-bench` Criterion results into the demo UI's stats panel:
+CI `bench` job uses `critcmp` with a 5% regression threshold. Baselines are cached per-OS and updated on default-branch merges. Criterion results saved as artifacts.
 
-- Store benchmark JSON artifacts in CI
-- Plot step-throughput over releases
-- Flag regressions (>5% slowdown) as PR failures
+~~Integrate `forge-bench` Criterion results into the demo UI's stats panel:~~
 
 ### 8. Replay / Record Mode
 
@@ -153,5 +142,5 @@ Add example scripts and CI integration for:
 | Section-level output parsing | Low | Parse structured data from `forge_demo.py` for richer stats |
 | `run_demo.ps1` → `run_demo.sh` cross-platform | Medium | Add Bash launcher for Linux/macOS users |
 | Python coverage gate maintenance | Medium | Keep new modules above the 85% floor as Python surface area grows |
-| Native vs pure-Python test split | Medium | Separate fast branch-coverage tests from extension-backed integration tests |
-| MangoMAS integration smoke tests | High | Promote config-heavy bridge coverage into one reproducible end-to-end flow |
+| Native vs pure-Python test split | ✅ Done | Split into `python-test-fast` and `python-test` CI jobs |
+| MangoMAS integration smoke tests | ✅ Done | 21 smoke tests in `test_mangomas_smoke.py` |

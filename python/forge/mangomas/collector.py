@@ -1,4 +1,5 @@
 """FORGE scenario collection for MangoMAS training pipelines."""
+
 from __future__ import annotations
 
 import json
@@ -96,10 +97,7 @@ class ScenarioCollectionResult:
         config_paths: Sequence[str | Path],
         run_name: str,
     ) -> dict[str, Any]:
-        resolved_by_id = {
-            scenario.scenario_id: scenario
-            for scenario in self.resolved_scenarios
-        }
+        resolved_by_id = {scenario.scenario_id: scenario for scenario in self.resolved_scenarios}
         scenarios: list[dict[str, Any]] = []
         for summary in self.scenario_summaries:
             resolved = resolved_by_id.get(summary.scenario_id)
@@ -153,10 +151,7 @@ class _EpisodeRollout:
 def _copy_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     if value is None:
         return {}
-    return {
-        str(key): _deep_copy(item)
-        for key, item in value.items()
-    }
+    return {str(key): _deep_copy(item) for key, item in value.items()}
 
 
 def _deep_copy(value: Any) -> Any:
@@ -222,16 +217,26 @@ def _resolve_path(identifier: str | Path, search_dirs: Sequence[Path]) -> Path:
 
 
 def _resolve_eval_manifest(path: Path, data: Mapping[str, Any]) -> ResolvedForgeScenario:
-    scenario = _copy_mapping(data.get("scenario") if isinstance(data.get("scenario"), Mapping) else None)
-    forge_config = _copy_mapping(data.get("forge") if isinstance(data.get("forge"), Mapping) else None)
-    scenario_id = str(scenario.get("id") or _normalize_identifier(str(scenario.get("name") or path.stem)))
+    scenario = _copy_mapping(
+        data.get("scenario") if isinstance(data.get("scenario"), Mapping) else None
+    )
+    forge_config = _copy_mapping(
+        data.get("forge") if isinstance(data.get("forge"), Mapping) else None
+    )
+    scenario_id = str(
+        scenario.get("id") or _normalize_identifier(str(scenario.get("name") or path.stem))
+    )
     return ResolvedForgeScenario(
         scenario_id=scenario_id,
         name=str(scenario.get("name") or scenario_id),
         source_path=path,
         difficulty_tier=int(scenario.get("difficulty_tier", 1)),
-        min_agents=int(scenario.get("min_agents", forge_config.get("agents", {}).get("num_agents", 1))),
-        max_agents=int(scenario.get("max_agents", forge_config.get("agents", {}).get("num_agents", 1))),
+        min_agents=int(
+            scenario.get("min_agents", forge_config.get("agents", {}).get("num_agents", 1))
+        ),
+        max_agents=int(
+            scenario.get("max_agents", forge_config.get("agents", {}).get("num_agents", 1))
+        ),
         forge_config=forge_config,
     )
 
@@ -242,7 +247,9 @@ def _resolve_high_level_manifest(path: Path, data: Mapping[str, Any]) -> Resolve
         msg = f"High-level scenario is missing [scenario]: {path}"
         raise ValueError(msg)
 
-    map_data = _copy_mapping(scenario.get("map") if isinstance(scenario.get("map"), Mapping) else None)
+    map_data = _copy_mapping(
+        scenario.get("map") if isinstance(scenario.get("map"), Mapping) else None
+    )
     objectives = _copy_mapping(
         scenario.get("objectives") if isinstance(scenario.get("objectives"), Mapping) else None
     )
@@ -286,7 +293,10 @@ def resolve_forge_scenarios(
     search_dirs: Sequence[str | Path] | None = None,
 ) -> list[ResolvedForgeScenario]:
     """Resolve scenario ids or paths into executable FORGE scenario configs."""
-    resolved_dirs = [Path(directory) for directory in (search_dirs or (DEFAULT_SCENARIO_DIR, DEFAULT_EVAL_REGISTRY_DIR))]
+    resolved_dirs = [
+        Path(directory)
+        for directory in (search_dirs or (DEFAULT_SCENARIO_DIR, DEFAULT_EVAL_REGISTRY_DIR))
+    ]
     resolved: list[ResolvedForgeScenario] = []
     for scenario_ref in scenario_refs:
         path = _resolve_path(scenario_ref, resolved_dirs)
@@ -422,7 +432,9 @@ def _compute_boundary_distance(position: Any, world_width: int, world_height: in
     pos_x = float(position[0])
     pos_y = float(position[1])
     max_distance = max(min(world_width, world_height) / 2.0, 1.0)
-    edge_distance = min(pos_x, pos_y, max(world_width - 1 - pos_x, 0.0), max(world_height - 1 - pos_y, 0.0))
+    edge_distance = min(
+        pos_x, pos_y, max(world_width - 1 - pos_x, 0.0), max(world_height - 1 - pos_y, 0.0)
+    )
     return float(np.clip(edge_distance / max_distance, 0.0, 1.0))
 
 
@@ -439,8 +451,12 @@ def _augment_observation(
     platform: str,
 ) -> dict[str, Any]:
     enriched = {str(key): value for key, value in obs.items()}
-    world = _copy_mapping(env_config.get("world") if isinstance(env_config.get("world"), Mapping) else None)
-    drone = _copy_mapping(env_config.get("drone") if isinstance(env_config.get("drone"), Mapping) else None)
+    world = _copy_mapping(
+        env_config.get("world") if isinstance(env_config.get("world"), Mapping) else None
+    )
+    drone = _copy_mapping(
+        env_config.get("drone") if isinstance(env_config.get("drone"), Mapping) else None
+    )
     world_width = int(world.get("width", 1))
     world_height = int(world.get("height", 1))
     altitude = float(enriched.get("altitude", 0.0))
@@ -710,7 +726,9 @@ def collect_training_data_from_scenarios(
             )
 
         scenario_seed = derive_seed(base_seed, f"scenario:{scenario.scenario_id}")
-        env_config = _prepare_env_config(base_forge_config, scenario, mangomas_config, scenario_seed)
+        env_config = _prepare_env_config(
+            base_forge_config, scenario, mangomas_config, scenario_seed
+        )
         env = build_env(env_config)
 
         try:

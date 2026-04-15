@@ -205,7 +205,9 @@ class MAPPOAgent(BaseAgent):
 
         # Normalize advantages
         if advantages.numel() > 1:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + DEFAULT_REWARD_EPSILON)
+            advantages = (advantages - advantages.mean()) / (
+                advantages.std() + DEFAULT_REWARD_EPSILON
+            )
 
         cfg = self.mappo_config
         n_samples = obs.shape[0]

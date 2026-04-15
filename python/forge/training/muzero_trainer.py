@@ -16,6 +16,7 @@ Usage::
     trainer = MuZeroTrainer(MuZeroTrainerConfig(), model)
     trainer.train(env_factory=lambda: ForgeEnv(config), num_iterations=100)
 """
+
 from __future__ import annotations
 
 __all__ = ["MuZeroTrainer", "MuZeroTrainerConfig"]
@@ -256,8 +257,12 @@ class MuZeroTrainer:
         obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=device)
         actions = torch.as_tensor(batch["actions"], dtype=torch.long, device=device)
         target_values = torch.as_tensor(batch["target_values"], dtype=torch.float32, device=device)
-        target_rewards = torch.as_tensor(batch["target_rewards"], dtype=torch.float32, device=device)
-        target_policies = torch.as_tensor(batch["target_policies"], dtype=torch.float32, device=device)
+        target_rewards = torch.as_tensor(
+            batch["target_rewards"], dtype=torch.float32, device=device
+        )
+        target_policies = torch.as_tensor(
+            batch["target_policies"], dtype=torch.float32, device=device
+        )
 
         self._optimizer.zero_grad()
 
@@ -290,7 +295,9 @@ class MuZeroTrainer:
             value_loss = value_loss + nn.functional.cross_entropy(val_logits, target_val_dist)
 
             log_p = torch.log_softmax(pol_logits, dim=-1)
-            policy_loss = policy_loss + (-torch.mean(torch.sum(target_policies[:, k + 1] * log_p, dim=-1)))
+            policy_loss = policy_loss + (
+                -torch.mean(torch.sum(target_policies[:, k + 1] * log_p, dim=-1))
+            )
 
         scale = 1.0 / (num_steps + 1)
         total_loss = scale * (value_loss + policy_loss + reward_loss)
@@ -365,8 +372,7 @@ class MuZeroTrainer:
 
             elapsed = time.time() - iter_start
             logger.info(
-                "Iteration %d/%d: games=%d, train_steps=%d, "
-                "buffer=%d games, elapsed=%.1fs",
+                "Iteration %d/%d: games=%d, train_steps=%d, buffer=%d games, elapsed=%.1fs",
                 iteration + 1,
                 num_iterations,
                 self._total_games,

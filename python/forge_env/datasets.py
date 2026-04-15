@@ -78,7 +78,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 _DEFAULT_VIEW_SIZE: int = 11
 _DEFAULT_INV_SLOTS: int = 10
-_MAX_STACK_SIZE: float = 64.0   # max item-stack count (for normalisation)
+_MAX_STACK_SIZE: float = 64.0  # max item-stack count (for normalisation)
 _MINECRAFT_MAX_HEALTH: float = 20.0  # Minecraft health scale
 
 # ---------------------------------------------------------------------------
@@ -95,8 +95,8 @@ class ForgeStep:
     """
 
     # Observation components
-    grid_view: NDArray[np.uint8]    # shape (view_h, view_w, 7)
-    inventory: NDArray[np.uint16]    # shape (10, 2)
+    grid_view: NDArray[np.uint8]  # shape (view_h, view_w, 7)
+    inventory: NDArray[np.uint16]  # shape (10, 2)
     health: float
     stamina: float
     position: tuple[int, int]
@@ -104,7 +104,7 @@ class ForgeStep:
     task_progress: NDArray[np.float32]  # shape (n_predicates,)
 
     # Transition
-    action: int              # discrete action id
+    action: int  # discrete action id
     reward: float
     terminated: bool
     truncated: bool
@@ -189,14 +189,16 @@ class ForgeDataset:
     @staticmethod
     def _flatten_obs(step: ForgeStep) -> np.ndarray:
         """Flatten all observation fields into a 1-D float32 vector."""
-        result: np.ndarray = np.concatenate([
-            step.grid_view.flatten().astype(np.float32) / 255.0,
-            step.inventory.flatten().astype(np.float32) / _MAX_STACK_SIZE,
-            np.array([step.health, step.stamina], dtype=np.float32),
-            np.array(step.position, dtype=np.float32),
-            np.array([step.day_phase / 3.0], dtype=np.float32),
-            step.task_progress.astype(np.float32),
-        ])
+        result: np.ndarray = np.concatenate(
+            [
+                step.grid_view.flatten().astype(np.float32) / 255.0,
+                step.inventory.flatten().astype(np.float32) / _MAX_STACK_SIZE,
+                np.array([step.health, step.stamina], dtype=np.float32),
+                np.array(step.position, dtype=np.float32),
+                np.array([step.day_phase / 3.0], dtype=np.float32),
+                step.task_progress.astype(np.float32),
+            ]
+        )
         return result
 
 
@@ -227,15 +229,17 @@ def _parse_forge_jsonl_step(raw: dict[str, Any], tick: int) -> ForgeStep | None:
             flat: list[int] = []
             for tile in grid_raw:
                 if isinstance(tile, dict):
-                    flat.extend([
-                        tile.get("terrain", 0),
-                        int(tile.get("has_agent", False)),
-                        int(tile.get("has_object", False)),
-                        int(tile.get("has_resource", False)),
-                        tile.get("elevation", 0),
-                        tile.get("object_type", 255),
-                        tile.get("resource_type", 255),
-                    ])
+                    flat.extend(
+                        [
+                            tile.get("terrain", 0),
+                            int(tile.get("has_agent", False)),
+                            int(tile.get("has_object", False)),
+                            int(tile.get("has_resource", False)),
+                            tile.get("elevation", 0),
+                            tile.get("object_type", 255),
+                            tile.get("resource_type", 255),
+                        ]
+                    )
                 elif isinstance(tile, (list, tuple)):
                     flat.extend(tile)
                 else:
@@ -259,9 +263,7 @@ def _parse_forge_jsonl_step(raw: dict[str, Any], tick: int) -> ForgeStep | None:
 
         task_prog = obs.get("task_progress", [])
         task_progress = (
-            np.array(task_prog, dtype=np.float32)
-            if task_prog
-            else np.zeros(1, dtype=np.float32)
+            np.array(task_prog, dtype=np.float32) if task_prog else np.zeros(1, dtype=np.float32)
         )
 
         return ForgeStep(
@@ -358,8 +360,7 @@ def load_minari(
     """
     if _minari is None:
         raise ImportError(
-            "minari is required to load Minari datasets. "
-            "Install with: pip install minari"
+            "minari is required to load Minari datasets. Install with: pip install minari"
         ) from None
 
     logger.info("Loading Minari dataset %s...", dataset_id)
@@ -382,31 +383,25 @@ def load_minari(
             action = int(episode.actions[t]) if np.isscalar(episode.actions[t]) else 0
             reward = float(episode.rewards[t])
             terminated = (
-                bool(episode.terminations[t])
-                if hasattr(episode, "terminations")
-                else False
+                bool(episode.terminations[t]) if hasattr(episode, "terminations") else False
             )
-            truncated = (
-                bool(episode.truncations[t])
-                if hasattr(episode, "truncations")
-                else False
-            )
+            truncated = bool(episode.truncations[t]) if hasattr(episode, "truncations") else False
 
-            steps.append(ForgeStep(
-                grid_view=np.zeros(
-                    (_DEFAULT_VIEW_SIZE, _DEFAULT_VIEW_SIZE, 7), dtype=np.uint8
-                ),
-                inventory=np.zeros((_DEFAULT_INV_SLOTS, 2), dtype=np.uint16),
-                health=health,
-                stamina=1.0,
-                position=position,
-                day_phase=1,
-                task_progress=np.zeros(1, dtype=np.float32),
-                action=action,
-                reward=reward,
-                terminated=terminated,
-                truncated=truncated,
-            ))
+            steps.append(
+                ForgeStep(
+                    grid_view=np.zeros((_DEFAULT_VIEW_SIZE, _DEFAULT_VIEW_SIZE, 7), dtype=np.uint8),
+                    inventory=np.zeros((_DEFAULT_INV_SLOTS, 2), dtype=np.uint16),
+                    health=health,
+                    stamina=1.0,
+                    position=position,
+                    day_phase=1,
+                    task_progress=np.zeros(1, dtype=np.float32),
+                    action=action,
+                    reward=reward,
+                    terminated=terminated,
+                    truncated=truncated,
+                )
+            )
 
             if max_steps > 0 and len(steps) >= max_steps:
                 break
@@ -444,13 +439,13 @@ _MINERL_CRAFT_MAP: tuple[tuple[str, int], ...] = (
 # Boolean-key action mappings ordered by priority (craft is handled separately).
 # Each entry: (action_dict_key, discrete_action_id)
 _MINERL_BOOL_ACTIONS: tuple[tuple[str, int], ...] = (
-    ("attack", 16),   # Use(slot 0) = weapon
-    ("use", 39),      # Interact
-    ("pickup", 5),    # PickUp
-    ("forward", 1),   # Move(Up)
-    ("back", 2),      # Move(Down)
-    ("left", 3),      # Move(Left)
-    ("right", 4),     # Move(Right)
+    ("attack", 16),  # Use(slot 0) = weapon
+    ("use", 39),  # Interact
+    ("pickup", 5),  # PickUp
+    ("forward", 1),  # Move(Up)
+    ("back", 2),  # Move(Down)
+    ("left", 3),  # Move(Left)
+    ("right", 4),  # Move(Right)
 )
 
 # Craft action base offset in FORGE's discrete action space.
@@ -522,28 +517,27 @@ def load_minerl(
             obs_dict: dict[str, Any] = raw.get("obs") or {}
             health = min(
                 1.0,
-                float(obs_dict.get("health", _MINECRAFT_MAX_HEALTH))
-                / _MINECRAFT_MAX_HEALTH,
+                float(obs_dict.get("health", _MINECRAFT_MAX_HEALTH)) / _MINECRAFT_MAX_HEALTH,
             )
             pos_raw: list[float] = obs_dict.get("position", [0.0, 0.0, 0.0])
             # MineRL uses (x, y, z); map x and z to FORGE (col, row).
             position = (int(pos_raw[0]), int(pos_raw[2]))
 
-            steps.append(ForgeStep(
-                grid_view=np.zeros(
-                    (_DEFAULT_VIEW_SIZE, _DEFAULT_VIEW_SIZE, 7), dtype=np.uint8
-                ),
-                inventory=np.zeros((_DEFAULT_INV_SLOTS, 2), dtype=np.uint16),
-                health=health,
-                stamina=1.0,
-                position=position,
-                day_phase=1,
-                task_progress=np.zeros(1, dtype=np.float32),
-                action=action_id,
-                reward=reward,
-                terminated=terminated,
-                truncated=truncated,
-            ))
+            steps.append(
+                ForgeStep(
+                    grid_view=np.zeros((_DEFAULT_VIEW_SIZE, _DEFAULT_VIEW_SIZE, 7), dtype=np.uint8),
+                    inventory=np.zeros((_DEFAULT_INV_SLOTS, 2), dtype=np.uint16),
+                    health=health,
+                    stamina=1.0,
+                    position=position,
+                    day_phase=1,
+                    task_progress=np.zeros(1, dtype=np.float32),
+                    action=action_id,
+                    reward=reward,
+                    terminated=terminated,
+                    truncated=truncated,
+                )
+            )
 
             if terminated or truncated:
                 ep_count += 1
@@ -617,24 +611,24 @@ def load_maze_jsonl(
                 action_id = _MAZE_DIR_TO_ACTION.get(ch, 0)
                 is_last = i == n - 1
 
-                steps.append(ForgeStep(
-                    grid_view=np.zeros(
-                        (_DEFAULT_VIEW_SIZE, _DEFAULT_VIEW_SIZE, 7),
-                        dtype=np.uint8,
-                    ),
-                    inventory=np.zeros((_DEFAULT_INV_SLOTS, 2), dtype=np.uint16),
-                    health=1.0,
-                    stamina=1.0,
-                    position=(pos[0], pos[1]),
-                    day_phase=1,
-                    task_progress=np.array(
-                        [float(i + 1) / n], dtype=np.float32
-                    ),
-                    action=action_id,
-                    reward=_MAZE_GOAL_REWARD if is_last else _MAZE_STEP_REWARD,
-                    terminated=is_last,
-                    truncated=False,
-                ))
+                steps.append(
+                    ForgeStep(
+                        grid_view=np.zeros(
+                            (_DEFAULT_VIEW_SIZE, _DEFAULT_VIEW_SIZE, 7),
+                            dtype=np.uint8,
+                        ),
+                        inventory=np.zeros((_DEFAULT_INV_SLOTS, 2), dtype=np.uint16),
+                        health=1.0,
+                        stamina=1.0,
+                        position=(pos[0], pos[1]),
+                        day_phase=1,
+                        task_progress=np.array([float(i + 1) / n], dtype=np.float32),
+                        action=action_id,
+                        reward=_MAZE_GOAL_REWARD if is_last else _MAZE_STEP_REWARD,
+                        terminated=is_last,
+                        truncated=False,
+                    )
+                )
 
                 if ch == "U":
                     pos[1] = max(0, pos[1] - 1)

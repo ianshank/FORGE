@@ -15,6 +15,7 @@ Usage::
     agent = MuZeroAgent(AgentConfig(name="muzero"), model)
     action, info = agent.act(observation)
 """
+
 from __future__ import annotations
 
 __all__ = ["MuZeroAgent"]
