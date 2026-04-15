@@ -14,7 +14,10 @@ use crate::error::{CloudResult, StorageError};
 use crate::traits;
 
 /// Sanitizes a storage key to prevent path traversal.
-fn sanitize_key(key: &str) -> Result<&str, StorageError> {
+///
+/// Rejects empty keys and keys containing `..`, `/`, `\`, or NUL.
+/// Used by both local and GCS storage backends.
+pub(crate) fn sanitize_key(key: &str) -> Result<&str, StorageError> {
     if key.contains("..") || key.contains('/') || key.contains('\\') || key.contains('\0') {
         return Err(StorageError::WriteFailed {
             path: key.to_string(),
@@ -173,12 +176,14 @@ impl LocalModelStore {
 
     /// Returns the path to the model binary within a version directory.
     fn model_file(&self, name: &str, version: &str) -> PathBuf {
-        self.version_dir(name, version).join("model.bin")
+        self.version_dir(name, version)
+            .join(crate::constants::MODEL_BINARY_FILENAME)
     }
 
     /// Returns the path to the `latest.txt` tracking file.
     fn latest_file(&self, name: &str) -> PathBuf {
-        self.model_dir(name).join("latest.txt")
+        self.model_dir(name)
+            .join(crate::constants::LATEST_VERSION_FILENAME)
     }
 
     /// Validates model name and version to prevent path traversal.

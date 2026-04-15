@@ -8,11 +8,22 @@
 # Stage 1: Rust builder
 # ---------------------------------------------------------------------------
 FROM rust:1.82-bookworm AS rust-builder
+ARG FEATURES=""
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 # Note: tests/ is intentionally excluded — not needed for cargo build --release
-RUN cargo build --release -p forge-server
+#
+# When FEATURES is set (e.g. "gcs"), build forge-cloud with that feature
+# enabled so feature-gated code is compiled, then build forge-server
+# separately.  Avoid building the whole workspace because unrelated crates
+# (e.g. forge-python) may require extra tooling only installed in Stage 2.
+RUN if [ -n "$FEATURES" ]; then \
+      cargo build --release -p forge-cloud --features "$FEATURES" && \
+      cargo build --release -p forge-server; \
+    else \
+      cargo build --release -p forge-server; \
+    fi
 
 # ---------------------------------------------------------------------------
 # Stage 2: Python wheel builder (separate from runtime to avoid Rust toolchain

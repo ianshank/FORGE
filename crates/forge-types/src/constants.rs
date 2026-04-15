@@ -395,6 +395,18 @@ pub const DEFAULT_CLOUD_CHECKPOINT_PATH: &str = "checkpoints";
 pub const DEFAULT_CLOUD_MODEL_VERSION_RETENTION: u32 = 10;
 /// Default checkpoint interval in training steps.
 pub const DEFAULT_CLOUD_CHECKPOINT_INTERVAL_STEPS: u64 = 1000;
+/// Default storage backend identifier (`"local"` or `"gcs"`).
+pub const DEFAULT_CLOUD_STORAGE_BACKEND: &str = "local";
+/// Default GCS bucket name (empty = unconfigured).
+pub const DEFAULT_CLOUD_GCS_BUCKET: &str = "";
+/// Default key prefix within the GCS bucket.
+pub const DEFAULT_CLOUD_GCS_PREFIX: &str = "forge/";
+/// Default GCP project ID (empty = use ADC default).
+pub const DEFAULT_CLOUD_GCP_PROJECT: &str = "";
+/// Default GCP region.
+pub const DEFAULT_CLOUD_GCP_REGION: &str = "us-central1";
+/// Default GCP service account email (empty = use ADC).
+pub const DEFAULT_CLOUD_GCP_SERVICE_ACCOUNT: &str = "";
 
 // ======================== Edge runtime defaults ========================
 
@@ -423,6 +435,10 @@ pub const DEFAULT_EDGE_LATENCY_EMA_ALPHA: f32 = 0.3;
 pub const DEFAULT_EDGE_UPLOAD_RETRY_COUNT: u32 = 4;
 /// Default base delay in milliseconds for exponential backoff retries.
 pub const DEFAULT_EDGE_UPLOAD_RETRY_BASE_MS: u64 = 2000;
+/// Default GCS bucket for edge model pulls (empty = unconfigured).
+pub const DEFAULT_EDGE_GCS_MODEL_BUCKET: &str = "";
+/// Default GCS prefix for edge model artifacts.
+pub const DEFAULT_EDGE_GCS_MODEL_PREFIX: &str = "forge/models/";
 
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
