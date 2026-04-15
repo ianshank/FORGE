@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 import pytest
 from forge.mangomas.adapters import ActionSpaceAdapter, ObservationAdapter
-from forge.mangomas.batch import BatchCollector, BatchResult, EpisodeData
+from forge.mangomas.batch import BatchCollector, EpisodeData
 from forge.mangomas.bdi_trainer import BDIPreTrainer
 from forge.mangomas.config import MangoMASBridgeConfig
 from forge.mangomas.constitutional_trainer import ConstitutionalPreTrainer
@@ -23,9 +23,11 @@ from forge.mangomas.pipeline import CollectedTrainingData, MangoMASDroneTraining
 from forge.mangomas.rssm_pretrainer import RSSMPreTrainer
 
 CONFIGS_DIR = Path(__file__).resolve().parents[2] / "configs" / "mangomas"
+assert CONFIGS_DIR.exists(), f"MangoMAS config directory not found: {CONFIGS_DIR}"
 
 # Discover all TOML config files dynamically
-_TOML_FILES = sorted(CONFIGS_DIR.glob("*.toml")) if CONFIGS_DIR.exists() else []
+_TOML_FILES = sorted(CONFIGS_DIR.glob("*.toml"))
+assert len(_TOML_FILES) > 0, f"No TOML files found in {CONFIGS_DIR}"
 
 
 # ---------------------------------------------------------------------------

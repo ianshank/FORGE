@@ -986,7 +986,7 @@ The `docker` job runs only on the default branch or semantic version tags (`v*`)
 | Rust unit + integration | `cargo test --workspace` | 2,186+ lib, 29 integration | — |
 | Rust coverage | `cargo-tarpaulin` | — | 85% line coverage |
 | Python (native) | `pytest` + `maturin develop` | — | 85% coverage |
-| Python (no native) | `pytest` (fast, no build) | 21+ smoke tests | — |
+| Python (no native) | `pytest` (fast, no build) | MangoMAS smoke tests | — |
 | Python lint | `ruff` + `mypy --strict` | 86 source files | 0 errors |
 | Demo UI | `pytest` + health endpoint | — | 200 OK |
 | Benchmarks | `criterion` + `critcmp` | — | <5% regression |

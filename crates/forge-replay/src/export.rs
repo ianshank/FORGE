@@ -252,9 +252,8 @@ mod tests {
             .agent_names(vec!["A".into(), "B".into()])
             .build(vec![0.5, 0.3]);
 
-        let dir = std::env::temp_dir().join("forge_test_csv_multi");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("multi_agent.csv");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("multi_agent.csv");
 
         export_to_csv(&traj, &path).unwrap();
 
@@ -264,8 +263,6 @@ mod tests {
         assert_eq!(lines.len(), 3);
         assert!(lines[1].contains(",0,")); // agent_idx 0
         assert!(lines[2].contains(",1,")); // agent_idx 1
-
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -273,9 +270,8 @@ mod tests {
         use crate::trajectory::TrajectoryStep;
 
         let traj = make_test_trajectory();
-        let dir = std::env::temp_dir().join("forge_test_jsonl_rt");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("roundtrip.jsonl");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("roundtrip.jsonl");
 
         export_to_jsonl(&traj, &path).unwrap();
 
@@ -285,8 +281,6 @@ mod tests {
             assert_eq!(step.tick, traj.steps[i].tick);
             assert_eq!(step.actions, traj.steps[i].actions);
         }
-
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -294,9 +288,8 @@ mod tests {
         use crate::trajectory::TrajectoryMetadata;
 
         let traj = make_test_trajectory();
-        let dir = std::env::temp_dir().join("forge_test_meta_rt");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("meta_rt.json");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("meta_rt.json");
 
         export_metadata(&traj, &path).unwrap();
 
@@ -305,22 +298,17 @@ mod tests {
         assert_eq!(meta.seed, traj.metadata.seed);
         assert_eq!(meta.total_steps, traj.metadata.total_steps);
         assert_eq!(meta.final_rewards, traj.metadata.final_rewards);
-
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn test_export_empty_jsonl() {
         let traj = Trajectory::new();
-        let dir = std::env::temp_dir().join("forge_test_empty_jsonl");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("empty.jsonl");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.jsonl");
 
         export_to_jsonl(&traj, &path).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.is_empty());
-
-        let _ = std::fs::remove_file(&path);
     }
 }

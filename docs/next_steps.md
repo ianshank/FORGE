@@ -8,7 +8,7 @@ Post-demo-UI priorities, roughly in order of impact.
 
 ### 0. ✅ Hex Grid Rollout Hardening — COMPLETED
 
-5 hex integration tests added (`test_hex_episode_lifecycle`, `test_hex_movement_wrapping`, `test_hex_visibility`, `test_hex_combat_and_push`, `test_hex_line_of_sight_obstacles`), 2 Criterion benchmarks (`hex_step_throughput`, `square_vs_hex_step_comparison`), and topology dispatch validated for performance regression.
+5 hex integration tests added (`test_hex_episode_full_cycle`, `test_hex_deterministic_replay`, `test_hex_multi_agent_episode`, `test_hex_grid_ignores_square_move`, `test_hex_serialization_roundtrip`), 2 Criterion benchmark groups (`step_hex_single_agent`, `step_hex_multi_agent`), and topology dispatch validated for performance regression.
 
 ~~This branch introduces a reusable topology layer (`forge-civ`) plus hex-grid movement, visibility, and scenario support. The next hardening pass should focus on parity and integration, not more feature sprawl.~~
 

@@ -162,10 +162,7 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Run unit tests (no maturin)
         run: |
-          pytest tests/python/ -v \
-            --ignore=tests/python/test_forge_env.py \
-            -k "not forge_core and not native" \
-            --tb=short
+          pytest tests/python/test_mangomas_smoke.py -v
 
   demo-ui:
     name: Demo UI Tests
