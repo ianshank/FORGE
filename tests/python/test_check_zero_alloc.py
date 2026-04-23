@@ -217,6 +217,67 @@ def test_max_bytes_relaxes_blocks_check(
     assert rc == 0
 
 
+def test_non_integer_field_exits_two(
+    helper_module: ModuleType, tmp_report_dir: Path
+) -> None:
+    """A variant row with a non-integer numeric field is malformed input.
+
+    Surfaces as ``EXIT_INPUT_ERROR`` via the ``_MalformedReport`` sentinel
+    rather than propagating a bare ``TypeError``/``ValueError`` to the
+    shell as an uncaught exception.
+    """
+    report = tmp_report_dir / "bad_type.json"
+    _write_report(
+        report,
+        [
+            {
+                "variant": "Noop",
+                "iters": 100,
+                "total_blocks": "not-an-int",
+                "total_bytes": 0,
+                "peak_live_bytes": 0,
+            }
+        ],
+    )
+    rc = _run_main(helper_module, ["--input", str(report), "--log-level", "ERROR"])
+    assert rc == helper_module.EXIT_INPUT_ERROR
+
+
+def test_null_field_exits_two(
+    helper_module: ModuleType, tmp_report_dir: Path
+) -> None:
+    """A ``null`` numeric field is also malformed input, not a crash."""
+    report = tmp_report_dir / "null_field.json"
+    report.write_text(
+        json.dumps(
+            {
+                "variants": [
+                    {
+                        "variant": "Noop",
+                        "iters": 100,
+                        "total_blocks": None,
+                        "total_bytes": 0,
+                        "peak_live_bytes": 0,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    rc = _run_main(helper_module, ["--input", str(report), "--log-level", "ERROR"])
+    assert rc == helper_module.EXIT_INPUT_ERROR
+
+
+def test_non_object_row_exits_two(
+    helper_module: ModuleType, tmp_report_dir: Path
+) -> None:
+    """A variant row that is not a JSON object is malformed input."""
+    report = tmp_report_dir / "non_object.json"
+    report.write_text(json.dumps({"variants": ["not-a-dict"]}), encoding="utf-8")
+    rc = _run_main(helper_module, ["--input", str(report), "--log-level", "ERROR"])
+    assert rc == helper_module.EXIT_INPUT_ERROR
+
+
 def test_strict_mode_rejects_any_blocks(
     helper_module: ModuleType, tmp_report_dir: Path
 ) -> None:

@@ -120,9 +120,12 @@ pub fn agent_counts(default: &[u32]) -> Vec<u32> {
 mod tests {
     use super::*;
 
-    // Tests mutate process-wide env state, so they must run sequentially.
-    // The default Cargo test harness serialises tests within a module when
-    // they write to shared state if we guard with a mutex.
+    // The tests here mutate process-wide environment state. `ENV_LOCK`
+    // serialises only the tests inside this module that acquire it — it
+    // does not prevent concurrent env-var access from tests elsewhere in
+    // the workspace. State restoration is the responsibility of
+    // `EnvironmentGuard` below, which mirrors the RAII pattern in
+    // `crates/forge-types/src/config.rs:822`.
     use std::sync::Mutex;
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -130,79 +133,115 @@ mod tests {
     const PROBE_SEED: &str = "FORGE_BENCH_SEED_TEST";
     const PROBE_AGENTS: &str = "FORGE_BENCH_AGENTS_TEST";
 
+    /// RAII guard that snapshots an env var on construction and restores
+    /// it on drop — including restoration after a panic. Pattern lifted
+    /// from `forge_types::config` tests so this crate's tests do not
+    /// leak env state into sibling tests sharing the same process.
+    struct EnvironmentGuard {
+        var_name: &'static str,
+        original_value: Option<String>,
+    }
+
+    impl EnvironmentGuard {
+        fn new(var_name: &'static str) -> Self {
+            Self {
+                var_name,
+                original_value: env::var(var_name).ok(),
+            }
+        }
+
+        fn set(&self, value: &str) {
+            env::set_var(self.var_name, value);
+        }
+
+        fn remove(&self) {
+            env::remove_var(self.var_name);
+        }
+    }
+
+    impl Drop for EnvironmentGuard {
+        fn drop(&mut self) {
+            if let Some(value) = &self.original_value {
+                env::set_var(self.var_name, value);
+            } else {
+                env::remove_var(self.var_name);
+            }
+        }
+    }
+
     #[test]
     fn u16_from_env_returns_default_when_unset() {
         let _g = ENV_LOCK.lock().unwrap();
-        // SAFETY: probe variable is test-scoped; we reset it immediately after.
-        env::remove_var(PROBE_WORLD);
+        let guard = EnvironmentGuard::new(PROBE_WORLD);
+        guard.remove();
         assert_eq!(u16_from_env(PROBE_WORLD, 128), 128);
     }
 
     #[test]
     fn u16_from_env_parses_valid_override() {
         let _g = ENV_LOCK.lock().unwrap();
-        env::set_var(PROBE_WORLD, "256");
+        let guard = EnvironmentGuard::new(PROBE_WORLD);
+        guard.set("256");
         assert_eq!(u16_from_env(PROBE_WORLD, 128), 256);
-        env::remove_var(PROBE_WORLD);
     }
 
     #[test]
     fn u16_from_env_falls_back_on_zero() {
         let _g = ENV_LOCK.lock().unwrap();
-        env::set_var(PROBE_WORLD, "0");
+        let guard = EnvironmentGuard::new(PROBE_WORLD);
+        guard.set("0");
         assert_eq!(u16_from_env(PROBE_WORLD, 64), 64);
-        env::remove_var(PROBE_WORLD);
     }
 
     #[test]
     fn u16_from_env_falls_back_on_garbage() {
         let _g = ENV_LOCK.lock().unwrap();
-        env::set_var(PROBE_WORLD, "not-a-number");
+        let guard = EnvironmentGuard::new(PROBE_WORLD);
+        guard.set("not-a-number");
         assert_eq!(u16_from_env(PROBE_WORLD, 32), 32);
-        env::remove_var(PROBE_WORLD);
     }
 
     #[test]
     fn u64_from_env_parses_and_falls_back() {
         let _g = ENV_LOCK.lock().unwrap();
-        env::set_var(PROBE_SEED, "99");
+        let guard = EnvironmentGuard::new(PROBE_SEED);
+        guard.set("99");
         assert_eq!(u64_from_env(PROBE_SEED, 1), 99);
-        env::set_var(PROBE_SEED, "bad");
+        guard.set("bad");
         assert_eq!(u64_from_env(PROBE_SEED, 1), 1);
-        env::remove_var(PROBE_SEED);
     }
 
     #[test]
     fn agent_counts_returns_default_when_unset() {
         let _g = ENV_LOCK.lock().unwrap();
-        env::remove_var(PROBE_AGENTS);
-        // Use the canonical name via agent_counts(); probe through the public
-        // fallback path by clearing the real env var too.
-        env::remove_var(ENV_AGENT_COUNTS);
+        let probe_guard = EnvironmentGuard::new(PROBE_AGENTS);
+        let real_guard = EnvironmentGuard::new(ENV_AGENT_COUNTS);
+        probe_guard.remove();
+        real_guard.remove();
         assert_eq!(agent_counts(&[1, 2, 4]), vec![1, 2, 4]);
     }
 
     #[test]
     fn agent_counts_parses_comma_separated() {
         let _g = ENV_LOCK.lock().unwrap();
-        env::set_var(ENV_AGENT_COUNTS, "1, 8,16, 64 ");
+        let guard = EnvironmentGuard::new(ENV_AGENT_COUNTS);
+        guard.set("1, 8,16, 64 ");
         assert_eq!(agent_counts(&[99]), vec![1, 8, 16, 64]);
-        env::remove_var(ENV_AGENT_COUNTS);
     }
 
     #[test]
     fn agent_counts_drops_invalid_tokens() {
         let _g = ENV_LOCK.lock().unwrap();
-        env::set_var(ENV_AGENT_COUNTS, "1,abc,0,-3,4");
+        let guard = EnvironmentGuard::new(ENV_AGENT_COUNTS);
+        guard.set("1,abc,0,-3,4");
         assert_eq!(agent_counts(&[99]), vec![1, 4]);
-        env::remove_var(ENV_AGENT_COUNTS);
     }
 
     #[test]
     fn agent_counts_falls_back_when_all_invalid() {
         let _g = ENV_LOCK.lock().unwrap();
-        env::set_var(ENV_AGENT_COUNTS, "abc,def,0");
+        let guard = EnvironmentGuard::new(ENV_AGENT_COUNTS);
+        guard.set("abc,def,0");
         assert_eq!(agent_counts(&[7]), vec![7]);
-        env::remove_var(ENV_AGENT_COUNTS);
     }
 }

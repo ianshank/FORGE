@@ -46,6 +46,31 @@ EXIT_VIOLATION: int = 1
 EXIT_INPUT_ERROR: int = 2
 
 
+class _MalformedReport(ValueError):
+    """Raised when a variant row contains a field with an unexpected type.
+
+    Surfaces at the top level so ``main`` can translate it to
+    ``EXIT_INPUT_ERROR`` instead of crashing with an uncaught exception.
+    """
+
+
+def _coerce_int(row: dict[str, Any], key: str, *, default: int = 0) -> int:
+    """Coerce ``row[key]`` to ``int``, raising ``_MalformedReport`` on failure.
+
+    ``int(None)`` / ``int("abc")`` would otherwise bubble up from ``_evaluate``
+    as a bare ``TypeError`` / ``ValueError``. This helper keeps the exit
+    contract (``EXIT_INPUT_ERROR == 2`` for malformed input) honest.
+    """
+    value = row.get(key, default)
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise _MalformedReport(
+            f"variant {row.get('variant', '<unknown>')}: "
+            f"field {key!r} is not an integer (got {value!r})"
+        ) from exc
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -115,10 +140,13 @@ def _evaluate(
     allowed_hits: list[dict[str, Any]] = []
 
     for row in variants:
+        if not isinstance(row, dict):
+            raise _MalformedReport(f"variant row is not an object: {row!r}")
         name = str(row.get("variant", "<unknown>"))
-        total_bytes = int(row.get("total_bytes", 0))
-        total_blocks = int(row.get("total_blocks", 0))
-        iters = int(row.get("iters", 0))
+        total_bytes = _coerce_int(row, "total_bytes")
+        total_blocks = _coerce_int(row, "total_blocks")
+        iters = _coerce_int(row, "iters")
+        peak_live_bytes = _coerce_int(row, "peak_live_bytes")
         # In strict mode (max_bytes == 0) the zero-allocation contract
         # requires `total_blocks` to also be zero. When the operator sets
         # a non-zero `--max-bytes` threshold they are explicitly tolerating
@@ -130,7 +158,7 @@ def _evaluate(
             "iters": iters,
             "total_blocks": total_blocks,
             "total_bytes": total_bytes,
-            "peak_live_bytes": int(row.get("peak_live_bytes", 0)),
+            "peak_live_bytes": peak_live_bytes,
         }
         if not is_violation:
             LOGGER.debug("clean: %s", payload)
@@ -158,7 +186,11 @@ def main() -> int:
         return EXIT_INPUT_ERROR
 
     allow = _build_allow_set(args.allow)
-    violations, allowed_hits = _evaluate(variants, allow, args.max_bytes)
+    try:
+        violations, allowed_hits = _evaluate(variants, allow, args.max_bytes)
+    except _MalformedReport as exc:
+        LOGGER.error("malformed report %s: %s", args.input, exc)
+        return EXIT_INPUT_ERROR
 
     summary: dict[str, Any] = {
         "input": str(args.input),
