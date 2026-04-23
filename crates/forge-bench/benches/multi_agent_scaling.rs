@@ -24,10 +24,10 @@
 //! FORGE_BENCH_WORLD=256 cargo bench -p forge-bench --bench multi_agent_scaling
 //! ```
 
-use std::env;
 use std::sync::Once;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use forge_bench::env::{agent_counts, seed_u64, world_side, BENCH_SEED};
 use forge_core::WorldState;
 use forge_types::config::{ForgeConfig, GridType};
 use forge_types::grid::{Direction, HexDirection};
@@ -48,92 +48,23 @@ fn init_tracing() {
     });
 }
 
-/// Environment variable for overriding the benchmark world side length.
-const ENV_WORLD: &str = "FORGE_BENCH_WORLD";
-/// Environment variable for overriding the comma-separated agent count sweep.
-const ENV_AGENT_COUNTS: &str = "FORGE_BENCH_AGENT_COUNTS";
-/// Environment variable for overriding the deterministic RNG seed.
-const ENV_SEED: &str = "FORGE_BENCH_SEED";
-
-/// Default world side length if no override is provided.
+/// Default world side length for the scaling sweep — chosen larger than the
+/// existing `step_throughput.rs` default so cache-resident effects do not
+/// mask multi-agent scaling cost. Overridable via `FORGE_BENCH_WORLD`.
 const DEFAULT_WORLD_SIDE: u16 = 128;
-/// Default deterministic seed for reproducible benchmarks.
-const DEFAULT_SEED: u64 = 42;
-/// Default agent count sweep designed to expose scaling inflection points.
+/// Default agent-count sweep, designed to expose scaling inflection points
+/// beyond the existing 1/2/4/8 range. Overridable via
+/// `FORGE_BENCH_AGENT_COUNTS`.
 const DEFAULT_AGENT_COUNTS: &[u32] = &[1, 8, 16, 32, 64, 128];
-
-/// Reads the world side length from `FORGE_BENCH_WORLD`, falling back to the
-/// documented default if unset or unparseable.
-fn world_side() -> u16 {
-    match env::var(ENV_WORLD) {
-        Ok(raw) => match raw.parse::<u16>() {
-            Ok(v) if v > 0 => v,
-            Ok(_) | Err(_) => {
-                warn!(
-                    env = ENV_WORLD,
-                    value = %raw,
-                    default = DEFAULT_WORLD_SIDE,
-                    "invalid world side override; using default"
-                );
-                DEFAULT_WORLD_SIDE
-            }
-        },
-        Err(_) => DEFAULT_WORLD_SIDE,
-    }
-}
-
-/// Reads the deterministic seed, falling back to the documented default.
-fn seed() -> u64 {
-    env::var(ENV_SEED)
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(DEFAULT_SEED)
-}
-
-/// Parses the comma-separated agent count sweep, dropping invalid entries
-/// with a warning. Returns the documented default list if no override is set
-/// or every parse fails.
-fn agent_counts() -> Vec<u32> {
-    let Ok(raw) = env::var(ENV_AGENT_COUNTS) else {
-        return DEFAULT_AGENT_COUNTS.to_vec();
-    };
-    let parsed: Vec<u32> = raw
-        .split(',')
-        .filter_map(|s| {
-            let trimmed = s.trim();
-            match trimmed.parse::<u32>() {
-                Ok(n) if n > 0 => Some(n),
-                _ => {
-                    warn!(
-                        env = ENV_AGENT_COUNTS,
-                        token = trimmed,
-                        "ignoring invalid agent-count token"
-                    );
-                    None
-                }
-            }
-        })
-        .collect();
-    if parsed.is_empty() {
-        warn!(
-            env = ENV_AGENT_COUNTS,
-            value = %raw,
-            "no valid agent counts; using default"
-        );
-        DEFAULT_AGENT_COUNTS.to_vec()
-    } else {
-        parsed
-    }
-}
 
 /// Builds a deterministic config for the scaling sweep with the requested
 /// topology and agent count.
 fn make_config(grid: GridType, num_agents: u32) -> ForgeConfig {
     let mut config = ForgeConfig::default();
     config.world.grid_type = grid;
-    config.world.width = world_side();
-    config.world.height = world_side();
-    config.world.seed = seed();
+    config.world.width = world_side(DEFAULT_WORLD_SIDE);
+    config.world.height = world_side(DEFAULT_WORLD_SIDE);
+    config.world.seed = seed_u64(BENCH_SEED);
     config.agents.num_agents = num_agents;
     // Disable episode truncation so the step is measured under steady state
     // rather than occasionally paying episode-reset cost.
@@ -174,8 +105,8 @@ fn hex_actions(num_agents: u32) -> Vec<Action> {
 /// interpretable metric for "how much does adding agents cost?".
 fn bench_scaling(c: &mut Criterion, group_name: &str, grid: GridType) {
     init_tracing();
-    let side = world_side();
-    let counts = agent_counts();
+    let side = world_side(DEFAULT_WORLD_SIDE);
+    let counts = agent_counts(DEFAULT_AGENT_COUNTS);
     info!(
         group = group_name,
         world_side = side,

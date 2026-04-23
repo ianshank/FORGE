@@ -38,6 +38,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use forge_bench::env::{seed_u64, world_side, BENCH_SEED};
 use forge_core::WorldState;
 use forge_types::config::ForgeConfig;
 use forge_types::grid::Direction;
@@ -49,14 +50,10 @@ use tracing_subscriber::EnvFilter;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-/// Environment variable for the audit world side length.
-const ENV_WORLD: &str = "FORGE_BENCH_WORLD";
-/// Environment variable for the audit RNG seed.
-const ENV_SEED: &str = "FORGE_BENCH_SEED";
-/// Default world side length for the audit run.
+/// Default world side length for the audit run — kept smaller than the
+/// scaling bench default because the audit measures a single agent and a
+/// tighter world keeps warm-up cheap. Overridable via `FORGE_BENCH_WORLD`.
 const DEFAULT_WORLD_SIDE: u16 = 64;
-/// Default deterministic seed.
-const DEFAULT_SEED: u64 = 42;
 /// Default warm-up iterations before measurement begins.
 const DEFAULT_WARMUP: u64 = 1024;
 /// Default measured iterations per variant.
@@ -92,20 +89,6 @@ struct AuditReport {
     target: String,
     /// Per-variant allocation rows.
     variants: Vec<VariantReport>,
-}
-
-fn read_u16(var: &str, default: u16) -> u16 {
-    env::var(var)
-        .ok()
-        .and_then(|v| v.parse::<u16>().ok().filter(|n| *n > 0))
-        .unwrap_or(default)
-}
-
-fn read_u64(var: &str, default: u64) -> u64 {
-    env::var(var)
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(default)
 }
 
 /// Minimal argv parser to avoid pulling `clap` into the audit binary.
@@ -209,21 +192,21 @@ fn main() -> ExitCode {
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
     let args = parse_args();
-    let world_side = read_u16(ENV_WORLD, DEFAULT_WORLD_SIDE);
-    let audit_seed = read_u64(ENV_SEED, DEFAULT_SEED);
+    let world = world_side(DEFAULT_WORLD_SIDE);
+    let audit_seed = seed_u64(BENCH_SEED);
 
     info!(
         warmup = args.warmup,
         iters = args.iters,
-        world_side,
+        world_side = world,
         seed = audit_seed,
         out = ?args.out,
         "running allocation audit"
     );
 
     let mut cfg_proto = ForgeConfig::default();
-    cfg_proto.world.width = world_side;
-    cfg_proto.world.height = world_side;
+    cfg_proto.world.width = world;
+    cfg_proto.world.height = world;
     cfg_proto.world.seed = audit_seed;
     cfg_proto.agents.num_agents = 1;
     cfg_proto.task.max_episode_length = 0;
@@ -240,7 +223,7 @@ fn main() -> ExitCode {
         binary: env::current_exe()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| "<unknown>".into()),
-        world_side,
+        world_side: world,
         seed: audit_seed,
         warmup: args.warmup,
         target: format!("{}-{}", env::consts::ARCH, env::consts::OS),
