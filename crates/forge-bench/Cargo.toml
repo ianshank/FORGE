@@ -10,11 +10,22 @@ keywords.workspace = true
 categories.workspace = true
 description = "Performance benchmarks for the FORGE simulation platform"
 
+[features]
+# Enables the `allocation_audit` binary which installs `dhat` as the global
+# allocator. Off by default so normal builds do not link a profiling
+# allocator into the binary.
+dhat-heap = ["dep:dhat"]
+
 [dependencies]
 forge-types = { workspace = true }
 forge-core = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dhat = { version = "0.3", optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -22,3 +33,14 @@ criterion = { workspace = true }
 [[bench]]
 name = "step_throughput"
 harness = false
+
+[[bench]]
+name = "multi_agent_scaling"
+harness = false
+
+[[bin]]
+name = "allocation_audit"
+path = "src/bin/allocation_audit.rs"
+# The binary only exists when the feature is enabled; normal `cargo build
+# -p forge-bench` leaves it out so we don't pay the dhat allocator cost.
+required-features = ["dhat-heap"]
