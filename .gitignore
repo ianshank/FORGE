@@ -101,3 +101,6 @@ mlruns/
 models/
 *.pt
 *.pth
+
+# dhat profiler side-effect file (forge-bench allocation_audit)
+dhat-heap.json
