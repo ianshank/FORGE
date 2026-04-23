@@ -78,8 +78,8 @@ def test_clean_report_exits_zero(
     _write_report(
         report,
         [
-            {"variant": "Noop", "iters": 100, "total_blocks": 0, "total_bytes": 0, "max_bytes": 0},
-            {"variant": "Move", "iters": 100, "total_blocks": 0, "total_bytes": 0, "max_bytes": 0},
+            {"variant": "Noop", "iters": 100, "total_blocks": 0, "total_bytes": 0, "peak_live_bytes": 0},
+            {"variant": "Move", "iters": 100, "total_blocks": 0, "total_bytes": 0, "peak_live_bytes": 0},
         ],
     )
     summary = tmp_report_dir / "summary.json"
@@ -100,13 +100,13 @@ def test_violation_exits_one(
     _write_report(
         report,
         [
-            {"variant": "Noop", "iters": 100, "total_blocks": 0, "total_bytes": 0, "max_bytes": 0},
+            {"variant": "Noop", "iters": 100, "total_blocks": 0, "total_bytes": 0, "peak_live_bytes": 0},
             {
                 "variant": "Move_Up",
                 "iters": 100,
                 "total_blocks": 1000,
                 "total_bytes": 128,
-                "max_bytes": 64,
+                "peak_live_bytes": 64,
             },
         ],
     )
@@ -126,7 +126,7 @@ def test_allowlisted_violation_exits_zero(
                 "iters": 100,
                 "total_blocks": 10,
                 "total_bytes": 64,
-                "max_bytes": 32,
+                "peak_live_bytes": 32,
             }
         ],
     )
@@ -186,7 +186,7 @@ def test_max_bytes_threshold(
     _write_report(
         report,
         [
-            {"variant": "Noop", "iters": 100, "total_blocks": 0, "total_bytes": 32, "max_bytes": 16},
+            {"variant": "Noop", "iters": 100, "total_blocks": 0, "total_bytes": 32, "peak_live_bytes": 16},
         ],
     )
     rc = _run_main(
@@ -196,19 +196,38 @@ def test_max_bytes_threshold(
     assert rc == 0
 
 
-def test_max_bytes_threshold_rejects_blocks(
+def test_max_bytes_relaxes_blocks_check(
     helper_module: ModuleType, tmp_report_dir: Path
 ) -> None:
-    """Non-zero ``total_blocks`` always counts as a violation even under bytes threshold."""
+    """When `--max-bytes > 0` (regression-investigation mode), non-zero
+    `total_blocks` within the byte ceiling is NOT a violation. The strict
+    `total_blocks == 0` contract only applies in the default zero-max-bytes
+    mode."""
     report = tmp_report_dir / "blocks.json"
     _write_report(
         report,
         [
-            {"variant": "Noop", "iters": 100, "total_blocks": 3, "total_bytes": 0, "max_bytes": 0},
+            {"variant": "Noop", "iters": 100, "total_blocks": 3, "total_bytes": 0, "peak_live_bytes": 0},
         ],
     )
     rc = _run_main(
         helper_module,
         ["--input", str(report), "--max-bytes", "999", "--log-level", "ERROR"],
     )
+    assert rc == 0
+
+
+def test_strict_mode_rejects_any_blocks(
+    helper_module: ModuleType, tmp_report_dir: Path
+) -> None:
+    """Default strict mode (`--max-bytes 0`) counts any non-zero
+    `total_blocks` as a violation — the original zero-allocation contract."""
+    report = tmp_report_dir / "strict_blocks.json"
+    _write_report(
+        report,
+        [
+            {"variant": "Noop", "iters": 100, "total_blocks": 1, "total_bytes": 0, "peak_live_bytes": 0},
+        ],
+    )
+    rc = _run_main(helper_module, ["--input", str(report), "--log-level", "ERROR"])
     assert rc == helper_module.EXIT_VIOLATION

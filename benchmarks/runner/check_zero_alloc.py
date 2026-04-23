@@ -119,13 +119,18 @@ def _evaluate(
         total_bytes = int(row.get("total_bytes", 0))
         total_blocks = int(row.get("total_blocks", 0))
         iters = int(row.get("iters", 0))
-        is_violation = total_bytes > max_bytes or total_blocks > 0
+        # In strict mode (max_bytes == 0) the zero-allocation contract
+        # requires `total_blocks` to also be zero. When the operator sets
+        # a non-zero `--max-bytes` threshold they are explicitly tolerating
+        # some allocation for regression investigation, so block count
+        # alone stops counting as a violation.
+        is_violation = total_bytes > max_bytes or (max_bytes == 0 and total_blocks > 0)
         payload: dict[str, Any] = {
             "variant": name,
             "iters": iters,
             "total_blocks": total_blocks,
             "total_bytes": total_bytes,
-            "max_bytes": int(row.get("max_bytes", 0)),
+            "peak_live_bytes": int(row.get("peak_live_bytes", 0)),
         }
         if not is_violation:
             LOGGER.debug("clean: %s", payload)

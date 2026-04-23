@@ -70,8 +70,10 @@ struct VariantReport {
     total_blocks: u64,
     /// Total heap bytes allocated during the measured region.
     total_bytes: u64,
-    /// Maximum live heap bytes observed during the measured region.
-    max_bytes: u64,
+    /// Peak live heap bytes observed during the measured region.
+    /// Named `peak_live_bytes` (not `max_bytes`) to avoid ambiguity with
+    /// the `--max-bytes` threshold flag on the post-processor.
+    peak_live_bytes: u64,
 }
 
 /// Full audit report written to `--out`.
@@ -181,7 +183,7 @@ fn measure_variant(
         iters,
         total_blocks: stats.total_blocks,
         total_bytes: stats.total_bytes,
-        max_bytes: stats.max_bytes as u64,
+        peak_live_bytes: stats.max_bytes as u64,
     }
 }
 
