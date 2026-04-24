@@ -21,7 +21,7 @@
 ## Key Principles
 - **No hard-coded values**: All constants flow through config structs with `Default` impls
 - **Deterministic**: Same seed + actions = identical state. Use `fixed` crate for physics, `rand_pcg` for RNG
-- **Zero allocation on hot path**: `WorldState::step()` must not heap-allocate
+- **Zero allocation on hot path**: `WorldState::step_into(&mut StepResult)` must not heap-allocate after warmup. The convenience `step()` wrapper allocates a fresh `StepResult` per call; reuse a buffer via `step_into` for the zero-alloc contract. Enforced in CI by `crates/forge-bench/src/bin/allocation_audit.rs` + `benchmarks/runner/check_zero_alloc.py`.
 - **Structured logging**: Use `tracing` crate throughout. `#[instrument]` on public functions
 - **Property-based tests**: Use `proptest` for invariant verification alongside unit tests
 

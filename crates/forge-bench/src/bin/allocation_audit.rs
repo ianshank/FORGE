@@ -42,6 +42,7 @@ use forge_bench::env::{seed_u64, world_side, BENCH_SEED};
 use forge_core::WorldState;
 use forge_types::config::ForgeConfig;
 use forge_types::grid::Direction;
+use forge_types::observation::StepResult;
 use forge_types::Action;
 use serde::Serialize;
 use tracing::{info, warn};
@@ -156,6 +157,11 @@ fn audit_variants() -> Vec<(&'static str, Action)> {
 
 /// Runs a warm-up of `warmup` iterations, then a measured `iters` inside
 /// a fresh `dhat::Profiler` so only the measured region counts.
+///
+/// Uses [`WorldState::step_into`] with a single reused [`StepResult`]
+/// buffer — this is the **zero-allocation hot-path entry point**. The
+/// convenience [`WorldState::step`] always allocates a fresh result and
+/// is therefore unsuitable for measuring the contract.
 fn measure_variant(
     name: &str,
     action: &Action,
@@ -165,15 +171,19 @@ fn measure_variant(
 ) -> VariantReport {
     let mut world = WorldState::new(config).expect("WorldState::new must succeed for audit config");
     let actions = vec![action.clone()];
+    let mut result = StepResult::default();
 
-    // Warm caches so allocator churn from first-touch is excluded.
+    // Warm caches so allocator churn from first-touch is excluded. The
+    // warm-up also fills `world.step_actions`, `world.validated_actions`,
+    // `world.physics_scratch`, and the inner `Vec`s of `result` so the
+    // measured region exercises the steady-state, capacity-stable path.
     for _ in 0..warmup {
-        world.step(&actions);
+        world.step_into(&actions, &mut result);
     }
 
     let profiler = dhat::Profiler::new_heap();
     for _ in 0..iters {
-        world.step(&actions);
+        world.step_into(&actions, &mut result);
     }
     let stats = dhat::HeapStats::get();
     drop(profiler); // flush any files dhat writes, though we only read stats.

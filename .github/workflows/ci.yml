@@ -70,6 +70,40 @@ jobs:
           path: target/criterion/current
           key: bench-baseline-${{ runner.os }}
 
+  alloc-audit:
+    name: Allocation Audit (zero-alloc gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build allocation_audit (dhat-heap)
+        run: |
+          cargo build -p forge-bench --bin allocation_audit \
+            --features dhat-heap --release
+      - name: Run audit
+        run: |
+          ./target/release/allocation_audit \
+            --warmup 1024 --iters 10000 \
+            --out alloc_audit.json
+      - name: Verify zero-allocation contract
+        run: |
+          python3 benchmarks/runner/check_zero_alloc.py \
+            --input alloc_audit.json \
+            --max-bytes 0 \
+            --json alloc_audit_summary.json
+      - name: Upload audit artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alloc-audit-report
+          path: |
+            alloc_audit.json
+            alloc_audit_summary.json
+
   coverage:
     name: Rust Coverage (tarpaulin)
     runs-on: ubuntu-latest

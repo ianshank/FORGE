@@ -50,14 +50,21 @@ impl Default for TileObservation {
 }
 
 /// Inventory observation — what the agent carries.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InventoryObservation {
     /// Per-slot: (item_type as u8, count). Empty slots use (`OBS_EMPTY_SLOT_ITEM`, 0).
     pub slots: Vec<(u8, u16)>,
 }
 
 /// Complete observation for a single agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Default` produces an empty observation with zero-length scalar fields and
+/// empty `Vec`s. The default is used as a placeholder slot inside reusable
+/// `StepResult` buffers (see [`crate::observation::StepResult`]) — agents are
+/// observed by mutating the slot in place via `clear` + `extend` on the inner
+/// `Vec`s, so the heap capacity allocated on the first `step` is reused across
+/// every subsequent step on the hot path.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observation {
     /// Ego-centric grid view (partial, based on vision radius).
     /// Flattened: size = (2*vision_radius+1)^2 tiles.
@@ -167,7 +174,14 @@ impl Observation {
 }
 
 /// The result of a single simulation step for one agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Default` produces an empty result that is intended to be filled in place
+/// by [`crate::WorldState::step_into`] (or the equivalent buffer-reusing API
+/// in your binding). Reusing a `StepResult` across steps is what makes the
+/// "zero allocation on hot path" contract hold — see
+/// `crates/forge-bench/src/bin/allocation_audit.rs` for the audit that
+/// gates the contract in CI.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StepResult {
     /// Per-agent observations.
     pub observations: Vec<Observation>,

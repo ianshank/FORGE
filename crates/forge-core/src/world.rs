@@ -3,6 +3,7 @@
 //! `WorldState` holds all simulation data and provides the `step()` and
 //! `reset()` methods that form the core API.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_civ::grid_topology::{GridTopology, GridTopologyKind};
@@ -12,9 +13,7 @@ use forge_types::config::{ForgeConfig, GridType};
 use forge_types::constants::{OBS_EMPTY_SLOT_ITEM, OBS_NO_OBJECT, OBS_NO_RESOURCE};
 use forge_types::entity::{Agent, Object};
 use forge_types::grid::{Grid, Position};
-use forge_types::observation::{
-    InventoryObservation, Observation, StepInfo, StepResult, TileObservation,
-};
+use forge_types::observation::{Observation, StepResult, TileObservation};
 use forge_types::resource::{RecipeBook, ResourceNode};
 use forge_types::task::ActiveTask;
 use forge_types::Action;
@@ -69,6 +68,19 @@ pub struct WorldState {
     pub soil_nodes: Vec<SoilSensorNode>,
     /// Pre-allocated scratch buffers for agricultural systems.
     pub(crate) agri_scratch: AgriScratch,
+    /// Reusable padded actions buffer. Sized to `agents.len()` at the top of
+    /// every step; replaces the per-step `actions.to_vec()` allocation.
+    pub(crate) step_actions: Vec<Action>,
+    /// Reusable validated actions buffer. Filled by `validate_actions` from
+    /// the padded `step_actions` and consumed by every system below.
+    pub(crate) validated_actions: Vec<Action>,
+    /// Reusable per-agent flags from `compute_near_station`.
+    pub(crate) near_station: Vec<bool>,
+    /// Reusable object-id-to-type lookup for `compute_near_station`. Only
+    /// holds entries for the duration of one tick; cleared at the top.
+    pub(crate) crafting_object_map: HashMap<u32, forge_types::entity::ObjectType>,
+    /// Reusable comm message queue for `process_communication`.
+    pub(crate) comm_messages: Vec<(usize, u16)>,
 }
 
 impl WorldState {
@@ -158,6 +170,7 @@ impl WorldState {
             (Vec::new(), Vec::new(), AgriScratch::default())
         };
 
+        let agent_count = agents.len();
         let mut state = Self {
             tick: 0,
             grid,
@@ -177,6 +190,11 @@ impl WorldState {
             crop_states,
             soil_nodes,
             agri_scratch,
+            step_actions: Vec::with_capacity(agent_count),
+            validated_actions: Vec::with_capacity(agent_count),
+            near_station: Vec::with_capacity(agent_count),
+            crafting_object_map: HashMap::new(),
+            comm_messages: Vec::with_capacity(agent_count),
         };
 
         // Place agents on the grid
@@ -197,21 +215,50 @@ impl WorldState {
 
     /// Advances the simulation by one tick with the given actions.
     ///
-    /// Returns a StepResult containing observations, rewards, and termination info.
+    /// Returns a freshly allocated [`StepResult`]. This is the convenience
+    /// API; for the **zero-allocation hot path**, call [`Self::step_into`]
+    /// with a caller-owned, reused `StepResult` buffer instead.
     #[instrument(skip_all)]
     pub fn step(&mut self, actions: &[Action]) -> StepResult {
+        let mut result = StepResult::default();
+        self.step_into(actions, &mut result);
+        result
+    }
+
+    /// Advances the simulation by one tick, filling the supplied
+    /// [`StepResult`] in place.
+    ///
+    /// This is the **hot-path entry point**: every internal buffer used by
+    /// the systems pipeline lives on `WorldState` and is reused across
+    /// ticks; the supplied `result` buffer is also reused (its inner
+    /// `Vec`s are cleared and re-extended rather than reallocated). After
+    /// a single warm-up call, subsequent invocations execute without any
+    /// heap allocations — this contract is enforced in CI by
+    /// `crates/forge-bench/src/bin/allocation_audit.rs` and
+    /// `benchmarks/runner/check_zero_alloc.py`.
+    ///
+    /// Pass an arbitrary `StepResult` (e.g. `StepResult::default()`); on
+    /// the first call the inner buffers will allocate to fit the agent
+    /// count, and every subsequent call will reuse that capacity.
+    #[instrument(skip_all)]
+    pub fn step_into(&mut self, actions: &[Action], result: &mut StepResult) {
         if self.terminated || self.truncated {
-            return self.make_terminal_result();
+            self.fill_step_result(result);
+            return;
         }
 
         trace!(tick = self.tick, num_actions = actions.len(), "step");
 
-        // Pad or truncate actions to match agent count
-        let mut padded_actions = actions.to_vec();
-        padded_actions.resize(self.agents.len(), Action::Noop);
+        // Pad or truncate actions to match agent count, reusing the
+        // pre-allocated `step_actions` buffer.
+        let agent_count = self.agents.len();
+        self.step_actions.clear();
+        let take = actions.len().min(agent_count);
+        self.step_actions.extend_from_slice(&actions[..take]);
+        self.step_actions.resize(agent_count, Action::Noop);
 
         // Run all systems
-        systems::run_systems(self, &padded_actions);
+        systems::run_systems(self);
 
         // Check truncation (max episode length)
         if self.config.task.max_episode_length > 0
@@ -225,8 +272,7 @@ impl WorldState {
             self.terminated = true;
         }
 
-        // Generate observations and result
-        self.make_step_result()
+        self.fill_step_result(result);
     }
 
     /// Resets the simulation to initial state with a new seed.
@@ -258,8 +304,15 @@ impl WorldState {
         self.crop_states = new_state.crop_states;
         self.soil_nodes = new_state.soil_nodes;
         self.agri_scratch.clear();
+        self.step_actions.clear();
+        self.validated_actions.clear();
+        self.near_station.clear();
+        self.crafting_object_map.clear();
+        self.comm_messages.clear();
 
-        self.make_step_result()
+        let mut result = StepResult::default();
+        self.fill_step_result(&mut result);
+        result
     }
 
     /// Synchronizes agent positions to the grid tiles.
@@ -280,16 +333,30 @@ impl WorldState {
 
     /// Generates an observation for a single agent.
     ///
-    /// This constructs an ego-centric grid view and gathers inventory,
-    /// health, stamina, messages, and task progress into an [`Observation`].
-    /// Useful for adapters that need to bridge `WorldState`-based agents
-    /// with the `AgentInterface` trait.
+    /// Convenience wrapper around [`Self::fill_observation`] that allocates
+    /// a fresh [`Observation`]. Use `fill_observation` directly to avoid
+    /// the allocation when filling a reusable buffer.
     pub fn generate_observation(&self, agent: &Agent) -> Observation {
+        let mut obs = Observation::default();
+        self.fill_observation(agent, &mut obs);
+        obs
+    }
+
+    /// Fills an existing [`Observation`] in place from the current state.
+    ///
+    /// The output's inner `Vec`s (`grid_view`, `inventory.slots`, `messages`,
+    /// `task_progress`, `crop_scan_results`, `soil_readings`) are `clear`ed
+    /// and re-extended rather than reallocated. After a single warm call,
+    /// repeated invocations on the same `out` buffer perform no heap
+    /// allocations — this is what keeps `step_into` zero-alloc.
+    pub fn fill_observation(&self, agent: &Agent, out: &mut Observation) {
         let vr = agent.vision_radius as i32;
         let view_side = (2 * vr + 1) as u16;
-        let mut grid_view = Vec::with_capacity((view_side as usize) * (view_side as usize));
+        let cells = (view_side as usize) * (view_side as usize);
         let is_hex = matches!(self.topology, GridTopologyKind::Hex(_));
 
+        out.grid_view.clear();
+        out.grid_view.reserve(cells);
         for dy in -vr..=vr {
             for dx in -vr..=vr {
                 let wx = agent.position.x as i32 + dx;
@@ -313,7 +380,7 @@ impl WorldState {
 
                 if in_disk {
                     let tile = self.grid.get(wx as u16, wy as u16).unwrap();
-                    grid_view.push(TileObservation {
+                    out.grid_view.push(TileObservation {
                         terrain: tile.terrain as u8,
                         elevation: tile.elevation,
                         has_agent: tile.agent_id.is_some(),
@@ -324,7 +391,7 @@ impl WorldState {
                     });
                 } else {
                     // Out of bounds — show as wall
-                    grid_view.push(TileObservation {
+                    out.grid_view.push(TileObservation {
                         terrain: forge_types::TerrainType::Wall as u8,
                         elevation: 0,
                         has_agent: false,
@@ -337,105 +404,109 @@ impl WorldState {
             }
         }
 
-        let inventory = InventoryObservation {
-            slots: agent
-                .inventory
-                .slots
-                .iter()
-                .map(|slot| match slot {
-                    Some(stack) => (stack.item_type as u8, stack.count),
-                    None => (OBS_EMPTY_SLOT_ITEM, 0),
-                })
-                .collect(),
-        };
+        out.view_width = view_side;
+        out.view_height = view_side;
+
+        out.inventory.slots.clear();
+        out.inventory
+            .slots
+            .extend(agent.inventory.slots.iter().map(|slot| match slot {
+                Some(stack) => (stack.item_type as u8, stack.count),
+                None => (OBS_EMPTY_SLOT_ITEM, 0),
+            }));
 
         let max_health = self.config.agents.max_health as f32;
         let max_stamina = self.config.agents.max_stamina as f32;
 
-        Observation {
-            grid_view,
-            view_width: view_side,
-            view_height: view_side,
-            inventory,
-            health: if max_health > 0.0 {
-                agent.health as f32 / max_health
-            } else {
-                0.0
-            },
-            stamina: if max_stamina > 0.0 {
-                agent.stamina as f32 / max_stamina
-            } else {
-                0.0
-            },
-            position: (agent.position.x, agent.position.y),
-            messages: agent.comm_buffer.to_vec(),
-            day_phase: self.day_phase,
-            task_progress: self
-                .tasks
+        out.health = if max_health > 0.0 {
+            agent.health as f32 / max_health
+        } else {
+            0.0
+        };
+        out.stamina = if max_stamina > 0.0 {
+            agent.stamina as f32 / max_stamina
+        } else {
+            0.0
+        };
+        out.position = (agent.position.x, agent.position.y);
+
+        out.messages.clear();
+        out.messages.extend_from_slice(&agent.comm_buffer);
+
+        out.day_phase = self.day_phase;
+
+        out.task_progress.clear();
+        out.task_progress.extend(
+            self.tasks
                 .iter()
-                .map(|t| {
-                    if t.progress.is_empty() {
-                        0.0
-                    } else {
-                        t.progress[0]
-                    }
-                })
-                .collect(),
-            altitude: agent.altitude,
-            battery: if self.config.drone.enabled
-                && agent.morphology == forge_types::entity::AgentMorphology::Aerial
-            {
-                let max = self.config.drone.max_battery as f32;
-                if max > 0.0 {
-                    (agent.battery as f32 / max).clamp(0.0, 1.0)
-                } else {
-                    1.0
-                }
+                .map(|t| t.progress.first().copied().unwrap_or(0.0)),
+        );
+
+        out.altitude = agent.altitude;
+        out.battery = if self.config.drone.enabled
+            && agent.morphology == forge_types::entity::AgentMorphology::Aerial
+        {
+            let max = self.config.drone.max_battery as f32;
+            if max > 0.0 {
+                (agent.battery as f32 / max).clamp(0.0, 1.0)
             } else {
                 1.0
-            },
-            morphology: agent.morphology as u8,
-            heading: agent.heading as u8,
-            crop_scan_results: vec![],
-            soil_readings: vec![],
-            disease_detections: 0,
-            report_ready: false,
-        }
-    }
-
-    /// Generates the StepResult for the current state.
-    fn make_step_result(&mut self) -> StepResult {
-        let observations: Vec<Observation> = self
-            .agents
-            .iter()
-            .map(|agent| self.generate_observation(agent))
-            .collect();
-
-        let rewards = self
-            .last_task_rewards
-            .take()
-            .unwrap_or_else(|| vec![0.0; self.agents.len()]);
-
-        let info = StepInfo {
-            tick: self.tick,
-            agents_alive: self.agents.iter().map(|a| a.alive).collect(),
-            tasks_completed: vec![Vec::new(); self.agents.len()],
-            total_resources: self.resources.iter().map(|r| r.quantity as u32).sum(),
-            day_phase: self.day_phase,
+            }
+        } else {
+            1.0
         };
-
-        StepResult {
-            observations,
-            rewards,
-            terminated: self.terminated,
-            truncated: self.truncated,
-            info,
-        }
+        out.morphology = agent.morphology as u8;
+        out.heading = agent.heading as u8;
+        out.crop_scan_results.clear();
+        out.soil_readings.clear();
+        out.disease_detections = 0;
+        out.report_ready = false;
     }
 
-    /// Generates a terminal StepResult.
-    fn make_terminal_result(&mut self) -> StepResult {
-        self.make_step_result()
+    /// Fills the supplied [`StepResult`] in place from the current state.
+    ///
+    /// The result's inner `Vec`s are reused — `clear`+`extend`/`resize`
+    /// rather than reallocated — so repeated calls with the same `out`
+    /// buffer perform no heap allocations after the first warm call.
+    fn fill_step_result(&mut self, out: &mut StepResult) {
+        let n = self.agents.len();
+
+        // Reuse the existing observation slots; per-slot inner Vecs are
+        // cleared and re-extended by `fill_observation`.
+        if out.observations.len() < n {
+            out.observations.resize_with(n, Observation::default);
+        } else if out.observations.len() > n {
+            out.observations.truncate(n);
+        }
+        for (i, agent) in self.agents.iter().enumerate() {
+            // Safe: bounds guaranteed by the resize above.
+            self.fill_observation(agent, &mut out.observations[i]);
+        }
+
+        // Rewards: prefer the task evaluator's Vec when present (move it
+        // out via take); otherwise zero-fill the reused buffer.
+        out.rewards.clear();
+        match self.last_task_rewards.take() {
+            Some(rewards) => out.rewards.extend_from_slice(&rewards),
+            None => out.rewards.resize(n, 0.0),
+        }
+
+        out.terminated = self.terminated;
+        out.truncated = self.truncated;
+
+        let info = &mut out.info;
+        info.tick = self.tick;
+        info.agents_alive.clear();
+        info.agents_alive
+            .extend(self.agents.iter().map(|a| a.alive));
+        // tasks_completed is currently always per-agent empty inner Vecs
+        // (no system populates it). Resize keeps the outer capacity and
+        // replaces inner Vecs with empty ones — empty Vec::new() does not
+        // allocate, so this is zero-alloc.
+        info.tasks_completed.clear();
+        info.tasks_completed.resize_with(n, Vec::new);
+        info.total_resources = self.resources.iter().map(|r| r.quantity as u32).sum();
+        info.day_phase = self.day_phase;
     }
 
     /// Returns an ASCII debug representation of the world.
@@ -556,6 +627,11 @@ impl WorldState {
             crop_states: Vec::new(),
             soil_nodes: Vec::new(),
             agri_scratch: AgriScratch::default(),
+            step_actions: Vec::new(),
+            validated_actions: Vec::new(),
+            near_station: Vec::new(),
+            crafting_object_map: HashMap::new(),
+            comm_messages: Vec::new(),
         })
     }
 
@@ -610,6 +686,11 @@ impl WorldState {
             crop_states: Vec::new(),
             soil_nodes: Vec::new(),
             agri_scratch: AgriScratch::default(),
+            step_actions: Vec::new(),
+            validated_actions: Vec::new(),
+            near_station: Vec::new(),
+            crafting_object_map: HashMap::new(),
+            comm_messages: Vec::new(),
         })
     }
 }
