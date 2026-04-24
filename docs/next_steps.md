@@ -147,7 +147,7 @@ Add example scripts and CI integration for:
 | Allocation audit (`step_into` zero-alloc invariant) | ✅ Done | `crates/forge-bench/src/bin/allocation_audit.rs` + `benchmarks/runner/check_zero_alloc.py` wired into CI as the `alloc-audit` job; baseline snapshot in `benchmarks/baselines/reference_a/alloc_audit.json` |
 | Multi-agent allocation audit | Medium | Audit runs at `num_agents = 1`. Add an `--agents N` mode and a per-agent-count variant row so per-step costs are exercised under fan-out |
 | `reference_b` hardware profile | Medium | `benchmarks/baselines/reference_b/` is empty; needs a non-CI hardware profile (Apple Silicon laptop or arm64 cloud instance) to be named and snapshot regenerated |
-| Replace `panic!` on enum variants in non-step crates | Medium | ~20 sites in `forge-proposal`, `forge-server/ws_handler.rs`, `forge-mangomas/curriculum/task_mapping.rs`, `forge-types/{task,action}.rs` should become `Result` returns or `unreachable!` with safety proof. Out of scope for the alloc-fix branch |
-| Replace `.unwrap()` on TOML parsing in `forge-scenario::config` | Medium | ~15 sites; move to `?` and propagate `Result` |
+| Replace `panic!` on enum variants in non-step crates | Medium | ~20 sites in `crates/forge-proposal`, `crates/forge-server/src/ws_handler.rs`, `crates/forge-mangomas/src/curriculum/task_mapping.rs`, and `crates/forge-types/src/{task,action}.rs` should become `Result` returns or `unreachable!` with safety proof. Out of scope for the alloc-fix branch |
+| Replace `.unwrap()` on TOML parsing in `crates/forge-scenario/src/config.rs` | Medium | ~15 sites; move to `?` and propagate `Result` |
 | Workspace `dev-dependencies` consolidation | Low | `proptest` + `tracing-subscriber` declared per-crate in 15 crates; promote to `workspace.dev-dependencies` |
 | Commented-out `println!` in `forge-data` | Low | Either delete or convert to `tracing::info!` in `generator.rs`, `lib.rs`, `minari.rs`, `maze.rs`, `edge_replay.rs` |
