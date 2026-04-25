@@ -63,7 +63,7 @@ StepResult (forge-types)  -->  Observations + Rewards
 - **Determinism**: Same seed + same action sequence = identical state across all platforms
 - **Fixed-point arithmetic**: All physics quantities use `i32` with 16 fractional bits (`FIXED_POINT_ONE = 65536`)
 - **No hard-coded values**: All constants flow through config structs with `Default` impls
-- **Zero allocation on hot path**: `WorldState::step()` must not heap-allocate
+- **Zero allocation on hot path**: `WorldState::step_into(&mut StepResult)` must not heap-allocate after warmup. The convenience `step()` allocates a fresh `StepResult`; reuse a buffer via `step_into` for the zero-alloc contract. Verified in CI by `crates/forge-bench/src/bin/allocation_audit.rs`.
 - **Structured logging**: Use `tracing` crate throughout, `#[instrument]` on public functions
 - **Property-based tests**: Use `proptest` for invariant verification alongside unit tests
 

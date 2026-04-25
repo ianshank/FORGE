@@ -28,12 +28,23 @@ Benchmarks test two independent scaling axes:
 `bench_step_noop` establishes the pure-overhead floor — a Noop action on 64x64 with 1 agent measures the minimum cost of the system pipeline without meaningful work.
 
 ### Comprehensive Hot-Path Coverage
-Five benchmark groups cover the critical operations:
+Benchmark groups cover the critical operations:
 1. **step_single_agent** — step throughput vs world size
 2. **step_multi_agent** — step throughput vs agent count
 3. **step_noop** — baseline overhead measurement
 4. **world_creation** — `WorldState::new()` including full world generation
 5. **serialization** — `to_bytes()` state snapshot performance
+6. **multi_agent_scaling** (`benches/multi_agent_scaling.rs`) — `{1,8,16,32,64,128}` agents on square + hex grids; env-var-driven sizing for cross-hardware reproducibility (`FORGE_BENCH_WORLD`, `FORGE_BENCH_AGENT_COUNTS`, `FORGE_BENCH_SEED`)
+
+### Allocation Audit (zero-alloc gate)
+`src/bin/allocation_audit.rs` is a `dhat`-gated harness behind the
+`dhat-heap` feature. It drives every representative `Action` variant
+through a warm `WorldState::step_into` and emits per-variant
+`total_blocks` / `total_bytes` to JSON. The CI `alloc-audit` job runs
+this binary and pipes the report through
+`benchmarks/runner/check_zero_alloc.py --max-bytes 0` to enforce the
+"zero allocation on hot path" contract. Reference snapshot lives at
+`benchmarks/baselines/reference_a/alloc_audit.json`.
 
 ## Crate Dependencies
 
@@ -45,7 +56,10 @@ Five benchmark groups cover the critical operations:
 
 | File | Purpose |
 |------|---------|
-| `benches/step_throughput.rs` | All Criterion benchmarks — step single/multi-agent, noop baseline, world creation, serialization |
+| `benches/step_throughput.rs` | Criterion benchmarks — step single/multi-agent, noop baseline, world creation, serialization |
+| `benches/multi_agent_scaling.rs` | Criterion sweep across `{1,8,16,32,64,128}` agents on both topologies, env-var-overridable for cross-hardware comparison |
+| `src/bin/allocation_audit.rs` | `dhat`-gated allocation profiler; emits per-`Action`-variant heap stats. Behind the `dhat-heap` feature so normal builds never link the profiling allocator |
+| `src/env.rs` | Shared env-var parsing (`FORGE_BENCH_WORLD`, `FORGE_BENCH_SEED`, `FORGE_BENCH_AGENT_COUNTS`) used by every harness |
 
 ## Key Invariants
 
@@ -79,6 +93,9 @@ Five benchmark groups cover the critical operations:
 |------|---------|
 | `cargo bench -p forge-bench` | Run all benchmarks with Criterion |
 | `cargo bench -p forge-bench -- step` | Run only step-related benchmarks |
+| `cargo bench -p forge-bench --bench multi_agent_scaling` | Run the multi-agent scaling sweep |
+| `cargo run -p forge-bench --bin allocation_audit --features dhat-heap --release -- --warmup 1024 --iters 10000 --out /tmp/audit.json` | Run the zero-alloc audit |
+| `python3 benchmarks/runner/check_zero_alloc.py --input /tmp/audit.json --max-bytes 0` | Gate the audit JSON against the zero-allocation contract |
 | `cargo bench -p forge-bench -- --save-baseline <name>` | Save results for later comparison |
 | `cargo bench -p forge-bench -- --baseline <name>` | Compare against a saved baseline |
 | `cargo clippy --workspace -- -D warnings` | Lint with zero-warning policy |

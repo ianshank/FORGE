@@ -1,0 +1,93 @@
+{
+  "binary": "allocation_audit",
+  "world_side": 64,
+  "seed": 42,
+  "warmup": 1024,
+  "target": "x86_64-linux",
+  "variants": [
+    {
+      "variant": "Noop",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Up",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Down",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Left",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Right",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "PickUp",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Drop_0",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Use_0",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Craft_0",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Push_Right",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Interact",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Communicate_0",
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    }
+  ]
+}

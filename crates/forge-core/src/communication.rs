@@ -18,11 +18,20 @@ use tracing::{instrument, trace};
 /// - Adds the token to each recipient's comm_buffer (evicting oldest if full)
 ///
 /// If comm_radius is 0, the message is broadcast to ALL alive agents.
+///
+/// `scratch` is a caller-owned message queue that is `clear`ed on entry
+/// and refilled — passing the same `Vec` across ticks avoids the per-tick
+/// `Vec::new()` allocation that lived here previously.
 #[instrument(skip_all)]
-pub fn process_communication(agents: &mut [Agent], actions: &[Action], config: &AgentConfig) {
+pub fn process_communication(
+    agents: &mut [Agent],
+    actions: &[Action],
+    config: &AgentConfig,
+    scratch: &mut Vec<(usize, u16)>,
+) {
     // Collect messages first to avoid borrow conflicts.
-    // Each entry: (sender_index, token)
-    let mut messages: Vec<(usize, u16)> = Vec::new();
+    // Each entry: (sender_index, token).
+    scratch.clear();
 
     for (i, action) in actions.iter().enumerate() {
         if i >= agents.len() {
@@ -59,11 +68,11 @@ pub fn process_communication(agents: &mut [Agent], actions: &[Action], config: &
             continue;
         }
 
-        messages.push((i, token));
+        scratch.push((i, token));
     }
 
     // Deliver each message to agents within range
-    for (sender_idx, token) in messages {
+    for &(sender_idx, token) in scratch.iter() {
         let sender_pos = agents[sender_idx].position;
         let sender_id = agents[sender_idx].id;
         let comm_radius = config.comm_radius;
@@ -254,7 +263,7 @@ mod tests {
         let actions = vec![Action::Communicate(3), Action::Noop];
         let config = make_config();
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         assert!(
             agents[0].comm_buffer.is_empty(),
@@ -276,7 +285,7 @@ mod tests {
         ];
         let actions = vec![Action::Communicate(1), Action::Noop, Action::Noop];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         assert_eq!(agents[1].comm_buffer.len(), 1);
         assert!(agents[2].comm_buffer.is_empty());
@@ -293,7 +302,7 @@ mod tests {
         // Send 5 messages — buffer should only keep the latest 3
         for token in 0u16..5 {
             let actions = vec![Action::Communicate(token), Action::Noop];
-            process_communication(&mut agents, &actions, &config);
+            process_communication(&mut agents, &actions, &config, &mut Vec::new());
         }
 
         assert_eq!(agents[1].comm_buffer.len(), 3);
@@ -310,7 +319,7 @@ mod tests {
         let actions = vec![Action::Communicate(1), Action::Noop];
         let config = make_config();
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         assert!(agents[1].comm_buffer.is_empty());
     }
@@ -322,7 +331,7 @@ mod tests {
         let actions = vec![Action::Communicate(1), Action::Noop];
         let config = make_config();
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         assert!(agents[1].comm_buffer.is_empty());
     }
@@ -339,7 +348,7 @@ mod tests {
         ];
         let actions = vec![Action::Communicate(7), Action::Noop, Action::Noop];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         assert_eq!(agents[1].comm_buffer.len(), 1);
         assert_eq!(agents[1].comm_buffer[0], 7);
@@ -356,7 +365,7 @@ mod tests {
         // Token 10 is out of vocabulary (valid: 0..9)
         let actions = vec![Action::Communicate(10), Action::Noop];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         assert!(agents[1].comm_buffer.is_empty());
     }
@@ -368,7 +377,7 @@ mod tests {
         let actions = vec![Action::Communicate(1), Action::Noop];
         let config = make_config();
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         assert!(agents[1].comm_buffer.is_empty());
     }
@@ -386,7 +395,7 @@ mod tests {
         // Agents 0 and 2 both send
         let actions = vec![Action::Communicate(5), Action::Noop, Action::Communicate(9)];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         // Agent 0 should receive from agent 2 only
         assert_eq!(agents[0].comm_buffer.len(), 1);
@@ -413,7 +422,7 @@ mod tests {
         let mut agents = vec![make_agent(0, 0, 0), make_agent(1, 1, 0)];
         let actions = vec![Action::Communicate(1), Action::Noop];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         // With buffer_size = 0, the condition `recipient.comm_buffer.len() >= buffer_size`
         // is always true, so the oldest message is evicted each time.
@@ -440,7 +449,7 @@ mod tests {
         // so no eviction ever happens, messages accumulate
         for token in 0u16..5 {
             let actions = vec![Action::Communicate(token), Action::Noop];
-            process_communication(&mut agents, &actions, &config);
+            process_communication(&mut agents, &actions, &config, &mut Vec::new());
         }
 
         assert_eq!(agents[1].comm_buffer.len(), 5);
@@ -457,7 +466,7 @@ mod tests {
         ];
         let actions = vec![Action::Communicate(7), Action::Noop];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         // Manhattan distance = 1000. u16::MAX = 65535 > 1000, so should be in range.
         assert_eq!(agents[1].comm_buffer.len(), 1);
@@ -476,7 +485,7 @@ mod tests {
         ];
         let actions = vec![Action::Communicate(1), Action::Noop, Action::Noop];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         assert_eq!(
             agents[1].comm_buffer.len(),
@@ -497,7 +506,7 @@ mod tests {
         let mut agents = vec![make_agent(0, 5, 5)];
         let actions = vec![Action::Communicate(1)];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         // Single agent — no one to receive
         assert!(agents[0].comm_buffer.is_empty());
@@ -512,7 +521,7 @@ mod tests {
         let mut agents = vec![make_agent(0, 0, 0), make_agent(1, 1, 0)];
         let actions = vec![Action::Communicate(0), Action::Noop];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         assert_eq!(agents[1].comm_buffer.len(), 1);
         assert_eq!(agents[1].comm_buffer[0], 0);
@@ -526,7 +535,7 @@ mod tests {
         // More actions than agents
         let actions = vec![Action::Communicate(1), Action::Communicate(2)];
 
-        process_communication(&mut agents, &actions, &config);
+        process_communication(&mut agents, &actions, &config, &mut Vec::new());
 
         // The second action should be skipped (index >= agents.len())
         assert!(agents[0].comm_buffer.is_empty());

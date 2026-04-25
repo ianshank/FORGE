@@ -155,6 +155,10 @@ pub struct AgriScratch {
     pub soil_readings: Vec<SoilReading>,
     /// Temporary buffer for disease spread candidates.
     pub disease_spread_candidates: Vec<(u16, u16)>,
+    /// Per-agent flag buffer used by `process_report_generation` to mark
+    /// agents that produced a field report this tick. Sized to `agents.len()`
+    /// at the top of the agri pipeline and reused across ticks.
+    pub report_flags: Vec<bool>,
 }
 
 impl AgriScratch {
@@ -164,6 +168,7 @@ impl AgriScratch {
             scan_results: Vec::with_capacity(scan_cap),
             soil_readings: Vec::with_capacity(soil_cap),
             disease_spread_candidates: Vec::with_capacity(scan_cap),
+            report_flags: Vec::new(),
         }
     }
 
@@ -172,6 +177,7 @@ impl AgriScratch {
         self.scan_results.clear();
         self.soil_readings.clear();
         self.disease_spread_candidates.clear();
+        self.report_flags.clear();
     }
 }
 

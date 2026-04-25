@@ -19,6 +19,12 @@ use crate::world::WorldState;
 
 /// Runs all simulation systems for a single tick.
 ///
+/// Reads padded actions from `state.step_actions` (populated by
+/// [`WorldState::step_into`]) and writes validated actions into
+/// `state.validated_actions`. Every per-tick scratch buffer required by
+/// the pipeline lives on `WorldState`, so this function performs no heap
+/// allocations on the hot path.
+///
 /// Systems execute in this fixed order:
 /// 1. Validate actions
 /// 2. Physics (movement, collision, push)
@@ -30,13 +36,13 @@ use crate::world::WorldState;
 /// 8. Day/night system — Phase 3 (before visibility so phase affects vision)
 /// 9. Visibility system — Phase 3 (applies day/night vision modifier)
 /// 10. Task system — Phase 4
-/// 11. Generate observations
 #[instrument(skip_all)]
-pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
+pub fn run_systems(state: &mut WorldState) {
     trace!(tick = state.tick, "running systems");
 
-    // 1. Validate actions (replace invalid actions with Noop)
-    let validated_actions = validate_actions(actions, state);
+    // 1. Validate actions (replace invalid actions with Noop). Reads
+    //    from `state.step_actions`, writes into `state.validated_actions`.
+    validate_actions_into(state);
 
     // 2. Physics: movement and collision (uses pre-allocated scratch buffers)
     let drone_config_ref = if state.config.drone.enabled {
@@ -47,24 +53,26 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     physics::process_movements_with_scratch(
         &mut state.agents,
         &mut state.grid,
-        &validated_actions,
+        &state.validated_actions,
         &state.config.physics,
         drone_config_ref,
         &mut state.physics_scratch,
         &state.topology,
     );
 
-    // 2b. Physics: push processing — extract minimal data to avoid cloning
-    let push_data: smallvec::SmallVec<[physics::AgentPushData; 8]> = state
-        .agents
-        .iter()
-        .map(physics::AgentPushData::from_agent)
-        .collect();
+    // 2b. Physics: push processing — extract minimal data to avoid
+    //     cloning the full `Agent` vec. Uses the `push_scratch` buffer
+    //     on `WorldState` so the snapshot is allocation-free for any
+    //     agent count after warmup.
+    state.push_scratch.clear();
+    state
+        .push_scratch
+        .extend(state.agents.iter().map(physics::AgentPushData::from_agent));
     physics::process_pushes(
-        &push_data,
+        &state.push_scratch,
         &mut state.grid,
         &mut state.objects,
-        &validated_actions,
+        &state.validated_actions,
         &state.config.physics,
     );
 
@@ -80,24 +88,26 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
         &mut state.agents,
         &state.grid,
         &mut state.resources,
-        &validated_actions,
+        &state.validated_actions,
     );
     resource::tick_respawn(&mut state.resources);
 
-    // 5. Crafting system
-    let near_station = compute_near_station(&state.agents, &state.grid, &state.objects);
+    // 5. Crafting system. `compute_near_station_into` writes per-agent
+    //    flags into `state.near_station` and uses `state.crafting_object_map`
+    //    as the lookup scratch.
+    compute_near_station_into(state);
     crafting::process_crafting(
         &mut state.agents,
-        &validated_actions,
+        &state.validated_actions,
         &state.recipe_book,
-        &near_station,
+        &state.near_station,
     );
 
     // 6. Combat system
     combat::process_combat(
         &mut state.agents,
         &state.grid,
-        &validated_actions,
+        &state.validated_actions,
         &state.topology,
     );
     combat::apply_environmental_damage(&mut state.agents, &state.grid);
@@ -106,7 +116,7 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     if state.config.drone.enabled {
         crate::drone::process_altitude_changes(
             &mut state.agents,
-            &validated_actions,
+            &state.validated_actions,
             &state.config.drone,
         );
         crate::drone::process_battery_drain(&mut state.agents, &state.config.drone);
@@ -114,7 +124,7 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
         crate::drone::process_payload_drops(
             &mut state.agents,
             &mut state.grid,
-            &validated_actions,
+            &state.validated_actions,
             &state.config.drone,
         );
     }
@@ -133,14 +143,14 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
             &mut state.agents,
             &mut state.crop_states,
             &state.grid,
-            &validated_actions,
+            &state.validated_actions,
             &state.config.agri,
         );
         crate::agriculture::process_multispectral_scan(
             &mut state.agents,
             &mut state.crop_states,
             &state.grid,
-            &validated_actions,
+            &state.validated_actions,
             &state.config.agri,
             state.tick,
             &mut state.agri_scratch.scan_results,
@@ -149,37 +159,41 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
             &mut state.agents,
             &state.crop_states,
             &state.grid,
-            &validated_actions,
+            &state.validated_actions,
             &state.config.agri,
             &mut state.agri_scratch.scan_results,
         );
         crate::agriculture::process_soil_relay(
             &state.agents,
             &mut state.soil_nodes,
-            &validated_actions,
+            &state.validated_actions,
             &state.config.agri,
             state.tick,
             &mut state.agri_scratch.soil_readings,
         );
 
-        // Report generation (uses a temporary flags vec in the scratch space)
-        let mut report_flags: Vec<bool> = Vec::new();
+        // Report generation: reuse the per-agent flag buffer carried on
+        // `AgriScratch` so the agri pipeline doesn't allocate per tick.
+        state.agri_scratch.report_flags.clear();
+        state
+            .agri_scratch
+            .report_flags
+            .resize(state.agents.len(), false);
         crate::agriculture::process_report_generation(
             &mut state.agents,
-            &validated_actions,
+            &state.validated_actions,
             &state.config.agri,
-            &mut report_flags,
+            &mut state.agri_scratch.report_flags,
         );
-
-        // TODO: populate observation agri fields from scratch buffers
-        // This will be done in generate_observation when we build observations
     }
 
-    // 7. Communication system
+    // 7. Communication system. `comm_messages` is the per-tick scratch
+    //    queue; `process_communication` clears it on entry and refills it.
     communication::process_communication(
         &mut state.agents,
-        &validated_actions,
+        &state.validated_actions,
         &state.config.agents,
+        &mut state.comm_messages,
     );
 
     // 8. Day/night system (compute before visibility so phase affects vision range)
@@ -217,25 +231,29 @@ pub fn run_systems(state: &mut WorldState, actions: &[Action]) {
     trace!(tick = state.tick, "systems complete");
 }
 
-/// Computes per-agent boolean indicating whether each agent is adjacent to
-/// or standing on a tile containing a CraftingStation object.
+/// Core logic for [`compute_near_station_into`], split out so tests can
+/// drive it without constructing a full [`WorldState`].
 ///
-/// Allocates a Vec with pre-sized capacity to reduce reallocation overhead.
-/// Uses a HashMap for O(1) object lookups instead of O(n) linear search.
-#[instrument(skip_all)]
-fn compute_near_station(
+/// Reuses the supplied `near` and `map` buffers — `near.clear()` first,
+/// then pushes one bool per agent; `map.clear()` then refills with
+/// `(object.id -> object.object_type)`.
+fn compute_near_station_buf(
     agents: &[forge_types::entity::Agent],
     grid: &forge_types::grid::Grid,
     objects: &[forge_types::entity::Object],
-) -> Vec<bool> {
-    let mut result = Vec::with_capacity(agents.len());
-
-    // Pre-compute object map for O(1) lookups instead of O(n) linear search
-    let object_map: std::collections::HashMap<_, _> = objects.iter().map(|o| (o.id, o)).collect();
+    near: &mut Vec<bool>,
+    map: &mut std::collections::HashMap<u32, ObjectType>,
+) {
+    near.clear();
+    near.reserve(agents.len());
+    map.clear();
+    for o in objects {
+        map.insert(o.id, o.object_type);
+    }
 
     for agent in agents {
         if !agent.alive {
-            result.push(false);
+            near.push(false);
             continue;
         }
 
@@ -250,8 +268,8 @@ fn compute_near_station(
         for pos in positions_to_check {
             if let Some(tile) = grid.get(pos.x, pos.y) {
                 if let Some(obj_id) = tile.object_id {
-                    if let Some(obj) = object_map.get(&obj_id) {
-                        if obj.object_type == ObjectType::CraftingStation {
+                    if let Some(obj_type) = map.get(&obj_id) {
+                        if *obj_type == ObjectType::CraftingStation {
                             found_station = true;
                             break;
                         }
@@ -260,26 +278,42 @@ fn compute_near_station(
             }
         }
 
-        result.push(found_station);
+        near.push(found_station);
     }
-
-    result
 }
 
-/// Validates actions and replaces invalid ones with Noop.
+/// Computes per-agent flags for "agent is adjacent to or on a CraftingStation".
 ///
-/// Always returns exactly one action per agent. If fewer actions are provided than agents,
-/// missing actions default to Noop. This prevents out-of-bounds panics in physics systems
-/// that expect an action for each agent.
-///
-/// Allocates a Vec with pre-sized capacity to reduce reallocation overhead.
+/// Writes results into `state.near_station`, reusing the buffer allocated
+/// on `WorldState`. Uses `state.crafting_object_map` as a transient
+/// `ObjectId -> ObjectType` lookup so the per-tick `HashMap::new()` and
+/// `Vec::with_capacity` allocations from earlier revisions are gone.
 #[instrument(skip_all)]
-fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
-    let mut result = Vec::with_capacity(state.agents.len());
+fn compute_near_station_into(state: &mut WorldState) {
+    compute_near_station_buf(
+        &state.agents,
+        &state.grid,
+        &state.objects,
+        &mut state.near_station,
+        &mut state.crafting_object_map,
+    );
+}
+
+/// Validates the padded actions in `state.step_actions` and writes the
+/// per-agent validated form into `state.validated_actions`.
+///
+/// Always produces exactly one action per agent — out-of-range slot/token
+/// values fall back to `Noop`. Reuses the `validated_actions` buffer on
+/// `WorldState` so the previous per-tick `Vec::with_capacity` allocation
+/// is gone.
+#[instrument(skip_all)]
+fn validate_actions_into(state: &mut WorldState) {
+    state.validated_actions.clear();
+    state.validated_actions.reserve(state.agents.len());
 
     for (i, agent) in state.agents.iter().enumerate() {
         // Get action for this agent, default to Noop if not provided
-        let action = if let Some(a) = actions.get(i) {
+        let action = if let Some(a) = state.step_actions.get(i) {
             a
         } else {
             trace!(
@@ -424,10 +458,8 @@ fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
             }
         };
 
-        result.push(validated);
+        state.validated_actions.push(validated);
     }
-
-    result
 }
 
 #[cfg(test)]
@@ -435,6 +467,47 @@ mod tests {
     use super::*;
     use forge_types::config::ForgeConfig;
     use forge_types::grid::Position;
+    use std::collections::HashMap;
+
+    /// Test wrapper around [`validate_actions_into`] that mirrors the
+    /// pre-refactor `validate_actions(actions, state) -> Vec<Action>`
+    /// signature. Clones `state` locally, stages `actions` into
+    /// `state.step_actions`, and moves the validated buffer out of the
+    /// cloned local `state`. The caller's `WorldState` is untouched.
+    fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
+        let mut state = state.clone();
+        state.step_actions.clear();
+        let n = state.agents.len();
+        let take = actions.len().min(n);
+        state.step_actions.extend_from_slice(&actions[..take]);
+        state.step_actions.resize(n, Action::Noop);
+        validate_actions_into(&mut state);
+        state.validated_actions
+    }
+
+    /// Test wrapper around [`compute_near_station_buf`] that returns an
+    /// owned `Vec<bool>` for the legacy assertion style.
+    fn compute_near_station(
+        agents: &[forge_types::entity::Agent],
+        grid: &forge_types::grid::Grid,
+        objects: &[forge_types::entity::Object],
+    ) -> Vec<bool> {
+        let mut near = Vec::new();
+        let mut map: HashMap<u32, ObjectType> = HashMap::new();
+        compute_near_station_buf(agents, grid, objects, &mut near, &mut map);
+        near
+    }
+
+    /// Test wrapper around [`run_systems`] that mirrors the pre-refactor
+    /// `run_systems(state, actions)` signature.
+    fn run_systems_with_actions(state: &mut WorldState, actions: &[Action]) {
+        state.step_actions.clear();
+        let n = state.agents.len();
+        let take = actions.len().min(n);
+        state.step_actions.extend_from_slice(&actions[..take]);
+        state.step_actions.resize(n, Action::Noop);
+        run_systems(state);
+    }
 
     #[test]
     fn test_validate_actions_dead_agent() {
@@ -483,7 +556,7 @@ mod tests {
         let initial_tick = state.tick;
 
         let actions = vec![Action::Noop];
-        run_systems(&mut state, &actions);
+        run_systems_with_actions(&mut state, &actions);
 
         assert_eq!(state.tick, initial_tick + 1);
     }
@@ -502,7 +575,7 @@ mod tests {
         state.grid.get_mut(5, 5).unwrap().agent_id = Some(0);
 
         let actions = vec![Action::Move(forge_types::Direction::Right)];
-        run_systems(&mut state, &actions);
+        run_systems_with_actions(&mut state, &actions);
 
         assert_eq!(state.agents[0].position, Position::new(6, 5));
     }
