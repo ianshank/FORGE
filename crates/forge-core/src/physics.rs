@@ -117,6 +117,13 @@ pub(crate) struct PhysicsScratch {
     pub(crate) desired_positions: Vec<Option<Position>>,
     /// Scratch buffer for occupied target tracking.
     pub(crate) occupied_targets: Vec<(usize, Position)>,
+    /// Snapshot of agent `(position, altitude, alive)` taken at the start
+    /// of the movement pass. Aerial collision detection scans this slice
+    /// while the third pass mutates `agents`, so a snapshot is required;
+    /// reusing the buffer keeps the step zero-allocation at all agent
+    /// counts (a per-step `SmallVec` here previously spilled to the heap
+    /// once `num_agents` exceeded its inline capacity).
+    pub(crate) agents_snapshot: Vec<(Position, u8, bool)>,
 }
 
 impl PhysicsScratch {
@@ -132,6 +139,10 @@ impl PhysicsScratch {
         if self.occupied_targets.capacity() < agent_count {
             self.occupied_targets
                 .reserve(agent_count - self.occupied_targets.capacity());
+        }
+        if self.agents_snapshot.capacity() < agent_count {
+            self.agents_snapshot
+                .reserve(agent_count - self.agents_snapshot.capacity());
         }
     }
 }
@@ -188,6 +199,7 @@ pub(crate) fn process_movements_with_scratch(
     scratch.results.clear();
     scratch.desired_positions.clear();
     scratch.occupied_targets.clear();
+    scratch.agents_snapshot.clear();
     scratch.ensure_capacity(agents.len());
 
     // First pass: compute desired positions
@@ -208,14 +220,14 @@ pub(crate) fn process_movements_with_scratch(
         scratch.desired_positions.push(pos);
     }
 
-    // Snapshot agent positions and altitudes for aerial collision detection
-    // Uses stack-allocated SmallVec to avoid heap allocation for small agent counts
-    let agents_snapshot: smallvec::SmallVec<
-        [(Position, u8, bool); forge_types::constants::PHYSICS_SMALLVEC_CAPACITY],
-    > = agents
-        .iter()
-        .map(|a| (a.position, a.altitude, a.alive))
-        .collect();
+    // Snapshot agent positions and altitudes for aerial collision detection.
+    // The snapshot lives in `scratch.agents_snapshot` and is reused across
+    // ticks via `ensure_capacity`, so this remains zero-allocation on the
+    // hot path regardless of `num_agents` (the previous local SmallVec
+    // spilled to heap once the count exceeded its inline capacity).
+    scratch
+        .agents_snapshot
+        .extend(agents.iter().map(|a| (a.position, a.altitude, a.alive)));
 
     // Second pass: detect conflicts (two agents wanting same tile)
     for (i, pos) in scratch.desired_positions.iter().enumerate() {
@@ -280,9 +292,12 @@ pub(crate) fn process_movements_with_scratch(
         if is_airborne {
             // Airborne Aerial: ignore ground terrain, only collide with agents at same altitude
             if config.collision_enabled {
-                // Check for aerial collision at same altitude (scan agents, not grid)
+                // Check for aerial collision at same altitude (scan agents, not grid).
+                // Reads `scratch.agents_snapshot` directly so the borrow stays
+                // disjoint from `scratch.results` writes below.
                 let aerial_conflict =
-                    agents_snapshot
+                    scratch
+                        .agents_snapshot
                         .iter()
                         .enumerate()
                         .any(|(j, (pos, alt, alive))| {
@@ -1482,6 +1497,80 @@ mod tests {
 
         // No crash, push_from is out of bounds so nothing happens
         assert!(objects.is_empty());
+    }
+
+    /// Regression for the multi-agent zero-allocation fix.
+    ///
+    /// The aerial-collision snapshot used to live in a per-call
+    /// `SmallVec<[..; 16]>`, which spilled to the heap on every step
+    /// once `num_agents` exceeded 16. Routing the snapshot through
+    /// `PhysicsScratch::agents_snapshot` and reusing the buffer across
+    /// ticks restored zero-allocation at all agent counts. This test
+    /// pins that contract structurally: after a warm-up step the
+    /// scratch buffer has stable capacity, and a second step does not
+    /// realloc it (length resets to the agent count, capacity stays
+    /// at-or-above the warm-up high-water mark).
+    #[test]
+    fn agents_snapshot_buffer_reuses_capacity_above_legacy_inline_cap() {
+        // Pick a count comfortably above the historical SmallVec inline
+        // capacity (16) to ensure the old code path would have spilled.
+        const NUM_AGENTS: usize = 32;
+        const GRID: u16 = 16;
+
+        let mut grid = make_test_grid(GRID, GRID);
+        let mut agents: Vec<Agent> = (0..NUM_AGENTS as u32)
+            .map(|i| {
+                let x = (i % u32::from(GRID)) as u16;
+                let y = (i / u32::from(GRID)) as u16;
+                make_test_agent(i, x, y)
+            })
+            .collect();
+        for a in &agents {
+            grid.get_mut(a.position.x, a.position.y).unwrap().agent_id = Some(a.id);
+        }
+        let actions: Vec<Action> = vec![Action::Noop; NUM_AGENTS];
+        let config = default_physics();
+        let mut scratch = PhysicsScratch::default();
+
+        // Warm-up step grows scratch.agents_snapshot to NUM_AGENTS capacity.
+        process_movements_with_scratch(
+            &mut agents,
+            &mut grid,
+            &actions,
+            &config,
+            None,
+            &mut scratch,
+            &topo(),
+        );
+        let warm_capacity = scratch.agents_snapshot.capacity();
+        assert!(
+            warm_capacity >= NUM_AGENTS,
+            "warm-up failed to size snapshot: capacity={warm_capacity} < {NUM_AGENTS}"
+        );
+
+        // Subsequent steps must not realloc the snapshot buffer — that
+        // is exactly what the alloc audit measures across `--agents`.
+        for _ in 0..32 {
+            process_movements_with_scratch(
+                &mut agents,
+                &mut grid,
+                &actions,
+                &config,
+                None,
+                &mut scratch,
+                &topo(),
+            );
+            assert_eq!(
+                scratch.agents_snapshot.len(),
+                NUM_AGENTS,
+                "snapshot length must equal agent count after each step"
+            );
+            assert_eq!(
+                scratch.agents_snapshot.capacity(),
+                warm_capacity,
+                "snapshot capacity must remain stable across steps"
+            );
+        }
     }
 
     // ---- Proptest: physics invariants ----

@@ -203,16 +203,24 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORGE_DEMO_UI_PORT: "8765"
+      FORGE_DEMO_PORT: "18765"
       FORGE_STARTUP_WAIT_SECS: "3"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            demo_ui/backend/requirements.txt
+            demo_ui/pyproject.toml
       - name: Install demo UI dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r demo_ui/backend/requirements.txt
+          pip install -e 'demo_ui[dev]'
+      - name: Install Playwright browser
+        run: python -m playwright install --with-deps chromium
       - name: Run demo UI tests
         run: pytest demo_ui/tests/ -v --tb=short
       - name: Smoke-test server health endpoint

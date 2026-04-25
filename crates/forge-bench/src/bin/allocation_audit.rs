@@ -13,6 +13,7 @@
 //! cargo run -p forge-bench --bin allocation_audit \
 //!     --features dhat-heap --release -- \
 //!     --warmup 1024 --iters 10000 \
+//!     --agents 1,8,16,32,64,128 \
 //!     --out /tmp/alloc_audit.json
 //! ```
 //!
@@ -20,13 +21,16 @@
 //!
 //! * `FORGE_BENCH_WORLD` -- world side (default 64)
 //! * `FORGE_BENCH_SEED`  -- RNG seed (default 42)
+//! * `FORGE_BENCH_AGENT_COUNTS` -- comma-separated agent count sweep
+//!   (default `1,8,16,32,64,128`); overridden by `--agents`.
 //!
 //! # Output
 //!
 //! Emits a JSON report to `--out` (or stdout if omitted) with one row per
-//! `Action` variant, capturing `total_blocks` and `total_bytes` allocated
-//! during the measured step region. Post-process with
-//! `benchmarks/runner/check_zero_alloc.py` to assert the zero-allocation
+//! `(Action variant, agent count)` pair, capturing `total_blocks` and
+//! `total_bytes` allocated during the measured step region. Variant labels
+//! use the `<name>@n=<count>` form (for example `Move_Up@n=8`). Post-process
+//! with `benchmarks/runner/check_zero_alloc.py` to assert the zero-allocation
 //! invariant and fail CI on violators.
 
 #![deny(clippy::all)]
@@ -38,7 +42,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use forge_bench::env::{seed_u64, world_side, BENCH_SEED};
+use forge_bench::env::{agent_counts, seed_u64, world_side, BENCH_SEED, DEFAULT_AGENT_COUNTS};
 use forge_core::WorldState;
 use forge_types::config::ForgeConfig;
 use forge_types::grid::Direction;
@@ -52,19 +56,25 @@ use tracing_subscriber::EnvFilter;
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 /// Default world side length for the audit run — kept smaller than the
-/// scaling bench default because the audit measures a single agent and a
-/// tighter world keeps warm-up cheap. Overridable via `FORGE_BENCH_WORLD`.
+/// scaling bench default because the audit's per-row cost grows with both
+/// the variant count and the agent-count sweep, and a tighter world keeps
+/// warm-up cheap. Overridable via `FORGE_BENCH_WORLD`.
 const DEFAULT_WORLD_SIDE: u16 = 64;
 /// Default warm-up iterations before measurement begins.
 const DEFAULT_WARMUP: u64 = 1024;
 /// Default measured iterations per variant.
 const DEFAULT_ITERS: u64 = 10_000;
 
-/// One row of allocation evidence per [`Action`] variant.
+/// One row of allocation evidence per `(Action variant, agent count)` pair.
 #[derive(Debug, Serialize)]
 struct VariantReport {
-    /// Human-readable Action variant label.
+    /// Human-readable label, formatted as `<base>@n=<agents>`
+    /// (for example `Move_Up@n=8`).
     variant: String,
+    /// Number of agents stepped in lockstep for this measurement. Captured
+    /// as a typed field so downstream tooling can filter without parsing
+    /// the variant string.
+    num_agents: u32,
     /// Iterations executed inside the measured region.
     iters: u64,
     /// Total heap blocks allocated during the measured region.
@@ -96,21 +106,31 @@ struct AuditReport {
 
 /// Minimal argv parser to avoid pulling `clap` into the audit binary.
 ///
-/// Recognises `--warmup N`, `--iters N`, `--out PATH`. Unknown flags
-/// emit a warning and are ignored (so CI can pass `--` and positional
-/// arguments safely).
+/// Recognises `--warmup N`, `--iters N`, `--out PATH`, and
+/// `--agents N[,N,...]`. Unknown flags emit a warning and are ignored
+/// (so CI can pass `--` and positional arguments safely).
+///
+/// `agents` is `None` when the flag is omitted; resolution to a concrete
+/// sweep happens in `main` and falls back to `FORGE_BENCH_AGENT_COUNTS`
+/// then `DEFAULT_AGENT_COUNTS`.
 struct Args {
     warmup: u64,
     iters: u64,
     out: Option<PathBuf>,
+    agents: Option<Vec<u32>>,
 }
 
 fn parse_args() -> Args {
+    parse_args_from(env::args().skip(1))
+}
+
+fn parse_args_from<I: IntoIterator<Item = String>>(argv: I) -> Args {
     let mut warmup = DEFAULT_WARMUP;
     let mut iters = DEFAULT_ITERS;
     let mut out: Option<PathBuf> = None;
+    let mut agents: Option<Vec<u32>> = None;
 
-    let mut argv = env::args().skip(1);
+    let mut argv = argv.into_iter();
     while let Some(flag) = argv.next() {
         match flag.as_str() {
             "--warmup" => {
@@ -126,10 +146,40 @@ fn parse_args() -> Args {
             "--out" => {
                 out = argv.next().map(PathBuf::from);
             }
+            "--agents" => {
+                if let Some(raw) = argv.next() {
+                    agents = Some(parse_agents_arg(&raw));
+                }
+            }
             other => warn!(flag = other, "unknown argument ignored"),
         }
     }
-    Args { warmup, iters, out }
+    Args {
+        warmup,
+        iters,
+        out,
+        agents,
+    }
+}
+
+/// Parses the `--agents` value (comma-separated u32 list).
+///
+/// Mirrors the convention in `forge_bench::env::agent_counts`: invalid or
+/// zero tokens are dropped with a warning. Returns an empty `Vec` if every
+/// token fails — `main` then falls back to the env-var / default chain.
+fn parse_agents_arg(raw: &str) -> Vec<u32> {
+    raw.split(',')
+        .filter_map(|s| {
+            let trimmed = s.trim();
+            match trimmed.parse::<u32>() {
+                Ok(n) if n > 0 => Some(n),
+                _ => {
+                    warn!(token = trimmed, "ignoring invalid --agents token");
+                    None
+                }
+            }
+        })
+        .collect()
 }
 
 /// Representative [`Action`] variants covering the hot-path surface.
@@ -162,15 +212,25 @@ fn audit_variants() -> Vec<(&'static str, Action)> {
 /// buffer — this is the **zero-allocation hot-path entry point**. The
 /// convenience [`WorldState::step`] always allocates a fresh result and
 /// is therefore unsuitable for measuring the contract.
+///
+/// `actions` must contain exactly `num_agents` entries; every agent steps
+/// with the same action so the measurement isolates that variant's hot
+/// path under fan-out (versus the throughput bench, which fans actions
+/// across `Direction` for diversity).
 fn measure_variant(
-    name: &str,
-    action: &Action,
+    label: &str,
+    num_agents: u32,
+    actions: &[Action],
     warmup: u64,
     iters: u64,
     config: ForgeConfig,
 ) -> VariantReport {
+    debug_assert_eq!(
+        actions.len(),
+        num_agents as usize,
+        "action vector must have one entry per agent"
+    );
     let mut world = WorldState::new(config).expect("WorldState::new must succeed for audit config");
-    let actions = vec![action.clone()];
     let mut result = StepResult::default();
 
     // Warm caches so allocator churn from first-touch is excluded. The
@@ -178,18 +238,19 @@ fn measure_variant(
     // `world.physics_scratch`, and the inner `Vec`s of `result` so the
     // measured region exercises the steady-state, capacity-stable path.
     for _ in 0..warmup {
-        world.step_into(&actions, &mut result);
+        world.step_into(actions, &mut result);
     }
 
     let profiler = dhat::Profiler::new_heap();
     for _ in 0..iters {
-        world.step_into(&actions, &mut result);
+        world.step_into(actions, &mut result);
     }
     let stats = dhat::HeapStats::get();
     drop(profiler); // flush any files dhat writes, though we only read stats.
 
     VariantReport {
-        variant: name.to_string(),
+        variant: label.to_string(),
+        num_agents,
         iters,
         total_blocks: stats.total_blocks,
         total_bytes: stats.total_bytes,
@@ -207,29 +268,51 @@ fn main() -> ExitCode {
     let world = world_side(DEFAULT_WORLD_SIDE);
     let audit_seed = seed_u64(BENCH_SEED);
 
+    // Resolution order: explicit `--agents` flag, then
+    // `FORGE_BENCH_AGENT_COUNTS`, then the canonical default sweep that
+    // matches `multi_agent_scaling.rs`. An explicit-but-empty `--agents`
+    // (e.g. `--agents ,,`) falls through to the env/default chain so a
+    // typo never silently produces a zero-row report.
+    let agents: Vec<u32> = args
+        .agents
+        .clone()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| agent_counts(DEFAULT_AGENT_COUNTS));
+
     info!(
         warmup = args.warmup,
         iters = args.iters,
         world_side = world,
         seed = audit_seed,
+        agents = ?agents,
         out = ?args.out,
         "running allocation audit"
     );
 
-    let mut cfg_proto = ForgeConfig::default();
-    cfg_proto.world.width = world;
-    cfg_proto.world.height = world;
-    cfg_proto.world.seed = audit_seed;
-    cfg_proto.agents.num_agents = 1;
-    cfg_proto.task.max_episode_length = 0;
+    let base_variants = audit_variants();
+    let mut variants: Vec<VariantReport> = Vec::with_capacity(base_variants.len() * agents.len());
+    for &num_agents in &agents {
+        let mut cfg = ForgeConfig::default();
+        cfg.world.width = world;
+        cfg.world.height = world;
+        cfg.world.seed = audit_seed;
+        cfg.agents.num_agents = num_agents;
+        cfg.task.max_episode_length = 0;
 
-    let variants: Vec<VariantReport> = audit_variants()
-        .into_iter()
-        .map(|(name, action)| {
-            info!(variant = name, "measuring");
-            measure_variant(name, &action, args.warmup, args.iters, cfg_proto.clone())
-        })
-        .collect();
+        for (name, action) in &base_variants {
+            let label = format!("{name}@n={num_agents}");
+            info!(variant = %label, "measuring");
+            let actions = vec![action.clone(); num_agents as usize];
+            variants.push(measure_variant(
+                &label,
+                num_agents,
+                &actions,
+                args.warmup,
+                args.iters,
+                cfg.clone(),
+            ));
+        }
+    }
 
     // Deliberately a stable identifier rather than `env::current_exe()`:
     // committing the latter into `benchmarks/baselines/<profile>/` would
@@ -264,4 +347,68 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn argv(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn parse_args_default_when_argv_empty() {
+        let args = parse_args_from(argv(&[]));
+        assert_eq!(args.warmup, DEFAULT_WARMUP);
+        assert_eq!(args.iters, DEFAULT_ITERS);
+        assert!(args.out.is_none());
+        assert!(
+            args.agents.is_none(),
+            "no --agents flag => fall back to env-var/default chain in main"
+        );
+    }
+
+    #[test]
+    fn parse_args_explicit_agents_flag_overrides_default() {
+        let args = parse_args_from(argv(&["--agents", "1,8,32"]));
+        assert_eq!(args.agents.as_deref(), Some(&[1u32, 8, 32][..]));
+    }
+
+    #[test]
+    fn parse_args_rejects_zero_and_invalid_agent_tokens() {
+        // "0" is dropped (zero is invalid for num_agents; matches env.rs convention).
+        // "abc" is dropped (parse failure).
+        // "16" survives.
+        let args = parse_args_from(argv(&["--agents", "0,abc,16"]));
+        assert_eq!(args.agents.as_deref(), Some(&[16u32][..]));
+    }
+
+    #[test]
+    fn parse_args_all_flags_combined() {
+        let args = parse_args_from(argv(&[
+            "--warmup",
+            "256",
+            "--iters",
+            "1000",
+            "--agents",
+            "1,8",
+            "--out",
+            "/tmp/x.json",
+        ]));
+        assert_eq!(args.warmup, 256);
+        assert_eq!(args.iters, 1000);
+        assert_eq!(args.agents.as_deref(), Some(&[1u32, 8][..]));
+        assert_eq!(
+            args.out.as_deref(),
+            Some(std::path::Path::new("/tmp/x.json"))
+        );
+    }
+
+    #[test]
+    fn parse_agents_arg_handles_whitespace_and_empty_tokens() {
+        // Empty tokens (from `,,`) and whitespace-padded numbers parse correctly.
+        let parsed = parse_agents_arg(" 1 , , 8 ");
+        assert_eq!(parsed, vec![1, 8]);
+    }
 }

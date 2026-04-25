@@ -292,3 +292,47 @@ def test_strict_mode_rejects_any_blocks(
     )
     rc = _run_main(helper_module, ["--input", str(report), "--log-level", "ERROR"])
     assert rc == helper_module.EXIT_VIOLATION
+
+
+def test_multi_agent_variant_with_num_agents_field(
+    helper_module: ModuleType, tmp_report_dir: Path
+) -> None:
+    """The validator must accept the multi-agent audit schema unchanged.
+
+    The audit binary emits rows shaped like ``Move_Up@n=8`` with a typed
+    ``num_agents`` field alongside the original numeric columns. The
+    validator only inspects ``variant``/``total_bytes``/``total_blocks``/
+    ``iters``/``peak_live_bytes``, so the extra field must not break
+    parsing and the row-level checks must still trip on a real violation.
+    """
+    report = tmp_report_dir / "multi_agent.json"
+    _write_report(
+        report,
+        [
+            {
+                "variant": "Move_Up@n=1",
+                "num_agents": 1,
+                "iters": 100,
+                "total_blocks": 0,
+                "total_bytes": 0,
+                "peak_live_bytes": 0,
+            },
+            {
+                "variant": "Move_Up@n=8",
+                "num_agents": 8,
+                "iters": 100,
+                "total_blocks": 0,
+                "total_bytes": 0,
+                "peak_live_bytes": 0,
+            },
+        ],
+    )
+    summary = tmp_report_dir / "multi_agent_summary.json"
+    rc = _run_main(
+        helper_module,
+        ["--input", str(report), "--json", str(summary), "--log-level", "ERROR"],
+    )
+    assert rc == 0
+    body = json.loads(summary.read_text(encoding="utf-8"))
+    assert body["violations"] == []
+    assert body["clean_count"] == 2

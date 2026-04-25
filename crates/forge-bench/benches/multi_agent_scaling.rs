@@ -27,7 +27,7 @@
 use std::sync::Once;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use forge_bench::env::{agent_counts, seed_u64, world_side, BENCH_SEED};
+use forge_bench::env::{agent_counts, seed_u64, world_side, BENCH_SEED, DEFAULT_AGENT_COUNTS};
 use forge_core::WorldState;
 use forge_types::config::{ForgeConfig, GridType};
 use forge_types::grid::{Direction, HexDirection};
@@ -52,10 +52,6 @@ fn init_tracing() {
 /// existing `step_throughput.rs` default so cache-resident effects do not
 /// mask multi-agent scaling cost. Overridable via `FORGE_BENCH_WORLD`.
 const DEFAULT_WORLD_SIDE: u16 = 128;
-/// Default agent-count sweep, designed to expose scaling inflection points
-/// beyond the existing 1/2/4/8 range. Overridable via
-/// `FORGE_BENCH_AGENT_COUNTS`.
-const DEFAULT_AGENT_COUNTS: &[u32] = &[1, 8, 16, 32, 64, 128];
 
 /// Builds a deterministic config for the scaling sweep with the requested
 /// topology and agent count.

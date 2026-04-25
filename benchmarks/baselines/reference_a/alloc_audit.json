@@ -6,84 +6,576 @@
   "target": "x86_64-linux",
   "variants": [
     {
-      "variant": "Noop",
+      "variant": "Noop@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Move_Up",
+      "variant": "Move_Up@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Move_Down",
+      "variant": "Move_Down@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Move_Left",
+      "variant": "Move_Left@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Move_Right",
+      "variant": "Move_Right@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "PickUp",
+      "variant": "PickUp@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Drop_0",
+      "variant": "Drop_0@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Use_0",
+      "variant": "Use_0@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Craft_0",
+      "variant": "Craft_0@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Push_Right",
+      "variant": "Push_Right@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Interact",
+      "variant": "Interact@n=1",
+      "num_agents": 1,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,
       "peak_live_bytes": 0
     },
     {
-      "variant": "Communicate_0",
+      "variant": "Communicate_0@n=1",
+      "num_agents": 1,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Noop@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Up@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Down@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Left@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Right@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "PickUp@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Drop_0@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Use_0@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Craft_0@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Push_Right@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Interact@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Communicate_0@n=8",
+      "num_agents": 8,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Noop@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Up@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Down@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Left@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Right@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "PickUp@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Drop_0@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Use_0@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Craft_0@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Push_Right@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Interact@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Communicate_0@n=16",
+      "num_agents": 16,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Noop@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Up@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Down@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Left@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Right@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "PickUp@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Drop_0@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Use_0@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Craft_0@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Push_Right@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Interact@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Communicate_0@n=32",
+      "num_agents": 32,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Noop@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Up@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Down@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Left@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Right@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "PickUp@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Drop_0@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Use_0@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Craft_0@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Push_Right@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Interact@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Communicate_0@n=64",
+      "num_agents": 64,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Noop@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Up@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Down@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Left@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Move_Right@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "PickUp@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Drop_0@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Use_0@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Craft_0@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Push_Right@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Interact@n=128",
+      "num_agents": 128,
+      "iters": 10000,
+      "total_blocks": 0,
+      "total_bytes": 0,
+      "peak_live_bytes": 0
+    },
+    {
+      "variant": "Communicate_0@n=128",
+      "num_agents": 128,
       "iters": 10000,
       "total_blocks": 0,
       "total_bytes": 0,

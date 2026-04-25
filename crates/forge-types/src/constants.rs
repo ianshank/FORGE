@@ -289,10 +289,6 @@ pub const NUM_VEHICLE_TERRAIN_TYPES: usize = NUM_TERRAIN_TYPES;
 
 // ---------- MCTS defaults ----------
 
-/// Inline capacity for SmallVec in physics hot path.
-/// Avoids heap allocation when the number of agents is at or below this threshold.
-pub const PHYSICS_SMALLVEC_CAPACITY: usize = 16;
-
 /// Default PUCT exploration constant (c_puct) for MCTS.
 pub const DEFAULT_MCTS_C_PUCT: f32 = 1.41;
 /// Default number of MCTS simulations per search.

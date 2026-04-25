@@ -24,28 +24,26 @@ CI now has three separate Python jobs: `python-lint` (ruff + mypy, no build), `p
 
 ~~The Python package surface is now coverage-gated and more resilient to missing optional dependencies.~~
 
-### 3. Playwright E2E Browser Tests
+### 3. ✅ Playwright E2E Browser Tests — COMPLETED
 
-Add `playwright`-based end-to-end tests for the demo UI to validate:
+`demo_ui/tests/test_e2e_browser.py` now ships four browser-driven tests
+on top of the existing page-load checks: `TestSectionStateMachine`
+(IDLE → RUNNING → PASS via real DOM click), `TestTerminalStream`
+(span-count threshold + no `.c-fail` spans + no console errors),
+`TestProgressBar` (`runAll`-driven progress advance + Stop), and
+`TestWorldCanvas` (non-zero pixels via `getImageData`). Function-scoped
+`fresh_page` isolates per-test DOM. Selector / timeout / span-threshold
+constants are extracted at module level for tuning.
 
-- Section badges transition IDLE → RUNNING → PASS
-- Terminal streams without error
-- Progress bar advances correctly
-- World canvas receives visible pixel data
+### 4. ✅ GitHub Actions CI for Demo UI — COMPLETED
 
-```bash
-# Planned test file
-demo_ui/tests/test_e2e_browser.py
-```
-
-### 4. GitHub Actions CI for Demo UI
-
-Extend `.github/workflows/` to include:
-
-- Install Python deps from `demo_ui/backend/requirements.txt`
-- Run `pytest demo_ui/tests/test_backend.py` in CI
-- Smoke-test the server with `httpx` (headless)
-- Cache `pip` installs for faster runs
+The existing `demo-ui` job now installs `demo_ui[dev]`, runs
+`playwright install --with-deps chromium`, and executes the full E2E
+suite (previously skipped via `pytest.importorskip`). `actions/setup-python@v5`
+gained `cache: pip` keyed off `demo_ui/backend/requirements.txt` and
+`demo_ui/pyproject.toml`. The httpx health-smoke step is unchanged and
+still runs after the test step. `playwright==1.48.*` is pinned in
+`demo_ui/pyproject.toml` for reproducibility.
 
 ### 5. ✅ Docker Container for Demo UI — COMPLETED
 
@@ -145,8 +143,8 @@ Add example scripts and CI integration for:
 | Native vs pure-Python test split | ✅ Done | Split into `python-test-fast` and `python-test` CI jobs |
 | MangoMAS integration smoke tests | ✅ Done | 21 smoke tests in `test_mangomas_smoke.py` |
 | Allocation audit (`step_into` zero-alloc invariant) | ✅ Done | `crates/forge-bench/src/bin/allocation_audit.rs` + `benchmarks/runner/check_zero_alloc.py` wired into CI as the `alloc-audit` job; baseline snapshot in `benchmarks/baselines/reference_a/alloc_audit.json` |
-| Multi-agent allocation audit | Medium | Audit runs at `num_agents = 1`. Add an `--agents N` mode and a per-agent-count variant row so per-step costs are exercised under fan-out |
-| `reference_b` hardware profile | Medium | `benchmarks/baselines/reference_b/` is empty; needs a non-CI hardware profile (Apple Silicon laptop or arm64 cloud instance) to be named and snapshot regenerated |
+| Multi-agent allocation audit | ✅ Done | `--agents <list>` flag added (default sweep `1,8,16,32,64,128`, also via `FORGE_BENCH_AGENT_COUNTS`); rows labelled `<base>@n=<count>` with typed `num_agents` field. Surfaced and fixed a real per-step heap allocation in `forge-core::physics::process_movements_with_scratch` (snapshot moved into `PhysicsScratch::agents_snapshot`). Reference baseline regenerated; all 72 rows zero-alloc |
+| `reference_b` hardware profile | Scaffolded | Directory committed with `.gitkeep`; `benchmarks/baselines/README.md` documents the regeneration command (including `--agents` flag and `FORGE_BENCH_AGENT_COUNTS`). User runs locally on workstation hardware and commits the JSON in a follow-up PR |
 | Replace `panic!` on enum variants in non-step crates | Medium | ~20 sites in `crates/forge-proposal`, `crates/forge-server/src/ws_handler.rs`, `crates/forge-mangomas/src/curriculum/task_mapping.rs`, and `crates/forge-types/src/{task,action}.rs` should become `Result` returns or `unreachable!` with safety proof. Out of scope for the alloc-fix branch |
 | Replace `.unwrap()` on TOML parsing in `crates/forge-scenario/src/config.rs` | Medium | ~15 sites; move to `?` and propagate `Result` |
 | Workspace `dev-dependencies` consolidation | Low | `proptest` + `tracing-subscriber` declared per-crate in 15 crates; promote to `workspace.dev-dependencies` |
