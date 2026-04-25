@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### v0.2 Tier 1 Closeout
+
+- Added **multi-agent allocation audit**: `crates/forge-bench/src/bin/allocation_audit.rs` now accepts `--agents <comma-list>` (default sweep `1,8,16,32,64,128`, matching `multi_agent_scaling.rs`), honours the `FORGE_BENCH_AGENT_COUNTS` env var, and emits one `VariantReport` per `(action, agent_count)` pair. Row labels use the `<base>@n=<count>` form and carry a typed `num_agents: u32` field so downstream tooling can filter without parsing the variant string. Five new unit tests cover the argv parser.
+- Added **four Playwright E2E browser tests** to `demo_ui/tests/test_e2e_browser.py`: `TestSectionStateMachine` (IDLE → RUNNING → PASS), `TestTerminalStream` (live span accumulation, no `.c-fail` spans, no console errors), `TestProgressBar` (progress advances under `runAll`), and `TestWorldCanvas` (non-zero pixels after a run). New function-scoped `fresh_page` fixture isolates per-test DOM and console listeners.
+- Added **`benchmarks/baselines/reference_b/` scaffolding** (`.gitkeep`) so the directory commits; the regeneration commands in `benchmarks/baselines/README.md` document how to populate it locally on a non-CI host.
+
 #### v0.2 Implementation Hardening
 
 - Added **5 hex-grid integration tests** covering full episode cycle, deterministic replay, multi-agent episodes, square-move rejection, and serialization roundtrip (`tests/rust/integration_tests.rs` — 29 total passing)
@@ -32,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Python type compliance**: Fixed all 10 mypy errors across `muzero_buffer.py`, `wrappers.py`, `muzero_mcts.py`, and `pyproject.toml` override configuration — 86 source files pass mypy strict
 - **Python formatting**: Applied `ruff format` across 40 Python files; resolved all E501 line-length violations
 - **`.gitignore`**: Added entries for stale build artifacts (`clippy_output.txt`, `demo_results.md`)
+- **`demo-ui` CI job**: Now installs `demo_ui[dev]` extras and runs `playwright install --with-deps chromium` so the Playwright suite executes (previously skipped via `pytest.importorskip`); pip cache enabled with `cache: pip` and `cache-dependency-path` covering both the requirements file and `pyproject.toml`. New `FORGE_DEMO_PORT=18765` keeps the E2E uvicorn separate from the existing `FORGE_DEMO_UI_PORT=8765` health smoke test.
+- **`demo_ui/pyproject.toml`**: pinned `playwright==1.48.*` (was `>=1.40`) for CI reproducibility and added `pytest-timeout>=2.3` to the dev extras.
+- **Allocation audit baseline**: `benchmarks/baselines/reference_a/alloc_audit.json` regenerated under the multi-agent sweep — 72 rows (12 variants × 6 agent counts) all satisfying `total_bytes == 0`. Variant labels changed from `Move_Up` to `Move_Up@n=1` etc., which is a breaking change for any external tooling that memorised the old strings; the in-tree validator (`benchmarks/runner/check_zero_alloc.py`) treats `variant` as opaque and is unaffected.
+
+### Fixed
+
+- **Multi-agent zero-allocation regression** in `crates/forge-core/src/physics.rs`: the per-step aerial-collision snapshot was a local `SmallVec` with inline capacity 16, so any step with `num_agents > 16` spilled to the heap once and allocated 6 bytes per agent on every subsequent tick. Snapshot now lives on `PhysicsScratch::agents_snapshot`, sized via the existing `ensure_capacity` path, restoring the zero-alloc contract at every agent count exercised by the audit (verified up to `n=128`). Surfaced by the new multi-agent allocation audit. Removed the now-unused `forge_types::constants::PHYSICS_SMALLVEC_CAPACITY`.
 
 ### Fixed
 

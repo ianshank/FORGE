@@ -950,8 +950,8 @@ The CI pipeline runs on every push and pull request targeting `main`, `master`, 
   │ python-    │  │ python-    │  │ python-test  │  │   demo-ui      │
   │ lint       │  │ test-fast  │  │ (maturin)    │  │                │
   │            │  │            │  │              │  │ pytest +       │
-  │ ruff       │  │ pytest     │  │ maturin dev  │  │ health smoke   │
-  │ mypy       │  │ (no native)│  │ --cov ≥85%   │  │                │
+  │ ruff       │  │ pytest     │  │ maturin dev  │  │ Playwright E2E │
+  │ mypy       │  │ (no native)│  │ --cov ≥85%   │  │ + health smoke │
   └────────────┘  └────────────┘  └──────┬───────┘  └────────────────┘
                                          │
                   needs: [test, clippy, fmt, python-test]
@@ -1006,14 +1006,15 @@ The `docker` job runs only on the default branch or semantic version tags (`v*`)
   └──────┬───────┘
          │
          ▼
-  ┌──────────────┐
-  │  Rust step() │  ~7 μs total
-  │              │
-  │  Zero-alloc  │  No heap allocation
-  │  Fixed-point │  Integer arithmetic
-  │  SmallVec    │  Stack-allocated collections
-  │  Row-major   │  Cache-friendly grid layout
-  └──────┬───────┘
+  ┌──────────────────┐
+  │  Rust step_into()│  ~7 μs total
+  │                  │
+  │  Zero-alloc      │  No heap allocation post-warmup
+  │  Fixed-point     │  Integer arithmetic
+  │  PhysicsScratch  │  Reused agent snapshot, results, occupancy buffers
+  │  SmallVec        │  Stack-allocated collections
+  │  Row-major       │  Cache-friendly grid layout
+  └──────┬───────────┘
          │
          ▼
   ┌──────────────┐

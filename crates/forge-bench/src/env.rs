@@ -30,6 +30,14 @@ pub const ENV_SEED: &str = "FORGE_BENCH_SEED";
 /// pre-existing reproducibility convention.
 pub const BENCH_SEED: u64 = 42;
 
+/// Canonical agent-count sweep used by `multi_agent_scaling.rs` and the
+/// `allocation_audit` binary. Centralised here so the throughput bench
+/// and the alloc audit always agree on the fan-out being characterised;
+/// downstream callers should reference this rather than redeclaring the
+/// list locally. Override via [`ENV_AGENT_COUNTS`] or the binary's
+/// per-tool flag (e.g. `allocation_audit --agents`).
+pub const DEFAULT_AGENT_COUNTS: &[u32] = &[1, 8, 16, 32, 64, 128];
+
 /// Reads a non-zero `u16` from `var`, falling back to `default` if unset or
 /// unparseable. A warning is emitted when an override is rejected.
 pub fn u16_from_env(var: &str, default: u16) -> u16 {

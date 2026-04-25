@@ -104,3 +104,7 @@ models/
 
 # dhat profiler side-effect file (forge-bench allocation_audit)
 dhat-heap.json
+
+# Playwright artefacts (demo_ui/tests/test_e2e_browser.py)
+playwright-report/
+.playwright/
