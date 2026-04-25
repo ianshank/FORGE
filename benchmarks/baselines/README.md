@@ -33,10 +33,11 @@ The two abstract profiles are referenced in
 
 ## Updating
 
-When you commit a regenerated `alloc_audit.json`, also bump
-`docs/next_steps.md` in the same PR with the new mean throughput numbers
-so the human-readable table stays in sync with the machine-readable
-evidence.
+When you commit a regenerated `alloc_audit.json`, make sure it still
+satisfies the zero-allocation gate below. If you also refresh
+throughput baselines such as `<profile>/multi_agent_scaling.json`,
+update the corresponding human-readable performance documentation in
+the same PR so it stays in sync with the machine-readable evidence.
 
 A regenerated baseline must satisfy the same gate the CI uses:
 

@@ -231,10 +231,12 @@ fn main() -> ExitCode {
         })
         .collect();
 
+    // Deliberately a stable identifier rather than `env::current_exe()`:
+    // committing the latter into `benchmarks/baselines/<profile>/` would
+    // bake in the local `target/release/` path of whichever machine
+    // produced the snapshot, creating noisy diffs on regeneration.
     let report = AuditReport {
-        binary: env::current_exe()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "<unknown>".into()),
+        binary: "allocation_audit".to_string(),
         world_side: world,
         seed: audit_seed,
         warmup: args.warmup,

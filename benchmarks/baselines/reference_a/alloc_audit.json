@@ -1,5 +1,5 @@
 {
-  "binary": "/home/user/FORGE/target/release/allocation_audit",
+  "binary": "allocation_audit",
   "world_side": 64,
   "seed": 42,
   "warmup": 1024,

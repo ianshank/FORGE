@@ -58,7 +58,7 @@ pub struct InventoryObservation {
 
 /// Complete observation for a single agent.
 ///
-/// `Default` produces an empty observation with zero-length scalar fields and
+/// `Default` produces an empty observation with zero-valued scalar fields and
 /// empty `Vec`s. The default is used as a placeholder slot inside reusable
 /// `StepResult` buffers (see [`crate::observation::StepResult`]) — agents are
 /// observed by mutating the slot in place via `clear` + `extend` on the inner
@@ -173,7 +173,8 @@ impl Observation {
     }
 }
 
-/// The result of a single simulation step for one agent.
+/// Per-step results for *all* agents in a `WorldState` (one entry per
+/// agent in `observations`, `rewards`, and `info.agents_alive`).
 ///
 /// `Default` produces an empty result that is intended to be filled in place
 /// by [`crate::WorldState::step_into`] (or the equivalent buffer-reusing API

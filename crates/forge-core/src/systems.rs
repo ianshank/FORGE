@@ -60,15 +60,16 @@ pub fn run_systems(state: &mut WorldState) {
         &state.topology,
     );
 
-    // 2b. Physics: push processing — extract minimal data to avoid cloning.
-    //     SmallVec inline capacity 8 means up to 8 agents allocates nothing.
-    let push_data: smallvec::SmallVec<[physics::AgentPushData; 8]> = state
-        .agents
-        .iter()
-        .map(physics::AgentPushData::from_agent)
-        .collect();
+    // 2b. Physics: push processing — extract minimal data to avoid
+    //     cloning the full `Agent` vec. Uses the `push_scratch` buffer
+    //     on `WorldState` so the snapshot is allocation-free for any
+    //     agent count after warmup.
+    state.push_scratch.clear();
+    state
+        .push_scratch
+        .extend(state.agents.iter().map(physics::AgentPushData::from_agent));
     physics::process_pushes(
-        &push_data,
+        &state.push_scratch,
         &mut state.grid,
         &mut state.objects,
         &state.validated_actions,
@@ -470,8 +471,9 @@ mod tests {
 
     /// Test wrapper around [`validate_actions_into`] that mirrors the
     /// pre-refactor `validate_actions(actions, state) -> Vec<Action>`
-    /// signature. Stages `actions` into `state.step_actions` and returns
-    /// a clone of the validated buffer.
+    /// signature. Clones `state` locally, stages `actions` into
+    /// `state.step_actions`, and moves the validated buffer out of the
+    /// cloned local `state`. The caller's `WorldState` is untouched.
     fn validate_actions(actions: &[Action], state: &WorldState) -> Vec<Action> {
         let mut state = state.clone();
         state.step_actions.clear();

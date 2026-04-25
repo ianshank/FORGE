@@ -81,6 +81,10 @@ pub struct WorldState {
     pub(crate) crafting_object_map: HashMap<u32, forge_types::entity::ObjectType>,
     /// Reusable comm message queue for `process_communication`.
     pub(crate) comm_messages: Vec<(usize, u16)>,
+    /// Reusable per-agent push snapshot for `physics::process_pushes`.
+    /// Replaces the `SmallVec<[_; 8]>` that previously lived in
+    /// `run_systems` and would heap-allocate when `agents.len() > 8`.
+    pub(crate) push_scratch: Vec<crate::physics::AgentPushData>,
 }
 
 impl WorldState {
@@ -195,6 +199,7 @@ impl WorldState {
             near_station: Vec::with_capacity(agent_count),
             crafting_object_map: HashMap::new(),
             comm_messages: Vec::with_capacity(agent_count),
+            push_scratch: Vec::with_capacity(agent_count),
         };
 
         // Place agents on the grid
@@ -231,11 +236,24 @@ impl WorldState {
     /// This is the **hot-path entry point**: every internal buffer used by
     /// the systems pipeline lives on `WorldState` and is reused across
     /// ticks; the supplied `result` buffer is also reused (its inner
-    /// `Vec`s are cleared and re-extended rather than reallocated). After
-    /// a single warm-up call, subsequent invocations execute without any
-    /// heap allocations — this contract is enforced in CI by
-    /// `crates/forge-bench/src/bin/allocation_audit.rs` and
+    /// `Vec`s are cleared and re-extended rather than reallocated).
+    ///
+    /// # Zero-allocation contract
+    ///
+    /// After a single warm-up call, subsequent invocations execute without
+    /// any heap allocations **in the audited configuration**: a single
+    /// `WorldState` with `tasks` empty and the agri pipeline disabled.
+    /// This is what CI enforces today via
+    /// `crates/forge-bench/src/bin/allocation_audit.rs` +
     /// `benchmarks/runner/check_zero_alloc.py`.
+    ///
+    /// Known caveats outside the audited configuration:
+    /// - When `self.tasks` is non-empty, `forge_task::evaluator::evaluate_tasks`
+    ///   allocates a fresh `Vec<f32>` per tick. Refactoring the task
+    ///   evaluator to write into a `WorldState`-owned reward scratch is
+    ///   tracked as tech debt in `docs/next_steps.md`.
+    /// - Logging via `tracing` may allocate when fields are recorded;
+    ///   keep `RUST_LOG=warn` (or below `info`) on the hot path.
     ///
     /// Pass an arbitrary `StepResult` (e.g. `StepResult::default()`); on
     /// the first call the inner buffers will allocate to fit the agent
@@ -309,6 +327,7 @@ impl WorldState {
         self.near_station.clear();
         self.crafting_object_map.clear();
         self.comm_messages.clear();
+        self.push_scratch.clear();
 
         let mut result = StepResult::default();
         self.fill_step_result(&mut result);
@@ -349,6 +368,7 @@ impl WorldState {
     /// and re-extended rather than reallocated. After a single warm call,
     /// repeated invocations on the same `out` buffer perform no heap
     /// allocations — this is what keeps `step_into` zero-alloc.
+    #[instrument(skip_all)]
     pub fn fill_observation(&self, agent: &Agent, out: &mut Observation) {
         let vr = agent.vision_radius as i32;
         let view_side = (2 * vr + 1) as u16;
@@ -632,6 +652,7 @@ impl WorldState {
             near_station: Vec::new(),
             crafting_object_map: HashMap::new(),
             comm_messages: Vec::new(),
+            push_scratch: Vec::new(),
         })
     }
 
@@ -691,6 +712,7 @@ impl WorldState {
             near_station: Vec::new(),
             crafting_object_map: HashMap::new(),
             comm_messages: Vec::new(),
+            push_scratch: Vec::new(),
         })
     }
 }
