@@ -910,11 +910,26 @@ then optional hex movements (`HEX_ACTION_COUNT = 6`). Layout flags live in
 blocks.
 
 Both `Action::to_discrete` (panicking) and `Action::try_to_discrete*`
-(fallible) flow through one bounds-checking helper (`param_check`) so that
-out-of-range parameters — `Action::Drop(slot=10)`, `Action::Use(slot=10)`,
-`Action::Craft(recipe=9)`, `Action::Communicate(token=N)`,
-`Action::DropPayload(slot=10)`, `Action::Spray(slot=10)` — are rejected
-instead of silently producing a colliding ID. See §4.7 for the error type.
+(fallible) flow through three uniform helpers so that out-of-range
+parameters and disabled-layout-block calls are rejected rather than silently
+producing a colliding or out-of-space ID:
+
+- `param_check(action, name, value, limit, id)` — slot/recipe/token bounds
+  for `Drop`, `Use`, `Craft`, `Communicate`, `DropPayload`, `Spray`.
+- `drone_check(action, drone_actions_enabled, compute_id)` — gates every
+  drone variant (`Ascend`, `Descend`, `Hover`, `TakeOff`, `Land`, 4× `Scan`,
+  `DropPayload`) on the configured layout. Without this gate, `Action::Ascend`
+  silently encoded to ID `40 + comm_vocab_size` even when drone support was
+  disabled — equal to `space_size_full(_, false, false, false)`, so
+  out-of-bounds for the active space and disagreeing with `from_discrete_full`.
+- `agri_check(action, drone_actions_enabled, agri_actions_enabled,
+  compute_id)` — gates every agricultural variant (`Spray`,
+  `ScanMultispectral`, `ScanThermal`, `RelaySoilData`, `GenerateReport`) on
+  both flags, since agri layouts layer on top of drone infrastructure.
+
+Encoder and decoder are now consistent: every `try_to_discrete_configured`
+rejection corresponds to a `from_discrete_full` returning `None`. See §4.7 for
+the error taxonomy.
 
 ### 4.7 Structured Error Types
 

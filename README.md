@@ -217,6 +217,21 @@ For full C4 architecture diagrams, see [`docs/architecture.md`](docs/architectur
 
 When `world.grid_type = "Hex"`, the action space appends 6 hex-movement actions after any enabled drone and agricultural action blocks, so the final discrete size is configuration-dependent.
 
+#### Encoder API
+
+`forge_types::action::Action` provides both panicking and fallible encoder variants:
+
+| Method | Returns | Use when |
+|--------|---------|----------|
+| `to_discrete()` | `u32` | Base actions only; you've already validated parameters |
+| `to_discrete_full(comm_vocab_size)` | `u32` | Canonical full layout; you've already validated parameters |
+| `to_discrete_configured(...)` | `u32` | Config-driven layout; you've already validated parameters |
+| `try_to_discrete()` | `Result<u32, ActionEncodingError>` | Untrusted input; base actions only |
+| `try_to_discrete_full(comm_vocab_size)` | `Result<u32, ActionEncodingError>` | Untrusted input; canonical full layout |
+| `try_to_discrete_configured(...)` | `Result<u32, ActionEncodingError>` | Untrusted input; config-driven layout |
+
+Both encoder paths share the same bounds-checking helpers (`param_check`, `drone_check`, `agri_check`) so that out-of-range parameters — `Drop(slot >= 10)`, `Communicate(token >= comm_vocab_size)`, `MoveHex` on a square grid, etc. — are rejected uniformly instead of silently producing a colliding ID. The fallible variants surface the violation as a typed `ActionEncodingError::{DroneActionRequiresFullEncoder, AgriActionUnsupported, HexActionUnsupported, ParameterOutOfRange}`; the panicking variants delegate to the same logic and panic with the same message. See `docs/architecture.md` §4.5 / §4.7 for the full taxonomy.
+
 ### Configuration
 
 ```python

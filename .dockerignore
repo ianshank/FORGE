@@ -3,29 +3,98 @@ target/
 node_modules/
 dashboard/dist/
 demo_ui/.mypy_cache/
+build/
+dist/
+
+# Python build artefacts that should never enter the container image
+*.egg-info/
+.eggs/
+*.whl
+*.so
+*.py[cod]
+*$py.class
 
 # Caches
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+**/.pytest_cache/
 __pycache__/
+**/__pycache__/
 .benchmarks/
+
+# Coverage artefacts (CI- or locally-generated)
 .coverage
+coverage/
+htmlcov/
+coverage.xml
+coverage.json
+cobertura.xml
 
 # VCS & IDE
 .git/
 .github/
 .vscode/
+.idea/
 *.swp
 *.swo
+*~
 
-# Test output
+# OS detritus
+.DS_Store
+Thumbs.db
+
+# Local virtualenvs (must never be copied into the image)
+.venv/
+venv/
+
+# Environment files (may contain secrets)
+.env
+.env.local
+
+# Test output / local logs
 test-results/
-coverage/
 *.profraw
+test_output.txt
+test_results.txt
+pytest_out.txt
+maturin_out.txt
+maturin_err.txt
+clippy_output.txt
+e2e_results.json
+demo_results.md
 
-# Dev files
+# Allocation-audit artefacts produced by `cargo bench`/`allocation_audit`
+# (these are CI-generated at the repo root; the tracked baselines under
+# benchmarks/baselines/ are kept by an explicit `!benchmarks/baselines/` if
+# the build needs them — currently they are not copied into the runtime image).
+/alloc_audit.json
+/alloc_audit_summary.json
+dhat-heap.json
+
+# Criterion benchmark output produced by `cargo bench -p forge-bench`
+target/criterion-baseline/
+
+# ML training side-effects (very large, never belong in a runtime image)
+*.onnx
+*.pt
+*.pth
+models/
+runs/
+wandb/
+mlruns/
+artifacts/
+
+# Playwright artefacts (demo_ui/tests/test_e2e_browser.py)
+playwright-report/
+.playwright/
+
+# Proptest regression seeds (fuzz harness state, not runtime input)
+**/proptest-regressions/
+
+# Dev / agent files (not part of any container image)
 .claude/
 .gemini/
+/memories/
 Agent.md
 CLAUDE.md
