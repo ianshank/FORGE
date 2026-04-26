@@ -149,6 +149,18 @@ pub const ACTION_DROP_SLOTS: usize = 10;
 pub const ACTION_USE_SLOTS: usize = 10;
 /// Number of craft recipe action slots in the action encoding.
 pub const ACTION_CRAFT_SLOTS: usize = 9;
+/// Number of `DropPayload` slots in the drone action block.
+///
+/// The drone block layout is 5 base actions (Ascend, Descend, Hover, TakeOff,
+/// Land) + 4 [`crate::action::Action::Scan`] directions + 10 `DropPayload`
+/// slots = [`DRONE_ACTION_COUNT`].
+pub const ACTION_DROP_PAYLOAD_SLOTS: usize = 10;
+/// Number of `Spray` slots in the agricultural action block.
+///
+/// The agri block layout is 10 `Spray` slots + 4 specialty actions
+/// (`ScanMultispectral`, `ScanThermal`, `RelaySoilData`, `GenerateReport`)
+/// = [`AGRI_ACTION_COUNT`].
+pub const ACTION_SPRAY_SLOTS: usize = 10;
 
 /// Number of fractional bits in fixed-point representation (16 bits).
 pub const FIXED_POINT_SHIFT: u32 = 16;

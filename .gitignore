@@ -105,6 +105,19 @@ models/
 # dhat profiler side-effect file (forge-bench allocation_audit)
 dhat-heap.json
 
+# CI-generated allocation-audit artefacts at the repo root
+# (the tracked baselines live under benchmarks/baselines/<profile>/, which
+# this rule is anchored to NOT match thanks to the leading slash).
+/alloc_audit.json
+/alloc_audit_summary.json
+
+# Criterion benchmark output produced by `cargo bench -p forge-bench`
+# (the tracked baselines under benchmarks/baselines/<profile>/ are unaffected).
+target/criterion-baseline/
+
+# Tarpaulin coverage XML produced locally by the `coverage` CI job
+cobertura.xml
+
 # Playwright artefacts (demo_ui/tests/test_e2e_browser.py)
 playwright-report/
 .playwright/

@@ -273,6 +273,27 @@ pub enum ActionEncodingError {
         /// Whether hex actions were enabled at the call site.
         hex_actions_enabled: bool,
     },
+
+    /// An action parameter (inventory slot, recipe index, communication token,
+    /// drone payload slot, etc.) is outside the valid range for the discrete
+    /// action space layout.
+    ///
+    /// Without this check, an out-of-range parameter would silently produce a
+    /// valid-looking discrete ID that collides with the next action block —
+    /// e.g. `Action::Drop(slot=10)` would otherwise encode to ID 16, which is
+    /// the slot for `Action::Use(slot=0)`.
+    #[error(
+        "action {action_name} parameter {value} is out of range \
+        (max allowed: {max})"
+    )]
+    ParameterOutOfRange {
+        /// Static, debug-style name of the offending action variant.
+        action_name: &'static str,
+        /// The invalid parameter value provided by the caller.
+        value: u32,
+        /// The maximum allowed value (inclusive) for this parameter.
+        max: u32,
+    },
 }
 
 /// Result type alias for FORGE operations.
