@@ -312,10 +312,16 @@ impl Action {
 
     /// Fallible counterpart of [`Action::to_discrete_full`].
     ///
-    /// All variants are enabled in the layout selected by this method, so the
-    /// only failure modes are unreachable in practice. The `Result`-typed
-    /// signature is provided so callers building generic encoder pipelines do
-    /// not need to special-case the canonical path.
+    /// All layout flags are enabled, so layout-gating errors
+    /// ([`ActionEncodingError::DroneActionRequiresFullEncoder`],
+    /// [`ActionEncodingError::AgriActionUnsupported`],
+    /// [`ActionEncodingError::HexActionUnsupported`]) are unreachable. The
+    /// remaining failure mode is parameter bounds:
+    /// [`ActionEncodingError::ParameterOutOfRange`] for `Drop`/`Use`/`Craft`/
+    /// `Communicate`/`DropPayload`/`Spray` whose argument exceeds its allocated
+    /// slot/vocab range. Callers that already validate parameters at their own
+    /// boundary can safely `.expect()` the result; callers ingesting actions
+    /// from untrusted sources should propagate the `Result`.
     pub fn try_to_discrete_full(&self, comm_vocab_size: u16) -> Result<u32, ActionEncodingError> {
         self.try_to_discrete_configured(comm_vocab_size, true, true, true)
     }
@@ -419,22 +425,32 @@ impl Action {
                 comm_vocab_size as u32,
                 40 + *token as u32,
             ),
-            Action::Ascend => Ok(drone_base),
-            Action::Descend => Ok(drone_base + 1),
-            Action::Hover => Ok(drone_base + 2),
-            Action::TakeOff => Ok(drone_base + 3),
-            Action::Land => Ok(drone_base + 4),
-            Action::Scan(Direction::Up) => Ok(drone_base + 5),
-            Action::Scan(Direction::Down) => Ok(drone_base + 6),
-            Action::Scan(Direction::Left) => Ok(drone_base + 7),
-            Action::Scan(Direction::Right) => Ok(drone_base + 8),
-            Action::DropPayload(slot) => param_check(
-                self,
-                "DropPayload",
-                *slot as u32,
-                crate::constants::ACTION_DROP_PAYLOAD_SLOTS as u32,
-                drone_base + 9 + *slot as u32,
-            ),
+            Action::Ascend => drone_check(self, drone_actions_enabled, || Ok(drone_base)),
+            Action::Descend => drone_check(self, drone_actions_enabled, || Ok(drone_base + 1)),
+            Action::Hover => drone_check(self, drone_actions_enabled, || Ok(drone_base + 2)),
+            Action::TakeOff => drone_check(self, drone_actions_enabled, || Ok(drone_base + 3)),
+            Action::Land => drone_check(self, drone_actions_enabled, || Ok(drone_base + 4)),
+            Action::Scan(Direction::Up) => {
+                drone_check(self, drone_actions_enabled, || Ok(drone_base + 5))
+            }
+            Action::Scan(Direction::Down) => {
+                drone_check(self, drone_actions_enabled, || Ok(drone_base + 6))
+            }
+            Action::Scan(Direction::Left) => {
+                drone_check(self, drone_actions_enabled, || Ok(drone_base + 7))
+            }
+            Action::Scan(Direction::Right) => {
+                drone_check(self, drone_actions_enabled, || Ok(drone_base + 8))
+            }
+            Action::DropPayload(slot) => drone_check(self, drone_actions_enabled, || {
+                param_check(
+                    self,
+                    "DropPayload",
+                    *slot as u32,
+                    crate::constants::ACTION_DROP_PAYLOAD_SLOTS as u32,
+                    drone_base + 9 + *slot as u32,
+                )
+            }),
             // Agricultural actions: after drone actions
             Action::Spray(slot) => {
                 agri_check(self, drone_actions_enabled, agri_actions_enabled, || {
@@ -551,6 +567,39 @@ fn agri_action_name(action: &Action) -> &'static str {
         Action::RelaySoilData => "RelaySoilData",
         Action::GenerateReport => "GenerateReport",
         _ => "<non-agri>",
+    }
+}
+
+/// Helper used by [`Action::try_to_discrete_configured`] to gate every drone
+/// variant on `drone_actions_enabled`, symmetric with [`agri_check`].
+///
+/// Without this guard the configured encoder would happily encode
+/// `Action::Ascend` to `40 + comm_vocab_size` even when drone actions are
+/// disabled — but that ID equals `space_size_full(_, drone=false, _, _)`, so
+/// it is out-of-bounds for the active action space and disagrees with
+/// [`Action::from_discrete_full`] which returns `None` for the same input.
+///
+/// `compute_id` is only invoked when drone actions are enabled. The closure
+/// returns its own `Result` so it can perform a downstream parameter-bounds
+/// check (e.g. for `DropPayload`'s slot) without fighting the layout-gating
+/// logic.
+#[inline]
+fn drone_check<F>(
+    action: &Action,
+    drone_actions_enabled: bool,
+    compute_id: F,
+) -> Result<u32, ActionEncodingError>
+where
+    F: FnOnce() -> Result<u32, ActionEncodingError>,
+{
+    if drone_actions_enabled {
+        compute_id()
+    } else {
+        let err = ActionEncodingError::DroneActionRequiresFullEncoder {
+            action_name: drone_action_name(action),
+        };
+        warn!(target: "forge_types::action", action = ?action, "{err}");
+        Err(err)
     }
 }
 
@@ -1246,6 +1295,78 @@ mod tests {
         #[should_panic(expected = "Action::to_discrete_configured:")]
         fn legacy_to_discrete_configured_panics_on_communicate_token_out_of_range() {
             let _ = Action::Communicate(99).to_discrete_configured(8, true, true, true);
+        }
+
+        // ---- Drone-gating regression (Copilot/Devin reviews on PR #39) ----
+
+        /// Without the `drone_check` gate, every drone variant silently
+        /// encoded to `40 + comm_vocab_size + offset` even when
+        /// `drone_actions_enabled=false` — that ID is *outside* the configured
+        /// action space (since `space_size_full(_, false, false, false) ==
+        /// 40 + comm_vocab_size`) and disagrees with `from_discrete_full`,
+        /// which decodes the same input to `None`. This regression test
+        /// pins the contract: every drone variant must come back as
+        /// `DroneActionRequiresFullEncoder` when drone actions are disabled.
+        #[test]
+        fn try_configured_rejects_every_drone_variant_when_drone_disabled() {
+            let drone_actions = [
+                Action::Ascend,
+                Action::Descend,
+                Action::Hover,
+                Action::TakeOff,
+                Action::Land,
+                Action::Scan(Direction::Up),
+                Action::Scan(Direction::Down),
+                Action::Scan(Direction::Left),
+                Action::Scan(Direction::Right),
+                Action::DropPayload(0),
+                Action::DropPayload(9),
+            ];
+            for action in drone_actions {
+                let err = action
+                    .try_to_discrete_configured(8, false, false, false)
+                    .expect_err("drone variant must error when drone_actions_enabled=false");
+                assert!(
+                    matches!(
+                        err,
+                        ActionEncodingError::DroneActionRequiresFullEncoder { .. }
+                    ),
+                    "wrong variant for {action:?}: {err:?}",
+                );
+            }
+        }
+
+        /// `try_to_discrete_configured(_, false, _, _)` must agree with
+        /// `from_discrete_full(_, false, _, _)`: both encoder and decoder
+        /// reject every drone action when drone support is disabled. Without
+        /// this guard the encoder produced `Ok(48)` for `Ascend` while the
+        /// decoder returned `None` for `from_discrete_full(48, 8, false, _, _)`.
+        #[test]
+        fn drone_disabled_encoder_decoder_agree() {
+            let vocab_size = 8u16;
+            // Encoder rejects every drone action.
+            for action in [Action::Ascend, Action::Hover, Action::DropPayload(3)] {
+                assert!(action
+                    .try_to_discrete_configured(vocab_size, false, false, false)
+                    .is_err());
+            }
+            // Decoder rejects every ID inside the would-be drone block.
+            let drone_base = 40 + vocab_size as u32;
+            for offset in 0..crate::constants::DRONE_ACTION_COUNT {
+                let id = drone_base + offset;
+                assert!(
+                    Action::from_discrete_full(id, vocab_size, false, false, false).is_none(),
+                    "decoder must return None for id={id} when drone_actions_enabled=false"
+                );
+            }
+        }
+
+        /// The legacy panicking entrypoint must now panic on drone-disabled
+        /// configurations instead of silently producing an out-of-space ID.
+        #[test]
+        #[should_panic(expected = "Action::to_discrete_configured:")]
+        fn legacy_to_discrete_configured_panics_when_drone_disabled() {
+            let _ = Action::Ascend.to_discrete_configured(8, false, false, false);
         }
     }
 }

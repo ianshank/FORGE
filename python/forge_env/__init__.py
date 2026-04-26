@@ -29,8 +29,8 @@ except ImportError:
 # Convenience re-exports. These are intentionally placed after the native
 # extension probe above so that callers see a consistent error path
 # ("Native module unavailable") before any pure-Python wrapper raises a
-# secondary ImportError. The `# noqa: E402` is therefore deliberate, not
-# accidental.
+# secondary ImportError. The trailing E402 suppression is therefore
+# deliberate, not accidental.
 from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: E402
 from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: E402
 from forge_env.utils import benchmark_fps, check_env, make_env, seed_everything  # noqa: E402
