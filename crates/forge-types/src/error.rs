@@ -35,6 +35,11 @@ pub enum ForgeError {
     /// An error occurred in the edge runtime.
     #[error("edge error: {0}")]
     Edge(#[from] EdgeError),
+
+    /// An error occurred while encoding an [`crate::action::Action`] into its
+    /// discrete integer representation.
+    #[error("action encoding error: {0}")]
+    ActionEncoding(#[from] ActionEncodingError),
 }
 
 /// Errors that can occur during world generation.
@@ -213,6 +218,60 @@ pub enum EdgeError {
         current_bytes: u64,
         /// Maximum buffer capacity in bytes.
         max_bytes: u64,
+    },
+}
+
+/// Errors that can occur when encoding an [`crate::action::Action`] into its
+/// discrete integer representation.
+///
+/// These errors replace the legacy `panic!` paths in
+/// [`crate::action::Action::to_discrete`] /
+/// [`crate::action::Action::to_discrete_configured`]. Use the `try_*` variants
+/// to recover gracefully from a configuration / action mismatch instead of
+/// crashing the process.
+#[derive(Debug, Error, PartialEq, Eq, Clone)]
+pub enum ActionEncodingError {
+    /// A drone action was submitted to an encoder that does not advertise the
+    /// drone communication offset (e.g. [`crate::action::Action::to_discrete`]).
+    ///
+    /// The fix is to use [`crate::action::Action::to_discrete_full`] or
+    /// [`crate::action::Action::to_discrete_configured`] with
+    /// `drone_actions_enabled = true`.
+    #[error(
+        "drone action {action_name} requires the drone-aware encoder \
+        (call to_discrete_full or to_discrete_configured with drone_actions_enabled=true)"
+    )]
+    DroneActionRequiresFullEncoder {
+        /// Static, debug-style name of the offending action variant.
+        action_name: &'static str,
+    },
+
+    /// An agricultural action was submitted but either drone or agricultural
+    /// support is disabled in the active action space layout. Agricultural
+    /// actions are layered on top of drone infrastructure, so they require
+    /// both flags.
+    #[error(
+        "agricultural action {action_name} requires drone_actions_enabled=true \
+        AND agri_actions_enabled=true (got drone={drone_actions_enabled}, agri={agri_actions_enabled})"
+    )]
+    AgriActionUnsupported {
+        /// Static, debug-style name of the offending action variant.
+        action_name: &'static str,
+        /// Whether drone actions were enabled at the call site.
+        drone_actions_enabled: bool,
+        /// Whether agricultural actions were enabled at the call site.
+        agri_actions_enabled: bool,
+    },
+
+    /// A hex-grid movement action was submitted but hex actions are disabled
+    /// in the active action space layout.
+    #[error(
+        "hex move action requires hex_actions_enabled=true \
+        (got hex_actions_enabled={hex_actions_enabled})"
+    )]
+    HexActionUnsupported {
+        /// Whether hex actions were enabled at the call site.
+        hex_actions_enabled: bool,
     },
 }
 

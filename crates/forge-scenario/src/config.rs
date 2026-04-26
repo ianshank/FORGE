@@ -7,13 +7,32 @@ use std::fmt;
 
 use forge_types::config::ForgeConfig;
 use serde::{Deserialize, Serialize};
-use tracing::instrument;
+use thiserror::Error;
+use tracing::{instrument, warn};
 
 /// Minimum valid difficulty tier.
 pub const MIN_DIFFICULTY_TIER: u8 = 1;
 
 /// Maximum valid difficulty tier.
 pub const MAX_DIFFICULTY_TIER: u8 = 6;
+
+/// Errors that can occur while parsing or serializing a [`ScenarioConfig`].
+///
+/// This replaces the previous `Result<_, String>` signature on
+/// [`ScenarioConfig::from_toml`] / [`ScenarioConfig::to_toml`]. The new type
+/// preserves the original error context (via the underlying
+/// [`toml::de::Error`] / [`toml::ser::Error`]) so callers can pattern-match on
+/// the failure mode instead of string-matching the message.
+#[derive(Debug, Error)]
+pub enum ScenarioConfigError {
+    /// The TOML payload could not be parsed into a [`ScenarioConfig`].
+    #[error("failed to parse scenario TOML: {0}")]
+    ParseToml(#[from] toml::de::Error),
+
+    /// A [`ScenarioConfig`] could not be serialized into a TOML string.
+    #[error("failed to serialize scenario TOML: {0}")]
+    SerializeToml(#[from] toml::ser::Error),
+}
 
 /// A scenario configuration loaded from TOML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,15 +89,28 @@ fn default_version() -> String {
 
 impl ScenarioConfig {
     /// Parses a scenario config from a TOML string.
+    ///
+    /// On failure, returns a [`ScenarioConfigError::ParseToml`] that wraps the
+    /// underlying [`toml::de::Error`] (including span/line information when
+    /// the source TOML provides it).
     #[instrument(skip_all)]
-    pub fn from_toml(toml_str: &str) -> Result<Self, String> {
-        toml::from_str(toml_str).map_err(|e| format!("TOML parse error: {e}"))
+    pub fn from_toml(toml_str: &str) -> Result<Self, ScenarioConfigError> {
+        toml::from_str(toml_str).map_err(|e: toml::de::Error| {
+            warn!(error = %e, "ScenarioConfig::from_toml: parse failure");
+            ScenarioConfigError::ParseToml(e)
+        })
     }
 
     /// Serializes to a TOML string.
+    ///
+    /// On failure, returns a [`ScenarioConfigError::SerializeToml`] that wraps
+    /// the underlying [`toml::ser::Error`].
     #[instrument(skip_all)]
-    pub fn to_toml(&self) -> Result<String, String> {
-        toml::to_string_pretty(self).map_err(|e| format!("TOML serialization error: {e}"))
+    pub fn to_toml(&self) -> Result<String, ScenarioConfigError> {
+        toml::to_string_pretty(self).map_err(|e: toml::ser::Error| {
+            warn!(error = %e, "ScenarioConfig::to_toml: serialization failure");
+            ScenarioConfigError::SerializeToml(e)
+        })
     }
 
     /// Returns the effective ForgeConfig with scenario overrides applied.
@@ -223,6 +255,24 @@ name = "Minimal Scenario"
         let deser = ScenarioConfig::from_toml(&toml_str).unwrap();
         assert_eq!(deser.scenario.id, "test");
         assert_eq!(deser.scenario.difficulty_tier, 3);
+    }
+
+    #[test]
+    fn test_scenario_from_toml_returns_parse_error_variant() {
+        // Confirm the error type carries the underlying toml::de::Error and is
+        // not silently downgraded to a String.
+        let err =
+            ScenarioConfig::from_toml("not [valid toml").expect_err("malformed TOML must error");
+        assert!(
+            matches!(err, ScenarioConfigError::ParseToml(_)),
+            "expected ParseToml variant, got {err:?}",
+        );
+        // Display message must remain human-readable (registry.rs logs it).
+        let msg = err.to_string();
+        assert!(
+            msg.contains("failed to parse scenario TOML"),
+            "missing wrapper prefix in: {msg}",
+        );
     }
 
     #[test]
