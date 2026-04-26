@@ -22,7 +22,11 @@ logger = logging.getLogger(__name__)
 
 ALPHAGALERKIN_AVAILABLE = False
 try:
-    from src.games.interface import GameInterface
+    # Probe import: we only need to know whether AlphaGalerkin is installed.
+    # The actual `GameInterface` symbol is unused in this module — the adapter
+    # talks to AlphaGalerkin via duck-typed objects. Aliasing to `_` makes the
+    # intent explicit and silences ruff F401.
+    from src.games.interface import GameInterface as _AlphaGalerkinProbe  # noqa: F401
 
     ALPHAGALERKIN_AVAILABLE = True
 except ImportError:

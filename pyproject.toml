@@ -61,6 +61,13 @@ ignore = [
     "E501",    # line-length handled by formatter
     "PLR0913", # too many arguments (env APIs have many args)
     "PLR2004", # magic value comparison (acceptable in tests)
+    # FORGE has many optional ML dependencies (torch, anthropic, openai,
+    # stable-baselines3, src.games.*) that are imported lazily inside the
+    # functions that actually need them so a stripped-down install can still
+    # import the package. Function-scope imports are the documented pattern,
+    # so suppress the rule globally instead of pinning a `# noqa` to every
+    # site (~50 occurrences across the agents / providers / collector layers).
+    "PLC0415", # `import` should be at the top-level of a file
 ]
 
 [tool.ruff.lint.isort]
@@ -115,6 +122,20 @@ module = [
     "onnxruntime.*",
     "src",
     "src.*",
+    # Optional LLM SDKs imported lazily by `forge.cognitive.providers`. They
+    # only need to type-check when the user actually installs them, so treat
+    # the module as untyped for mypy.
+    "anthropic",
+    "anthropic.*",
+    "openai",
+    "openai.*",
+    # Optional dependencies of `scripts/calibrate_agri.py` (HuggingFace
+    # `datasets` for dataset I/O, `tomli_w` for writing back the calibrated
+    # config). Either is installed on demand by the calibration workflow.
+    "datasets",
+    "datasets.*",
+    "tomli_w",
+    "tomli_w.*",
 ]
 ignore_missing_imports = true
 # Prevent mypy from descending into third-party source files (e.g. torch uses

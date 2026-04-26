@@ -11,8 +11,8 @@ import pytest
 @pytest.fixture()
 def parallel_env() -> object:
     """Create a ForgeParallelEnv with 3 agents using real native backend."""
-    from forge_env import pettingzoo_env  # noqa: PLC0415
-    from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: PLC0415
+    from forge_env import pettingzoo_env
+    from forge_env.pettingzoo_env import ForgeParallelEnv
 
     if pettingzoo_env._NativeEnv is None:
         pytest.skip("forge_env running in pure-Python mode (no native backend)")

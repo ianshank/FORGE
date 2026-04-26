@@ -60,7 +60,7 @@ class TestModuleImport:
             contextlib.suppress(ImportError, TypeError),
         ):
             # Re-executing the conditional import block should not crash.
-            from src.games.interface import GameInterface  # noqa: F401,PLC0415
+            from src.games.interface import GameInterface  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +239,7 @@ class TestForgeGameAdapterToTensor:
 
 def _make_mock_torch_model(action_n: int = 4) -> MagicMock:
     """Return a mock AG model that produces fake logits via torch tensors."""
-    import torch  # noqa: PLC0415
+    import torch
 
     logits = torch.zeros(1, action_n)
     model = MagicMock()
@@ -251,7 +251,7 @@ class TestAlphaGalerkinAgent:
     """Tests for AlphaGalerkinAgent."""
 
     def test_is_base_agent_subclass(self) -> None:
-        from forge.agents.base_agent import BaseAgent  # noqa: PLC0415
+        from forge.agents.base_agent import BaseAgent
 
         assert issubclass(AlphaGalerkinAgent, BaseAgent)
 

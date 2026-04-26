@@ -96,8 +96,8 @@ class TestActorCriticNetworkStandalone:
 
     def test_save_load_roundtrip_via_tmp_path(self, tmp_path: Path) -> None:
         """Save and load through a tmp_path directory."""
-        import torch  # noqa: PLC0415
-        from forge.models.policy_network import ActorCriticNetwork  # noqa: PLC0415
+        import torch
+        from forge.models.policy_network import ActorCriticNetwork
 
         net1 = ActorCriticNetwork(
             obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
@@ -119,7 +119,7 @@ class TestActorCriticNetworkStandalone:
 
     def test_load_dimension_mismatch_obs(self, tmp_path: Path) -> None:
         """Loading a checkpoint with wrong obs_dim should raise ValueError."""
-        from forge.models.policy_network import ActorCriticNetwork  # noqa: PLC0415
+        from forge.models.policy_network import ActorCriticNetwork
 
         net1 = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         path = str(tmp_path / "model.pt")
@@ -134,7 +134,7 @@ class TestActorCriticNetworkStandalone:
 
     def test_load_dimension_mismatch_action(self, tmp_path: Path) -> None:
         """Loading a checkpoint with wrong action_dim should raise ValueError."""
-        from forge.models.policy_network import ActorCriticNetwork  # noqa: PLC0415
+        from forge.models.policy_network import ActorCriticNetwork
 
         net1 = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         path = str(tmp_path / "model.pt")
@@ -149,8 +149,8 @@ class TestActorCriticNetworkStandalone:
 
     def test_parameters_returns_list(self) -> None:
         """parameters() should return a non-empty list of torch Parameters."""
-        import torch  # noqa: PLC0415
-        from forge.models.policy_network import ActorCriticNetwork  # noqa: PLC0415
+        import torch
+        from forge.models.policy_network import ActorCriticNetwork
 
         net = ActorCriticNetwork(
             obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES

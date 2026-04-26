@@ -82,7 +82,7 @@ class TestPPOTrainerEvalCallback:
 
     def test_callback_fires_at_interval(self) -> None:
         """eval_callback is called every eval_interval updates."""
-        from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
+        from forge.training.trainer import PPOTrainer, PPOTrainerConfig
 
         mock_agent = MagicMock()
         mock_agent.obs_dim = 4
@@ -144,7 +144,7 @@ class TestPPOTrainerEvalCallback:
 
     def test_no_callback_when_none(self) -> None:
         """When eval_callback is None, no callback errors occur."""
-        from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
+        from forge.training.trainer import PPOTrainer, PPOTrainerConfig
 
         mock_agent = MagicMock()
         mock_agent.obs_dim = 4
@@ -187,7 +187,7 @@ class TestPPOTrainerEvalCallback:
 
     def test_callback_not_fired_when_interval_zero(self) -> None:
         """When eval_interval=0, callback is never called even if provided."""
-        from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
+        from forge.training.trainer import PPOTrainer, PPOTrainerConfig
 
         mock_agent = MagicMock()
         mock_agent.obs_dim = 4

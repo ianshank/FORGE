@@ -174,7 +174,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _load_mangomas_bridge_config(config_paths: list[str]) -> Any:
     """Load the MangoMAS bridge config, defaulting to in-code dataclass defaults."""
-    from forge.mangomas.config import MangoMASBridgeConfig  # noqa: PLC0415
+    from forge.mangomas.config import MangoMASBridgeConfig
 
     bridge_config = MangoMASBridgeConfig()
     for path in config_paths:
@@ -221,7 +221,7 @@ def _maybe_write_mangomas_report(
     if not args.collection_report_path:
         return
 
-    from forge.mangomas.collector import write_collection_report  # noqa: PLC0415
+    from forge.mangomas.collector import write_collection_report
 
     write_collection_report(
         collection_result,
@@ -238,7 +238,7 @@ def _maybe_write_mangomas_report(
 
 def _collect_mangomas_training_data(config: Any, args: argparse.Namespace) -> tuple[Any, Any, list[str]]:
     """Collect MangoMAS training data using the configured FORGE scenarios."""
-    from forge.mangomas.collector import collect_training_data_from_scenarios  # noqa: PLC0415
+    from forge.mangomas.collector import collect_training_data_from_scenarios
 
     bridge_config = _load_mangomas_bridge_config(args.mangomas_config)
     _apply_mangomas_cli_overrides(bridge_config, args)
@@ -268,7 +268,7 @@ def _create_env(config: Any) -> Any:
     Raises:
         RuntimeError: If environment creation fails.
     """
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     try:
         rust_config = config.to_rust_config()
@@ -291,7 +291,7 @@ def _make_early_stopping(args: argparse.Namespace) -> Any:
         An ``EarlyStopping`` instance, or ``None`` if disabled.
     """
     if args.early_stopping_patience > 0 and args.eval_interval > 0:
-        from forge.training.stability import (  # noqa: PLC0415
+        from forge.training.stability import (
             EarlyStopping,
             EarlyStoppingConfig,
         )
@@ -310,10 +310,10 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
         config: A ForgeConfig instance.
         args: Parsed CLI arguments.
     """
-    from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig  # noqa: PLC0415
-    from forge.training.checkpointing import CheckpointManager  # noqa: PLC0415
-    from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
-    from forge.utils.observation import compute_obs_dim, flatten_obs  # noqa: PLC0415
+    from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig
+    from forge.training.checkpointing import CheckpointManager
+    from forge.training.trainer import PPOTrainer, PPOTrainerConfig
+    from forge.utils.observation import compute_obs_dim, flatten_obs
 
     obs_dim, action_dim = compute_obs_dim(env), int(env.action_space.n)
     logger.info("Env obs_dim=%d, action_dim=%d", obs_dim, action_dim)
@@ -338,7 +338,7 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
     # Optional dashboard client for live metrics streaming
     dashboard = None
     if getattr(args, "dashboard_url", ""):
-        from forge.utils.dashboard_client import DashboardClient  # noqa: PLC0415
+        from forge.utils.dashboard_client import DashboardClient
 
         dashboard = DashboardClient(args.dashboard_url)
 
@@ -350,7 +350,7 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
         trainer_config.eval_interval = args.eval_interval
 
         def _mappo_eval_callback(update: int, _agent: Any) -> None:
-            from forge.evaluation.evaluator import EvalConfig, Evaluator  # noqa: PLC0415
+            from forge.evaluation.evaluator import EvalConfig, Evaluator
 
             evaluator = Evaluator(EvalConfig(num_episodes=args.eval_episodes, seed=args.seed))
             result = evaluator.evaluate(env, agent)
@@ -428,13 +428,13 @@ def _train_basic(
         agent: An agent implementing ``act(obs) -> (action, trace)``.
         args: Parsed CLI arguments.
     """
-    from forge.utils.observation import flatten_obs  # noqa: PLC0415
+    from forge.utils.observation import flatten_obs
 
     early_stopping = _make_early_stopping(args)
 
     dashboard = None
     if getattr(args, "dashboard_url", ""):
-        from forge.utils.dashboard_client import DashboardClient  # noqa: PLC0415
+        from forge.utils.dashboard_client import DashboardClient
 
         dashboard = DashboardClient(args.dashboard_url)
 
@@ -459,7 +459,7 @@ def _train_basic(
         total_steps += steps
 
         if args.eval_interval > 0 and episode % args.eval_interval == 0:
-            from forge.evaluation.evaluator import EvalConfig, Evaluator  # noqa: PLC0415
+            from forge.evaluation.evaluator import EvalConfig, Evaluator
 
             evaluator = Evaluator(EvalConfig(num_episodes=args.eval_episodes, seed=args.seed))
             result = evaluator.evaluate(env, agent)
@@ -512,12 +512,12 @@ def main(argv: list[str] | None = None) -> None:
     """
     args = parse_args(argv)
 
-    from forge.utils.logging_config import setup_logging  # noqa: PLC0415
+    from forge.utils.logging_config import setup_logging
 
     setup_logging(level=args.log_level)
 
-    from forge.config import ForgeConfig  # noqa: PLC0415
-    from forge.utils.seed import set_all_seeds  # noqa: PLC0415
+    from forge.config import ForgeConfig
+    from forge.utils.seed import set_all_seeds
 
     try:
         config = ForgeConfig.from_file(args.config)
@@ -550,7 +550,7 @@ def main(argv: list[str] | None = None) -> None:
                 collection_result.total_steps(),
             )
         elif args.agent == "mangomas":
-            from forge.mangomas.pipeline import (  # noqa: PLC0415
+            from forge.mangomas.pipeline import (
                 MangoMASDroneTrainingPipeline,
             )
 
@@ -579,8 +579,8 @@ def main(argv: list[str] | None = None) -> None:
                 if args.agent == "mappo":
                     _train_mappo(env, config, args)
                 elif args.agent == "random":
-                    from forge.agents.base_agent import AgentConfig  # noqa: PLC0415
-                    from forge.agents.random_agent import RandomAgent  # noqa: PLC0415
+                    from forge.agents.base_agent import AgentConfig
+                    from forge.agents.random_agent import RandomAgent
 
                     action_dim: int = env.action_space.n
                     agent = RandomAgent(
@@ -590,7 +590,7 @@ def main(argv: list[str] | None = None) -> None:
                     )
                     _train_basic(env, agent, args)
                 elif args.agent == "mcts":
-                    from forge.agents.mcts_agent import MCTSAgent, MCTSConfig  # noqa: PLC0415
+                    from forge.agents.mcts_agent import MCTSAgent, MCTSConfig
 
                     action_dim = env.action_space.n
                     mcts_agent = MCTSAgent(

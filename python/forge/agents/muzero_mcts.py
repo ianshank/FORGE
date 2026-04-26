@@ -344,22 +344,22 @@ class MuZeroMCTS:
             probs = np.zeros_like(visit_counts)
             best = np.argmax(visit_counts)
             probs[best] = 1.0
-            return probs  # type: ignore[no-any-return]
+            return probs
 
         # Temperature-scaled softmax over log visit counts
         total = visit_counts.sum()
         if total == 0:
-            return np.ones_like(visit_counts) / len(visit_counts)  # type: ignore[no-any-return]
+            return np.ones_like(visit_counts) / len(visit_counts)
 
         counts_temp = visit_counts ** (1.0 / temperature)
         total_temp = counts_temp.sum()
         if total_temp == 0:
-            return np.ones_like(visit_counts) / len(visit_counts)  # type: ignore[no-any-return]
-        return counts_temp / total_temp  # type: ignore[no-any-return]
+            return np.ones_like(visit_counts) / len(visit_counts)
+        return counts_temp / total_temp
 
 
 def _softmax(logits: np.ndarray) -> np.ndarray:
     """Numerically stable softmax over a 1D array."""
     shifted = logits - logits.max()
     exp_vals = np.exp(shifted)
-    return exp_vals / exp_vals.sum()  # type: ignore[no-any-return]
+    return exp_vals / exp_vals.sum()

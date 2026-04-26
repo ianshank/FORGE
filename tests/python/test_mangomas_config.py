@@ -249,7 +249,7 @@ class TestMangoMASBridgeConfigToml:
         assert config.sweep.episodes_per_config == 10
 
     def test_from_toml_file(self, tmp_path: object) -> None:
-        from pathlib import Path  # noqa: PLC0415
+        from pathlib import Path
 
         path = Path(str(tmp_path)) / "test.toml"
         path.write_bytes(b'platform = "car"\n\n[action_adapter]\nbins_per_axis = 10\n')

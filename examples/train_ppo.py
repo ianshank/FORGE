@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+from typing import Any
 
 import numpy as np
 
@@ -128,7 +129,7 @@ def train_with_sb3(timesteps: int, seed: int, logger_backend: str = "none", log_
         forge_logger = None
         if logger_backend != "none":
             try:
-                from forge.training.loggers import make_logger  # noqa: PLC0415
+                from forge.training.loggers import make_logger
                 logger_kwargs: dict[str, Any]
                 if logger_backend == "tensorboard":
                     logger_kwargs = {"log_dir": log_dir}

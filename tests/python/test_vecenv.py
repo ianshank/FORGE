@@ -368,7 +368,7 @@ class TestForgeAsyncVecEnv:
 
 def test_numpy_unavailable_raises_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """ForgeSyncVecEnv raises ImportError when numpy is missing."""
-    import forge_env.vecenv as vecenv_mod  # noqa: PLC0415
+    import forge_env.vecenv as vecenv_mod
 
     monkeypatch.setattr(vecenv_mod, "HAS_NUMPY", False)
     with pytest.raises(ImportError, match="numpy"):

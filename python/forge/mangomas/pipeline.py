@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
-from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    # Annotation-only — `from __future__ import annotations` defers evaluation,
+    # so `NDArray` only needs to resolve for static type-checkers.
+    from numpy.typing import NDArray
 
 from forge.mangomas.bdi_trainer import BDIPreTrainer
 from forge.mangomas.constitutional_trainer import ConstitutionalPreTrainer
@@ -117,7 +121,7 @@ class CollectedTrainingData:
         if all(int(episode.shape[0]) == 0 for episode in step_observations):
             return np.zeros((0, self.state_dim), dtype=np.float32)
         return cast(
-            NDArray[np.float32],
+            "NDArray[np.float32]",
             np.concatenate(step_observations, axis=0).astype(np.float32, copy=False),
         )
 
@@ -129,7 +133,7 @@ class CollectedTrainingData:
         if not arrays or all(int(array.shape[0]) == 0 for array in arrays):
             return np.zeros((0,), dtype=np.int64)
         return cast(
-            NDArray[np.int64],
+            "NDArray[np.int64]",
             np.concatenate(arrays, axis=0).astype(np.int64, copy=False),
         )
 
@@ -138,7 +142,7 @@ class CollectedTrainingData:
         if not arrays or all(int(array.shape[0]) == 0 for array in arrays):
             return np.zeros((0,), dtype=np.float32)
         return cast(
-            NDArray[np.float32],
+            "NDArray[np.float32]",
             np.concatenate(arrays, axis=0).astype(np.float32, copy=False),
         )
 
@@ -207,7 +211,11 @@ class MangoMASDroneTrainingPipeline:
         """Resolve the filesystem directory used for a pipeline-aligned run."""
         return self._resolve_run_dir(base_seed, run_name)
 
-    def run(
+    def run(  # noqa: PLR0911, PLR0912
+        # Stage dispatcher: each early `return` corresponds to one configured
+        # pipeline halt-point (curriculum / constitutional / curiosity / sweep
+        # boundaries). Collapsing them into a state-machine would hide the
+        # 1:1 mapping between TOML stage flags and runtime exits.
         self,
         collected_data: CollectedTrainingData,
         *,

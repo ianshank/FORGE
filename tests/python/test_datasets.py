@@ -578,7 +578,7 @@ def test_load_maze_blank_lines_skipped(tmp_path: Path) -> None:
 
 
 def test_load_minari_raises_without_package(monkeypatch: pytest.MonkeyPatch) -> None:
-    import forge_env.datasets as _mod  # noqa: PLC0415
+    import forge_env.datasets as _mod
     original = _mod._minari
     monkeypatch.setattr(_mod, "_minari", None)
     with pytest.raises(ImportError, match="minari"):

@@ -79,7 +79,7 @@ def parse_args() -> argparse.Namespace:
 
 def _make_random_agent(num_actions: int = 8) -> object:
     """Return a simple random-action agent backed by a mock."""
-    import random  # noqa: PLC0415
+    import random
 
     class _RandomAgent:
         """Uniform-random action agent."""

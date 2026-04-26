@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 def env() -> Generator[ForgeGymnasiumEnv]:
     """Create a ForgeGymnasiumEnv with the real native backend."""
     gymnasium = pytest.importorskip("gymnasium")  # noqa: F841
-    from forge_env import gymnasium_env  # noqa: PLC0415
-    from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+    from forge_env import gymnasium_env
+    from forge_env.gymnasium_env import ForgeGymnasiumEnv
 
     if gymnasium_env._NativeEnv is None:
         pytest.skip("forge_env running in pure-Python mode (no native backend)")
@@ -106,7 +106,7 @@ class TestPurePythonBranches:
     """Tests for constructor and helper branches that do not require the native backend."""
 
     def test_init_raises_without_native_backend(self) -> None:
-        from forge_env import gymnasium_env  # noqa: PLC0415
+        from forge_env import gymnasium_env
 
         with (
             patch.object(gymnasium_env, "_NativeEnv", None),
@@ -115,7 +115,7 @@ class TestPurePythonBranches:
             gymnasium_env.ForgeGymnasiumEnv()
 
     def test_init_raises_without_gymnasium(self) -> None:
-        from forge_env import gymnasium_env  # noqa: PLC0415
+        from forge_env import gymnasium_env
 
         native_factory = MagicMock(return_value=_make_native_env_mock())
         with (
@@ -127,7 +127,7 @@ class TestPurePythonBranches:
 
     def test_fallback_space_metadata_defaults(self) -> None:
         pytest.importorskip("gymnasium")
-        from forge_env import gymnasium_env  # noqa: PLC0415
+        from forge_env import gymnasium_env
 
         native_env = _make_native_env_mock()
         native_factory = MagicMock(return_value=native_env)
@@ -145,7 +145,7 @@ class TestPurePythonBranches:
 
     def test_render_ascii_delegates_to_native(self) -> None:
         pytest.importorskip("gymnasium")
-        from forge_env import gymnasium_env  # noqa: PLC0415
+        from forge_env import gymnasium_env
 
         native_env = _make_native_env_mock()
         with patch.object(gymnasium_env, "_NativeEnv", MagicMock(return_value=native_env)):
@@ -157,7 +157,7 @@ class TestPurePythonBranches:
 
     def test_unwrapped_returns_native_env(self) -> None:
         pytest.importorskip("gymnasium")
-        from forge_env import gymnasium_env  # noqa: PLC0415
+        from forge_env import gymnasium_env
 
         native_env = _make_native_env_mock()
         with patch.object(gymnasium_env, "_NativeEnv", MagicMock(return_value=native_env)):

@@ -353,7 +353,7 @@ class TestForgeObsExtractor:
 
 def test_import_error_without_torch(monkeypatch: pytest.MonkeyPatch) -> None:
     """_require_torch_sb3 raises ImportError when torch is absent."""
-    import forge_env.feature_extractors as fe_mod  # noqa: PLC0415
+    import forge_env.feature_extractors as fe_mod
 
     monkeypatch.setattr(fe_mod, "HAS_TORCH", False)
     with pytest.raises(ImportError, match="PyTorch"):
@@ -362,7 +362,7 @@ def test_import_error_without_torch(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_import_error_without_sb3(monkeypatch: pytest.MonkeyPatch) -> None:
     """_require_torch_sb3 raises ImportError when SB3 is absent."""
-    import forge_env.feature_extractors as fe_mod  # noqa: PLC0415
+    import forge_env.feature_extractors as fe_mod
 
     monkeypatch.setattr(fe_mod, "HAS_SB3", False)
     with pytest.raises(ImportError, match="Stable Baselines"):

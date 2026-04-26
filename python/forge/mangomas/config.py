@@ -364,7 +364,11 @@ class MangoMASBridgeConfig:
         return cls._from_dict(data)
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> MangoMASBridgeConfig:
+    def _from_dict(cls, data: dict[str, Any]) -> MangoMASBridgeConfig:  # noqa: PLR0912, PLR0915
+        # Linear dispatcher over optional TOML sections. Splitting this into a
+        # registry-style table would obscure the 1:1 correspondence between
+        # TOML keys and config attributes, and the branches are intentionally
+        # symmetric (one `if "X" in data` per config field).
         """Build config from a nested dictionary."""
         config = cls()
         if "platform" in data:

@@ -7,9 +7,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
+if TYPE_CHECKING:
+    # `numpy` is only referenced in annotations, and `from __future__ import
+    # annotations` makes those strings at runtime. Keeping the import behind
+    # `TYPE_CHECKING` lets `forge.cognitive.llm_agent` import on systems
+    # without numpy installed (e.g. lightweight evaluation harnesses).
+    import numpy as np
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.cognitive.providers import (

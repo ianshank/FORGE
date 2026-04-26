@@ -142,7 +142,7 @@ class TestMuZeroMCTS:
 
 class TestMinMaxStats:
     def test_normalize_range(self) -> None:
-        from forge.agents.muzero_mcts import _MinMaxStats  # noqa: PLC0415
+        from forge.agents.muzero_mcts import _MinMaxStats
 
         stats = _MinMaxStats()
         stats.update(1.0)
@@ -150,7 +150,7 @@ class TestMinMaxStats:
         assert abs(stats.normalize(3.0) - 0.5) < 1e-6
 
     def test_normalize_equal_min_max(self) -> None:
-        from forge.agents.muzero_mcts import _MinMaxStats  # noqa: PLC0415
+        from forge.agents.muzero_mcts import _MinMaxStats
 
         stats = _MinMaxStats()
         stats.update(3.0)

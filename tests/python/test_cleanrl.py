@@ -45,7 +45,7 @@ _MOCK_OBS_DICT: dict[str, Any] = {
 
 def _make_mock_vec_env(n_envs: int = 1) -> MagicMock:
     """Return a mock ForgeSyncVecEnv."""
-    import numpy as np  # noqa: PLC0415
+    import numpy as np
 
     env = MagicMock()
     env.num_envs = n_envs
@@ -66,7 +66,7 @@ def _make_mock_vec_env(n_envs: int = 1) -> MagicMock:
 
 def _make_mock_single_env() -> MagicMock:
     """Return a mock single ForgeGymnasiumEnv (flat obs)."""
-    import numpy as np  # noqa: PLC0415
+    import numpy as np
 
     env = MagicMock()
     flat_obs = np.zeros(42, dtype=np.float32)
@@ -124,7 +124,7 @@ class TestTrainPPOCleanRL:
     def test_actor_critic_output_shapes(self) -> None:
         """_ActorCritic forward pass returns correct shapes."""
         pytest.importorskip("torch")
-        import torch  # noqa: PLC0415
+        import torch
 
         mod = _load_module(_PPO_SCRIPT, "train_ppo_cleanrl_shape")
         model = mod._ActorCritic(obs_dim=16, action_dim=8)
@@ -137,7 +137,7 @@ class TestTrainPPOCleanRL:
 
     def test_actor_critic_get_value(self) -> None:
         pytest.importorskip("torch")
-        import torch  # noqa: PLC0415
+        import torch
 
         mod = _load_module(_PPO_SCRIPT, "train_ppo_cleanrl_value")
         model = mod._ActorCritic(obs_dim=8, action_dim=4)
@@ -192,7 +192,7 @@ class TestTrainPPOCleanRL:
         ):
             mod = _load_module(_PPO_SCRIPT, "train_ppo_cleanrl_envvar")
 
-        import os  # noqa: PLC0415
+        import os
 
         with patch.dict(os.environ, {"FORGE_TRAINING_SEED": "99"}):
             args = mod._build_argparser({}).parse_args([])
@@ -242,8 +242,8 @@ class TestTrainSACCleanRL:
 
     def test_replay_buffer_add_and_sample(self) -> None:
         pytest.importorskip("torch")
-        import numpy as np  # noqa: PLC0415
-        import torch  # noqa: PLC0415
+        import numpy as np
+        import torch
 
         mod = _load_module(_SAC_SCRIPT, "train_sac_cleanrl_buf")
         buf = mod._ReplayBuffer(capacity=100, obs_dim=8, device=torch.device("cpu"))
@@ -261,8 +261,8 @@ class TestTrainSACCleanRL:
 
     def test_replay_buffer_capacity_limit(self) -> None:
         pytest.importorskip("torch")
-        import numpy as np  # noqa: PLC0415
-        import torch  # noqa: PLC0415
+        import numpy as np
+        import torch
 
         mod = _load_module(_SAC_SCRIPT, "train_sac_cleanrl_cap")
         buf = mod._ReplayBuffer(capacity=5, obs_dim=4, device=torch.device("cpu"))
@@ -272,7 +272,7 @@ class TestTrainSACCleanRL:
 
     def test_actor_output_shapes(self) -> None:
         pytest.importorskip("torch")
-        import torch  # noqa: PLC0415
+        import torch
 
         mod = _load_module(_SAC_SCRIPT, "train_sac_cleanrl_actor")
         actor = mod._Actor(obs_dim=8, action_dim=4, hidden_sizes=(32,))
@@ -284,7 +284,7 @@ class TestTrainSACCleanRL:
 
     def test_soft_q_network_output(self) -> None:
         pytest.importorskip("torch")
-        import torch  # noqa: PLC0415
+        import torch
 
         mod = _load_module(_SAC_SCRIPT, "train_sac_cleanrl_qnet")
         qnet = mod._SoftQNetwork(obs_dim=8, action_dim=4, hidden_sizes=(32,))
@@ -341,9 +341,9 @@ class TestTrainingConfigs:
 
     def test_ppo_default_parseable(self) -> None:
         try:
-            import tomllib  # noqa: PLC0415
+            import tomllib
         except ImportError:
-            import tomli as tomllib  # noqa: PLC0415
+            import tomli as tomllib
         content = (self._CONFIGS_DIR / "ppo_default.toml").read_text(encoding="utf-8")
         data = tomllib.loads(content)
         assert "hyperparams" in data
@@ -354,9 +354,9 @@ class TestTrainingConfigs:
 
     def test_sac_default_parseable(self) -> None:
         try:
-            import tomllib  # noqa: PLC0415
+            import tomllib
         except ImportError:
-            import tomli as tomllib  # noqa: PLC0415
+            import tomli as tomllib
         content = (self._CONFIGS_DIR / "sac_default.toml").read_text(encoding="utf-8")
         data = tomllib.loads(content)
         assert "hyperparams" in data
@@ -367,9 +367,9 @@ class TestTrainingConfigs:
     def test_ppo_no_hard_coded_values(self) -> None:
         """Every hyperparameter in ppo_default.toml should be explicitly set."""
         try:
-            import tomllib  # noqa: PLC0415
+            import tomllib
         except ImportError:
-            import tomli as tomllib  # noqa: PLC0415
+            import tomli as tomllib
         content = (self._CONFIGS_DIR / "ppo_default.toml").read_text(encoding="utf-8")
         data = tomllib.loads(content)
         required_keys = {

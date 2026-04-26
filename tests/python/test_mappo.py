@@ -296,7 +296,7 @@ class TestMAPPOConfigFromForgeConfig:
 
     def test_from_forge_config_defaults(self) -> None:
         """from_forge_config with default ForgeConfig should populate all fields."""
-        from forge.config import ForgeConfig  # noqa: PLC0415
+        from forge.config import ForgeConfig
 
         forge_cfg = ForgeConfig.from_dict({})
         mappo_cfg = MAPPOConfig.from_forge_config(forge_cfg)
@@ -314,7 +314,7 @@ class TestMAPPOConfigFromForgeConfig:
 
     def test_from_forge_config_custom_values(self) -> None:
         """from_forge_config should propagate non-default training values."""
-        from forge.config import ForgeConfig  # noqa: PLC0415
+        from forge.config import ForgeConfig
 
         forge_cfg = ForgeConfig.from_dict(
             {"training": {"learning_rate": 1e-3, "gamma": 0.95, "epochs": 8}}
@@ -336,7 +336,7 @@ class TestPPOTrainerConfigFromForgeConfig:
 
     def test_from_forge_config_defaults(self) -> None:
         """from_forge_config with default ForgeConfig should populate fields."""
-        from forge.config import ForgeConfig  # noqa: PLC0415
+        from forge.config import ForgeConfig
 
         forge_cfg = ForgeConfig.from_dict({})
         trainer_cfg = PPOTrainerConfig.from_forge_config(forge_cfg)
@@ -347,7 +347,7 @@ class TestPPOTrainerConfigFromForgeConfig:
 
     def test_from_forge_config_custom_values(self) -> None:
         """from_forge_config should propagate non-default values."""
-        from forge.config import ForgeConfig  # noqa: PLC0415
+        from forge.config import ForgeConfig
 
         forge_cfg = ForgeConfig.from_dict(
             {
@@ -372,7 +372,7 @@ class TestMAPPOAgentDeviceAuto:
 
     def test_device_auto_calls_get_device(self) -> None:
         """MAPPOAgent with device='auto' should call get_device() to resolve it."""
-        from unittest.mock import patch  # noqa: PLC0415
+        from unittest.mock import patch
 
         with patch("forge.agents.mappo_agent.get_device", return_value="cpu") as mock_gd:
             config = MAPPOConfig(
@@ -438,7 +438,7 @@ class TestRandomPolicyNetwork:
 
     def test_forward_returns_uniform_probabilities(self) -> None:
         """forward() should return a uniform probability array of correct size."""
-        from forge.models.policy_network import RandomPolicyNetwork  # noqa: PLC0415
+        from forge.models.policy_network import RandomPolicyNetwork
 
         net = RandomPolicyNetwork(action_size=6)
         obs = np.zeros(10, dtype=np.float32)  # shape doesn't matter for random
@@ -450,7 +450,7 @@ class TestRandomPolicyNetwork:
 
     def test_train_step_returns_empty_dict(self) -> None:
         """train_step() should return an empty dict (no-op)."""
-        from forge.models.policy_network import RandomPolicyNetwork  # noqa: PLC0415
+        from forge.models.policy_network import RandomPolicyNetwork
 
         net = RandomPolicyNetwork()
         result = net.train_step({"observations": np.zeros((4, 8), dtype=np.float32)})
@@ -458,7 +458,7 @@ class TestRandomPolicyNetwork:
 
     def test_save_is_noop(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """save() should not raise and should not create any file."""
-        from forge.models.policy_network import RandomPolicyNetwork  # noqa: PLC0415
+        from forge.models.policy_network import RandomPolicyNetwork
 
         net = RandomPolicyNetwork()
         path = str(tmp_path / "model.pkl")
@@ -466,7 +466,7 @@ class TestRandomPolicyNetwork:
 
     def test_load_is_noop(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """load() should not raise even for a non-existent path."""
-        from forge.models.policy_network import RandomPolicyNetwork  # noqa: PLC0415
+        from forge.models.policy_network import RandomPolicyNetwork
 
         net = RandomPolicyNetwork()
         path = str(tmp_path / "nonexistent.pkl")
@@ -474,7 +474,7 @@ class TestRandomPolicyNetwork:
 
     def test_default_action_size(self) -> None:
         """RandomPolicyNetwork uses DEFAULT_ACTION_SIZE=8 by default."""
-        from forge.models.policy_network import (  # noqa: PLC0415
+        from forge.models.policy_network import (
             DEFAULT_ACTION_SIZE,
             RandomPolicyNetwork,
         )

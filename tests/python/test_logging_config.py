@@ -38,7 +38,7 @@ class TestJsonFormatter:
 
     def test_json_formatter_with_exception(self) -> None:
         """Exception info is included in the JSON output."""
-        import sys  # noqa: PLC0415
+        import sys
 
         formatter = JsonFormatter()
         try:

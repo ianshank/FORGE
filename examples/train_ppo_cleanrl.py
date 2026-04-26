@@ -62,8 +62,7 @@ except ImportError:
 
 try:
     import torch
-    import torch.nn as nn
-    import torch.optim as optim
+    from torch import nn, optim
     from torch.distributions import Categorical
 except ImportError:
     logger.error("PyTorch is required. Install with: pip install torch")
@@ -84,7 +83,7 @@ try:
     from forge_env.utils import seed_everything
 except ImportError:
     def seed_everything(seed: int) -> None:  # type: ignore[misc]
-        import random  # noqa: PLC0415
+        import random
         random.seed(seed)
         np.random.seed(seed)
 
@@ -101,9 +100,9 @@ def _load_toml(path: Path) -> dict[str, Any]:
         logger.warning("Config file not found: %s — using defaults", path)
         return {}
     try:
-        import tomllib  # noqa: PLC0415
+        import tomllib
     except ImportError:
-        import tomli as tomllib  # type: ignore[no-redef]  # noqa: PLC0415
+        import tomli as tomllib  # type: ignore[no-redef]
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
@@ -232,7 +231,10 @@ class _ActorCritic(nn.Module):
 # ---------------------------------------------------------------------------
 
 
-def train(args: argparse.Namespace) -> None:
+def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
+    # PPO is presented as a single linear training loop on purpose so this
+    # example reads top-to-bottom against the algorithm description in the
+    # paper. Splitting it into sub-functions hurts the pedagogical value.
     """Run the PPO training loop.
 
     Args:
@@ -273,7 +275,7 @@ def train(args: argparse.Namespace) -> None:
     forge_logger = None
     if args.logger != "none":
         try:
-            from forge.training.loggers import make_logger  # noqa: PLC0415
+            from forge.training.loggers import make_logger
             logger_kwargs: dict[str, Any]
             if args.logger == "wandb":
                 logger_kwargs = {"project": args.wandb_project}
@@ -339,9 +341,9 @@ def train(args: argparse.Namespace) -> None:
             current_obs = _flatten(raw_obs)
 
             # Collect episode statistics
-            for info in infos:
-                if "episode" in info:
-                    episode_returns.append(float(info["episode"]["r"]))
+            episode_returns.extend(
+                float(info["episode"]["r"]) for info in infos if "episode" in info
+            )
 
         # --- GAE computation ---
         with torch.no_grad():
