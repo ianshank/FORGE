@@ -428,7 +428,7 @@ def demo_multi_agent(seed: int) -> bool:
     print_header("5. Multi-Agent Cooperation")
 
     try:
-        from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: PLC0415
+        from forge_env.pettingzoo_env import ForgeParallelEnv
     except ImportError:
         print("  ForgeParallelEnv not available, skipping.")
         return False

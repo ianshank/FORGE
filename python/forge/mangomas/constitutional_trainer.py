@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 
@@ -246,5 +246,5 @@ class ConstitutionalPreTrainer:
             raise RuntimeError("No trained weights. Call train() first.")
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(str(path), **cast("dict[str, Any]", self._weights))
+        np.savez(str(path), **self._weights)
         logger.info("Constitutional weights exported to %s", path)

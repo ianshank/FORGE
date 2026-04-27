@@ -37,10 +37,14 @@ class TraceLogger:
     def _open(self) -> None:
         """Open the output file for writing."""
         Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
+        # The handle is owned by `self._file` and explicitly closed in
+        # `close()` / `__exit__` — a `with`-block here would close the file
+        # before any caller could log anything. SIM115 suppression is therefore
+        # intentional, not accidental.
         if self.compress:
-            self._file = gzip.open(self.output_path, "wt", encoding="utf-8")
+            self._file = gzip.open(self.output_path, "wt", encoding="utf-8")  # noqa: SIM115
         else:
-            self._file = Path(self.output_path).open("w", encoding="utf-8")
+            self._file = Path(self.output_path).open("w", encoding="utf-8")  # noqa: SIM115
         logger.info("TraceLogger opened %s (compress=%s)", self.output_path, self.compress)
 
     def log(self, trace: DecisionTrace) -> None:

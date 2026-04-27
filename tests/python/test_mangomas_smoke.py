@@ -98,18 +98,19 @@ def _make_collected_data(state_dim: int = 22) -> CollectedTrainingData:
     dones = [np.zeros(ep_len, dtype=np.float32) for _ in range(num_episodes)]
     for d in dones:
         d[-1] = 1.0
-    raw_observations: list[list[dict[str, Any]]] = []
-    for ep_idx in range(num_episodes):
-        ep_raw = []
-        for step in range(ep_len + 1):
-            ep_raw.append({
+    raw_observations: list[list[dict[str, Any]]] = [
+        [
+            {
                 "battery": 0.8 - step * 0.01,
                 "altitude": 0.3 + step * 0.02,
                 "stamina_inverse": 0.2,
                 "boundary_distance": 0.5,
                 "threat_proximity": 0.9,
-            })
-        raw_observations.append(ep_raw)
+            }
+            for step in range(ep_len + 1)
+        ]
+        for _ in range(num_episodes)
+    ]
     return CollectedTrainingData(
         observations=observations,
         action_names=action_names,
@@ -229,7 +230,7 @@ class TestPipelineStageWiring:
             initial_weights=list(config.curiosity_optimizer.initial_weights),
             seed=config.curiosity_optimizer.seed,
         )
-        weights = optimizer._normalize(  # noqa: SLF001
+        weights = optimizer._normalize(
             np.array([0.5, 0.3, 0.1, 0.1])
         )
         assert abs(weights.sum() - 1.0) < 1e-6

@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Fallible Action Encoders + Structured Scenario Errors (PR #39)
+
+- Added **`ActionEncodingError`** in `crates/forge-types/src/error.rs` with four variants — `DroneActionRequiresFullEncoder`, `AgriActionUnsupported { drone_actions_enabled, agri_actions_enabled }`, `HexActionUnsupported { hex_actions_enabled }`, and `ParameterOutOfRange { action_name, value, max }` — wired into `ForgeError` via `#[from]`.
+- Added **fallible action encoders** in `crates/forge-types/src/action.rs`: `Action::try_to_discrete()`, `Action::try_to_discrete_full(comm_vocab_size)`, and `Action::try_to_discrete_configured(comm_vocab_size, drone, agri, hex)`. The legacy panicking entrypoints (`to_discrete`, `to_discrete_configured`) now delegate to the fallible variants and `unwrap_or_else(panic!)`, so behavior is byte-identical for callers that already guarantee in-range inputs.
+- Added **parameter-bounds validation** for every parameterized action variant via the new `param_check` helper. Out-of-range parameters that would otherwise silently produce a colliding discrete ID — `Action::Drop(slot >= 10)`, `Action::Use(slot >= 10)`, `Action::Craft(recipe >= 9)`, `Action::Communicate(token >= comm_vocab_size)`, `Action::DropPayload(slot >= 10)`, `Action::Spray(slot >= 10)` — now return `ActionEncodingError::ParameterOutOfRange`. Slot limits flow through new `ACTION_DROP_PAYLOAD_SLOTS` and `ACTION_SPRAY_SLOTS` constants in `forge-types::constants` (no more hard-coded `10` in encoder helper calls).
+- Added **`ScenarioConfigError`** (`thiserror`-derived) in `crates/forge-scenario/src/config.rs`, replacing `Result<_, String>` on `ScenarioConfig::from_toml` / `to_toml`. Wraps the underlying `toml::de::Error` / `toml::ser::Error` so callers preserve span / line context for diagnostics.
+- Added **22 new `forge-types::action::try_encoder_tests`** covering happy paths, every `ActionEncodingError` variant, parameter-bounds rejection, `ForgeError` conversion, Display formatting, the agri-gating-takes-precedence-over-bounds invariant, and `should_panic` regression guards proving the legacy entrypoints still panic identically.
+- Added **1 proptest** (`try_and_panic_agree_on_happy_path`) that fuzzes 256 random `(vocab_size, drone, agri, hex, action_id)` layouts and asserts the fallible / panicking encoders never disagree on the happy path.
+- Added **`docs/architecture.md` §4.7 Structured Error Types** documenting the new `ActionEncodingError` taxonomy and the relationship between fallible and panicking encoder entrypoints.
+
+### Changed
+
+#### Lint Surface (PR #39)
+
+- **Ruff**: 94 → 0 errors across `python/ tests/python/ scripts/ demo_ui/ examples/`. Suppressed `PLC0415` globally with a documented justification (FORGE has ~50 deliberate lazy imports for optional ML deps); annotated four intentionally-linear functions with `# noqa: PLR09xx` (two example training loops, the MangoMAS config dispatcher, the pipeline stage runner); moved annotation-only `numpy` / `numpy.typing.NDArray` imports into `TYPE_CHECKING` blocks; added explicit `__all__` lists to `python/forge/__init__.py` and `python/forge/training/__init__.py`. Also fixed a real `F821` bug in `examples/train_ppo.py` (`Any` referenced without import).
+- **Mypy**: 26 → 0 errors across `python/ scripts/`. Added `anthropic`, `openai`, `datasets`, `tomli_w` to the existing `[[tool.mypy.overrides]]` block; removed 21 stale `# type: ignore[...]` comments across `forge.mangomas.*`, `forge.agents.muzero_mcts`, `forge.testing.env_factory`, `forge.social.trust_tracker`, `forge_env.vecenv`; replaced a redundant `cast()` in `forge.mangomas.constitutional_trainer.export_weights`; fixed two real `[no-any-return]` issues in `forge.mangomas.adapters` (`_quantize` and `total_action_space` were silently returning `Any`).
+- **Workspace dependency consolidation**: `crates/forge-server/Cargo.toml` now inherits `tracing-subscriber` from the workspace (`{ workspace = true }`) instead of declaring its own version. Was the only crate not consolidated; the per-crate declaration was a version-skew risk.
+
 #### v0.2 Tier 1 Closeout
 
 - Added **multi-agent allocation audit**: `crates/forge-bench/src/bin/allocation_audit.rs` now accepts `--agents <comma-list>` (default sweep `1,8,16,32,64,128`, matching `multi_agent_scaling.rs`), honours the `FORGE_BENCH_AGENT_COUNTS` env var, and emits one `VariantReport` per `(action, agent_count)` pair. Row labels use the `<base>@n=<count>` form and carry a typed `num_agents: u32` field so downstream tooling can filter without parsing the variant string. Five new unit tests cover the argv parser.

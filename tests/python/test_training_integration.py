@@ -285,8 +285,8 @@ def env():
     Skips if the native Rust extension is not built.
     """
     try:
-        from forge_env import gymnasium_env  # noqa: PLC0415
-        from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+        from forge_env import gymnasium_env
+        from forge_env.gymnasium_env import ForgeGymnasiumEnv
     except ImportError:
         pytest.skip("Native Rust extension not built (run `maturin develop` first)")
 
@@ -345,8 +345,8 @@ class TestMAPPOTraining:
 
     def test_mappo_training_completes(self, env: Any) -> None:
         """MAPPO training runs for a small number of updates without error."""
-        from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig  # noqa: PLC0415
-        from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
+        from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig
+        from forge.training.trainer import PPOTrainer, PPOTrainerConfig
 
         obs_dim = compute_obs_dim(env)
         action_dim = env.action_space.n
@@ -381,8 +381,8 @@ class TestMAPPOTraining:
 
     def test_training_metrics_keys(self, env: Any) -> None:
         """Training metrics contain expected keys."""
-        from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig  # noqa: PLC0415
-        from forge.training.trainer import PPOTrainer, PPOTrainerConfig  # noqa: PLC0415
+        from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig
+        from forge.training.trainer import PPOTrainer, PPOTrainerConfig
 
         obs_dim = compute_obs_dim(env)
         action_dim = env.action_space.n

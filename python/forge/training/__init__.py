@@ -24,3 +24,21 @@ from forge.training.stability import (
     PlateauDetector,
     PlateauDetectorConfig,
 )
+
+# Public surface of `forge.training`. Listed explicitly so ruff F401 recognises
+# the re-exports as intentional and downstream `from forge.training import *`
+# remains stable.
+__all__ = [
+    "CompositeLogger",
+    "EarlyStopping",
+    "EarlyStoppingConfig",
+    "ForgeLogger",
+    "MLflowLogger",
+    "PlateauDetector",
+    "PlateauDetectorConfig",
+    "TaskTierCurriculum",
+    "TaskTierCurriculumConfig",
+    "TensorBoardLogger",
+    "WandbLogger",
+    "make_logger",
+]

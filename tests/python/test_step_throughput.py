@@ -110,7 +110,7 @@ def _native_env_factory() -> Any:
     maturin build has not produced ``forge_env.forge_env``.
     """
     try:
-        from forge_env.forge_env import ForgeEnv  # noqa: PLC0415
+        from forge_env.forge_env import ForgeEnv
     except ImportError:
         pytest.skip("forge_env native extension not built (run `maturin develop`)")
     return ForgeEnv

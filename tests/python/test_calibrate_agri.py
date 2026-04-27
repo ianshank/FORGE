@@ -316,7 +316,7 @@ def test_export_toml_creates_file(tmp_path: Path) -> None:
 @pytest.mark.skipif(not cal._TOMLI_W_AVAILABLE, reason="tomli_w not installed")
 def test_export_toml_readable(tmp_path: Path) -> None:
     try:
-        import tomllib  # noqa: PLC0415
+        import tomllib
     except ImportError:
         pytest.skip("tomllib not available for reading")
 
@@ -386,7 +386,7 @@ def test_karaagroai_falls_back_on_missing_package(tmp_path: Path) -> None:
 
 def test_plantvillage_live_path_with_mock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the actual data-processing code path when datasets is mocked."""
-    from unittest.mock import MagicMock  # noqa: PLC0415
+    from unittest.mock import MagicMock
 
     mock_ds = MagicMock()
     mock_ds.__len__.return_value = 100

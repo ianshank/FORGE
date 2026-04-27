@@ -14,7 +14,10 @@ forge-core = { path = "../forge-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Inherits version + features ("env-filter", "json") from the workspace
+# definition in the root Cargo.toml so the whole workspace builds against a
+# single version of tracing-subscriber (no duplicate copies in the dep graph).
+tracing-subscriber = { workspace = true }
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["ws"] }
 tower-http = { version = "0.5", features = ["cors"] }

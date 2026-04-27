@@ -4,8 +4,10 @@
 //! The discrete action space is designed for efficient GPU batching.
 
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::entity::CommToken;
+use crate::error::ActionEncodingError;
 use crate::grid::{Direction, HexDirection};
 
 /// An action that an agent can take in a single tick.
@@ -194,28 +196,72 @@ impl Action {
     /// **Important**: This method only produces correct, non-colliding IDs for base
     /// actions (Noop, Move, PickUp, Drop, Use, Craft, Push, Interact, Communicate).
     /// For drone actions (Ascend, Descend, Hover, TakeOff, Land, Scan, DropPayload),
-    /// use [`to_discrete_full`] which accounts for the communication vocabulary offset.
+    /// use [`Action::to_discrete_full`] which accounts for the communication
+    /// vocabulary offset.
     ///
     /// # Panics
     ///
-    /// Panics if called on a drone action. Use [`to_discrete_full`] instead.
+    /// Panics if called on a drone, agricultural, or hex-move action. Prefer
+    /// [`Action::try_to_discrete`] for fallible callers.
     pub fn to_discrete(&self) -> u32 {
+        // Delegate to the fallible variant so the encoding rules live in exactly
+        // one place. The panic path is preserved for back-compat with callers
+        // that have always been documented to pass base actions only.
+        self.try_to_discrete()
+            .unwrap_or_else(|e| panic!("Action::to_discrete: {e}"))
+    }
+
+    /// Fallible counterpart of [`Action::to_discrete`].
+    ///
+    /// Returns [`ActionEncodingError`] instead of panicking when called on a
+    /// drone, agricultural, or hex-move action. This is the preferred entry
+    /// point for new code that may receive actions from untrusted sources
+    /// (e.g. external policies, replay loaders, RPC handlers).
+    pub fn try_to_discrete(&self) -> Result<u32, ActionEncodingError> {
+        // The base action layout has no `comm_vocab_size` parameter, so we
+        // route through the configured encoder with vocab_size=0 to keep
+        // bounds-checking semantics identical between the two entrypoints.
+        // `try_to_discrete` is documented as base-action-only, so drone /
+        // agri / hex variants will fall through to their typed errors below.
         match self {
-            Action::Noop => 0,
-            Action::Move(Direction::Up) => 1,
-            Action::Move(Direction::Down) => 2,
-            Action::Move(Direction::Left) => 3,
-            Action::Move(Direction::Right) => 4,
-            Action::PickUp => 5,
-            Action::Drop(slot) => 6 + *slot as u32,
-            Action::Use(slot) => 16 + *slot as u32,
-            Action::Craft(recipe) => 26 + *recipe as u32,
-            Action::Push(Direction::Up) => 35,
-            Action::Push(Direction::Down) => 36,
-            Action::Push(Direction::Left) => 37,
-            Action::Push(Direction::Right) => 38,
-            Action::Interact => 39,
-            Action::Communicate(token) => 40 + *token as u32,
+            Action::Noop => Ok(0),
+            Action::Move(Direction::Up) => Ok(1),
+            Action::Move(Direction::Down) => Ok(2),
+            Action::Move(Direction::Left) => Ok(3),
+            Action::Move(Direction::Right) => Ok(4),
+            Action::PickUp => Ok(5),
+            Action::Drop(slot) => param_check(
+                self,
+                "Drop",
+                *slot as u32,
+                crate::constants::ACTION_DROP_SLOTS as u32,
+                6 + *slot as u32,
+            ),
+            Action::Use(slot) => param_check(
+                self,
+                "Use",
+                *slot as u32,
+                crate::constants::ACTION_USE_SLOTS as u32,
+                16 + *slot as u32,
+            ),
+            Action::Craft(recipe) => param_check(
+                self,
+                "Craft",
+                *recipe as u32,
+                crate::constants::ACTION_CRAFT_SLOTS as u32,
+                26 + *recipe as u32,
+            ),
+            Action::Push(Direction::Up) => Ok(35),
+            Action::Push(Direction::Down) => Ok(36),
+            Action::Push(Direction::Left) => Ok(37),
+            Action::Push(Direction::Right) => Ok(38),
+            Action::Interact => Ok(39),
+            // `try_to_discrete` cannot validate Communicate against
+            // `comm_vocab_size` (no vocab parameter). Out-of-vocab tokens
+            // collide with the drone block; callers that need a strict bound
+            // check should use `try_to_discrete_configured` with the active
+            // vocab size.
+            Action::Communicate(token) => Ok(40 + *token as u32),
             Action::Ascend
             | Action::Descend
             | Action::Hover
@@ -223,17 +269,31 @@ impl Action {
             | Action::Land
             | Action::Scan(_)
             | Action::DropPayload(_) => {
-                panic!("drone actions require to_discrete_full(comm_vocab_size)")
+                let err = ActionEncodingError::DroneActionRequiresFullEncoder {
+                    action_name: drone_action_name(self),
+                };
+                warn!(target: "forge_types::action", action = ?self, "{err}");
+                Err(err)
             }
             Action::Spray(_)
             | Action::ScanMultispectral
             | Action::ScanThermal
             | Action::RelaySoilData
             | Action::GenerateReport => {
-                panic!("agricultural actions require to_discrete_full(comm_vocab_size)")
+                let err = ActionEncodingError::AgriActionUnsupported {
+                    action_name: agri_action_name(self),
+                    drone_actions_enabled: false,
+                    agri_actions_enabled: false,
+                };
+                warn!(target: "forge_types::action", action = ?self, "{err}");
+                Err(err)
             }
             Action::MoveHex(_) => {
-                panic!("hex move actions require to_discrete_full(comm_vocab_size)")
+                let err = ActionEncodingError::HexActionUnsupported {
+                    hex_actions_enabled: false,
+                };
+                warn!(target: "forge_types::action", action = ?self, "{err}");
+                Err(err)
             }
         }
     }
@@ -250,11 +310,33 @@ impl Action {
         self.to_discrete_configured(comm_vocab_size, true, true, true)
     }
 
+    /// Fallible counterpart of [`Action::to_discrete_full`].
+    ///
+    /// All layout flags are enabled, so layout-gating errors
+    /// ([`ActionEncodingError::DroneActionRequiresFullEncoder`],
+    /// [`ActionEncodingError::AgriActionUnsupported`],
+    /// [`ActionEncodingError::HexActionUnsupported`]) are unreachable. The
+    /// remaining failure mode is parameter bounds:
+    /// [`ActionEncodingError::ParameterOutOfRange`] for `Drop`/`Use`/`Craft`/
+    /// `Communicate`/`DropPayload`/`Spray` whose argument exceeds its allocated
+    /// slot/vocab range. Callers that already validate parameters at their own
+    /// boundary can safely `.expect()` the result; callers ingesting actions
+    /// from untrusted sources should propagate the `Result`.
+    pub fn try_to_discrete_full(&self, comm_vocab_size: u16) -> Result<u32, ActionEncodingError> {
+        self.try_to_discrete_configured(comm_vocab_size, true, true, true)
+    }
+
     /// Converts an Action to its discrete integer representation for a specific action-space layout.
     ///
     /// This is the correct encoder when the active action space is controlled by configuration,
     /// because agricultural actions depend on drone support and hex actions are only appended when
     /// hex movement is enabled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the action variant is not enabled in the requested layout (for
+    /// example, [`Action::Spray`] with `agri_actions_enabled=false`). Prefer
+    /// [`Action::try_to_discrete_configured`] for fallible callers.
     pub fn to_discrete_configured(
         &self,
         comm_vocab_size: u16,
@@ -262,7 +344,32 @@ impl Action {
         agri_actions_enabled: bool,
         hex_actions_enabled: bool,
     ) -> u32 {
-        let drone_base = 40 + comm_vocab_size as u32;
+        // Delegate to the fallible variant so the encoding rules and
+        // parameter bounds checks live in exactly one place.
+        self.try_to_discrete_configured(
+            comm_vocab_size,
+            drone_actions_enabled,
+            agri_actions_enabled,
+            hex_actions_enabled,
+        )
+        .unwrap_or_else(|e| panic!("Action::to_discrete_configured: {e}"))
+    }
+
+    /// Fallible counterpart of [`Action::to_discrete_configured`].
+    ///
+    /// Returns an [`ActionEncodingError`] instead of panicking when the action
+    /// variant is not enabled in the requested layout. This is the preferred
+    /// entry point for new code that drives encoding from runtime
+    /// configuration (e.g. RPC handlers, replay loaders, multi-config
+    /// curricula).
+    pub fn try_to_discrete_configured(
+        &self,
+        comm_vocab_size: u16,
+        drone_actions_enabled: bool,
+        agri_actions_enabled: bool,
+        hex_actions_enabled: bool,
+    ) -> Result<u32, ActionEncodingError> {
+        let drone_base = 40u32 + comm_vocab_size as u32;
         let agri_base = drone_base
             + if drone_actions_enabled {
                 crate::constants::DRONE_ACTION_COUNT
@@ -276,68 +383,116 @@ impl Action {
                 0
             };
         match self {
-            Action::Noop => 0,
-            Action::Move(Direction::Up) => 1,
-            Action::Move(Direction::Down) => 2,
-            Action::Move(Direction::Left) => 3,
-            Action::Move(Direction::Right) => 4,
-            Action::PickUp => 5,
-            Action::Drop(slot) => 6 + *slot as u32,
-            Action::Use(slot) => 16 + *slot as u32,
-            Action::Craft(recipe) => 26 + *recipe as u32,
-            Action::Push(Direction::Up) => 35,
-            Action::Push(Direction::Down) => 36,
-            Action::Push(Direction::Left) => 37,
-            Action::Push(Direction::Right) => 38,
-            Action::Interact => 39,
-            Action::Communicate(token) => 40 + *token as u32,
-            Action::Ascend => drone_base,
-            Action::Descend => drone_base + 1,
-            Action::Hover => drone_base + 2,
-            Action::TakeOff => drone_base + 3,
-            Action::Land => drone_base + 4,
-            Action::Scan(Direction::Up) => drone_base + 5,
-            Action::Scan(Direction::Down) => drone_base + 6,
-            Action::Scan(Direction::Left) => drone_base + 7,
-            Action::Scan(Direction::Right) => drone_base + 8,
-            Action::DropPayload(slot) => drone_base + 9 + *slot as u32,
+            Action::Noop => Ok(0),
+            Action::Move(Direction::Up) => Ok(1),
+            Action::Move(Direction::Down) => Ok(2),
+            Action::Move(Direction::Left) => Ok(3),
+            Action::Move(Direction::Right) => Ok(4),
+            Action::PickUp => Ok(5),
+            Action::Drop(slot) => param_check(
+                self,
+                "Drop",
+                *slot as u32,
+                crate::constants::ACTION_DROP_SLOTS as u32,
+                6 + *slot as u32,
+            ),
+            Action::Use(slot) => param_check(
+                self,
+                "Use",
+                *slot as u32,
+                crate::constants::ACTION_USE_SLOTS as u32,
+                16 + *slot as u32,
+            ),
+            Action::Craft(recipe) => param_check(
+                self,
+                "Craft",
+                *recipe as u32,
+                crate::constants::ACTION_CRAFT_SLOTS as u32,
+                26 + *recipe as u32,
+            ),
+            Action::Push(Direction::Up) => Ok(35),
+            Action::Push(Direction::Down) => Ok(36),
+            Action::Push(Direction::Left) => Ok(37),
+            Action::Push(Direction::Right) => Ok(38),
+            Action::Interact => Ok(39),
+            // Out-of-vocab tokens would otherwise collide with the drone
+            // block (offset `40 + comm_vocab_size`), so we explicitly bound
+            // the token here.
+            Action::Communicate(token) => param_check(
+                self,
+                "Communicate",
+                *token as u32,
+                comm_vocab_size as u32,
+                40 + *token as u32,
+            ),
+            Action::Ascend => drone_check(self, drone_actions_enabled, || Ok(drone_base)),
+            Action::Descend => drone_check(self, drone_actions_enabled, || Ok(drone_base + 1)),
+            Action::Hover => drone_check(self, drone_actions_enabled, || Ok(drone_base + 2)),
+            Action::TakeOff => drone_check(self, drone_actions_enabled, || Ok(drone_base + 3)),
+            Action::Land => drone_check(self, drone_actions_enabled, || Ok(drone_base + 4)),
+            Action::Scan(Direction::Up) => {
+                drone_check(self, drone_actions_enabled, || Ok(drone_base + 5))
+            }
+            Action::Scan(Direction::Down) => {
+                drone_check(self, drone_actions_enabled, || Ok(drone_base + 6))
+            }
+            Action::Scan(Direction::Left) => {
+                drone_check(self, drone_actions_enabled, || Ok(drone_base + 7))
+            }
+            Action::Scan(Direction::Right) => {
+                drone_check(self, drone_actions_enabled, || Ok(drone_base + 8))
+            }
+            Action::DropPayload(slot) => drone_check(self, drone_actions_enabled, || {
+                param_check(
+                    self,
+                    "DropPayload",
+                    *slot as u32,
+                    crate::constants::ACTION_DROP_PAYLOAD_SLOTS as u32,
+                    drone_base + 9 + *slot as u32,
+                )
+            }),
             // Agricultural actions: after drone actions
             Action::Spray(slot) => {
-                if !(drone_actions_enabled && agri_actions_enabled) {
-                    panic!("agricultural actions require drone and agri support")
-                }
-                agri_base + *slot as u32
+                agri_check(self, drone_actions_enabled, agri_actions_enabled, || {
+                    param_check(
+                        self,
+                        "Spray",
+                        *slot as u32,
+                        crate::constants::ACTION_SPRAY_SLOTS as u32,
+                        agri_base + *slot as u32,
+                    )
+                })
             }
             Action::ScanMultispectral => {
-                if !(drone_actions_enabled && agri_actions_enabled) {
-                    panic!("agricultural actions require drone and agri support")
-                }
-                agri_base + 10
+                agri_check(self, drone_actions_enabled, agri_actions_enabled, || {
+                    Ok(agri_base + 10)
+                })
             }
             Action::ScanThermal => {
-                if !(drone_actions_enabled && agri_actions_enabled) {
-                    panic!("agricultural actions require drone and agri support")
-                }
-                agri_base + 11
+                agri_check(self, drone_actions_enabled, agri_actions_enabled, || {
+                    Ok(agri_base + 11)
+                })
             }
             Action::RelaySoilData => {
-                if !(drone_actions_enabled && agri_actions_enabled) {
-                    panic!("agricultural actions require drone and agri support")
-                }
-                agri_base + 12
+                agri_check(self, drone_actions_enabled, agri_actions_enabled, || {
+                    Ok(agri_base + 12)
+                })
             }
             Action::GenerateReport => {
-                if !(drone_actions_enabled && agri_actions_enabled) {
-                    panic!("agricultural actions require drone and agri support")
-                }
-                agri_base + 13
+                agri_check(self, drone_actions_enabled, agri_actions_enabled, || {
+                    Ok(agri_base + 13)
+                })
             }
             // Hex movement actions: after agricultural actions
             Action::MoveHex(dir) => {
                 if !hex_actions_enabled {
-                    panic!("hex move actions require hex movement support")
+                    let err = ActionEncodingError::HexActionUnsupported {
+                        hex_actions_enabled,
+                    };
+                    warn!(target: "forge_types::action", action = ?self, "{err}");
+                    return Err(err);
                 }
-                hex_base + *dir as u32
+                Ok(hex_base + *dir as u32)
             }
         }
     }
@@ -378,6 +533,133 @@ impl Action {
             0
         };
         base + drone + agri + hex
+    }
+}
+
+/// Static, debug-style name for a drone-class [`Action`] variant.
+///
+/// Used to enrich [`ActionEncodingError`] without forcing a heap allocation.
+/// Returns `"<non-drone>"` for non-drone actions; the encoder never calls this
+/// helper on a non-drone variant, so that branch is unreachable in production.
+#[inline]
+fn drone_action_name(action: &Action) -> &'static str {
+    match action {
+        Action::Ascend => "Ascend",
+        Action::Descend => "Descend",
+        Action::Hover => "Hover",
+        Action::TakeOff => "TakeOff",
+        Action::Land => "Land",
+        Action::Scan(_) => "Scan",
+        Action::DropPayload(_) => "DropPayload",
+        _ => "<non-drone>",
+    }
+}
+
+/// Static, debug-style name for an agricultural [`Action`] variant.
+///
+/// See [`drone_action_name`] for the same allocation-free contract.
+#[inline]
+fn agri_action_name(action: &Action) -> &'static str {
+    match action {
+        Action::Spray(_) => "Spray",
+        Action::ScanMultispectral => "ScanMultispectral",
+        Action::ScanThermal => "ScanThermal",
+        Action::RelaySoilData => "RelaySoilData",
+        Action::GenerateReport => "GenerateReport",
+        _ => "<non-agri>",
+    }
+}
+
+/// Helper used by [`Action::try_to_discrete_configured`] to gate every drone
+/// variant on `drone_actions_enabled`, symmetric with [`agri_check`].
+///
+/// Without this guard the configured encoder would happily encode
+/// `Action::Ascend` to `40 + comm_vocab_size` even when drone actions are
+/// disabled — but that ID equals `space_size_full(_, drone=false, _, _)`, so
+/// it is out-of-bounds for the active action space and disagrees with
+/// [`Action::from_discrete_full`] which returns `None` for the same input.
+///
+/// `compute_id` is only invoked when drone actions are enabled. The closure
+/// returns its own `Result` so it can perform a downstream parameter-bounds
+/// check (e.g. for `DropPayload`'s slot) without fighting the layout-gating
+/// logic.
+#[inline]
+fn drone_check<F>(
+    action: &Action,
+    drone_actions_enabled: bool,
+    compute_id: F,
+) -> Result<u32, ActionEncodingError>
+where
+    F: FnOnce() -> Result<u32, ActionEncodingError>,
+{
+    if drone_actions_enabled {
+        compute_id()
+    } else {
+        let err = ActionEncodingError::DroneActionRequiresFullEncoder {
+            action_name: drone_action_name(action),
+        };
+        warn!(target: "forge_types::action", action = ?action, "{err}");
+        Err(err)
+    }
+}
+
+/// Helper used by [`Action::try_to_discrete_configured`] to gate every
+/// agricultural variant on `drone_actions_enabled && agri_actions_enabled`
+/// without duplicating the error construction at every match arm.
+///
+/// `compute_id` is only invoked when both flags are enabled. The closure
+/// returns its own `Result` so it can perform a downstream parameter-bounds
+/// check (see [`param_check`]) without fighting the layout-gating logic.
+#[inline]
+fn agri_check<F>(
+    action: &Action,
+    drone_actions_enabled: bool,
+    agri_actions_enabled: bool,
+    compute_id: F,
+) -> Result<u32, ActionEncodingError>
+where
+    F: FnOnce() -> Result<u32, ActionEncodingError>,
+{
+    if drone_actions_enabled && agri_actions_enabled {
+        compute_id()
+    } else {
+        let err = ActionEncodingError::AgriActionUnsupported {
+            action_name: agri_action_name(action),
+            drone_actions_enabled,
+            agri_actions_enabled,
+        };
+        warn!(target: "forge_types::action", action = ?action, "{err}");
+        Err(err)
+    }
+}
+
+/// Helper that validates an action parameter (inventory slot, recipe index,
+/// communication token, drone payload slot, etc.) against its allocated range
+/// in the discrete action space. Returns the supplied `id` on success, or a
+/// typed [`ActionEncodingError::ParameterOutOfRange`] on failure.
+///
+/// Without this check, an out-of-range parameter silently produces a
+/// valid-looking discrete ID that collides with the next action block — for
+/// example `Action::Drop(slot=10)` would otherwise encode to ID 16, which is
+/// the slot for `Action::Use(slot=0)`.
+#[inline]
+fn param_check(
+    action: &Action,
+    name: &'static str,
+    value: u32,
+    limit: u32,
+    id: u32,
+) -> Result<u32, ActionEncodingError> {
+    if value >= limit {
+        let err = ActionEncodingError::ParameterOutOfRange {
+            action_name: name,
+            value,
+            max: limit.saturating_sub(1),
+        };
+        warn!(target: "forge_types::action", action = ?action, "{err}");
+        Err(err)
+    } else {
+        Ok(id)
     }
 }
 
@@ -618,6 +900,473 @@ mod tests {
                 prop_assert!(with > without, "drone actions should increase space size");
                 prop_assert_eq!(with - without, crate::constants::DRONE_ACTION_COUNT);
             }
+
+            /// `try_to_discrete_configured` and `to_discrete_configured` agree
+            /// on every input that doesn't fail (i.e. their happy paths are
+            /// byte-identical). This guards against the panicking path silently
+            /// drifting from the fallible path.
+            #[test]
+            fn try_and_panic_agree_on_happy_path(
+                vocab_size in 0u16..32,
+                drone in any::<bool>(),
+                agri in any::<bool>(),
+                hex in any::<bool>(),
+                action_id in 0u32..256,
+            ) {
+                let space = Action::space_size_full(vocab_size, drone, agri, hex);
+                if action_id >= space {
+                    return Ok(());
+                }
+                let Some(action) = Action::from_discrete_full(action_id, vocab_size, drone, agri, hex) else {
+                    return Ok(());
+                };
+                // try_* must succeed for any action that round-trips through the
+                // configured layout — those are by construction enabled.
+                let try_id = action
+                    .try_to_discrete_configured(vocab_size, drone, agri, hex)
+                    .expect("decoded action must re-encode under the same layout");
+                let panic_id = action.to_discrete_configured(vocab_size, drone, agri, hex);
+                prop_assert_eq!(try_id, panic_id);
+                prop_assert_eq!(try_id, action_id);
+            }
+        }
+    }
+
+    /// Tests for the fallible action encoders ([`Action::try_to_discrete`],
+    /// [`Action::try_to_discrete_configured`], [`Action::try_to_discrete_full`])
+    /// and their interplay with [`crate::error::ActionEncodingError`].
+    mod try_encoder_tests {
+        use super::*;
+        use crate::error::{ActionEncodingError, ForgeError};
+
+        // ---- try_to_discrete: happy paths ----
+
+        #[test]
+        fn try_to_discrete_succeeds_for_base_actions() {
+            let cases: &[(Action, u32)] = &[
+                (Action::Noop, 0),
+                (Action::Move(Direction::Up), 1),
+                (Action::Move(Direction::Down), 2),
+                (Action::PickUp, 5),
+                (Action::Drop(0), 6),
+                (Action::Drop(9), 15),
+                (Action::Use(0), 16),
+                (Action::Craft(0), 26),
+                (Action::Push(Direction::Up), 35),
+                (Action::Interact, 39),
+                (Action::Communicate(0), 40),
+                (Action::Communicate(15), 55),
+            ];
+            for (action, expected) in cases {
+                let got = action
+                    .try_to_discrete()
+                    .expect("base action must encode without error");
+                assert_eq!(got, *expected, "wrong id for {action:?}");
+            }
+        }
+
+        // ---- try_to_discrete: error paths ----
+
+        #[test]
+        fn try_to_discrete_rejects_drone_actions() {
+            let drone_actions = [
+                Action::Ascend,
+                Action::Descend,
+                Action::Hover,
+                Action::TakeOff,
+                Action::Land,
+                Action::Scan(Direction::Up),
+                Action::DropPayload(0),
+            ];
+            for action in drone_actions {
+                let err = action
+                    .try_to_discrete()
+                    .expect_err("drone action must not encode via try_to_discrete");
+                assert!(
+                    matches!(
+                        err,
+                        ActionEncodingError::DroneActionRequiresFullEncoder { .. }
+                    ),
+                    "wrong error variant for {action:?}: {err:?}",
+                );
+            }
+        }
+
+        #[test]
+        fn try_to_discrete_rejects_agri_actions() {
+            let agri_actions = [
+                Action::Spray(0),
+                Action::ScanMultispectral,
+                Action::ScanThermal,
+                Action::RelaySoilData,
+                Action::GenerateReport,
+            ];
+            for action in agri_actions {
+                let err = action
+                    .try_to_discrete()
+                    .expect_err("agri action must not encode via try_to_discrete");
+                assert!(
+                    matches!(err, ActionEncodingError::AgriActionUnsupported { .. }),
+                    "wrong error variant for {action:?}: {err:?}",
+                );
+            }
+        }
+
+        #[test]
+        fn try_to_discrete_rejects_hex_actions() {
+            let action = Action::MoveHex(HexDirection::E);
+            let err = action
+                .try_to_discrete()
+                .expect_err("hex action must not encode via try_to_discrete");
+            assert!(
+                matches!(err, ActionEncodingError::HexActionUnsupported { .. }),
+                "wrong error variant: {err:?}",
+            );
+        }
+
+        // ---- try_to_discrete_configured: error paths ----
+
+        #[test]
+        fn try_configured_rejects_agri_when_agri_disabled() {
+            let action = Action::Spray(2);
+            let err = action
+                .try_to_discrete_configured(8, true, false, false)
+                .expect_err("agri must require both drone and agri flags");
+            match err {
+                ActionEncodingError::AgriActionUnsupported {
+                    action_name,
+                    drone_actions_enabled,
+                    agri_actions_enabled,
+                } => {
+                    assert_eq!(action_name, "Spray");
+                    assert!(drone_actions_enabled);
+                    assert!(!agri_actions_enabled);
+                }
+                other => panic!("wrong error variant: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn try_configured_rejects_agri_when_drone_disabled() {
+            let action = Action::ScanMultispectral;
+            let err = action
+                .try_to_discrete_configured(8, false, true, false)
+                .expect_err("agri requires drone infrastructure");
+            assert!(matches!(
+                err,
+                ActionEncodingError::AgriActionUnsupported {
+                    drone_actions_enabled: false,
+                    agri_actions_enabled: true,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn try_configured_rejects_hex_when_hex_disabled() {
+            let action = Action::MoveHex(HexDirection::NW);
+            let err = action
+                .try_to_discrete_configured(8, true, true, false)
+                .expect_err("hex must require hex_actions_enabled");
+            assert!(matches!(
+                err,
+                ActionEncodingError::HexActionUnsupported {
+                    hex_actions_enabled: false,
+                }
+            ));
+        }
+
+        // ---- panicking variants delegate cleanly ----
+
+        #[test]
+        #[should_panic(expected = "Action::to_discrete:")]
+        fn legacy_to_discrete_still_panics_on_drone() {
+            let _ = Action::Ascend.to_discrete();
+        }
+
+        #[test]
+        #[should_panic(expected = "Action::to_discrete_configured:")]
+        fn legacy_to_discrete_configured_still_panics_when_disabled() {
+            let _ = Action::Spray(0).to_discrete_configured(8, true, false, false);
+        }
+
+        // ---- error type plumbing ----
+
+        #[test]
+        fn action_encoding_error_converts_into_forge_error() {
+            let err = Action::MoveHex(HexDirection::E)
+                .try_to_discrete()
+                .unwrap_err();
+            let forge_err: ForgeError = err.into();
+            assert!(matches!(forge_err, ForgeError::ActionEncoding(_)));
+            let msg = forge_err.to_string();
+            assert!(
+                msg.contains("action encoding error"),
+                "missing wrapper prefix in: {msg}",
+            );
+        }
+
+        #[test]
+        fn action_encoding_error_display_includes_action_name() {
+            let err = Action::Hover.try_to_discrete().unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("Hover"), "expected action name in: {msg}");
+        }
+
+        #[test]
+        fn try_to_discrete_full_succeeds_for_every_variant() {
+            // Every variant is enabled in the canonical full layout, so there
+            // are no failure modes; this guards against regressions if a new
+            // variant is added without wiring it through.
+            let vocab_size = 16u16;
+            let space = Action::space_size_full(vocab_size, true, true, true);
+            for id in 0..space {
+                let action = Action::from_discrete_full(id, vocab_size, true, true, true).unwrap();
+                let roundtrip = action
+                    .try_to_discrete_full(vocab_size)
+                    .expect("full layout must accept every decoded action");
+                assert_eq!(roundtrip, id, "roundtrip failed for {action:?}");
+            }
+        }
+
+        // ---- Parameter-bounds validation (added per PR #39 review) ----
+
+        /// Without bounds checks, `Action::Drop(slot=10)` would silently
+        /// encode to ID 16, which is the slot for `Action::Use(0)` — a
+        /// silent collision that corrupts the action distribution. The
+        /// fallible encoder must reject the out-of-range slot instead.
+        #[test]
+        fn try_to_discrete_rejects_drop_slot_out_of_range() {
+            let action = Action::Drop(crate::constants::ACTION_DROP_SLOTS as u8);
+            let err = action
+                .try_to_discrete()
+                .expect_err("Drop(slot=ACTION_DROP_SLOTS) must error");
+            match err {
+                ActionEncodingError::ParameterOutOfRange {
+                    action_name,
+                    value,
+                    max,
+                } => {
+                    assert_eq!(action_name, "Drop");
+                    assert_eq!(value, crate::constants::ACTION_DROP_SLOTS as u32);
+                    assert_eq!(max, crate::constants::ACTION_DROP_SLOTS as u32 - 1);
+                }
+                other => panic!("wrong error variant: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn try_to_discrete_rejects_use_slot_out_of_range() {
+            let err = Action::Use(crate::constants::ACTION_USE_SLOTS as u8)
+                .try_to_discrete()
+                .expect_err("Use(slot=ACTION_USE_SLOTS) must error");
+            assert!(matches!(
+                err,
+                ActionEncodingError::ParameterOutOfRange {
+                    action_name: "Use",
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn try_to_discrete_rejects_craft_recipe_out_of_range() {
+            let err = Action::Craft(crate::constants::ACTION_CRAFT_SLOTS as u16)
+                .try_to_discrete()
+                .expect_err("Craft(recipe=ACTION_CRAFT_SLOTS) must error");
+            assert!(matches!(
+                err,
+                ActionEncodingError::ParameterOutOfRange {
+                    action_name: "Craft",
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn try_to_discrete_configured_rejects_communicate_token_out_of_range() {
+            let vocab_size = 8u16;
+            let err = Action::Communicate(vocab_size)
+                .try_to_discrete_configured(vocab_size, true, true, true)
+                .expect_err("Communicate(vocab_size) must error");
+            match err {
+                ActionEncodingError::ParameterOutOfRange {
+                    action_name,
+                    value,
+                    max,
+                } => {
+                    assert_eq!(action_name, "Communicate");
+                    assert_eq!(value, vocab_size as u32);
+                    assert_eq!(max, vocab_size as u32 - 1);
+                }
+                other => panic!("wrong error variant: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn try_to_discrete_configured_rejects_drop_payload_slot_out_of_range() {
+            let err = Action::DropPayload(crate::constants::ACTION_DROP_PAYLOAD_SLOTS as u8)
+                .try_to_discrete_configured(8, true, true, false)
+                .expect_err("DropPayload(slot=10) must error");
+            assert!(matches!(
+                err,
+                ActionEncodingError::ParameterOutOfRange {
+                    action_name: "DropPayload",
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn try_to_discrete_configured_rejects_spray_slot_out_of_range() {
+            let err = Action::Spray(crate::constants::ACTION_SPRAY_SLOTS as u8)
+                .try_to_discrete_configured(8, true, true, false)
+                .expect_err("Spray(slot=10) must error");
+            assert!(matches!(
+                err,
+                ActionEncodingError::ParameterOutOfRange {
+                    action_name: "Spray",
+                    ..
+                }
+            ));
+        }
+
+        /// The `agri_actions_enabled=false` gate must fire BEFORE the slot
+        /// bounds check — callers who haven't enabled agri shouldn't see a
+        /// confusing "spray slot out of range" error.
+        #[test]
+        fn agri_unsupported_takes_precedence_over_slot_bounds() {
+            let err = Action::Spray(99)
+                .try_to_discrete_configured(8, true, false, false)
+                .expect_err("must error before reaching slot bounds check");
+            assert!(matches!(
+                err,
+                ActionEncodingError::AgriActionUnsupported { .. }
+            ));
+        }
+
+        /// Every in-bounds parameter value must encode successfully under the
+        /// canonical full layout. Guards against off-by-one regressions in
+        /// `param_check`.
+        #[test]
+        fn try_to_discrete_accepts_every_in_bounds_parameter() {
+            let vocab_size = 16u16;
+            for slot in 0..crate::constants::ACTION_DROP_SLOTS as u8 {
+                Action::Drop(slot)
+                    .try_to_discrete()
+                    .expect("Drop(in-bounds) must succeed");
+            }
+            for slot in 0..crate::constants::ACTION_USE_SLOTS as u8 {
+                Action::Use(slot)
+                    .try_to_discrete()
+                    .expect("Use(in-bounds) must succeed");
+            }
+            for recipe in 0..crate::constants::ACTION_CRAFT_SLOTS as u16 {
+                Action::Craft(recipe)
+                    .try_to_discrete()
+                    .expect("Craft(in-bounds) must succeed");
+            }
+            for token in 0..vocab_size {
+                Action::Communicate(token)
+                    .try_to_discrete_configured(vocab_size, true, true, true)
+                    .expect("Communicate(in-bounds) must succeed");
+            }
+            for slot in 0..crate::constants::ACTION_DROP_PAYLOAD_SLOTS as u8 {
+                Action::DropPayload(slot)
+                    .try_to_discrete_configured(vocab_size, true, true, true)
+                    .expect("DropPayload(in-bounds) must succeed");
+            }
+            for slot in 0..crate::constants::ACTION_SPRAY_SLOTS as u8 {
+                Action::Spray(slot)
+                    .try_to_discrete_configured(vocab_size, true, true, true)
+                    .expect("Spray(in-bounds) must succeed");
+            }
+        }
+
+        /// The legacy panicking entrypoint must now panic on out-of-range
+        /// parameters instead of silently producing a colliding ID.
+        #[test]
+        #[should_panic(expected = "Action::to_discrete:")]
+        fn legacy_to_discrete_panics_on_drop_slot_out_of_range() {
+            let _ = Action::Drop(crate::constants::ACTION_DROP_SLOTS as u8).to_discrete();
+        }
+
+        #[test]
+        #[should_panic(expected = "Action::to_discrete_configured:")]
+        fn legacy_to_discrete_configured_panics_on_communicate_token_out_of_range() {
+            let _ = Action::Communicate(99).to_discrete_configured(8, true, true, true);
+        }
+
+        // ---- Drone-gating regression (Copilot/Devin reviews on PR #39) ----
+
+        /// Without the `drone_check` gate, every drone variant silently
+        /// encoded to `40 + comm_vocab_size + offset` even when
+        /// `drone_actions_enabled=false` — that ID is *outside* the configured
+        /// action space (since `space_size_full(_, false, false, false) ==
+        /// 40 + comm_vocab_size`) and disagrees with `from_discrete_full`,
+        /// which decodes the same input to `None`. This regression test
+        /// pins the contract: every drone variant must come back as
+        /// `DroneActionRequiresFullEncoder` when drone actions are disabled.
+        #[test]
+        fn try_configured_rejects_every_drone_variant_when_drone_disabled() {
+            let drone_actions = [
+                Action::Ascend,
+                Action::Descend,
+                Action::Hover,
+                Action::TakeOff,
+                Action::Land,
+                Action::Scan(Direction::Up),
+                Action::Scan(Direction::Down),
+                Action::Scan(Direction::Left),
+                Action::Scan(Direction::Right),
+                Action::DropPayload(0),
+                Action::DropPayload(9),
+            ];
+            for action in drone_actions {
+                let err = action
+                    .try_to_discrete_configured(8, false, false, false)
+                    .expect_err("drone variant must error when drone_actions_enabled=false");
+                assert!(
+                    matches!(
+                        err,
+                        ActionEncodingError::DroneActionRequiresFullEncoder { .. }
+                    ),
+                    "wrong variant for {action:?}: {err:?}",
+                );
+            }
+        }
+
+        /// `try_to_discrete_configured(_, false, _, _)` must agree with
+        /// `from_discrete_full(_, false, _, _)`: both encoder and decoder
+        /// reject every drone action when drone support is disabled. Without
+        /// this guard the encoder produced `Ok(48)` for `Ascend` while the
+        /// decoder returned `None` for `from_discrete_full(48, 8, false, _, _)`.
+        #[test]
+        fn drone_disabled_encoder_decoder_agree() {
+            let vocab_size = 8u16;
+            // Encoder rejects every drone action.
+            for action in [Action::Ascend, Action::Hover, Action::DropPayload(3)] {
+                assert!(action
+                    .try_to_discrete_configured(vocab_size, false, false, false)
+                    .is_err());
+            }
+            // Decoder rejects every ID inside the would-be drone block.
+            let drone_base = 40 + vocab_size as u32;
+            for offset in 0..crate::constants::DRONE_ACTION_COUNT {
+                let id = drone_base + offset;
+                assert!(
+                    Action::from_discrete_full(id, vocab_size, false, false, false).is_none(),
+                    "decoder must return None for id={id} when drone_actions_enabled=false"
+                );
+            }
+        }
+
+        /// The legacy panicking entrypoint must now panic on drone-disabled
+        /// configurations instead of silently producing an out-of-space ID.
+        #[test]
+        #[should_panic(expected = "Action::to_discrete_configured:")]
+        fn legacy_to_discrete_configured_panics_when_drone_disabled() {
+            let _ = Action::Ascend.to_discrete_configured(8, false, false, false);
         }
     }
 }

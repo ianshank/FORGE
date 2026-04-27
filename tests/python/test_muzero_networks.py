@@ -313,7 +313,7 @@ class TestResidualBlock:
     """Tests for ResidualBlock."""
 
     def test_build_output_shape(self) -> None:
-        from forge.models.muzero_networks import ResidualBlock  # noqa: PLC0415
+        from forge.models.muzero_networks import ResidualBlock
 
         block = ResidualBlock.build(32)
         x = torch.randn(4, 32)
@@ -322,7 +322,7 @@ class TestResidualBlock:
 
     def test_residual_connection(self) -> None:
         """Output should differ from input (non-identity) but be same shape."""
-        from forge.models.muzero_networks import ResidualBlock  # noqa: PLC0415
+        from forge.models.muzero_networks import ResidualBlock
 
         block = ResidualBlock.build(16)
         x = torch.randn(2, 16)

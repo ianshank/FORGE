@@ -837,7 +837,7 @@ Observation
 | forge-task | forge-types, rand, tracing |
 | forge-agent | forge-types, forge-core, rand, rand_pcg, serde, tracing |
 | forge-procgen | forge-types, forge-core, rand, rand_pcg, serde, tracing |
-| forge-server | forge-types, forge-core, serde, serde_json, tracing |
+| forge-server | forge-types, forge-core, serde, serde_json, tracing, tracing-subscriber (workspace) |
 | forge-python | forge-types, forge-core, forge-worldgen, forge-task, pyo3, numpy, serde_json, tracing |
 | forge-wasm | forge-types, forge-core, serde, serde_json, wasm-bindgen, tracing |
 | forge-bench | forge-types, forge-core, rand, rand_pcg, criterion |
@@ -902,7 +902,71 @@ Index:  0   1   2   3   4   5   6 ··· 15  16 ··· 25  26 ··· 34  35 36 3
                                                                    act
 ```
 
-### 4.6 Biome Classification
+The total action space is layered: base actions, then communication tokens
+(`comm_vocab_size`), then optional drone actions (`DRONE_ACTION_COUNT = 19`),
+then optional agricultural actions (`AGRI_ACTION_COUNT = 14`, requires drone),
+then optional hex movements (`HEX_ACTION_COUNT = 6`). Layout flags live in
+`ForgeConfig` so a stripped-down agent never has to reason about disabled
+blocks.
+
+Both `Action::to_discrete` (panicking) and `Action::try_to_discrete*`
+(fallible) flow through three uniform helpers so that out-of-range
+parameters and disabled-layout-block calls are rejected rather than silently
+producing a colliding or out-of-space ID:
+
+- `param_check(action, name, value, limit, id)` — slot/recipe/token bounds
+  for `Drop`, `Use`, `Craft`, `Communicate`, `DropPayload`, `Spray`.
+- `drone_check(action, drone_actions_enabled, compute_id)` — gates every
+  drone variant (`Ascend`, `Descend`, `Hover`, `TakeOff`, `Land`, 4× `Scan`,
+  `DropPayload`) on the configured layout. Without this gate, `Action::Ascend`
+  silently encoded to ID `40 + comm_vocab_size` even when drone support was
+  disabled — equal to `space_size_full(_, false, false, false)`, so
+  out-of-bounds for the active space and disagreeing with `from_discrete_full`.
+- `agri_check(action, drone_actions_enabled, agri_actions_enabled,
+  compute_id)` — gates every agricultural variant (`Spray`,
+  `ScanMultispectral`, `ScanThermal`, `RelaySoilData`, `GenerateReport`) on
+  both flags, since agri layouts layer on top of drone infrastructure.
+
+Encoder and decoder are now consistent: every `try_to_discrete_configured`
+rejection corresponds to a `from_discrete_full` returning `None`. See §4.7 for
+the error taxonomy.
+
+### 4.7 Structured Error Types
+
+`forge-types::error` exposes the workspace's top-level `ForgeError` and the
+domain-specific variants that compose into it via `#[from]`. Every error is
+`thiserror`-derived so `Display` is human-readable and `Debug` is structured.
+
+```
+ForgeError
+├── WorldGen(WorldGenError)            crates/forge-worldgen
+├── Simulation(SimulationError)        crates/forge-core
+├── Config(ConfigError)                crates/forge-types::config
+├── Serialization(String)
+├── Task(TaskError)                    crates/forge-task
+├── Cloud(CloudError)                  crates/forge-cloud
+├── Edge(EdgeError)                    crates/forge-edge
+└── ActionEncoding(ActionEncodingError)  crates/forge-types::action
+    ├── DroneActionRequiresFullEncoder { action_name }
+    ├── AgriActionUnsupported { action_name, drone_actions_enabled,
+    │                            agri_actions_enabled }
+    ├── HexActionUnsupported { hex_actions_enabled }
+    └── ParameterOutOfRange { action_name, value, max }
+```
+
+`ScenarioConfigError` (in `forge-scenario::config`) wraps the underlying
+`toml::de::Error` / `toml::ser::Error` rather than collapsing to `String`, so
+callers can pattern-match on the parse vs. serialize failure mode and
+preserve span / line context for diagnostics.
+
+The fallible encoders (`try_to_discrete`, `try_to_discrete_full`,
+`try_to_discrete_configured`) are the preferred entrypoints for any code that
+receives actions from untrusted sources — RPC handlers, replay loaders,
+cross-config curricula. The legacy panicking entrypoints delegate to the
+fallible variants so behavior is byte-identical for callers that already
+guarantee in-range inputs.
+
+### 4.8 Biome Classification
 
 ```
      Elevation

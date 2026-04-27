@@ -214,7 +214,7 @@ def test_build_section_empty() -> None:
 
 class TestDryRunConfig:
     def test_dry_run_defaults(self) -> None:
-        from forge.config import DryRunConfig  # noqa: PLC0415
+        from forge.config import DryRunConfig
 
         cfg = DryRunConfig()
         assert cfg.enabled is False
@@ -225,7 +225,7 @@ class TestDryRunConfig:
         assert cfg.curriculum_max_tier == 2
 
     def test_effective_simulation_uses_dry_run(self) -> None:
-        from forge.config import DryRunConfig, ForgeConfig  # noqa: PLC0415
+        from forge.config import DryRunConfig, ForgeConfig
 
         config = ForgeConfig(dry_run=DryRunConfig(enabled=True))
         effective = config.effective_simulation()
@@ -233,18 +233,18 @@ class TestDryRunConfig:
         assert effective.max_episode_length == 50
 
     def test_effective_simulation_normal_mode(self) -> None:
-        from forge.config import ForgeConfig  # noqa: PLC0415
+        from forge.config import ForgeConfig
 
         config = ForgeConfig()
         effective = config.effective_simulation()
         assert effective.grid_size == 64
 
     def test_dry_run_env_override(self) -> None:
-        import os  # noqa: PLC0415
+        import os
 
         os.environ["FORGE_DRY_RUN_ENABLED"] = "true"
         try:
-            from forge.config import ForgeConfig  # noqa: PLC0415
+            from forge.config import ForgeConfig
 
             config = ForgeConfig.from_dict({})
             assert config.dry_run.enabled is True

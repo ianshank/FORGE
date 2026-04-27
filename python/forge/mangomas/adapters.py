@@ -63,13 +63,15 @@ class ActionSpaceAdapter:
             divisor = self._bins ** (dims - 1 - i)
             bins.append(remaining // divisor)
             remaining %= divisor
-        return np.array([self._bin_center(b) for b in bins], dtype=np.float32)  # type: ignore[no-any-return]
+        return np.array([self._bin_center(b) for b in bins], dtype=np.float32)
 
     def _quantize(self, values: np.ndarray) -> list[int]:
         """Quantize continuous values to bin indices."""
         normalized = (values - self._lo) / (self._hi - self._lo)
         indices = np.clip((normalized * self._bins).astype(int), 0, self._bins - 1)
-        return indices.tolist()  # type: ignore[no-any-return]
+        # `ndarray.tolist()` is typed `Any` in numpy stubs; coerce each element
+        # to a built-in `int` so the public list[int] contract is honoured.
+        return [int(i) for i in indices.tolist()]
 
     def _bin_center(self, bin_idx: int) -> float:
         """Get the center value for a bin index."""
@@ -80,7 +82,9 @@ class ActionSpaceAdapter:
     @property
     def total_action_space(self) -> int:
         """Total number of discrete actions in the mapped space."""
-        return self._bins**self.continuous_dims  # type: ignore[no-any-return]
+        # `int ** int` produces `Any` under numpy / int interactions in older
+        # numpy stubs; coerce explicitly so the int return type is preserved.
+        return int(self._bins**self.continuous_dims)
 
 
 class ObservationAdapter:
@@ -165,20 +169,20 @@ class ObservationAdapter:
                 )
             )
 
-        return np.concatenate(parts)  # type: ignore[no-any-return]
+        return np.concatenate(parts)
 
     def _grid_summary(self, grid: np.ndarray) -> np.ndarray:
         """Extract summary statistics from the observation grid."""
         if grid.ndim < 3:
-            return np.zeros(self._grid_channels, dtype=np.float32)  # type: ignore[no-any-return]
+            return np.zeros(self._grid_channels, dtype=np.float32)
         # Channels: agents(0), resources(1), obstacles(2), terrain(3-10)
         n_cells = float(grid.shape[0] * grid.shape[1])
         if n_cells == 0:
-            return np.zeros(self._grid_channels, dtype=np.float32)  # type: ignore[no-any-return]
+            return np.zeros(self._grid_channels, dtype=np.float32)
         summary = np.zeros(self._grid_channels, dtype=np.float32)
         n_channels = min(grid.shape[2], self._grid_channels)
         for c in range(min(3, n_channels)):
             summary[c] = float(np.sum(grid[:, :, c] > 0)) / n_cells
         for c in range(3, n_channels):
             summary[c] = float(np.mean(grid[:, :, c]))
-        return summary  # type: ignore[no-any-return]
+        return summary

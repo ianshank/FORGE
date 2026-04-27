@@ -136,7 +136,7 @@ class TestOnnxExport:
 
 class TestWeightExporterIntegration:
     def test_export_muzero_weights(self, tmp_path: Any) -> None:
-        from forge.mangomas.export import WeightExporter  # noqa: PLC0415
+        from forge.mangomas.export import WeightExporter
 
         exporter = WeightExporter(tmp_path / "export", platform="drone")
         weights = {"rep_w0": np.zeros((32, 16)), "dyn_w0": np.ones((16, 16))}
@@ -146,9 +146,9 @@ class TestWeightExporterIntegration:
         assert "rep_w0" in loaded
 
     def test_manifest_includes_muzero(self, tmp_path: Any) -> None:
-        import json  # noqa: PLC0415
+        import json
 
-        from forge.mangomas.export import WeightExporter  # noqa: PLC0415
+        from forge.mangomas.export import WeightExporter
 
         exporter = WeightExporter(tmp_path / "export")
         exporter.export_muzero_weights({"w": np.zeros(10)})

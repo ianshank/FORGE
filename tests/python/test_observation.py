@@ -68,8 +68,8 @@ class TestComputeObsDim:
         """Computes correct dimensionality from a real FORGE environment."""
         pytest.importorskip("gymnasium")
         try:
-            from forge_env import gymnasium_env  # noqa: PLC0415
-            from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: PLC0415
+            from forge_env import gymnasium_env
+            from forge_env.gymnasium_env import ForgeGymnasiumEnv
         except ImportError as exc:
             pytest.skip(f"forge_env native extension not available: {exc}")
 

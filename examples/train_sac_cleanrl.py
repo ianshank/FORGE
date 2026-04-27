@@ -99,9 +99,9 @@ def _load_toml(path: Path) -> dict[str, Any]:
         logger.warning("Config file not found: %s — using defaults", path)
         return {}
     try:
-        import tomllib  # noqa: PLC0415
+        import tomllib
     except ImportError:
-        import tomli as tomllib  # type: ignore[no-redef]  # noqa: PLC0415
+        import tomli as tomllib  # type: ignore[no-redef]
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
@@ -332,7 +332,10 @@ def _flatten_obs(raw: Any, n_envs: int = 1) -> NDArray[np.float32]:
     return np.asarray(raw, dtype=np.float32).ravel()
 
 
-def train(args: argparse.Namespace) -> None:
+def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
+    # Discrete SAC is presented as a single linear training loop on purpose so
+    # this example reads top-to-bottom against the algorithm description.
+    # Splitting it into sub-functions hurts the pedagogical value.
     """Run the discrete SAC training loop.
 
     Args:
@@ -391,7 +394,7 @@ def train(args: argparse.Namespace) -> None:
     forge_logger = None
     if args.logger != "none":
         try:
-            from forge.training.loggers import make_logger  # noqa: PLC0415
+            from forge.training.loggers import make_logger
             logger_kwargs: dict[str, Any]
             if args.logger == "wandb":
                 logger_kwargs = {"project": args.wandb_project}

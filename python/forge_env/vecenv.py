@@ -302,7 +302,7 @@ class ForgeAsyncVecEnv:
             )
             process.start()
             child_conn.close()
-            self._parent_pipes.append(parent_conn)  # type: ignore[arg-type]
+            self._parent_pipes.append(parent_conn)
             self._processes.append(process)
 
         # Retrieve spaces from the first worker.

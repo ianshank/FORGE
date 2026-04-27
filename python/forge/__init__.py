@@ -17,3 +17,16 @@ with contextlib.suppress(ImportError):
         WandbLogger,
         make_logger,
     )
+
+# `__all__` makes the conditional re-exports explicit so static analyzers
+# (ruff F401, pylint) recognise them as the package's public surface even when
+# the optional logger backends fail to import on a stripped-down install.
+__all__ = [
+    "CompositeLogger",
+    "ForgeLogger",
+    "MLflowLogger",
+    "TensorBoardLogger",
+    "WandbLogger",
+    "make_logger",
+    "setup_logging",
+]
