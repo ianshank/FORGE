@@ -1,0 +1,47 @@
+# Kitchen-counter cleanup scenario: agent sweeps crumbs and coffee grinds
+# into a sink tile while avoiding fragile, hot, electronic, or human tiles.
+#
+# Format mirrors the existing patrol/escort scenario sketches under this
+# directory. The scenario is paired with:
+#   - configs/edge/rpi5_hailo_kitchen.toml      (EdgeConfig profile)
+#   - configs/actuator/openclaw_kitchen.toml    (action_id → actuator commands)
+[scenario]
+name = "kitchen_cleanup"
+description = "Sweep crumbs and grinds from a counter-top into the sink while respecting safety predicates around fragile/hot/electronic/human tiles"
+min_agents = 1
+max_agents = 1
+
+[scenario.map]
+# 32 × 16 tiles of ~3 cm/tile gives a ~1 m × 0.5 m workspace, the typical
+# size of a clear counter section in a domestic kitchen.
+grid_size = 32
+terrain_type = "kitchen_counter"
+# Number of contiguous sink tiles the agent can drop debris over.
+sink_tiles = 4
+# Treat the rest of the perimeter as cliffs — the cliff sensors enforce this
+# in hardware, but we encode it in the world so the policy learns to avoid it.
+cliff_perimeter = true
+
+[scenario.objectives]
+# Same dispatcher token used by `escort` / `sequence` — adding a new variant
+# would require touching the scenario loader, which is out of scope.
+type = "sweep_to_drain"
+time_limit = 1500
+# Per-event reward shaping. Magnitudes mirror the patrol/escort scaling
+# convention so curriculum mixing keeps the same effective reward range.
+reward_per_grind_drained = 0.05
+reward_per_crumb_drained = 0.02
+completion_bonus = 5.0
+penalty_per_fragile_contact = -10.0
+penalty_per_cliff_event = -25.0
+penalty_per_human_proximity = -2.0
+
+[scenario.difficulty]
+base_tier = 2
+# Top-down camera sees the whole counter — no fog of war.
+fog_of_war = false
+# Stray utensils, mugs, phones — distractor objects the policy must skirt.
+distractor_objects = true
+# Inject simulated reach-ins so the policy learns to back off from
+# `object_kind = human_hand` tiles.
+human_hand_events = true

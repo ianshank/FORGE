@@ -449,6 +449,14 @@ pub const DEFAULT_EDGE_UPLOAD_RETRY_BASE_MS: u64 = 2000;
 pub const DEFAULT_EDGE_GCS_MODEL_BUCKET: &str = "";
 /// Default GCS prefix for edge model artifacts.
 pub const DEFAULT_EDGE_GCS_MODEL_PREFIX: &str = "forge/models/";
+/// Default fallback action id used when MCTS planning fails on edge.
+///
+/// Defaults to `0` (Noop) so existing deployments preserve current behaviour.
+/// Override via `EdgeConfig.fallback_action_id` (TOML
+/// `[edge] fallback_action_id = N`) or the `FORGE_EDGE_FALLBACK_ACTION_ID`
+/// environment variable to halt the robot in a domain-appropriate safe pose
+/// (e.g. raise sweeper + stop wheels for a counter-top robot).
+pub const DEFAULT_EDGE_FALLBACK_ACTION_ID: u32 = 0;
 
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
@@ -748,5 +756,12 @@ mod tests {
     fn test_edge_latency_ema_alpha_in_range() {
         assert!(DEFAULT_EDGE_LATENCY_EMA_ALPHA > 0.0);
         assert!(DEFAULT_EDGE_LATENCY_EMA_ALPHA <= 1.0);
+    }
+
+    #[test]
+    fn test_edge_fallback_action_id_default_is_noop() {
+        // The default fallback must remain Noop (0) so that existing deployments
+        // see no behavioural change when this field is added.
+        assert_eq!(DEFAULT_EDGE_FALLBACK_ACTION_ID, 0);
     }
 }

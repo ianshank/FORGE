@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# Edge profile: Raspberry Pi 5 + Hailo AI HAT 2 + OpenClaw kitchen-counter robot
+#
+# Targets a 30 Hz control loop on a Hailo-8L (13 TOPS) NPU. Most fields here
+# are the FORGE defaults — they are spelled out for clarity so an operator
+# tuning the platform doesn't have to chase down the constants in
+# `crates/forge-types/src/constants.rs`.
+#
+# Use:
+#   ForgeConfig::from_toml("configs/edge/rpi5_hailo_kitchen.toml")
+# Companion files:
+#   - Scenario:  configs/scenarios/kitchen_cleanup.toml
+#   - Actuator:  configs/actuator/openclaw_kitchen.toml
+# ---------------------------------------------------------------------------
+
+[edge]
+# Enable adaptive MCTS, telemetry, and the configured fallback action.
+enabled = true
+
+# 30 Hz target loop → ~33 ms budget, leaving headroom for vision preprocessing
+# and the OpenClaw bridge.
+mcts_latency_budget_ms = 33
+
+# Floor used during human-proximity pauses (see `kitchen_cleanup.toml`
+# `human_hand_events`). Keeping the floor low + the ceiling moderate keeps the
+# Cortex-A76 cores free for SLAM and OpenClaw motion control.
+mcts_min_simulations = 8
+mcts_max_simulations = 96
+
+# Telemetry: one CompactReplay flush per cleanup pass (~1 minute).
+telemetry_interval_s = 60
+# 4 MiB buffer is enough for ~250 cleanup-pass replays at the typical
+# ~16 KB/replay size — an off-Wi-Fi outage of several hours is recoverable.
+telemetry_buffer_bytes = 4194304
+compress_telemetry = false
+
+# Hailo NPU runs the inference; ONNX threads are only used for the CPU fallback
+# path (`forge-wasm` or pure-CPU ONNX). Keep low to leave cores for control.
+onnx_batch_size = 1
+onnx_num_threads = 2
+
+# Pull updates hourly when a Wi-Fi link is available.
+model_update_interval_s = 3600
+
+# Standard EMA alpha (proven default).
+latency_ema_alpha = 0.3
+
+# Retry telemetry uploads aggressively — a kitchen robot is intermittently
+# online when it returns to its dock.
+upload_retry_count = 4
+upload_retry_base_ms = 2000
+
+# Configure the GCS bucket / prefix where compact replays land and where
+# updated `.hef` artifacts are pulled from. Leave empty to disable cloud
+# round-trips entirely (e.g. for fully-offline demo kits).
+gcs_model_bucket = ""
+gcs_model_prefix = "forge/models/kitchen/"
+
+# Safe-pose fallback action id used when MCTS planning fails or the
+# constitutional layer trips. The actuator mapping in
+# `configs/actuator/openclaw_kitchen.toml` routes this id to
+# `[disengage_sweeper, halt]` — a hardware-safe stance that lifts the
+# squeegee bar before stopping wheels, so the robot doesn't drag debris if
+# it stops mid-sweep.
+fallback_action_id = 17

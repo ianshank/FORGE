@@ -153,25 +153,25 @@ combinators called out in Case F of the RPi5/Hailo doc — the kitchen case
 is, structurally, a constitutional-safety case with a domestic-flavoured
 predicate set.
 
-A starter scenario file (`configs/scenarios/kitchen_cleanup.toml`) would
-follow the shape of the existing `patrol.toml` / `escort.toml`:
+The starter scenario lives in
+[`configs/scenarios/kitchen_cleanup.toml`](../configs/scenarios/kitchen_cleanup.toml)
+and follows the shape of the existing `patrol.toml` / `escort.toml`:
 
 ```toml
 [scenario]
 name = "kitchen_cleanup"
-description = "Sweep crumbs and grinds from a countertop into the sink"
+description = "Sweep crumbs and grinds from a counter-top into the sink ..."
 min_agents = 1
 max_agents = 1
 
 [scenario.map]
-grid_size_x = 32
-grid_size_y = 16
+grid_size = 32                  # matches the existing single-int convention
 terrain_type = "kitchen_counter"
 sink_tiles = 4
-cliff_tiles = "perimeter_minus_sink"
+cliff_perimeter = true
 
 [scenario.objectives]
-type = "sweep_to_drain"
+type = "sweep_to_drain"         # new objective token; reuses the dispatcher
 time_limit = 1500
 reward_per_grind_drained = 0.05
 reward_per_crumb_drained = 0.02
@@ -182,15 +182,16 @@ penalty_per_human_proximity = -2.0
 
 [scenario.difficulty]
 base_tier = 2
-fog_of_war = false               # top-down camera sees everything
-distractor_objects = true        # stray utensils, mugs, phones
-human_hand_events = true         # simulated reach-ins
+fog_of_war = false              # top-down camera sees the whole counter
+distractor_objects = true
+human_hand_events = true        # simulated reach-ins
 ```
 
-Nothing here requires schema changes — `grid_size_x/y` and the new
-terrain enum values map onto existing `forge-types::config` extension
-points. The new objective type slots into the existing reward-builder
-the same way `escort` and `patrol` do.
+The map block uses the existing single-int `grid_size` convention so the
+file slots cleanly into the same loader as `patrol.toml` and friends.
+The new `sweep_to_drain` objective token requires the scenario
+dispatcher to grow one variant — the rest of the file is pure data the
+existing reward-builder already handles.
 
 ---
 
@@ -211,10 +212,17 @@ RPi5/Hailo doc. FORGE handles it in three layers:
    - "Do not Move into a tile occupied by a human_hand object_kind."
    - "Do not Drop over a non-`drain` tile."
    - When the value head's prediction crosses the constitutional
-     threshold, `EdgeAgent` already falls back to its configured fallback
-     action. For the kitchen we override the default `Noop` fallback to
-     "raise sweeper + halt" via the existing fallback-action knob in
-     `EdgeAgent` (this is one config field, not a code change).
+     threshold, `EdgeAgent` falls back to the action id supplied by
+     `EdgeConfig.fallback_action_id`
+     ([`crates/forge-types/src/config.rs`](../crates/forge-types/src/config.rs)
+     — see also `DEFAULT_EDGE_FALLBACK_ACTION_ID` in
+     [`crates/forge-types/src/constants.rs`](../crates/forge-types/src/constants.rs)).
+     The kitchen profile sets that field to `17`
+     ([`configs/edge/rpi5_hailo_kitchen.toml`](../configs/edge/rpi5_hailo_kitchen.toml)),
+     and the OpenClaw mapping
+     ([`configs/actuator/openclaw_kitchen.toml`](../configs/actuator/openclaw_kitchen.toml))
+     routes id `17` to `[disengage_sweeper, halt]` — a hardware-safe
+     stance. The whole change is two TOML edits; no Rust touched.
 
 3. **Adaptive planning budget (`AdaptiveMctsSearch`).**
    - Default `mcts_latency_budget_ms = 33` (≈30 Hz).
@@ -229,36 +237,84 @@ configuration of it, not a new mechanism.
 
 ---
 
-## 7. What Has to Be Built
+## 7. What's Built (and what's still pending)
 
-Mirroring §4 of the RPi5/Hailo doc, the kitchen-counter robot adds these
-deltas on top of the reference stack:
+The deltas on top of the reference RPi5/Hailo stack are intentionally
+small. The list below is what now ships in this repository — everything
+else is configuration the operator owns.
 
-1. **`configs/scenarios/kitchen_cleanup.toml`** — the scenario sketched
-   in §5. Pure config.
-2. **`configs/edge/rpi5_hailo_kitchen.toml`** — `EdgeConfig` profile:
-   - `mcts_latency_budget_ms = 33`
-   - `mcts_min_simulations = 8` (used during human-proximity pauses)
-   - `mcts_max_simulations = 96`
-   - `telemetry_interval_s = 60` (one flush per typical cleanup pass)
-   - Custom fallback action ID for "raise sweeper + halt".
-3. **OpenClaw kitchen bridge** — the §7.2 shim from the RPi5/Hailo doc,
-   with one extra responsibility: route action `16/17` to the sweeper
-   servo and recognise the `drain` terrain tag for `Drop`. ~200 LOC of
-   Python or a small Rust crate; lives outside the FORGE workspace or in
-   a `forge-actuator-kitchen` crate if we want it in-tree.
-4. **Vision head** — a YOLO-style debris detector compiled to `.hef`
-   alongside the MuZero heads. Off-the-shelf model, fine-tuned on a few
-   thousand kitchen frames; emits the `object_kind` channel consumed by
-   the world model. No FORGE changes required — it's just another
-   producer for `TileObservation`.
-5. **Reward shaping** — the new objective type `sweep_to_drain` plus the
-   penalty terms in §5. Slots into the same reward-builder pattern used
-   by the existing scenarios.
+### Built and tested in-tree
 
-No trait or schema changes. The Hailo backend (`HailoLatentModel`) and
-the OpenClaw bridge described in the RPi5/Hailo doc §4 are reused
-verbatim.
+1. **`fallback_action_id` field on `EdgeConfig`**
+   ([`crates/forge-types/src/config.rs`](../crates/forge-types/src/config.rs),
+   default in
+   [`crates/forge-types/src/constants.rs`](../crates/forge-types/src/constants.rs)).
+   Backwards compatible — old TOMLs missing the field deserialize to the
+   historical `Noop` (`0`) fallback, and an env override
+   (`FORGE_EDGE_FALLBACK_ACTION_ID`) is wired through `apply_env_overrides`.
+   `EdgeAgent::new`
+   ([`crates/forge-edge/src/edge_agent.rs`](../crates/forge-edge/src/edge_agent.rs))
+   now reads this field instead of the previous hardcoded `0`. Verified by
+   `test_fallback_action_id_honoured_from_config` and
+   `test_edge_config_fallback_action_id_backward_compatible`.
+
+2. **New `forge-actuator` crate**
+   ([`crates/forge-actuator/`](../crates/forge-actuator)) — the
+   action-id → actuator-command bridge:
+   - `ActuatorCommand` (`drive_direction`, `open_gripper`, `close_gripper`,
+     `engage_sweeper`, `disengage_sweeper`, `vibrate`, `halt`, `custom`).
+   - `ActionMapping` — TOML-loaded, `strict` / permissive, with default
+     fallback sequence; rejects duplicate ids and missing defaults at load.
+   - `ActuatorBridge` + `ActuatorDriver` traits.
+   - `MappedActuator<D>` — single generic implementation, instrumented
+     with `tracing` and a bounded command-history ring buffer.
+   - `MockDriver` — in-memory driver for tests, with optional
+     failure-injection predicate for error-path coverage.
+   - 34 unit tests (incl. proptest cases) all green.
+
+3. **Edge profile**
+   [`configs/edge/rpi5_hailo_kitchen.toml`](../configs/edge/rpi5_hailo_kitchen.toml).
+   Sets `mcts_latency_budget_ms = 33`, `mcts_min_simulations = 8`,
+   `mcts_max_simulations = 96`, `telemetry_interval_s = 60`,
+   `telemetry_buffer_bytes = 4 MiB`, and crucially `fallback_action_id = 17`.
+
+4. **OpenClaw action mapping**
+   [`configs/actuator/openclaw_kitchen.toml`](../configs/actuator/openclaw_kitchen.toml).
+   Concrete action-id → command-sequence assignments for ids 0–39,
+   including the safe-pose `17 → [disengage_sweeper, halt]` contract that
+   pairs with the edge profile's fallback id.
+
+5. **Scenario sketch**
+   [`configs/scenarios/kitchen_cleanup.toml`](../configs/scenarios/kitchen_cleanup.toml).
+   Mirrors the existing `patrol.toml` / `escort.toml` shape; depends on a
+   future `sweep_to_drain` dispatcher variant (see "still to do" below).
+
+6. **End-to-end integration test**
+   [`tests/rust/integration_kitchen_robot.rs`](../tests/rust/integration_kitchen_robot.rs).
+   Loads both TOMLs, drives an `EdgeAgent` backed by an always-failing
+   model, asserts the fallback id (`17`) emerges, dispatches it through
+   the bridge, and confirms the driver received exactly
+   `[disengage_sweeper, halt]`. Also covers the legacy-profile
+   backwards-compat path and the cleanup-sweep command sequence.
+
+### Still to do (not blocking the kitchen MVP)
+
+1. **OpenClaw `ActuatorDriver` impl.** A small Rust shim (or Python glue
+   over PyO3) that marshals `ActuatorCommand` onto the OpenClaw serial
+   bus. Lives outside the FORGE workspace because it depends on
+   distribution-specific serial drivers; the trait it implements is here.
+2. **`sweep_to_drain` objective dispatcher.** The scenario TOML uses the
+   new objective token; the scenario loader needs one new match arm to
+   wire it through to the reward computation. Out of scope for this
+   change because it touches `forge-task` independently and the rest of
+   the pipeline doesn't block on it.
+3. **Vision head.** Off-the-shelf YOLO-style debris detector compiled to
+   `.hef` alongside the MuZero heads. Emits the `object_kind` channel
+   consumed by the world model — no FORGE changes required.
+4. **Hailo `LatentForwardModel` backend.** Wraps HailoRT and a compiled
+   `.hef`. Slots into the existing `OnnxMuZeroModel` extension point.
+
+None of these require trait or schema changes to FORGE itself.
 
 ---
 
@@ -307,9 +363,15 @@ RPi5+Hailo+OpenClaw reference stack:
   `OnnxMuZeroModel`/`HailoLatentModel`, the constitutional layer,
   `CompactReplay`, the OTA model-update loop, the discrete action space,
   the task DSL.
-- **Added**: one scenario TOML, one edge profile TOML, a ~200-LOC
-  actuator bridge with sweeper + drain awareness, an off-the-shelf
-  vision head, and IP54 packaging.
+- **Added (this branch)**: a backwards-compatible `fallback_action_id`
+  field on `EdgeConfig`; a generic `forge-actuator` crate
+  (`MappedActuator` + `ActionMapping` + `ActuatorCommand` +
+  `ActuatorDriver` trait + `MockDriver`); kitchen-specific edge,
+  scenario, and actuator TOMLs; and a workspace integration test that
+  proves the safe-pose path end-to-end.
+- **Still to add**: an OpenClaw `ActuatorDriver` (lives outside the
+  workspace), a `sweep_to_drain` dispatcher arm in the scenario loader,
+  and an off-the-shelf vision head.
 - **Risks owned outside FORGE**: cliff/bump hardware interlock, OpenClaw
   torque limits, IP rating.
 

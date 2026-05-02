@@ -565,6 +565,13 @@ pub struct EdgeConfig {
     pub gcs_model_bucket: String,
     /// GCS prefix for model artifacts on edge.
     pub gcs_model_prefix: String,
+    /// Discrete action id emitted when MCTS planning fails or returns no
+    /// candidate (e.g. transient model error, watchdog trip). Defaults to
+    /// [`crate::constants::DEFAULT_EDGE_FALLBACK_ACTION_ID`] (Noop). Domains
+    /// with safety-critical postures (kitchen-counter cleanup, manipulators
+    /// near humans) should override this to a halt/safe-pose action id so
+    /// the actuator bridge can map it to a hardware-safe stance.
+    pub fallback_action_id: u32,
 }
 
 impl Default for EdgeConfig {
@@ -585,6 +592,7 @@ impl Default for EdgeConfig {
             upload_retry_base_ms: constants::DEFAULT_EDGE_UPLOAD_RETRY_BASE_MS,
             gcs_model_bucket: constants::DEFAULT_EDGE_GCS_MODEL_BUCKET.to_string(),
             gcs_model_prefix: constants::DEFAULT_EDGE_GCS_MODEL_PREFIX.to_string(),
+            fallback_action_id: constants::DEFAULT_EDGE_FALLBACK_ACTION_ID,
         }
     }
 }
@@ -767,6 +775,7 @@ impl ForgeConfig {
         env_override!(edge.latency_ema_alpha, f32);
         env_override!(edge.upload_retry_count, u32);
         env_override!(edge.upload_retry_base_ms, u64);
+        env_override!(edge.fallback_action_id, u32);
 
         // Edge GCS string overrides
         if let Ok(val) = std::env::var("FORGE_EDGE_GCS_MODEL_BUCKET") {
@@ -1398,6 +1407,40 @@ grid_type = "Hex"
             config.latency_ema_alpha,
             constants::DEFAULT_EDGE_LATENCY_EMA_ALPHA
         );
+        assert_eq!(
+            config.fallback_action_id,
+            constants::DEFAULT_EDGE_FALLBACK_ACTION_ID
+        );
+    }
+
+    #[test]
+    fn test_edge_config_fallback_action_id_backward_compatible() {
+        // A TOML missing fallback_action_id (i.e. produced by older code)
+        // must deserialize cleanly and pick up the default.
+        let toml_str = r#"
+[edge]
+enabled = true
+mcts_latency_budget_ms = 33
+"#;
+        let config: ForgeConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.edge.enabled);
+        assert_eq!(
+            config.edge.fallback_action_id,
+            constants::DEFAULT_EDGE_FALLBACK_ACTION_ID
+        );
+    }
+
+    #[test]
+    fn test_edge_config_fallback_action_id_override() {
+        // A TOML providing a custom fallback (e.g. kitchen-counter "raise
+        // sweeper + halt" action id) must be honoured verbatim.
+        let toml_str = r#"
+[edge]
+enabled = true
+fallback_action_id = 17
+"#;
+        let config: ForgeConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.edge.fallback_action_id, 17);
     }
 
     #[test]
