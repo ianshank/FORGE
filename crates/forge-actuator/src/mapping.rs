@@ -109,20 +109,16 @@ impl ActionMapping {
     #[instrument(skip_all, fields(path = %path.as_ref().display()))]
     pub fn from_toml_file<P: AsRef<Path>>(path: P) -> Result<Self, ActuatorError> {
         let path_buf: PathBuf = path.as_ref().to_path_buf();
+        let display_path = path_buf.display().to_string();
         let contents = std::fs::read_to_string(&path_buf).map_err(|e| {
-            warn!(path = %path_buf.display(), error = %e, "ActionMapping: failed to read file");
+            warn!(path = %display_path, error = %e, "ActionMapping: failed to read file");
             ActuatorError::Io {
-                path: path_buf.display().to_string(),
+                path: display_path.clone(),
                 source: e,
             }
         })?;
         let mapping = Self::from_toml_str(&contents)?;
-        debug!(
-            path = %path_buf.display(),
-            entries = mapping.len(),
-            strict = mapping.strict,
-            "ActionMapping: loaded mapping from file"
-        );
+        debug!(path = %display_path, entries = mapping.len(), strict = mapping.strict, "ActionMapping: loaded mapping from file");
         Ok(mapping)
     }
 
@@ -151,17 +147,6 @@ impl ActionMapping {
         }
     }
 
-    /// Returns true when the action id has an explicit mapping entry.
-    pub fn has_mapping(&self, action_id: u32) -> bool {
-        self.entries.contains_key(&action_id)
-    }
-
-    /// Returns the default command sequence used for unmapped ids when not
-    /// in strict mode.
-    pub fn default_commands(&self) -> &[ActuatorCommand] {
-        &self.default
-    }
-
     /// Returns whether the mapping is in strict mode.
     pub fn is_strict(&self) -> bool {
         self.strict
@@ -175,11 +160,6 @@ impl ActionMapping {
     /// Returns true when there are no explicit entries.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
-    }
-
-    /// Iterate over `(action_id, commands)` pairs in ascending id order.
-    pub fn iter(&self) -> impl Iterator<Item = (u32, &[ActuatorCommand])> {
-        self.entries.iter().map(|(id, cmds)| (*id, cmds.as_slice()))
     }
 
     fn try_from_file(file: ActionMappingFile) -> Result<Self, ActuatorError> {
@@ -426,7 +406,14 @@ commands = []
 "#;
         let mapping = ActionMapping::from_toml_str(toml_str).unwrap();
         assert!(mapping.is_strict());
-        assert!(mapping.default_commands().is_empty());
+        // Strict mode reaches the unknown-id error path instead of the
+        // default sequence; verify that contract here rather than poking at
+        // the internal default field.
+        let err = mapping.resolve(99).unwrap_err();
+        assert!(matches!(
+            err,
+            ActuatorError::UnknownActionId { action_id: 99 }
+        ));
     }
 
     #[test]
@@ -469,29 +456,6 @@ commands = []
     }
 
     #[test]
-    fn iter_yields_entries_in_id_order() {
-        let mapping = ActionMapping::try_from_entries(
-            [
-                (39, vec![ActuatorCommand::Halt]),
-                (1, vec![ActuatorCommand::OpenGripper]),
-                (5, vec![ActuatorCommand::CloseGripper]),
-            ],
-            vec![ActuatorCommand::Halt],
-            false,
-        )
-        .unwrap();
-        let ids: Vec<u32> = mapping.iter().map(|(id, _)| id).collect();
-        assert_eq!(ids, vec![1, 5, 39]);
-    }
-
-    #[test]
-    fn has_mapping_distinguishes_explicit_vs_default() {
-        let mapping = ActionMapping::from_toml_str(sample_kitchen_toml()).unwrap();
-        assert!(mapping.has_mapping(1));
-        assert!(!mapping.has_mapping(999));
-    }
-
-    #[test]
     fn default_constructor_is_permissive_with_halt() {
         let mapping = ActionMapping::new();
         assert!(!mapping.is_strict());
@@ -528,6 +492,42 @@ commands = []
             err,
             ActuatorError::UnknownActionId { action_id: 99 }
         ));
+    }
+
+    #[test]
+    fn action_mapping_round_trips_through_toml_serialization() {
+        // Serialise → parse must be lossless. This exercises both
+        // `From<ActionMapping> for ActionMappingFile` (the `into = ...`
+        // direction of the serde wiring) and the matching `try_from` path
+        // on the way back. Without this test the `into` path is dead code.
+        let original = ActionMapping::try_from_entries(
+            [
+                (1u32, vec![ActuatorCommand::OpenGripper]),
+                (
+                    17,
+                    vec![ActuatorCommand::DisengageSweeper, ActuatorCommand::Halt],
+                ),
+            ],
+            vec![ActuatorCommand::Halt],
+            false,
+        )
+        .unwrap();
+
+        let serialised = toml::to_string(&original).expect("ActionMapping must serialise to TOML");
+        let restored: ActionMapping = toml::from_str(&serialised)
+            .expect("serialised TOML must parse back into ActionMapping");
+
+        assert_eq!(restored.len(), original.len());
+        assert!(!restored.is_strict());
+        assert_eq!(
+            restored.commands_for(17).unwrap(),
+            &[ActuatorCommand::DisengageSweeper, ActuatorCommand::Halt]
+        );
+        // Permissive default survives the round trip.
+        assert_eq!(
+            restored.commands_for(999).unwrap(),
+            &[ActuatorCommand::Halt]
+        );
     }
 
     #[test]

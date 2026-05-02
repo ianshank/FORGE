@@ -119,9 +119,10 @@ impl<D: ActuatorDriver> MappedActuator<D> {
     /// command history so subsequent debugging output reflects only the new
     /// mapping's behaviour.
     pub fn replace_mapping(&mut self, mapping: ActionMapping) {
+        let (old_len, new_len) = (self.mapping.len(), mapping.len());
         info!(
-            old_entries = self.mapping.len(),
-            new_entries = mapping.len(),
+            old_entries = old_len,
+            new_entries = new_len,
             "MappedActuator: replacing action mapping"
         );
         self.mapping = mapping;
@@ -136,11 +137,6 @@ impl<D: ActuatorDriver> MappedActuator<D> {
     /// Borrow the underlying driver mutably.
     pub fn driver_mut(&mut self) -> &mut D {
         &mut self.driver
-    }
-
-    /// Returns the configured history capacity.
-    pub fn history_capacity(&self) -> usize {
-        self.history_capacity
     }
 
     fn record(&mut self, command: &ActuatorCommand) {
@@ -171,12 +167,7 @@ impl<D: ActuatorDriver> ActuatorBridge for MappedActuator<D> {
         );
         for command in &commands {
             if let Err(e) = self.driver.execute(command) {
-                warn!(
-                    action_id,
-                    ?command,
-                    error = %e,
-                    "MappedActuator: driver failed mid-sequence"
-                );
+                warn!(action_id, ?command, error = %e, "MappedActuator: driver failed mid-sequence");
                 self.record(command);
                 return Err(e);
             }
@@ -434,6 +425,31 @@ mod tests {
         assert_eq!(bridge.driver().received().len(), 1);
         bridge.driver_mut().clear();
         assert!(bridge.driver().received().is_empty());
+    }
+
+    #[test]
+    fn mapping_accessor_exposes_underlying_action_mapping() {
+        let mapping = kitchen_mapping();
+        let expected_len = mapping.len();
+        let bridge = MappedActuator::new(mapping, MockDriver::new(), 4);
+        assert_eq!(bridge.mapping().len(), expected_len);
+    }
+
+    #[test]
+    fn mock_driver_debug_renders_received_buffer_and_predicate_marker() {
+        // Without a predicate installed.
+        let mut driver_plain = MockDriver::new();
+        driver_plain.execute(&ActuatorCommand::Halt).unwrap();
+        let dbg_plain = format!("{driver_plain:?}");
+        assert!(dbg_plain.contains("MockDriver"), "{dbg_plain}");
+        assert!(dbg_plain.contains("Halt"), "{dbg_plain}");
+
+        // With a predicate installed — the Debug impl swaps the closure for
+        // a static "<closure>" marker so the type stays Debug-printable.
+        let driver_with_pred =
+            MockDriver::new().with_failure_predicate(|_cmd| Some("forced-fail".to_string()));
+        let dbg_pred = format!("{driver_with_pred:?}");
+        assert!(dbg_pred.contains("<closure>"), "{dbg_pred}");
     }
 
     // ---- Property tests ----
