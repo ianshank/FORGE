@@ -30,7 +30,7 @@ scenario library under `configs/scenarios/`.
 | `forge-edge::EdgeAgent` | Top-level on-device agent (already implements `AgentInterface`) |
 | `forge-edge::AdaptiveMctsSearch` | Latency-budgeted MCTS, drops sims to fit budget |
 | `forge-edge::TelemetryCollector` | Store-and-forward `CompactReplay` buffer |
-| `forge-agent::latent_mcts::OnnxMuZeroModel` | Three small ONNX models (~350 KB total) — compiled to Hailo `.hef` |
+| `forge-agent::latent_mcts::onnx_model::OnnxMuZeroModel` | Three small ONNX models (~350 KB total) — compiled to Hailo `.hef` |
 | `forge-types::config::EdgeConfig` | `mcts_latency_budget_ms`, `onnx_num_threads`, `gcs_model_bucket`, etc. |
 | `crates/forge-wasm` | Optional fallback runtime if Hailo path is unavailable |
 
@@ -194,8 +194,8 @@ ship to a larger robot.
 **Edge**
 - The Hailo HAT runs the value head at high speed; if the predicted value
   drops below a constitutional threshold, `EdgeAgent` returns its
-  configurable fallback action (currently `0 = Noop` — see
-  `edge_agent.rs:104`).
+  configurable fallback action (currently `0 = Noop` — see the
+  `EdgeAgent` fallback logic in `edge_agent.rs`).
 - OpenClaw observes a software E-stop tied to that fallback.
 
 **Why it's a fit**: FORGE already has the constitutional plumbing and the
