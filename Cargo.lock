@@ -522,6 +522,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
+name = "forge-actuator"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "forge-agent"
 version = "0.1.0"
 dependencies = [
@@ -699,7 +711,9 @@ dependencies = [
 name = "forge-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bincode",
+ "forge-actuator",
  "forge-agent",
  "forge-cloud",
  "forge-cognitive",
@@ -710,6 +724,7 @@ dependencies = [
  "forge-memory",
  "forge-proposal",
  "forge-replay",
+ "forge-scenario",
  "forge-social",
  "forge-task",
  "forge-types",

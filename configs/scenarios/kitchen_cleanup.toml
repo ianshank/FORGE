@@ -1,0 +1,45 @@
+# Kitchen-counter cleanup scenario.
+#
+# Schema: `forge_scenario::ScenarioConfig` (loaded via
+# `ScenarioConfig::from_toml_file` — see
+# `crates/forge-scenario/src/config.rs`). The `[scenario]` block carries
+# discoverable metadata; the `[forge.*]` block overrides FORGE config
+# defaults for this scenario.
+#
+# Pairs with:
+#   - configs/edge/rpi5_hailo_kitchen.toml      (EdgeConfig profile)
+#   - configs/actuator/openclaw_kitchen.toml    (action_id → actuator commands)
+#
+# Kitchen-specific reward shaping (per-grind / per-crumb rewards, sink-tile
+# bonus, fragile/cliff/human-proximity penalties) is not yet expressible in
+# the current `TaskConfig` / `WorldConfig` schema. Tracking it as a
+# follow-up scenario extension — see `docs/kitchen_counter_robot.md` §7
+# "Still to do".
+
+[scenario]
+id = "kitchen_cleanup"
+name = "Kitchen Counter Cleanup"
+description = "Sweep crumbs and grinds from a counter-top into the sink while respecting safety predicates around fragile, hot, electronic, and human-occupied tiles."
+tags = ["edge", "manipulation", "navigation", "constitutional-safety"]
+difficulty_tier = 2
+min_agents = 1
+max_agents = 1
+author = "FORGE"
+version = "1.0"
+
+# A 1 m × 0.5 m counter section at ~3 cm/tile maps onto a 32 × 16 grid.
+[forge.world]
+width = 32
+height = 16
+seed = 0
+
+[forge.agents]
+num_agents = 1
+
+[forge.task]
+enabled = true
+max_episode_length = 1500
+# Dense reward shaping is enabled so the sweep / drain / safety signals
+# accumulate per-tick. The exact reward weights live in the future
+# kitchen-specific scenario extension referenced in the header.
+dense_rewards = true

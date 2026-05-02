@@ -1,0 +1,150 @@
+# ---------------------------------------------------------------------------
+# Action mapping: FORGE discrete action ids → OpenClaw kitchen-bridge commands
+#
+# Loaded by `forge_actuator::ActionMapping::from_toml_file`. The kitchen
+# bridge wraps a `forge_actuator::MappedActuator<KitchenDriver>` (a thin
+# OpenClaw-specific implementor of `ActuatorDriver` that lives outside this
+# repo) — this file is the only thing that has to change to retarget the
+# same code at a different gripper or drive train.
+#
+# Action-id encoding (matches the FORGE discrete action enum in
+# `crates/forge-types/src/action.rs`):
+#   0       Noop
+#   1–4     Move (Up/Down/Left/Right)
+#   5       PickUp
+#   6–15    Drop slot N
+#   16–25   Use slot N    (kitchen: 16 = lower sweeper, 17 = raise + halt)
+#   26–34   Craft N
+#   35–38   Push (Up/Down/Left/Right)  (kitchen: the workhorse sweep action)
+#   39      Interact      (kitchen: sink-edge subroutine)
+#
+# `strict = false` so action ids the policy explores but the bridge has no
+# explicit mapping for fall through to the `default` (Halt) sequence rather
+# than crashing the control loop. The cliff/bump hardware E-stop is a
+# separate layer below this — see docs/kitchen_counter_robot.md §6.
+# ---------------------------------------------------------------------------
+
+[mapping]
+strict = false
+
+# ---- 0: Noop ----
+[[mapping.action]]
+id = 0
+commands = [{ kind = "halt" }]
+
+# ---- 1–4: Move (drive base one tile = 30 mm) ----
+[[mapping.action]]
+id = 1
+commands = [{ kind = "drive_direction", direction = "up", distance_mm = 30 }]
+
+[[mapping.action]]
+id = 2
+commands = [{ kind = "drive_direction", direction = "down", distance_mm = 30 }]
+
+[[mapping.action]]
+id = 3
+commands = [{ kind = "drive_direction", direction = "left", distance_mm = 30 }]
+
+[[mapping.action]]
+id = 4
+commands = [{ kind = "drive_direction", direction = "right", distance_mm = 30 }]
+
+# ---- 5: PickUp (close gripper on a discrete object, e.g. dropped utensil) ----
+[[mapping.action]]
+id = 5
+commands = [{ kind = "close_gripper" }]
+
+# ---- 6–15: Drop slot N (open gripper to release inventory) ----
+# All 10 inventory slots map to the same physical motion: open gripper.
+# The policy decides which slot semantics matter; the gripper is one device.
+[[mapping.action]]
+id = 6
+commands = [{ kind = "open_gripper" }]
+[[mapping.action]]
+id = 7
+commands = [{ kind = "open_gripper" }]
+[[mapping.action]]
+id = 8
+commands = [{ kind = "open_gripper" }]
+[[mapping.action]]
+id = 9
+commands = [{ kind = "open_gripper" }]
+[[mapping.action]]
+id = 10
+commands = [{ kind = "open_gripper" }]
+[[mapping.action]]
+id = 11
+commands = [{ kind = "open_gripper" }]
+[[mapping.action]]
+id = 12
+commands = [{ kind = "open_gripper" }]
+[[mapping.action]]
+id = 13
+commands = [{ kind = "open_gripper" }]
+[[mapping.action]]
+id = 14
+commands = [{ kind = "open_gripper" }]
+[[mapping.action]]
+id = 15
+commands = [{ kind = "open_gripper" }]
+
+# ---- 16–25: Use slot N (kitchen-specific tool semantics) ----
+# 16 = lower sweeper bar (engage squeegee with surface).
+[[mapping.action]]
+id = 16
+commands = [{ kind = "engage_sweeper" }]
+
+# 17 = raise sweeper + halt. Doubles as the EdgeConfig fallback action id
+# (see configs/edge/rpi5_hailo_kitchen.toml `fallback_action_id = 17`) so a
+# constitutional or MCTS failure parks the robot in a hardware-safe stance.
+[[mapping.action]]
+id = 17
+commands = [
+    { kind = "disengage_sweeper" },
+    { kind = "halt" },
+]
+
+# 18 = brief vibration burst to dislodge stuck grinds.
+[[mapping.action]]
+id = 18
+commands = [{ kind = "vibrate", duration_ms = 200 }]
+
+# 19–25 reserved for future tools (cloth dispense, mist spray) — they fall
+# through to the default Halt sequence today.
+
+# ---- 26–34: Craft N (multi-step routines composed by the policy) ----
+# Left unmapped → default Halt. Crafting is not part of the kitchen MVP.
+
+# ---- 35–38: Push (sweep motion in cardinal direction) ----
+# Same physical motion as Move, but the policy uses Push when the sweeper is
+# already engaged. The driver doesn't need to distinguish — the sweeper-bar
+# state is owned by the `engage_sweeper` / `disengage_sweeper` history.
+[[mapping.action]]
+id = 35
+commands = [{ kind = "drive_direction", direction = "up", distance_mm = 30 }]
+[[mapping.action]]
+id = 36
+commands = [{ kind = "drive_direction", direction = "down", distance_mm = 30 }]
+[[mapping.action]]
+id = 37
+commands = [{ kind = "drive_direction", direction = "left", distance_mm = 30 }]
+[[mapping.action]]
+id = 38
+commands = [{ kind = "drive_direction", direction = "right", distance_mm = 30 }]
+
+# ---- 39: Interact = sink-edge subroutine ----
+# The OpenClaw driver implements `sink_edge_sweep` as: align with sink lip,
+# sweep over the lip with extended stroke, then raise sweeper.
+[[mapping.action]]
+id = 39
+commands = [
+    { kind = "custom", name = "sink_edge_sweep" },
+    { kind = "disengage_sweeper" },
+]
+
+# ---- Default fallback (used for any unmapped id when strict = false) ----
+[mapping.default]
+commands = [
+    { kind = "disengage_sweeper" },
+    { kind = "halt" },
+]

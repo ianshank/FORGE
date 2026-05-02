@@ -89,8 +89,10 @@ fn flatten_observation(obs: &Observation) -> Vec<f32> {
 /// compatible with `EvalHarness`, `BatchRunner`, and all FORGE evaluation
 /// infrastructure.
 ///
-/// On MCTS failure, the agent falls back to a configurable fallback action
-/// (default: Noop = 0) and logs a warning.
+/// On MCTS failure, the agent falls back to the action id supplied by
+/// [`EdgeConfig::fallback_action_id`] (default: Noop = 0) and logs a warning.
+/// Domains with safety-critical postures should set this to a halt/safe-pose
+/// action id so the actuator bridge can route it to a hardware-safe stance.
 pub struct EdgeAgent<M: LatentForwardModel + Clone> {
     /// Adaptive MCTS search engine.
     mcts: AdaptiveMctsSearch<M>,
@@ -100,7 +102,7 @@ pub struct EdgeAgent<M: LatentForwardModel + Clone> {
     model_version: String,
     /// Agent display name.
     name: String,
-    /// Fallback action when MCTS fails (0 = Noop).
+    /// Fallback action when MCTS fails (sourced from `EdgeConfig`, default 0 = Noop).
     fallback_action: u32,
 }
 
@@ -110,7 +112,9 @@ impl<M: LatentForwardModel + Clone> EdgeAgent<M> {
     /// # Arguments
     ///
     /// * `model` - The latent forward model for MCTS inference.
-    /// * `edge_config` - Edge runtime configuration.
+    /// * `edge_config` - Edge runtime configuration. The agent reads
+    ///   `fallback_action_id` from this struct so the safe-pose action is
+    ///   configurable per deployment without a code change.
     /// * `mcts_config` - Base MCTS search configuration.
     /// * `model_version` - Version string for metadata attribution.
     pub fn new(
@@ -126,7 +130,7 @@ impl<M: LatentForwardModel + Clone> EdgeAgent<M> {
             telemetry,
             model_version,
             name: "EdgeAgent".to_string(),
-            fallback_action: 0,
+            fallback_action: edge_config.fallback_action_id,
         }
     }
 
@@ -143,6 +147,11 @@ impl<M: LatentForwardModel + Clone> EdgeAgent<M> {
     /// Returns the current model version string.
     pub fn model_version(&self) -> &str {
         &self.model_version
+    }
+
+    /// Returns the configured fallback action id used when MCTS fails.
+    pub fn fallback_action_id(&self) -> u32 {
+        self.fallback_action
     }
 }
 
@@ -283,8 +292,48 @@ mod tests {
 
         let obs = make_test_observation();
         let resp = agent.select_action(&obs, 0);
-        // Should fall back to Noop (action 0)
+        // Should fall back to Noop (action 0) when EdgeConfig is at its default.
         assert_eq!(resp.action_id, 0);
+    }
+
+    #[test]
+    fn test_fallback_action_id_honoured_from_config() {
+        /// Always-failing model so the fallback path runs deterministically.
+        #[derive(Clone)]
+        struct FailingModel;
+
+        impl LatentForwardModel for FailingModel {
+            fn initial_inference(
+                &self,
+                _observation: &[f32],
+            ) -> anyhow::Result<LatentInferenceOutput> {
+                anyhow::bail!("deliberate test failure")
+            }
+            fn recurrent_inference(
+                &self,
+                _state: &LatentState,
+                _action: u32,
+            ) -> anyhow::Result<LatentInferenceOutput> {
+                anyhow::bail!("deliberate test failure")
+            }
+            fn action_space_size(&self) -> u32 {
+                40
+            }
+        }
+
+        // Pick an action id that is *not* Noop so a regression to the old
+        // hardcoded `0` would fail this assertion.
+        let safe_pose_action_id: u32 = 17;
+        let edge_cfg = EdgeConfig {
+            fallback_action_id: safe_pose_action_id,
+            ..make_edge_config()
+        };
+        let mcts_cfg = make_mcts_config(40);
+        let mut agent = EdgeAgent::new(FailingModel, &edge_cfg, mcts_cfg, "kitchen-v1".to_string());
+
+        assert_eq!(agent.fallback_action_id(), safe_pose_action_id);
+        let resp = agent.select_action(&make_test_observation(), 0);
+        assert_eq!(resp.action_id, safe_pose_action_id);
     }
 
     #[test]
