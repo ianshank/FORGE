@@ -724,6 +724,7 @@ dependencies = [
  "forge-memory",
  "forge-proposal",
  "forge-replay",
+ "forge-scenario",
  "forge-social",
  "forge-task",
  "forge-types",

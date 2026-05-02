@@ -30,6 +30,7 @@ use forge_agent::latent_mcts::search::LatentMctsConfig;
 use forge_agent::latent_mcts::state::LatentState;
 use forge_agent::mcts::tree::MctsConfig;
 use forge_edge::EdgeAgent;
+use forge_scenario::config::ScenarioConfig;
 use forge_types::agent_interface::AgentInterface;
 use forge_types::config::{EdgeConfig, ForgeConfig};
 use forge_types::constants::{self, OBS_EMPTY_SLOT_ITEM};
@@ -356,6 +357,37 @@ fn edge_config_default_fallback_remains_noop_for_legacy_profiles() {
 // future mapping changes (e.g. somebody adds `strict = true` and forgets to
 // also enumerate every reachable id).
 // ---------------------------------------------------------------------------
+
+#[test]
+fn kitchen_scenario_toml_parses_as_real_scenario_config() {
+    // Loads `configs/scenarios/kitchen_cleanup.toml` through the actual
+    // `forge_scenario::ScenarioConfig::from_toml_file` loader (the same one
+    // used by the scenario registry). If the file doesn't conform to the
+    // ScenarioConfig schema, this test fails — preventing the kitchen
+    // scenario from drifting back into a sketch-only format.
+    let path = config_path("configs/scenarios/kitchen_cleanup.toml");
+    let contents = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+    let scenario = ScenarioConfig::from_toml(&contents)
+        .unwrap_or_else(|e| panic!("kitchen_cleanup.toml must parse as ScenarioConfig: {e}"));
+
+    assert_eq!(scenario.scenario.id, "kitchen_cleanup");
+    assert!(
+        scenario.is_valid(),
+        "validation errors: {:?}",
+        scenario.validate()
+    );
+
+    // Verify the FORGE-config overrides match the documented counter-top
+    // dimensions. Hard-coded values mirror the ones in the TOML so a
+    // future rename / tweak forces an explicit update of both files.
+    let forge = scenario.effective_config();
+    assert_eq!(forge.world.width, 32);
+    assert_eq!(forge.world.height, 16);
+    assert_eq!(forge.agents.num_agents, 1);
+    assert!(forge.task.enabled);
+    assert!(forge.task.dense_rewards);
+}
 
 #[test]
 fn dispatch_never_panics_for_random_ids_against_kitchen_mapping() {

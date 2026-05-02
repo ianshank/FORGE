@@ -83,14 +83,17 @@ Shows the major containers (deployable units) within FORGE.
 │  │  │ backends   │  │ estimator  │  │ replay     │  │           │  │   │
 │  │  └────────────┘  └────────────┘  └────────────┘  └───────────┘  │   │
 │  │                                                                  │   │
-│  │  ┌────────────┐  ┌────────────┐                                  │   │
-│  │  │forge-python│  │forge-wasm  │                                  │   │
-│  │  │            │  │            │                                  │   │
-│  │  │ PyO3       │  │ wasm-      │                                  │   │
-│  │  │ bindings,  │  │ bindgen,   │                                  │   │
-│  │  │ numpy obs  │  │ JSON I/O   │                                  │   │
-│  │  │ GIL release│  │            │                                  │   │
-│  │  └────────────┘  └────────────┘                                  │   │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐                  │   │
+│  │  │forge-python│  │forge-wasm  │  │forge-      │                  │   │
+│  │  │            │  │            │  │actuator    │                  │   │
+│  │  │ PyO3       │  │ wasm-      │  │            │                  │   │
+│  │  │ bindings,  │  │ bindgen,   │  │ Action-id  │                  │   │
+│  │  │ numpy obs  │  │ JSON I/O   │  │ → command  │                  │   │
+│  │  │ GIL release│  │            │  │ bridge     │                  │   │
+│  │  │            │  │            │  │ (gripper/  │                  │   │
+│  │  │            │  │            │  │  drive/    │                  │   │
+│  │  │            │  │            │  │  sweeper)  │                  │   │
+│  │  └────────────┘  └────────────┘  └────────────┘                  │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                         │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
@@ -708,6 +711,53 @@ The core engine executes a deterministic pipeline of systems every tick.
 
 This control-plane split is intentional: branch-specific coverage work focuses on keeping config resolution, optional imports, and fallback behavior stable even when native extensions or heavyweight ML packages are unavailable.
 
+### 3.9 forge-actuator — Action-ID → Hardware-Command Bridge
+
+The actuator crate is the only edge component that touches physical
+end-effectors. It sits *outside* the simulation engine and is invoked
+once per agent decision (typical edge cadence ~30 Hz). The mapping it
+applies is fully config-driven, so the same crate serves a kitchen
+sweeper, a tabletop pick-and-place arm, or an agri sampler — only the
+TOML changes.
+
+```
+       AgentResponse.action_id            ┌─────────────────────────────┐
+                │                          │       ActionMapping         │
+                ▼                          │  (loaded from TOML once)    │
+       ┌──────────────────┐                │                             │
+       │ ActuatorBridge   │                │  BTreeMap<u32, Vec<Cmd>>    │
+       │ (trait)          │── resolve() ──▶│  + default fallback         │
+       └─────────┬────────┘                │  + strict / permissive flag │
+                 │                          └─────────────────────────────┘
+                 │ implemented by
+                 ▼
+       ┌──────────────────┐
+       │ MappedActuator<D>│
+       │                  │     for each   ┌─────────────────────────────┐
+       │ - mapping        │── command ────▶│ ActuatorDriver (trait)      │
+       │ - driver: D      │    in seq.     │                             │
+       │ - history (ring) │                │ MockDriver (in-tree, tests) │
+       │                  │                │ <SerialOpenClawDriver>      │
+       │ DispatchResult { │                │   ← lives outside workspace │
+       │   action_id,     │                └─────────────────────────────┘
+       │   commands,      │
+       │   source         │      DispatchSource = Mapped | Default
+       │ }                │
+       └──────────────────┘
+
+       ActuatorCommand = drive_direction | open_gripper | close_gripper
+                       | engage_sweeper | disengage_sweeper | vibrate
+                       | halt | custom { name, payload? }
+```
+
+Single `BTreeMap` lookup per dispatch (`ActionMapping::resolve` returns
+both the command slice and the lookup source in one probe). The bounded
+command-history ring buffer is for debugging only; setting capacity to
+zero disables it. The `EdgeAgent` fallback action id flows through the
+mapping like any other id, so a constitutional or MCTS failure parks
+the robot in whatever safe pose the mapping configures (kitchen profile:
+`fallback_action_id = 17 → [disengage_sweeper, halt]`).
+
 ---
 
 ## Level 4: Code-Level Detail
@@ -841,6 +891,7 @@ Observation
 | forge-python | forge-types, forge-core, forge-worldgen, forge-task, pyo3, numpy, serde_json, tracing |
 | forge-wasm | forge-types, forge-core, serde, serde_json, wasm-bindgen, tracing |
 | forge-bench | forge-types, forge-core, rand, rand_pcg, criterion |
+| forge-actuator | serde, toml, tracing, thiserror (no FORGE deps — pure leaf crate so the bridge can be reused outside this workspace) |
 
 ### 4.3 Determinism Guarantees
 

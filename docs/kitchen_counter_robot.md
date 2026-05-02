@@ -98,13 +98,13 @@ tile for a 1 m × 0.5 m workspace). Per-tile observations reuse existing
 | `TileObservation` field | Kitchen meaning |
 |---|---|
 | `terrain` | Surface type (granite / wood / glass insert / induction zone) — affects allowed actions |
-| `has_object` | Vision-detected debris density (binary or quantised) |
-| `object_kind` | Class — `crumb`, `coffee_grind`, `liquid`, `solid_item`, `fragile`, `hot`, `electronic`, `human_hand` |
-| `height` | Bump map (cutting board, plate edge) — used by sweeper engage logic |
-| `agent_id` | Self-occupancy |
+| `has_object` | Whether a debris cluster is present on the tile (the boolean already produced by `forge-types::observation::TileObservation`) |
+| `object_type` | Class — `crumb`, `coffee_grind`, `liquid`, `solid_item`, `fragile`, `hot`, `electronic`, `human_hand` (the existing `u8` channel; values defined by the deployment's perception model) |
+| `elevation` | Bump map (cutting board, plate edge) — used by sweeper engage logic |
+| `has_agent` | Self-occupancy |
 
 A perception model (off-the-shelf YOLO-style detector compiled to the
-Hailo HAT) populates `object_kind` from the camera frame each tick. This
+Hailo HAT) populates `object_type` from the camera frame each tick. This
 slots into the same vision-preprocessing path the agricultural scenarios
 already use — `forge-edge::edge_agent::flatten_observation` flattens it
 verbatim.
@@ -155,43 +155,48 @@ predicate set.
 
 The starter scenario lives in
 [`configs/scenarios/kitchen_cleanup.toml`](../configs/scenarios/kitchen_cleanup.toml)
-and follows the shape of the existing `patrol.toml` / `escort.toml`:
+and is a real `forge_scenario::ScenarioConfig` — i.e. it parses through
+the existing `ScenarioConfig::from_toml_file` loader
+([`crates/forge-scenario/src/config.rs`](../crates/forge-scenario/src/config.rs))
+and a regression test
+([`tests/rust/integration_kitchen_robot.rs`](../tests/rust/integration_kitchen_robot.rs))
+asserts that on every workspace test run:
 
 ```toml
 [scenario]
-name = "kitchen_cleanup"
+id = "kitchen_cleanup"
+name = "Kitchen Counter Cleanup"
 description = "Sweep crumbs and grinds from a counter-top into the sink ..."
+tags = ["edge", "manipulation", "navigation", "constitutional-safety"]
+difficulty_tier = 2
 min_agents = 1
 max_agents = 1
+author = "FORGE"
+version = "1.0"
 
-[scenario.map]
-grid_size = 32                  # matches the existing single-int convention
-terrain_type = "kitchen_counter"
-sink_tiles = 4
-cliff_perimeter = true
+# A 1 m × 0.5 m counter at ~3 cm/tile → 32 × 16 grid.
+[forge.world]
+width = 32
+height = 16
+seed = 0
 
-[scenario.objectives]
-type = "sweep_to_drain"         # new objective token; reuses the dispatcher
-time_limit = 1500
-reward_per_grind_drained = 0.05
-reward_per_crumb_drained = 0.02
-completion_bonus = 5.0
-penalty_per_fragile_contact = -10.0
-penalty_per_cliff_event = -25.0
-penalty_per_human_proximity = -2.0
+[forge.agents]
+num_agents = 1
 
-[scenario.difficulty]
-base_tier = 2
-fog_of_war = false              # top-down camera sees the whole counter
-distractor_objects = true
-human_hand_events = true        # simulated reach-ins
+[forge.task]
+enabled = true
+max_episode_length = 1500
+dense_rewards = true
 ```
 
-The map block uses the existing single-int `grid_size` convention so the
-file slots cleanly into the same loader as `patrol.toml` and friends.
-The new `sweep_to_drain` objective token requires the scenario
-dispatcher to grow one variant — the rest of the file is pure data the
-existing reward-builder already handles.
+What this file does **not** carry — and would need a future
+kitchen-specific scenario extension to express — is the per-event reward
+shaping (per-crumb / per-grind / completion bonus, fragile / cliff /
+human-proximity penalties) and the kitchen-specific terrain semantics
+(sink tiles, cliff perimeter). Those fields are tracked as the
+`sweep_to_drain` objective dispatcher work in §7 "Still to do" and
+would slot in alongside the existing `WorldConfig` / `TaskConfig`
+extension points without breaking the schema this file already obeys.
 
 ---
 
@@ -209,7 +214,7 @@ RPi5/Hailo doc. FORGE handles it in three layers:
 
 2. **Constitutional layer (`forge-cognitive`).**
    - "Do not Push fragile / hot / electronic / liquid tiles."
-   - "Do not Move into a tile occupied by a human_hand object_kind."
+   - "Do not Move into a tile whose `object_type` is `human_hand`."
    - "Do not Drop over a non-`drain` tile."
    - When the value head's prediction crosses the constitutional
      threshold, `EdgeAgent` falls back to the action id supplied by
@@ -284,10 +289,14 @@ else is configuration the operator owns.
    including the safe-pose `17 → [disengage_sweeper, halt]` contract that
    pairs with the edge profile's fallback id.
 
-5. **Scenario sketch**
+5. **Scenario file**
    [`configs/scenarios/kitchen_cleanup.toml`](../configs/scenarios/kitchen_cleanup.toml).
-   Mirrors the existing `patrol.toml` / `escort.toml` shape; depends on a
-   future `sweep_to_drain` dispatcher variant (see "still to do" below).
+   Conforms to the real `forge_scenario::ScenarioConfig` schema — verified
+   to parse cleanly via a workspace integration test. Kitchen-specific
+   reward shaping and terrain extensions (per-crumb / per-grind rewards,
+   sink/cliff terrain tags, the `sweep_to_drain` objective dispatcher
+   variant) are deliberately deferred to the "Still to do" list below
+   so this file doesn't carry unloadable schema.
 
 6. **End-to-end integration test**
    [`tests/rust/integration_kitchen_robot.rs`](../tests/rust/integration_kitchen_robot.rs).
@@ -309,7 +318,7 @@ else is configuration the operator owns.
    change because it touches `forge-task` independently and the rest of
    the pipeline doesn't block on it.
 3. **Vision head.** Off-the-shelf YOLO-style debris detector compiled to
-   `.hef` alongside the MuZero heads. Emits the `object_kind` channel
+   `.hef` alongside the MuZero heads. Emits the `object_type` channel
    consumed by the world model — no FORGE changes required.
 4. **Hailo `LatentForwardModel` backend.** Wraps HailoRT and a compiled
    `.hef`. Slots into the existing `OnnxMuZeroModel` extension point.
@@ -340,7 +349,7 @@ of similar future incidents across the fleet.
 ## 9. Out-of-Scope (for now)
 
 - **Wet cleanup.** A countertop sweeper handles dry debris (crumbs,
-  grinds, sugar, dry spices). Liquid spills are detected (`object_kind =
+  grinds, sugar, dry spices). Liquid spills are detected (`object_type =
   liquid`) and treated as no-go zones. Wet cleanup needs a different
   end-effector and is a separate product.
 - **Knife / blade handling.** Treated as `fragile|hot` from the planner's

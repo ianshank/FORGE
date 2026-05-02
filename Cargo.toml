@@ -49,6 +49,7 @@ forge-replay = { path = "crates/forge-replay" }
 forge-agent = { path = "crates/forge-agent" }
 forge-data = { path = "crates/forge-data" }
 forge-actuator = { path = "crates/forge-actuator" }
+forge-scenario = { path = "crates/forge-scenario" }
 serde_json = "1"
 rand = "0.8"
 rand_pcg = "0.3"
