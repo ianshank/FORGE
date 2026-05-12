@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+from unittest.mock import MagicMock
+
 import pytest
 from forge.cognitive.providers import (
     CognitiveProvider,
     CompletionConfig,
     CompletionResponse,
+    LMStudioProvider,
     MockProvider,
+    OpenAIProvider,
+    _build_openai_kwargs,
+    _extract_usage,
     create_provider,
 )
 
@@ -21,6 +28,14 @@ class TestCompletionConfig:
         assert config.temperature == 0.7
         assert config.max_tokens == 1024
 
+    def test_new_optional_fields_default_to_none(self) -> None:
+        config = CompletionConfig()
+        assert config.response_format is None
+        assert config.seed is None
+        assert config.top_p is None
+        assert config.extra_body is None
+        assert config.timeout_secs is None
+
 
 class TestCompletionResponse:
     """Tests for CompletionResponse dataclass."""
@@ -30,6 +45,8 @@ class TestCompletionResponse:
         assert resp.text == ""
         assert resp.input_tokens == 0
         assert resp.output_tokens == 0
+        assert resp.latency_ms == 0.0
+        assert resp.raw == {}
 
 
 class TestMockProvider:
@@ -95,3 +112,175 @@ class TestCreateProvider:
     def test_openai_provider_exists(self) -> None:
         provider = create_provider("openai")
         assert provider.name() == "openai"
+
+    def test_lmstudio_provider_exists(self) -> None:
+        provider = create_provider("lmstudio")
+        assert provider.name() == "lmstudio"
+        assert isinstance(provider, LMStudioProvider)
+
+
+class TestBuildOpenAIKwargs:
+    """Unit tests for the kwarg builder used by both sync and async paths."""
+
+    def test_basic_kwargs(self) -> None:
+        cfg = CompletionConfig(model="x", temperature=0.0, max_tokens=10)
+        kwargs = _build_openai_kwargs("hi", cfg, default_model="d")
+        assert kwargs["model"] == "x"
+        assert kwargs["temperature"] == 0.0
+        assert kwargs["max_tokens"] == 10
+        assert kwargs["messages"] == [{"role": "user", "content": "hi"}]
+        assert "response_format" not in kwargs
+        assert "seed" not in kwargs
+        assert "top_p" not in kwargs
+
+    def test_forwards_response_format(self) -> None:
+        cfg = CompletionConfig(response_format={"type": "json_object"})
+        kwargs = _build_openai_kwargs("hi", cfg, default_model="d")
+        assert kwargs["response_format"] == {"type": "json_object"}
+
+    def test_forwards_seed_and_top_p(self) -> None:
+        cfg = CompletionConfig(seed=42, top_p=0.95)
+        kwargs = _build_openai_kwargs("hi", cfg, default_model="d")
+        assert kwargs["seed"] == 42
+        assert kwargs["top_p"] == 0.95
+
+    def test_falls_back_to_default_model(self) -> None:
+        cfg = CompletionConfig(model="")
+        kwargs = _build_openai_kwargs("hi", cfg, default_model="fallback")
+        assert kwargs["model"] == "fallback"
+
+    def test_timeout_forwarded(self) -> None:
+        cfg = CompletionConfig(timeout_secs=30.0)
+        kwargs = _build_openai_kwargs("hi", cfg, default_model="d")
+        assert kwargs["timeout"] == 30.0
+
+
+def _fake_chat_response(text: str, prompt_tokens: int, completion_tokens: int) -> Any:
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.content = text
+    response.usage = MagicMock()
+    response.usage.prompt_tokens = prompt_tokens
+    response.usage.completion_tokens = completion_tokens
+    return response
+
+
+class TestOpenAIProviderTokenCapture:
+    """Regression tests for the silent ``input_tokens=0`` bug."""
+
+    def test_extract_usage_reads_prompt_and_completion_tokens(self) -> None:
+        response = _fake_chat_response("ok", 17, 23)
+        assert _extract_usage(response) == (17, 23)
+
+    def test_extract_usage_handles_missing_usage(self) -> None:
+        response = MagicMock()
+        response.usage = None
+        assert _extract_usage(response) == (0, 0)
+
+    def test_complete_captures_usage_tokens(self) -> None:
+        provider = OpenAIProvider(api_key="dummy")
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.return_value = _fake_chat_response(
+            "hi", 11, 7
+        )
+        provider._client = fake_client  # noqa: SLF001 — testing internal
+        resp = provider.complete("hello", CompletionConfig(model="m"))
+        assert resp.text == "hi"
+        assert resp.input_tokens == 11
+        assert resp.output_tokens == 7
+        assert resp.latency_ms >= 0.0
+
+    def test_complete_forwards_optional_fields(self) -> None:
+        provider = OpenAIProvider(api_key="dummy")
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.return_value = _fake_chat_response(
+            "x", 1, 1
+        )
+        provider._client = fake_client  # noqa: SLF001
+        cfg = CompletionConfig(
+            model="m",
+            response_format={"type": "json_object"},
+            seed=99,
+            top_p=0.9,
+            extra_body={"foo": "bar"},
+        )
+        provider.complete("hi", cfg)
+        call_kwargs = fake_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+        assert call_kwargs["seed"] == 99
+        assert call_kwargs["top_p"] == 0.9
+        assert call_kwargs["extra_body"] == {"foo": "bar"}
+
+    def test_complete_does_not_send_optional_when_unset(self) -> None:
+        provider = OpenAIProvider(api_key="dummy")
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.return_value = _fake_chat_response(
+            "x", 1, 1
+        )
+        provider._client = fake_client  # noqa: SLF001
+        provider.complete("hi", CompletionConfig(model="m"))
+        call_kwargs = fake_client.chat.completions.create.call_args.kwargs
+        assert "response_format" not in call_kwargs
+        assert "seed" not in call_kwargs
+        assert "top_p" not in call_kwargs
+        assert "extra_body" not in call_kwargs
+
+
+class TestLMStudioProviderSync:
+    """Synchronous LMStudioProvider tests with HTTP mocked."""
+
+    def test_defaults(self) -> None:
+        provider = LMStudioProvider()
+        assert provider.name() == "lmstudio"
+        assert provider._base_url == "http://localhost:1234/v1"  # noqa: SLF001
+        assert provider._timeout_secs == 120.0  # noqa: SLF001
+        assert provider._max_retries == 2  # noqa: SLF001
+
+    def test_model_kwarg_sets_default_model(self) -> None:
+        provider = LMStudioProvider(model="qwen2.5-14b-instruct")
+        assert provider._default_model == "qwen2.5-14b-instruct"  # noqa: SLF001
+
+    def test_complete_uses_lmstudio_provider_name_in_logs(self, caplog: pytest.LogCaptureFixture) -> None:
+        provider = LMStudioProvider()
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.return_value = _fake_chat_response(
+            "ok", 4, 5
+        )
+        provider._client = fake_client  # noqa: SLF001
+        import logging
+        caplog.set_level(logging.INFO, logger="forge.cognitive.providers")
+        provider.complete("hi", CompletionConfig(model="qwen"))
+        assert any("provider=lmstudio" in r.message for r in caplog.records)
+
+    def test_retry_on_transient_error_then_succeeds(self) -> None:
+        provider = LMStudioProvider(max_retries=2, retry_backoff_secs=0.0)
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.side_effect = [
+            RuntimeError("boom"),
+            _fake_chat_response("ok", 1, 1),
+        ]
+        provider._client = fake_client  # noqa: SLF001
+        resp = provider.complete("hi", CompletionConfig(model="m"))
+        assert resp.text == "ok"
+        assert fake_client.chat.completions.create.call_count == 2
+
+    def test_giveup_after_max_retries(self) -> None:
+        provider = LMStudioProvider(max_retries=1, retry_backoff_secs=0.0)
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.side_effect = RuntimeError("boom")
+        provider._client = fake_client  # noqa: SLF001
+        with pytest.raises(RuntimeError, match="boom"):
+            provider.complete("hi", CompletionConfig(model="m"))
+        assert fake_client.chat.completions.create.call_count == 2
+
+    def test_factory_passes_kwargs(self) -> None:
+        provider = create_provider(
+            "lmstudio",
+            base_url="http://example:9/v1",
+            model="qwen",
+            timeout_secs=5.0,
+            max_retries=0,
+        )
+        assert isinstance(provider, LMStudioProvider)
+        assert provider._base_url == "http://example:9/v1"  # noqa: SLF001
+        assert provider._default_model == "qwen"  # noqa: SLF001
