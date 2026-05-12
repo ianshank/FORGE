@@ -122,19 +122,43 @@ class BDIPreTrainer:
         observations: list[np.ndarray],
         action_names: list[list[str]],
         rewards: list[list[float]],
+        *,
+        teacher_intentions: list[list[int]] | None = None,
     ) -> BDIDataset:
-        """Build a BDI dataset from collected episode data."""
+        """Build a BDI dataset from collected episode data.
+
+        When ``teacher_intentions`` is provided (per-episode lists of integer
+        labels emitted by the LM Studio teacher), it overrides the
+        rule-derived mapping from action name to intention. Default
+        behaviour is unchanged for callers that don't pass the kwarg.
+        """
         all_obs = []
         all_intentions = []
         all_rewards = []
         episode_lengths = []
 
-        for ep_obs, ep_actions, ep_rewards in zip(observations, action_names, rewards):
+        use_teacher = bool(teacher_intentions)
+        if use_teacher and len(teacher_intentions or []) != len(observations):
+            msg = "teacher_intentions must match the number of episodes"
+            raise ValueError(msg)
+
+        for ep_idx, (ep_obs, ep_actions, ep_rewards) in enumerate(
+            zip(observations, action_names, rewards)
+        ):
             ep_len = min(len(ep_obs), len(ep_actions), len(ep_rewards))
             episode_lengths.append(ep_len)
+            teacher_ep = (
+                (teacher_intentions or [[]])[ep_idx] if use_teacher else None
+            )
             for t in range(ep_len):
                 all_obs.append(ep_obs[t])
-                all_intentions.append(self.map_action_to_intention(ep_actions[t]))
+                if use_teacher and teacher_ep is not None and t < len(teacher_ep):
+                    intention = int(teacher_ep[t])
+                    if intention < 0:
+                        intention = self.map_action_to_intention(ep_actions[t])
+                else:
+                    intention = self.map_action_to_intention(ep_actions[t])
+                all_intentions.append(intention)
                 all_rewards.append(ep_rewards[t])
 
         return BDIDataset(
