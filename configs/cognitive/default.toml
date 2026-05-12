@@ -6,3 +6,23 @@ temperature = 0.7
 max_tokens = 1024
 reasoning_steps = 5
 api_base_url = ""
+
+[cognitive.lmstudio]
+enabled = false
+model = ""
+base_url = "http://localhost:1234/v1"
+timeout_secs = 120.0
+max_retries = 2
+retry_backoff_secs = 1.0
+top_p = 1.0
+seed = 0
+
+[cognitive.structured]
+enabled = false
+prompt_template_path = ""
+response_schema_path = ""
+few_shot_examples_path = ""
+include_legal_actions = true
+log_payloads = false
+validate_action = true
+payload_preview_chars = 256

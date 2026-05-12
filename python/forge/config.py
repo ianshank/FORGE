@@ -14,10 +14,11 @@ Usage::
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import MISSING, asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
+
+from forge.utils.config_env import apply_env_overrides as _apply_env_overrides_shared
 
 try:
     import tomllib  # Python 3.11+
@@ -40,28 +41,10 @@ _DEFAULT_CONFIG_PATHS: tuple[str, ...] = (
 def _apply_env_overrides(obj: Any, section: str) -> None:
     """Apply ``FORGE_<SECTION>_<FIELD>`` environment overrides to *obj*.
 
-    Only fields that are declared on the dataclass are considered.
-    Invalid values are logged and skipped.
+    Thin wrapper around :func:`forge.utils.config_env.apply_env_overrides`
+    that keeps the historical name for in-module callers.
     """
-    for f in fields(obj):
-        key = f"{_ENV_PREFIX}{section.upper()}_{f.name.upper()}"
-        val = os.environ.get(key)
-        if val is None:
-            continue
-        try:
-            parsed: bool | int | float | str
-            if f.type in ("bool", bool):
-                parsed = val.lower() in ("1", "true", "yes")
-            elif f.type in ("int", int):
-                parsed = int(val)
-            elif f.type in ("float", float):
-                parsed = float(val)
-            else:
-                parsed = val
-            setattr(obj, f.name, parsed)
-            logger.debug("Env override applied: %s = %s", key, parsed)
-        except (ValueError, TypeError) as exc:
-            logger.warning("Invalid env override %s=%s: %s", key, val, exc)
+    _apply_env_overrides_shared(obj, section, prefix=_ENV_PREFIX)
 
 
 @dataclass
