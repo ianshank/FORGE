@@ -11,6 +11,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### LM Studio + Qwen 14B Teacher for Offline BC / SFT
+
+- **`LMStudioProvider`** (`python/forge/cognitive/providers.py`): OpenAI-compatible
+  subclass of `OpenAIProvider` with LM Studio defaults
+  (`base_url=http://localhost:1234/v1`, longer timeout, light retry-with-backoff).
+  Both sync (`complete`) and async (`acomplete` via `openai.AsyncOpenAI`) paths.
+  Registered in `create_provider` as `"lmstudio"`.
+- **`CognitiveProvider.acomplete`** (concrete, not abstract): default impl
+  off-loads `complete` to a worker thread via `asyncio.to_thread`. Third-party
+  subclasses gain async support without modification.
+- **`CompletionConfig`** gains optional `response_format`, `seed`, `top_p`,
+  `extra_body`, `timeout_secs` (all default `None`; only forwarded when set).
+- **`PromptBuilder`** (`python/forge/cognitive/prompt_builder.py`):
+  deterministic template-driven prompt rendering with optional JSONL
+  few-shots; no Jinja dependency.
+- **`StructuredLLMAgentConfig` / `LLMAgent.aact`**: JSON-mode teacher agent
+  that emits rich `trace_info` (`intention`, `subgoals`, `rationale`,
+  `value_hat`, `constraint_critique`, `top_k_probs`, token counts, latency).
+  Malformed JSON falls back to the legacy integer extractor; invalid
+  `action_id` raises when `validate_action=True`.
+- **`TeacherConfig`** + `[teacher]` TOML section in `MangoMASBridgeConfig`;
+  preset `configs/cognitive/qwen14b_teacher.toml`. Override any field via
+  `FORGE_TEACHER_<UPPER_SNAKE>` env vars or new CLI flags
+  (`--teacher-config`, `--teacher-model`, `--teacher-base-url`,
+  `--teacher-concurrency`, `--teacher-output-root`, `--bc-train-after-collect`).
+- **`TeacherDecisionTrace` + `TeacherTraceWriter` / `TeacherTraceReader`**
+  (`python/forge/mangomas/teacher_trace.py`): JSONL shards under
+  `<output_root>/<scenario_id>/ep<episode:06d>-<shard:04d>.jsonl[.gz]`.
+  Composes `forge.traces.trace_logger.TraceLogger`; `TraceLogger.log` widened
+  to accept any `TraceRecord` Protocol (backwards-compatible with
+  `DecisionTrace`).
+- **Collector `policy_name="llm"`** branch with two paths:
+  * **Sync** (`teacher.concurrency=1`): per-step traces streamed to a writer
+    per `(scenario_id, episode_index)`.
+  * **Async** (`teacher.concurrency>1`): episodes run concurrently under
+    `asyncio.Semaphore(concurrency)`; trace shards written in
+    `episode_index` order after `asyncio.gather` so on-disk bytes depend
+    only on `(base_seed, scenario_id, episode_index)`, not coroutine
+    completion order.
+- **`BCTrainer` + `BCDataset` + `BCTrainResult` + `BCTrainerConfig`**
+  (`python/forge/mangomas/bc_trainer.py`): pure behavioural-cloning trainer.
+  NumPy path: linear softmax classifier with CE + optional KL on
+  `top_k_probs`. Torch path (guarded import): fine-tunes
+  `ActorCriticNetwork` actor head in-place. Scope is BC only — no DAgger /
+  DPO.
+- **`MangoMASPipeline._run_bc_stage`** prepended to `run()`. No-op when
+  `CollectedTrainingData.teacher_intentions` is empty.
+- **Teacher-aware build_dataset kwargs**:
+  * `BDIPreTrainer.build_dataset(*, teacher_intentions=...)` — per-episode
+    integer labels override the rule-based `DEFAULT_ACTION_INTENTION_MAP`.
+  * `ConstitutionalPreTrainer.build_dataset(*, teacher_constraint_critiques=...,
+    teacher_severity_default=...)` — teacher critiques OR-merged with the
+    rule-derived violation matrix; penalty recomputed as
+    `max(rule_penalty, teacher_flags * severity * penalty_weight)`.
+- **`CollectedTrainingData`** gains optional `teacher_*` per-episode lists.
+  `validate()` checks length parity only when fields are non-empty.
+- **Shared env-override helper** `forge.utils.config_env.apply_env_overrides`,
+  extracted from `forge.config._apply_env_overrides`. Reused by both
+  `ForgeConfig` and `MangoMASBridgeConfig`.
+- Documentation: README "LM Studio Teacher (offline behavioural cloning)"
+  section under MangoMAS Collection.
+
+### Fixed
+
+- **`OpenAIProvider` silent token-capture bug**: `complete()` previously
+  returned `input_tokens=0, output_tokens=0` regardless of what the API
+  reported. Now reads `response.usage.prompt_tokens` /
+  `completion_tokens` and propagates them into `CompletionResponse`. The
+  existing dataclass-defaults test (`CompletionResponse()` → `(0, 0)`) is
+  preserved unchanged — only API-returned values change.
+
 #### Fallible Action Encoders + Structured Scenario Errors (PR #39)
 
 - Added **`ActionEncodingError`** in `crates/forge-types/src/error.rs` with four variants — `DroneActionRequiresFullEncoder`, `AgriActionUnsupported { drone_actions_enabled, agri_actions_enabled }`, `HexActionUnsupported { hex_actions_enabled }`, and `ParameterOutOfRange { action_name, value, max }` — wired into `ForgeError` via `#[from]`.

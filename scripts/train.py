@@ -42,7 +42,7 @@ _DEFAULT_EARLY_STOP_PATIENCE = 0
 _DEFAULT_COLLECTION_POLICY = "random"
 _DEFAULT_OPTIONAL_PATH = ""
 _AGENT_CHOICES = ("random", "mcts", "mappo", "mangomas", "mangomas-collect")
-_COLLECTION_POLICY_CHOICES = ("random", "mcts")
+_COLLECTION_POLICY_CHOICES = ("random", "mcts", "llm")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -160,6 +160,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=_DEFAULT_OPTIONAL_PATH,
         help="Optional JSON report path for MangoMAS collection summaries",
     )
+    parser.add_argument(
+        "--teacher-config",
+        type=str,
+        default=_DEFAULT_OPTIONAL_PATH,
+        help=(
+            "Path to a TOML preset with [teacher] section (e.g. "
+            "configs/cognitive/qwen14b_teacher.toml). Required for "
+            "--collection-policy llm unless [teacher] is already in the "
+            "MangoMAS bridge config."
+        ),
+    )
+    parser.add_argument(
+        "--teacher-model",
+        type=str,
+        default=None,
+        help="Override teacher.model (e.g. qwen2.5-14b-instruct).",
+    )
+    parser.add_argument(
+        "--teacher-base-url",
+        type=str,
+        default=None,
+        help="Override teacher.base_url (e.g. http://localhost:1234/v1).",
+    )
+    parser.add_argument(
+        "--teacher-concurrency",
+        type=int,
+        default=None,
+        help="Override teacher.concurrency (>=1). Triggers the asyncio path when >1.",
+    )
+    parser.add_argument(
+        "--teacher-output-root",
+        type=str,
+        default=None,
+        help="Override teacher.output_root for JSONL trace shards.",
+    )
+    parser.add_argument(
+        "--bc-train-after-collect",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Run the BC pipeline stage after collection (default: pipeline auto-decides).",
+    )
     args = parser.parse_args(argv)
 
     if args.eval_interval < 0:
@@ -204,11 +245,31 @@ def _resolve_mangomas_scenarios(args: argparse.Namespace, bridge_config: Any) ->
 
 
 def _apply_mangomas_cli_overrides(bridge_config: Any, args: argparse.Namespace) -> None:
-    """Apply CLI overrides to the loaded MangoMAS bridge configuration."""
+    """Apply CLI overrides to the loaded MangoMAS bridge configuration.
+
+    Precedence: CLI flag (when explicitly provided) > env var > TOML >
+    dataclass default. CLI flags default to ``None`` so absent flags do
+    not clobber TOML/env values.
+    """
     if args.pipeline_run_name:
         bridge_config.pipeline.paths.run_name = args.pipeline_run_name
     if args.pipeline_output_root:
         bridge_config.pipeline.paths.output_root = args.pipeline_output_root
+
+    # Teacher overrides (only applied when explicitly provided).
+    if getattr(args, "teacher_config", None):
+        from forge.mangomas.config import MangoMASBridgeConfig
+
+        teacher_cfg = MangoMASBridgeConfig.from_toml(args.teacher_config).teacher
+        bridge_config.teacher = teacher_cfg
+    if getattr(args, "teacher_model", None) is not None:
+        bridge_config.teacher.model = args.teacher_model
+    if getattr(args, "teacher_base_url", None) is not None:
+        bridge_config.teacher.base_url = args.teacher_base_url
+    if getattr(args, "teacher_concurrency", None) is not None:
+        bridge_config.teacher.concurrency = int(args.teacher_concurrency)
+    if getattr(args, "teacher_output_root", None) is not None:
+        bridge_config.teacher.output_root = args.teacher_output_root
 
 
 def _maybe_write_mangomas_report(
@@ -244,6 +305,8 @@ def _collect_mangomas_training_data(config: Any, args: argparse.Namespace) -> tu
     _apply_mangomas_cli_overrides(bridge_config, args)
     scenario_refs = _resolve_mangomas_scenarios(args, bridge_config)
 
+    teacher_config = bridge_config.teacher if args.collection_policy == "llm" else None
+
     collection_result = collect_training_data_from_scenarios(
         base_forge_config=config.to_rust_config(),
         mangomas_config=bridge_config,
@@ -251,6 +314,7 @@ def _collect_mangomas_training_data(config: Any, args: argparse.Namespace) -> tu
         total_episodes=args.episodes,
         base_seed=args.seed,
         policy_name=args.collection_policy,
+        teacher_config=teacher_config,
     )
     _maybe_write_mangomas_report(collection_result, scenario_refs, args, bridge_config)
     return bridge_config, collection_result, scenario_refs

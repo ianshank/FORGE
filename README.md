@@ -97,6 +97,38 @@ python scripts/train.py \
 
 The stage pipeline writes manifests, logs, and exported weight bundles under `artifacts/mangomas/` by default.
 
+#### LM Studio Teacher (offline behavioural cloning)
+
+For high-leverage but slow guidance, FORGE can use a locally-served LLM (e.g.
+Qwen 2.5 14B Instruct via [LM Studio](https://lmstudio.ai/)) as an **offline
+teacher** that produces structured `(action_id, intention, subgoals,
+rationale, value_hat, constraint_critique, top_k_probs)` decisions. The
+collector amortises one LLM call across four trainers — BC, BDI,
+Constitutional, and (future) RSSM — by writing rich teacher traces to JSONL
+shards.
+
+```bash
+# 1. Start LM Studio with Qwen 2.5 14B Instruct exposed at http://localhost:1234
+# 2. Collect 4 parallel-episode teacher traces and run the BC stage
+python scripts/train.py \
+    --agent mangomas-collect \
+    --collection-policy llm \
+    --episodes 4 \
+    --scenario hex_patrol \
+    --mangomas-config configs/cognitive/qwen14b_teacher.toml \
+    --teacher-concurrency 4 \
+    --teacher-output-root artifacts/teacher_traces \
+    --collection-report-path artifacts/teacher_traces/report.json \
+    --bc-train-after-collect
+```
+
+Per-episode JSONL shards are written under
+`<output_root>/<scenario_id>/ep<episode:06d>-<shard:04d>.jsonl[.gz]` in
+deterministic `episode_index` order — concurrency at the episode level does
+not affect the on-disk byte order for the same `base_seed`. Override any
+`[teacher]` field via the `FORGE_TEACHER_<UPPER_SNAKE>` env variable or the
+CLI flags listed in `--help`.
+
 ## Architecture
 
 FORGE is a 23-crate Rust workspace organized in six layers, from shared foundations through cognitive systems to bindings and deployment targets.
