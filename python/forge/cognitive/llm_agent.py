@@ -63,6 +63,13 @@ class LLMAgentConfig(AgentConfig):
     reasoning_steps: int = DEFAULT_REASONING_STEPS
     obs_preview_dim: int = DEFAULT_OBS_PREVIEW_DIM
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    # In-memory rollout history. Defaults preserve the legacy free-text
+    # agent's behaviour (keep everything). For long teacher collections
+    # the StructuredLLMAgentConfig override below switches this off so
+    # the per-step `response` text is not retained twice (in-memory and
+    # on disk via TeacherTraceWriter).
+    keep_reasoning_history: bool = True
+    reasoning_history_max: int = 0  # 0 = unbounded
 
 
 @dataclass
@@ -86,6 +93,11 @@ class StructuredLLMAgentConfig(LLMAgentConfig):
     timeout_secs: float | None = None
     payload_preview_chars: int = DEFAULT_PAYLOAD_PREVIEW_CHARS
     legal_actions: tuple[int, ...] = field(default_factory=tuple)
+    # Structured teacher runs persist every decision to a JSONL trace
+    # shard via TeacherTraceWriter, so the duplicate in-memory history
+    # adds memory pressure without unique value. Off by default; override
+    # via TOML / CLI when interactive debugging needs it.
+    keep_reasoning_history: bool = False
 
 
 class LLMAgent(BaseAgent):
@@ -207,7 +219,7 @@ class LLMAgent(BaseAgent):
                 "response": response.text,
                 "action_id": action_id,
             }
-            self._reasoning_history.append(trace_info)
+            self._record_history(trace_info)
             return action_id, trace_info
         parsed, action_id = self._parse_structured_response(response.text)
         trace_info = {
@@ -233,8 +245,25 @@ class LLMAgent(BaseAgent):
                 prompt[:preview],
                 response.text[:preview],
             )
-        self._reasoning_history.append(trace_info)
+        self._record_history(trace_info)
         return action_id, trace_info
+
+    def _record_history(self, trace_info: dict[str, Any]) -> None:
+        """Append to in-memory reasoning history honouring config bounds.
+
+        Skip entirely when ``keep_reasoning_history=False`` (default for
+        StructuredLLMAgentConfig — traces are persisted to disk via
+        TeacherTraceWriter, so the in-memory copy adds memory pressure
+        without unique value). When a positive ``reasoning_history_max``
+        is set, drop the oldest entries to keep the deque bounded.
+        """
+        cfg = self.llm_config
+        if not getattr(cfg, "keep_reasoning_history", True):
+            return
+        self._reasoning_history.append(trace_info)
+        cap = int(getattr(cfg, "reasoning_history_max", 0) or 0)
+        if cap > 0 and len(self._reasoning_history) > cap:
+            del self._reasoning_history[: len(self._reasoning_history) - cap]
 
     def _clip_value(self, value: Any) -> float | None:
         if value is None:

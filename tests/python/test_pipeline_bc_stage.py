@@ -91,6 +91,30 @@ def test_bc_stage_runs_when_teacher_data_present(tmp_path: Path) -> None:
     assert "weights" in bc.outputs
 
 
+def test_bc_stage_uses_action_space_sizes_when_provided(tmp_path: Path) -> None:
+    """Regression: if collected_data.action_space_sizes is set, BC sizes the
+    actor against that, not against the (potentially smaller) max action_id
+    actually observed in the rollout.
+    """
+    cd = _collected(with_teacher=True)
+    # All teacher actions are in {0, 1, 2}; episode max is 2 (so the old
+    # codepath would size num_actions = 3). Real env had 7 legal actions.
+    cd.action_space_sizes = [7]
+    cfg = MangoMASBridgeConfig()
+    cfg.pipeline.paths.output_root = str(tmp_path)
+    cfg.pipeline.execution.stop_after_stage = "bc"
+    pipeline = MangoMASPipeline(config=cfg)
+    result = pipeline.run(cd, base_seed=4, run_name="run-action-space")
+    bc = result.stage_by_name("bc")
+    assert bc is not None
+    assert bc.status == "completed"
+    weights_path = Path(bc.outputs["weights"])
+    loaded = np.load(weights_path)
+    # Actor weight shape is (num_actions, state_dim) — verify num_actions=7,
+    # not 3 (which is what flat_actions.max()+1 would have produced).
+    assert loaded["actor_w"].shape[0] == 7
+
+
 def test_bc_stage_emits_actor_weights_npz(tmp_path: Path) -> None:
     cfg = MangoMASBridgeConfig()
     cfg.pipeline.paths.output_root = str(tmp_path)

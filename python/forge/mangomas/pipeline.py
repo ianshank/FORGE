@@ -72,6 +72,11 @@ class CollectedTrainingData:
     teacher_value_hats: list[list[float]] = field(default_factory=list)
     teacher_constraint_critiques: list[list[dict[str, bool]]] = field(default_factory=list)
     teacher_top_k_probs: list[list[list[dict[str, Any]]]] = field(default_factory=list)
+    # Per-episode action_space.n captured at collection time. Lets the BC
+    # stage size the actor head against the env's true action space rather
+    # than `flat_actions.max() + 1`, which underestimates whenever an
+    # episode never selects the highest-index legal action.
+    action_space_sizes: list[int] = field(default_factory=list)
 
     def validate(self) -> None:
         episode_count = len(self.observations)
@@ -411,7 +416,15 @@ class MangoMASDroneTrainingPipeline:
                 ),
                 None,
             )
-        num_actions = int(flat_actions.max()) + 1
+        # Prefer the env-reported action_space.n captured at collection
+        # time. Falling back to flat_actions.max()+1 underestimates the
+        # action space whenever no episode happens to select the highest
+        # legal action — that mismatch would later collide with the env's
+        # actual `action_space.n` at policy evaluation.
+        if collected_data.action_space_sizes:
+            num_actions = int(max(collected_data.action_space_sizes))
+        else:
+            num_actions = int(flat_actions.max()) + 1
         dataset = trainer.build_dataset(
             collected_data.step_observations(),
             [

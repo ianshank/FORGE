@@ -955,6 +955,7 @@ def collect_training_data_from_scenarios(
     teacher_top_k_probs: list[list[list[dict[str, Any]]]] = []
     curriculum_outcomes: list[bool] = []
     scenario_summaries: list[ScenarioRolloutSummary] = []
+    action_space_sizes: list[int] = []
 
     for scenario, scenario_episodes in zip(scenarios, episode_counts):
         if scenario.min_agents > 1:
@@ -1001,6 +1002,8 @@ def collect_training_data_from_scenarios(
                         rollout.teacher_constraint_critiques or []
                     )
                     teacher_top_k_probs.append(rollout.teacher_top_k_probs or [])
+                if rollout.action_space_size > 0:
+                    action_space_sizes.append(int(rollout.action_space_size))
 
         finally:
             env.close()
@@ -1038,6 +1041,7 @@ def collect_training_data_from_scenarios(
             teacher_value_hats=teacher_value_hats,
             teacher_constraint_critiques=teacher_constraint_critiques,
             teacher_top_k_probs=teacher_top_k_probs,
+            action_space_sizes=action_space_sizes,
         ),
         curriculum_outcomes=curriculum_outcomes,
         scenario_summaries=scenario_summaries,
@@ -1428,6 +1432,7 @@ async def _acollect_training_data_from_scenarios(
     teacher_top_k_probs: list[list[list[dict[str, Any]]]] = []
     curriculum_outcomes: list[bool] = []
     scenario_summaries: list[ScenarioRolloutSummary] = []
+    action_space_sizes: list[int] = []
 
     for scenario, scenario_episodes in zip(scenarios, episode_counts):
         scenario_rollouts, scenario_rewards, scenario_successes = (
@@ -1461,6 +1466,8 @@ async def _acollect_training_data_from_scenarios(
                     rollout.teacher_constraint_critiques or []
                 )
                 teacher_top_k_probs.append(rollout.teacher_top_k_probs or [])
+            if rollout.action_space_size > 0:
+                action_space_sizes.append(int(rollout.action_space_size))
 
         mean_reward = float(np.mean(scenario_rewards)) if scenario_rewards else 0.0
         success_rate = float(np.mean(scenario_successes)) if scenario_successes else 0.0
@@ -1496,6 +1503,7 @@ async def _acollect_training_data_from_scenarios(
             teacher_value_hats=teacher_value_hats,
             teacher_constraint_critiques=teacher_constraint_critiques,
             teacher_top_k_probs=teacher_top_k_probs,
+            action_space_sizes=action_space_sizes,
         ),
         curriculum_outcomes=curriculum_outcomes,
         scenario_summaries=scenario_summaries,

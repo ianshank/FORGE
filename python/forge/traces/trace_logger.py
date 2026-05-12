@@ -60,16 +60,28 @@ class TraceLogger:
             self._file = Path(self.output_path).open("w", encoding="utf-8")  # noqa: SIM115
         logger.info("TraceLogger opened %s (compress=%s)", self.output_path, self.compress)
 
-    def log(self, trace: TraceRecord) -> None:
-        """Write a single trace as a JSONL line."""
+    def log(self, trace: TraceRecord) -> bool:
+        """Write a single trace as a JSONL line.
+
+        Returns ``True`` when the record was actually persisted, ``False``
+        when the configured size limit caused the write to be skipped.
+        Existing callers that ignore the return value still work because
+        they previously had no signal at all and the write still happens
+        when there is room.
+        """
         if self._file is None:
             msg = "TraceLogger is closed"
             raise RuntimeError(msg)
         if self._exceeds_size_limit():
-            logger.warning("File size limit reached (%d MB), skipping write", self.max_file_size_mb)
-            return
+            logger.warning(
+                "File size limit reached (%d MB), skipping write to %s",
+                self.max_file_size_mb,
+                self.output_path,
+            )
+            return False
         line = json.dumps(trace.to_dict())
         self._file.write(line + "\n")
+        return True
 
     def flush(self) -> None:
         """Flush the output buffer."""

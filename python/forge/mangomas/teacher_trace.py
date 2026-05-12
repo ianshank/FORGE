@@ -123,14 +123,37 @@ class TeacherTraceWriter:
         self._open_shard()
 
     def log(self, trace: TeacherDecisionTrace) -> None:
-        """Write a single record, rolling over the shard when full."""
+        """Write a single record, rolling over the shard when full.
+
+        Counters (``records_in_shard``, ``total_records``) only advance
+        when the underlying ``TraceLogger`` actually persists the record.
+        If the write is skipped (max-file-size hit on the current shard),
+        the writer rolls over to a fresh shard and retries once before
+        raising — this keeps counters honest and avoids silently dropping
+        teacher decisions.
+        """
         if self._logger is None:
             msg = "TeacherTraceWriter is closed"
             raise RuntimeError(msg)
         if self._records_in_shard >= self._shard_size:
             self._rollover()
         assert self._logger is not None
-        self._logger.log(trace)
+        written = self._logger.log(trace)
+        if not written:
+            # Underlying writer rejected the write because the current
+            # shard exceeded max_file_size_mb. Rollover to a fresh shard
+            # and retry exactly once.
+            self._rollover()
+            assert self._logger is not None
+            written = self._logger.log(trace)
+            if not written:
+                msg = (
+                    "TeacherTraceWriter: TraceLogger refused write twice in a row "
+                    f"(shard_size={self._shard_size}, "
+                    f"max_file_size_mb={self._max_file_size_mb}). "
+                    "Either lower shard_size or raise max_file_size_mb."
+                )
+                raise RuntimeError(msg)
         self._records_in_shard += 1
         self._total_records += 1
 

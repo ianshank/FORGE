@@ -122,3 +122,49 @@ def test_trace_record_protocol_satisfied() -> None:
 
     trace = _make_trace(0)
     assert isinstance(trace, TraceRecord)
+
+
+def test_writer_rolls_over_when_underlying_logger_skips(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """Regression: TraceLogger.log returns bool; writer must rollover on skip.
+
+    Previously the writer would increment counters even when the
+    underlying TraceLogger silently skipped a write because
+    max_file_size_mb was exceeded — losing records and reporting wrong
+    totals. The writer now retries exactly once after a forced rollover.
+    """
+    from forge.mangomas import teacher_trace as tt
+
+    skip_count = {"n": 0}
+
+    class _SkippingLogger:
+        def __init__(self, output_path: str, *args: object, **kwargs: object) -> None:
+            self.output_path = output_path
+            self.calls = 0
+            self.closed = False
+
+        def log(self, _trace: tt.TeacherDecisionTrace) -> bool:
+            self.calls += 1
+            # Skip on the first call to the first shard only.
+            if self.output_path.endswith("ep000000-0000.jsonl") and self.calls == 1:
+                skip_count["n"] += 1
+                return False
+            return True
+
+        def flush(self) -> None:
+            pass
+
+        def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr(tt, "TraceLogger", _SkippingLogger)
+    with tt.TeacherTraceWriter(
+        tmp_path, "scenario", 0, compress=False, shard_size=10
+    ) as w:
+        w.log(_make_trace(0))
+        # First write was skipped → writer rolled over. After retry on
+        # shard 1 the record is persisted and counters are incremented.
+        assert w.shard_count == 2
+        assert w.total_records == 1
+    assert skip_count["n"] == 1

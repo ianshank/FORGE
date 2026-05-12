@@ -17,7 +17,7 @@ import train  # type: ignore[import]
 def test_cli_accepts_llm_policy_choice() -> None:
     parser = argparse.ArgumentParser()
     # We use train._COLLECTION_POLICY_CHOICES indirectly via _parse_args.
-    args = train._parse_args(
+    args = train.parse_args(
         ["--agent", "mangomas-collect", "--collection-policy", "llm", "--episodes", "1"]
     )
     assert args.collection_policy == "llm"
@@ -25,7 +25,7 @@ def test_cli_accepts_llm_policy_choice() -> None:
 
 
 def test_cli_teacher_overrides_threaded(tmp_path: Path) -> None:
-    args = train._parse_args(
+    args = train.parse_args(
         [
             "--agent",
             "mangomas-collect",
@@ -60,7 +60,7 @@ def test_cli_teacher_config_loads_preset(tmp_path: Path) -> None:
     )
     if not preset_path.exists():
         pytest.skip("preset TOML missing")
-    args = train._parse_args(
+    args = train.parse_args(
         [
             "--agent",
             "mangomas-collect",
@@ -83,7 +83,7 @@ def test_cli_teacher_config_loads_preset(tmp_path: Path) -> None:
 
 def test_cli_random_policy_unaffected_by_new_flags() -> None:
     """Regression: random policy still parses with default flag values."""
-    args = train._parse_args(
+    args = train.parse_args(
         ["--agent", "mangomas-collect", "--collection-policy", "random", "--episodes", "1"]
     )
     assert args.collection_policy == "random"
@@ -101,7 +101,7 @@ def test_cli_omits_bc_train_flag() -> None:
     import pytest
 
     with pytest.raises(SystemExit):
-        train._parse_args(
+        train.parse_args(
             [
                 "--agent",
                 "mangomas-collect",

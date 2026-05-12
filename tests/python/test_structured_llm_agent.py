@@ -232,3 +232,46 @@ def test_schema_path_missing_raises(tmp_path: Path) -> None:
 
 def test_structured_is_cognitive_subclass() -> None:
     assert issubclass(MockProvider, CognitiveProvider)
+
+
+def test_structured_agent_does_not_keep_reasoning_history_by_default(
+    tmp_path: Path,
+) -> None:
+    """Regression: structured runs persist traces to disk; the in-memory
+    history would duplicate every response and grow without bound.
+    """
+    cfg = StructuredLLMAgentConfig(
+        name="structured",
+        prompt_template_path=str(_structured_template(tmp_path)),
+        legal_actions=(0, 1, 2, 3),
+    )
+    provider = _RecordingProvider(_good_response(action_id=2))
+    agent = LLMAgent(cfg, provider=provider)
+    for _ in range(5):
+        agent.act(np.zeros(2, dtype=np.float32))
+    assert agent._reasoning_history == []  # noqa: SLF001 — invariant under test
+
+
+def test_structured_agent_keep_history_can_be_enabled(tmp_path: Path) -> None:
+    cfg = StructuredLLMAgentConfig(
+        name="structured",
+        prompt_template_path=str(_structured_template(tmp_path)),
+        legal_actions=(0, 1, 2, 3),
+        keep_reasoning_history=True,
+    )
+    provider = _RecordingProvider(_good_response(action_id=2))
+    agent = LLMAgent(cfg, provider=provider)
+    for _ in range(3):
+        agent.act(np.zeros(2, dtype=np.float32))
+    assert len(agent._reasoning_history) == 3  # noqa: SLF001
+
+
+def test_reasoning_history_max_caps_legacy_agent() -> None:
+    """Legacy free-text agents keep history but can opt-in to a cap."""
+    from forge.cognitive.llm_agent import LLMAgentConfig
+
+    agent = LLMAgent(LLMAgentConfig(name="legacy", reasoning_history_max=3))
+    obs = np.zeros(4, dtype=np.float32)
+    for _ in range(8):
+        agent.act(obs)
+    assert len(agent._reasoning_history) == 3  # noqa: SLF001
