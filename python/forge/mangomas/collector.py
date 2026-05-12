@@ -152,6 +152,10 @@ class _EpisodeRollout:
     teacher_value_hats: list[float] | None = None
     teacher_constraint_critiques: list[dict[str, bool]] | None = None
     teacher_top_k_probs: list[list[dict[str, Any]]] | None = None
+    teacher_prompt_tokens: list[int] | None = None
+    teacher_completion_tokens: list[int] | None = None
+    teacher_latency_ms: list[float] | None = None
+    teacher_providers: list[str] | None = None
 
 
 def _copy_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -699,6 +703,10 @@ def _collect_episode_rollout(
     teacher_value_hats: list[float] = []
     teacher_constraint_critiques: list[dict[str, bool]] = []
     teacher_top_k_probs: list[list[dict[str, Any]]] = []
+    teacher_prompt_tokens: list[int] = []
+    teacher_completion_tokens: list[int] = []
+    teacher_latency_ms: list[float] = []
+    teacher_providers: list[str] = []
 
     for _step in range(max_steps):
         episode_raw_observations.append(_extract_raw_observation(enriched_obs))
@@ -738,6 +746,12 @@ def _collect_episode_rollout(
                 dict(trace_info.get("constraint_critique") or {})
             )
             teacher_top_k_probs.append(list(trace_info.get("top_k_probs") or []))
+            teacher_prompt_tokens.append(int(trace_info.get("prompt_tokens") or 0))
+            teacher_completion_tokens.append(
+                int(trace_info.get("completion_tokens") or 0)
+            )
+            teacher_latency_ms.append(float(trace_info.get("latency_ms") or 0.0))
+            teacher_providers.append(str(trace_info.get("provider") or ""))
 
             if trace_writer is not None:
                 from forge.mangomas.teacher_trace import TeacherDecisionTrace
@@ -788,6 +802,10 @@ def _collect_episode_rollout(
         teacher_value_hats=teacher_value_hats if capture_teacher else None,
         teacher_constraint_critiques=teacher_constraint_critiques if capture_teacher else None,
         teacher_top_k_probs=teacher_top_k_probs if capture_teacher else None,
+        teacher_prompt_tokens=teacher_prompt_tokens if capture_teacher else None,
+        teacher_completion_tokens=teacher_completion_tokens if capture_teacher else None,
+        teacher_latency_ms=teacher_latency_ms if capture_teacher else None,
+        teacher_providers=teacher_providers if capture_teacher else None,
     )
 
 
@@ -1068,6 +1086,10 @@ async def _acollect_episode_rollout(
     teacher_value_hats: list[float] = []
     teacher_constraint_critiques: list[dict[str, bool]] = []
     teacher_top_k_probs: list[list[dict[str, Any]]] = []
+    teacher_prompt_tokens: list[int] = []
+    teacher_completion_tokens: list[int] = []
+    teacher_latency_ms: list[float] = []
+    teacher_providers: list[str] = []
 
     for _step in range(max_steps):
         episode_raw_observations.append(_extract_raw_observation(enriched_obs))
@@ -1107,6 +1129,12 @@ async def _acollect_episode_rollout(
                 dict(trace_info.get("constraint_critique") or {})
             )
             teacher_top_k_probs.append(list(trace_info.get("top_k_probs") or []))
+            teacher_prompt_tokens.append(int(trace_info.get("prompt_tokens") or 0))
+            teacher_completion_tokens.append(
+                int(trace_info.get("completion_tokens") or 0)
+            )
+            teacher_latency_ms.append(float(trace_info.get("latency_ms") or 0.0))
+            teacher_providers.append(str(trace_info.get("provider") or ""))
 
         enriched_obs = next_enriched_obs
         final_info = info if isinstance(info, Mapping) else {}
@@ -1130,6 +1158,10 @@ async def _acollect_episode_rollout(
         teacher_value_hats=teacher_value_hats,
         teacher_constraint_critiques=teacher_constraint_critiques,
         teacher_top_k_probs=teacher_top_k_probs,
+        teacher_prompt_tokens=teacher_prompt_tokens,
+        teacher_completion_tokens=teacher_completion_tokens,
+        teacher_latency_ms=teacher_latency_ms,
+        teacher_providers=teacher_providers,
     )
 
 
@@ -1300,11 +1332,31 @@ def _flush_rollout_to_writer(
                 top_k_probs=(rollout.teacher_top_k_probs or [])[step_index]
                 if rollout.teacher_top_k_probs
                 else [],
-                provider=teacher_config.provider,
+                provider=(
+                    (rollout.teacher_providers or [teacher_config.provider])[step_index]
+                    if rollout.teacher_providers
+                    and step_index < len(rollout.teacher_providers)
+                    else teacher_config.provider
+                ),
                 model=teacher_config.model,
-                prompt_tokens=0,
-                completion_tokens=0,
-                latency_ms=0.0,
+                prompt_tokens=(
+                    rollout.teacher_prompt_tokens[step_index]
+                    if rollout.teacher_prompt_tokens
+                    and step_index < len(rollout.teacher_prompt_tokens)
+                    else 0
+                ),
+                completion_tokens=(
+                    rollout.teacher_completion_tokens[step_index]
+                    if rollout.teacher_completion_tokens
+                    and step_index < len(rollout.teacher_completion_tokens)
+                    else 0
+                ),
+                latency_ms=(
+                    rollout.teacher_latency_ms[step_index]
+                    if rollout.teacher_latency_ms
+                    and step_index < len(rollout.teacher_latency_ms)
+                    else 0.0
+                ),
                 schema_version=teacher_config.trace_schema_version,
             )
         )

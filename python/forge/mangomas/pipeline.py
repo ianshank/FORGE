@@ -400,7 +400,18 @@ class MangoMASDroneTrainingPipeline:
         stage_dir = self._stage_dir(run_dir, "bc")
         bc_config = BCTrainerConfig(seed=derive_seed(base_seed, "bc"))
         trainer = BCTrainer(config=bc_config)
-        num_actions = int(collected_data.flattened_action_ids().max()) + 1
+        flat_actions = collected_data.flattened_action_ids()
+        if flat_actions.size == 0:
+            return (
+                PipelineStageResult(
+                    name="bc",
+                    status="skipped",
+                    duration_secs=time.perf_counter() - started,
+                    notes="no teacher actions found in collected data",
+                ),
+                None,
+            )
+        num_actions = int(flat_actions.max()) + 1
         dataset = trainer.build_dataset(
             collected_data.step_observations(),
             [
