@@ -81,6 +81,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `completion_tokens` and propagates them into `CompletionResponse`. The
   existing dataclass-defaults test (`CompletionResponse()` → `(0, 0)`) is
   preserved unchanged — only API-returned values change.
+- **Async teacher traces recorded wrong `legal_actions`** (post-review
+  audit, commit `3a3eafc`): the asyncio path computed
+  `legal_actions = range(action_ids.max() + 1)` which underestimated the
+  action space whenever an episode never exercised the highest legal
+  action. Now threads `action_space_size` through `_EpisodeRollout` from
+  `env.action_space.n` and uses it directly. Regression test asserts a
+  4-action env always produces `legal_actions=[0,1,2,3]` even when the
+  teacher only selects `action_id=1`.
+- **`BCTrainer.train` on an empty dataset silently reported success**
+  (post-review audit, commit `3a3eafc`): the trainer would run zero-sample
+  epochs and report `loss=0.0, accuracy=0.0`. Now logs a WARNING and
+  returns `BCTrainResult(epochs_run=0)` early; subsequent
+  `export_weights` raises rather than writing a no-op file.
+- **`apply_env_overrides` silently miscast complex types** (post-review
+  audit, commit `3a3eafc`): env vars for `list[…]` / `dict[…]` fields
+  would silently take the raw string. The helper now raises
+  `UnsupportedFieldType` (logged as a WARNING; affected fields are
+  skipped). Today's `TeacherConfig` has only primitive fields, so this is
+  a defensive hardening rather than a live bug fix.
+
+### Removed
+
+- Inert `--bc-train-after-collect` CLI flag (post-review audit). It was
+  parsed but never read; the BC stage decision lives in
+  `MangoMASPipeline._run_bc_stage` and keys off the presence of teacher
+  data. See `docs/architecture.md` §3.9 and the README LM Studio Teacher
+  subsection.
 
 #### Fallible Action Encoders + Structured Scenario Errors (PR #39)
 

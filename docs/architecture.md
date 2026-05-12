@@ -708,6 +708,122 @@ The core engine executes a deterministic pipeline of systems every tick.
 
 This control-plane split is intentional: branch-specific coverage work focuses on keeping config resolution, optional imports, and fallback behavior stable even when native extensions or heavyweight ML packages are unavailable.
 
+### 3.9 Cognitive Teacher Pipeline — Offline BC / SFT
+
+The teacher pipeline produces structured `(action_id, intention, subgoals,
+rationale, value_hat, constraint_critique, top_k_probs)` decisions from a
+local LLM (LM Studio + Qwen 2.5 14B Instruct by default). One LLM call is
+amortised across four trainers — `BCTrainer` plus the existing
+`BDIPreTrainer`, `ConstitutionalPreTrainer`, and (future) `RSSMPreTrainer`.
+
+```
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │ scripts/train.py  --collection-policy llm  --teacher-config <toml>  │
+   └──────────────────────────────────┬──────────────────────────────────┘
+                                      │
+                                      ▼
+   ┌──────────────────────────────────────────────┐
+   │ forge.mangomas.collector                     │
+   │                                              │
+   │ collect_training_data_from_scenarios(...)    │
+   │   ├── concurrency = 1   → sync rollout loop  │
+   │   └── concurrency > 1   → asyncio.Semaphore  │
+   │                           per-scenario gather│
+   └────────────────────┬─────────────────────────┘
+                        │ for each step
+                        ▼
+   ┌──────────────────────────────────────────────┐
+   │ forge.cognitive.llm_agent.LLMAgent           │
+   │  (StructuredLLMAgentConfig)                  │
+   │                                              │
+   │ act() / aact()                               │
+   │   ├── PromptBuilder.render(obs, legal_acts)  │
+   │   ├── provider.complete / acomplete          │
+   │   └── _parse_structured_response  → JSON     │
+   └────────────────────┬─────────────────────────┘
+                        │
+                        ▼
+   ┌──────────────────────────────────────────────┐
+   │ forge.cognitive.providers.LMStudioProvider   │
+   │ (OpenAIProvider subclass; openai SDK)        │
+   │                                              │
+   │ complete  → openai.OpenAI                    │
+   │ acomplete → openai.AsyncOpenAI               │
+   │ retry-with-backoff, response_format / seed   │
+   │ / top_p forwarded only when set              │
+   └────────────────────┬─────────────────────────┘
+                        │ HTTP   http://localhost:1234/v1
+                        ▼
+   ┌──────────────────────────────────────────────┐
+   │ LM Studio (out-of-process)                   │
+   │   Qwen 2.5 14B Instruct                      │
+   └──────────────────────────────────────────────┘
+
+                        ▲ (per-step trace_info)
+                        │
+                        │
+   ┌──────────────────────────────────────────────┐
+   │ forge.mangomas.teacher_trace                 │
+   │                                              │
+   │ TeacherTraceWriter (composes TraceLogger)    │
+   │   ├── shard rollover by record count         │
+   │   └── gzip / JSONL / size limits inherited   │
+   │                                              │
+   │ Files:                                       │
+   │ artifacts/teacher_traces/<scenario_id>/      │
+   │   ep<NNNNNN>-<NNNN>.jsonl[.gz]               │
+   └──────────────────────────────────────────────┘
+
+   ┌──────────────────────────────────────────────┐
+   │ forge.mangomas.pipeline.MangoMASPipeline.run │
+   │                                              │
+   │ stages (run in order):                       │
+   │   1. _run_bc_stage           ← teacher data  │
+   │   2. _run_bdi_stage          ← teacher_intentions
+   │   3. _run_constitutional_stage ← teacher_constraint_critiques
+   │   4. _run_rssm_stage         (unchanged)     │
+   │   5. _run_curiosity_stage    (unchanged)     │
+   │   6. _run_sweep_stage        (unchanged)     │
+   │   7. _run_curriculum_stage   (unchanged)     │
+   │                                              │
+   │ Each stage is a no-op when its required      │
+   │ teacher field is empty, preserving existing  │
+   │ random/MCTS pipeline behaviour byte-for-byte.│
+   └──────────────────────────────────────────────┘
+```
+
+**Concurrency & determinism.** The async collection path runs
+`scenario_episodes` coroutines under `asyncio.Semaphore(concurrency)`.
+Each coroutine owns its own `env` + `LLMAgent` instance and shares a
+single `AsyncOpenAI`-backed provider. After `asyncio.gather` returns,
+results are sorted by `episode_index` before any trace shard is opened —
+on-disk JSONL bytes therefore depend only on
+`(base_seed, scenario_id, episode_index)` and are byte-identical to the
+serial path for the same seed.
+
+**Backwards compatibility.** Every public-API change is additive and
+defaults to off:
+
+* `_EpisodeRollout`, `CollectedTrainingData`, `CompletionConfig`,
+  `CompletionResponse` gain optional fields appended at the tail
+  (positional callers unaffected).
+* `CognitiveProvider.acomplete` is a concrete method with an
+  `asyncio.to_thread(self.complete, …)` fallback — third-party providers
+  acquire async support without modification.
+* `BDIPreTrainer.build_dataset` and
+  `ConstitutionalPreTrainer.build_dataset` accept kw-only optional
+  teacher labels; without them the existing rule-based behaviour is
+  unchanged.
+* `_run_bc_stage` is prepended to the pipeline but no-ops when no
+  teacher data is present.
+* `forge.utils.config_env.apply_env_overrides` was extracted from
+  `forge.config._apply_env_overrides` and is reused by both
+  `ForgeConfig` and `MangoMASBridgeConfig`; semantics are identical.
+
+**Out of scope** (documented as future work in `docs/next_steps.md`):
+DAgger, DPO / preference data, Rust HTTP client, vectorised step-level
+concurrency.
+
 ---
 
 ## Level 4: Code-Level Detail
