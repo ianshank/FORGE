@@ -38,6 +38,22 @@ DEFAULT_PIPELINE_EXPORT_DIR = "export"
 DEFAULT_PIPELINE_LOG_FILE = "pipeline.log"
 DEFAULT_PIPELINE_MANIFEST = "pipeline_manifest.json"
 
+DEFAULT_TEACHER_PROVIDER = "lmstudio"
+DEFAULT_TEACHER_BASE_URL = "http://localhost:1234/v1"
+DEFAULT_TEACHER_MODEL = ""
+DEFAULT_TEACHER_TEMPERATURE = 0.0
+DEFAULT_TEACHER_TOP_P = 1.0
+DEFAULT_TEACHER_MAX_TOKENS = 1024
+DEFAULT_TEACHER_SEED = 42
+DEFAULT_TEACHER_TIMEOUT_SECS = 120.0
+DEFAULT_TEACHER_MAX_RETRIES = 2
+DEFAULT_TEACHER_RETRY_BACKOFF_SECS = 1.0
+DEFAULT_TEACHER_CONCURRENCY = 1
+DEFAULT_TEACHER_OUTPUT_ROOT = "artifacts/teacher_traces"
+DEFAULT_TEACHER_SHARD_SIZE = 1000
+DEFAULT_TEACHER_TRACE_SCHEMA_VERSION = "1.0"
+DEFAULT_TEACHER_PAYLOAD_PREVIEW_CHARS = 256
+
 # Canonical constraint definitions for constitutional RL
 DEFAULT_CONSTITUTIONAL_CONSTRAINTS: list[dict[str, Any]] = [
     {"name": "battery_minimum", "forge_field": "battery", "threshold": 0.2, "is_lower_bound": True},
@@ -330,6 +346,43 @@ class MuZeroTrainerConfig:
 
 
 @dataclass
+class TeacherConfig:
+    """LM Studio / Qwen offline teacher configuration.
+
+    Drives both the cognitive provider (base URL, timeouts, retries) and
+    the structured agent (template / schema / few-shots) so a single
+    ``[teacher]`` TOML section captures the whole pipeline.
+    """
+
+    enabled: bool = False
+    provider: str = DEFAULT_TEACHER_PROVIDER
+    base_url: str = DEFAULT_TEACHER_BASE_URL
+    model: str = DEFAULT_TEACHER_MODEL
+    api_key: str = ""
+    temperature: float = DEFAULT_TEACHER_TEMPERATURE
+    top_p: float = DEFAULT_TEACHER_TOP_P
+    max_tokens: int = DEFAULT_TEACHER_MAX_TOKENS
+    seed: int = DEFAULT_TEACHER_SEED
+    timeout_secs: float = DEFAULT_TEACHER_TIMEOUT_SECS
+    max_retries: int = DEFAULT_TEACHER_MAX_RETRIES
+    retry_backoff_secs: float = DEFAULT_TEACHER_RETRY_BACKOFF_SECS
+    concurrency: int = DEFAULT_TEACHER_CONCURRENCY
+    prompt_template_path: str = ""
+    response_schema_path: str = ""
+    few_shot_examples_path: str = ""
+    system_prompt: str = ""
+    output_root: str = DEFAULT_TEACHER_OUTPUT_ROOT
+    log_payloads: bool = False
+    validate_action: bool = True
+    include_legal_actions: bool = True
+    response_format_enabled: bool = True
+    shard_size: int = DEFAULT_TEACHER_SHARD_SIZE
+    compress_traces: bool = True
+    trace_schema_version: str = DEFAULT_TEACHER_TRACE_SCHEMA_VERSION
+    payload_preview_chars: int = DEFAULT_TEACHER_PAYLOAD_PREVIEW_CHARS
+
+
+@dataclass
 class MangoMASBridgeConfig:
     """Top-level MangoMAS integration configuration."""
 
@@ -349,6 +402,7 @@ class MangoMASBridgeConfig:
     muzero_trainer: MuZeroTrainerConfig = field(default_factory=MuZeroTrainerConfig)
     transfer: TransferConfig = field(default_factory=TransferConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
+    teacher: TeacherConfig = field(default_factory=TeacherConfig)
 
     @classmethod
     def from_toml(cls, path: str | Path) -> MangoMASBridgeConfig:
@@ -432,5 +486,11 @@ class MangoMASBridgeConfig:
                 execution=PipelineExecutionConfig(**pipeline_data.get("execution", {})),
                 logging=PipelineLoggingConfig(**pipeline_data.get("logging", {})),
             )
+        if "teacher" in data:
+            config.teacher = TeacherConfig(**data["teacher"])
+        # Apply FORGE_TEACHER_<FIELD> env overrides to the (possibly TOML-loaded) teacher.
+        from forge.utils.config_env import apply_env_overrides
+
+        apply_env_overrides(config.teacher, "TEACHER")
         logger.debug("MangoMASBridgeConfig loaded: platform=%s", config.platform)
         return config

@@ -93,6 +93,14 @@ runs/
 wandb/
 mlruns/
 
+# LM Studio teacher pipeline outputs (tracked under artifacts/, but
+# documented explicitly so contributors don't accidentally check them in
+# from a custom output_root):
+#   - artifacts/teacher_traces/<scenario_id>/ep<NNNNNN>-<NNNN>.jsonl[.gz]
+#   - artifacts/mangomas/<run_name>/stages/bc/bc_weights.npz
+forge_teacher_traces/
+teacher_traces/
+
 # Copilot memory workspace state
 /memories/
 

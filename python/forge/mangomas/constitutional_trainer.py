@@ -123,21 +123,61 @@ class ConstitutionalPreTrainer:
         actions: np.ndarray,
         rewards: np.ndarray,
         obs_dicts: list[dict[str, float]],
+        *,
+        teacher_constraint_critiques: list[dict[str, bool]] | None = None,
+        teacher_severity_default: float = 1.0,
     ) -> ConstitutionalDataset:
-        """Build a constitutional dataset with violation annotations."""
+        """Build a constitutional dataset with violation annotations.
+
+        When ``teacher_constraint_critiques`` is supplied — one dict per
+        sample, mapping constraint name → bool — the rule-derived
+        ``violation_matrix`` is OR-merged with the teacher's view. The
+        per-sample penalty is recomputed as
+        ``max(rule_penalty, teacher_severity_default * num_teacher_flags
+        * penalty_weight)`` so teacher critiques can lift penalties on
+        samples the rule-based detector missed.
+        """
         n = len(observations)
         n_constraints = len(self.constraints)
         violation_matrix = np.zeros((n, n_constraints), dtype=np.float32)
         penalties = np.zeros(n, dtype=np.float32)
 
+        use_teacher = bool(teacher_constraint_critiques)
+        if use_teacher and len(teacher_constraint_critiques or []) != n:
+            msg = (
+                "teacher_constraint_critiques must have the same length as observations"
+            )
+            raise ValueError(msg)
+        name_to_index = {c["name"]: j for j, c in enumerate(self.constraints)}
+
         for i, obs in enumerate(obs_dicts):
             violations = self.check_violations(obs)
             for v in violations:
-                for j, c in enumerate(self.constraints):
-                    if c["name"] == v.constraint_name:
-                        violation_matrix[i, j] = 1.0
-                        break
-            penalties[i] = self.compute_penalty(violations)
+                idx = name_to_index.get(v.constraint_name)
+                if idx is not None:
+                    violation_matrix[i, idx] = 1.0
+            rule_penalty = self.compute_penalty(violations)
+
+            if use_teacher:
+                critique = (teacher_constraint_critiques or [{}])[i] or {}
+                teacher_flags = 0
+                for name, flag in critique.items():
+                    if not bool(flag):
+                        continue
+                    idx = name_to_index.get(name)
+                    if idx is None:
+                        continue
+                    if violation_matrix[i, idx] == 0.0:
+                        teacher_flags += 1
+                    violation_matrix[i, idx] = 1.0
+                teacher_penalty = (
+                    self.config.penalty_weight
+                    * teacher_severity_default
+                    * float(teacher_flags)
+                )
+                penalties[i] = max(rule_penalty, teacher_penalty)
+            else:
+                penalties[i] = rule_penalty
 
         return ConstitutionalDataset(
             observations=observations,

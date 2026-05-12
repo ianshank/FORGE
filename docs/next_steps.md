@@ -45,6 +45,28 @@ gained `cache: pip` keyed off `demo_ui/backend/requirements.txt` and
 still runs after the test step. `playwright==1.48.*` is pinned in
 `demo_ui/pyproject.toml` for reproducibility.
 
+### 5b. ✅ LM Studio + Qwen 14B Offline Teacher Pipeline — COMPLETED
+
+Behavioural-cloning data pipeline driven by a locally-served Qwen 2.5 14B
+Instruct (or any OpenAI-compatible endpoint). One LLM call per env step
+amortises across four trainers (BC, BDI, Constitutional, future RSSM).
+
+- `LMStudioProvider` + async `acomplete` path in `forge.cognitive.providers`
+- `PromptBuilder` + JSON Schema for deterministic structured decisions
+- `StructuredLLMAgentConfig` / `LLMAgent.aact` JSON-mode parser with
+  legacy free-text fallback
+- `TeacherDecisionTrace` + `TeacherTraceWriter` for sharded JSONL/gzip
+  outputs (composes `forge.traces.trace_logger.TraceLogger`)
+- `BCTrainer` (NumPy + optional torch path) + `BCStage` prepended to
+  `MangoMASPipeline.run`
+- `TeacherConfig` TOML section + `FORGE_TEACHER_*` env overrides + CLI
+  flags (`--collection-policy llm` etc.)
+- Episode-level concurrency via `asyncio.Semaphore`; on-disk shards
+  written in `episode_index` order so traces are byte-identical for the
+  same `base_seed` regardless of `concurrency`.
+
+See `docs/architecture.md` §3.9 and `configs/cognitive/qwen14b_teacher.toml`.
+
 ### 5. ✅ Docker Container for Demo UI — COMPLETED
 
 The full three-service Docker Compose stack is now deployed:
@@ -147,5 +169,9 @@ Add example scripts and CI integration for:
 | `reference_b` hardware profile | Scaffolded | Directory committed with `.gitkeep`; `benchmarks/baselines/README.md` documents the regeneration command (including `--agents` flag and `FORGE_BENCH_AGENT_COUNTS`). User runs locally on workstation hardware and commits the JSON in a follow-up PR |
 | Replace `panic!` on enum variants in non-step crates | Medium | ~20 sites in `crates/forge-proposal`, `crates/forge-server/src/ws_handler.rs`, `crates/forge-mangomas/src/curriculum/task_mapping.rs`, and `crates/forge-types/src/{task,action}.rs` should become `Result` returns or `unreachable!` with safety proof. Out of scope for the alloc-fix branch |
 | Replace `.unwrap()` on TOML parsing in `crates/forge-scenario/src/config.rs` | Medium | ~15 sites; move to `?` and propagate `Result` |
+| Real LM Studio integration smoke test | Low | Today CI exercises only the mocked provider path. Add an opt-in `pytest -m lmstudio` job that spins up the `mlc-llm/qwen` Docker image and runs a 1-episode hex_patrol collection end-to-end. |
+| Torch path coverage for `BCTrainer._train_torch` | Medium | The numpy path is fully covered; the torch path has one happy-path test that's `pytest.importorskip("torch")`-gated. Add KL-only and value-loss-only branches to the test once torch becomes a CI dependency. |
+| DAgger / DPO follow-on for the teacher pipeline | Medium | Out of scope for the BC PR but a natural next step. The teacher trace schema (`TeacherDecisionTrace`) already records `top_k_probs` and `value_hat`, which DPO would consume directly. Belongs in a separate `forge.mangomas.dpo_trainer` module. |
+| Vectorised step-level teacher concurrency | Low | Today concurrency is at the episode level (one LLM call per step, parallelised across episodes). Step-level batching would require a real vec-env under the teacher and is not justified at Qwen 14B latencies. Revisit when sub-100ms quantised inference is available. |
 | Workspace `dev-dependencies` consolidation | Low | `proptest` + `tracing-subscriber` declared per-crate in 15 crates; promote to `workspace.dev-dependencies` |
 | Commented-out `println!` in `forge-data` | Low | Either delete or convert to `tracing::info!` in `generator.rs`, `lib.rs`, `minari.rs`, `maze.rs`, `edge_replay.rs` |

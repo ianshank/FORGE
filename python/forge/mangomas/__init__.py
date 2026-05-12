@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from forge.mangomas.adapters import ActionSpaceAdapter, ObservationAdapter
 from forge.mangomas.batch import BatchCollector, BatchResult, EpisodeData
+from forge.mangomas.bc_trainer import BCDataset, BCTrainer, BCTrainerConfig, BCTrainResult
 from forge.mangomas.bdi_trainer import BDIDataset, BDIPreTrainer, BDITrainResult
 from forge.mangomas.config import (
     ActionAdapterConfig,
@@ -36,6 +37,7 @@ from forge.mangomas.config import (
     PipelinePathsConfig,
     RSSMPreTrainConfig,
     SweepConfig,
+    TeacherConfig,
     TransferConfig,
 )
 from forge.mangomas.constitutional_trainer import (
@@ -54,9 +56,19 @@ from forge.mangomas.sweep_runner import (
     SweepResult,
 )
 
+from forge.mangomas.teacher_trace import (
+    TeacherDecisionTrace,
+    TeacherTraceReader,
+    TeacherTraceWriter,
+)
+
 __all__ = [
     "ActionAdapterConfig",
     "ActionSpaceAdapter",
+    "BCDataset",
+    "BCTrainResult",
+    "BCTrainer",
+    "BCTrainerConfig",
     "BDIDataset",
     "BDIPreTrainer",
     "BDITrainResult",
@@ -91,6 +103,10 @@ __all__ = [
     "SweepConfig",
     "SweepReport",
     "SweepResult",
+    "TeacherConfig",
+    "TeacherDecisionTrace",
+    "TeacherTraceReader",
+    "TeacherTraceWriter",
     "TierStatus",
     "TransferConfig",
     "WeightExporter",

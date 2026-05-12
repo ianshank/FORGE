@@ -6,14 +6,27 @@ import gzip
 import json
 import logging
 from pathlib import Path
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from forge.traces.decision_trace import DecisionTrace
-
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class TraceRecord(Protocol):
+    """Anything with a ``to_dict() -> dict`` method.
+
+    Lets ``TraceLogger`` serialise both ``DecisionTrace`` (from
+    ``forge.traces.decision_trace``) and ``TeacherDecisionTrace`` (from
+    ``forge.mangomas.teacher_trace``) without an inheritance dependency
+    between the two modules.
+    """
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict view of this record."""
+        ...
 
 DEFAULT_MAX_FILE_SIZE_MB = 100
 BYTES_PER_MB = 1024 * 1024
@@ -47,16 +60,28 @@ class TraceLogger:
             self._file = Path(self.output_path).open("w", encoding="utf-8")  # noqa: SIM115
         logger.info("TraceLogger opened %s (compress=%s)", self.output_path, self.compress)
 
-    def log(self, trace: DecisionTrace) -> None:
-        """Write a single trace as a JSONL line."""
+    def log(self, trace: TraceRecord) -> bool:
+        """Write a single trace as a JSONL line.
+
+        Returns ``True`` when the record was actually persisted, ``False``
+        when the configured size limit caused the write to be skipped.
+        Existing callers that ignore the return value still work because
+        they previously had no signal at all and the write still happens
+        when there is room.
+        """
         if self._file is None:
             msg = "TraceLogger is closed"
             raise RuntimeError(msg)
         if self._exceeds_size_limit():
-            logger.warning("File size limit reached (%d MB), skipping write", self.max_file_size_mb)
-            return
+            logger.warning(
+                "File size limit reached (%d MB), skipping write to %s",
+                self.max_file_size_mb,
+                self.output_path,
+            )
+            return False
         line = json.dumps(trace.to_dict())
         self._file.write(line + "\n")
+        return True
 
     def flush(self) -> None:
         """Flush the output buffer."""
