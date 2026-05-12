@@ -37,7 +37,13 @@ SweepEvaluateFn = Callable[[dict[str, Any], int], tuple[float, float, float]]
 
 @dataclass
 class CollectedTrainingData:
-    """Episode data required by the MangoMAS training stages."""
+    """Episode data required by the MangoMAS training stages.
+
+    Teacher-supplied per-episode lists (``teacher_intentions`` etc.) are
+    optional: when non-empty they unlock the BC stage and override the
+    rule-derived intention / constraint labels in the BDI and
+    Constitutional stages.
+    """
 
     observations: list[NDArray[np.float32]]
     action_names: list[list[str]]
@@ -45,6 +51,12 @@ class CollectedTrainingData:
     rewards: list[NDArray[np.float32]]
     dones: list[NDArray[np.float32]]
     raw_observations: list[list[dict[str, float]]] = field(default_factory=list)
+    teacher_intentions: list[list[int]] = field(default_factory=list)
+    teacher_rationales: list[list[str]] = field(default_factory=list)
+    teacher_subgoals: list[list[list[str]]] = field(default_factory=list)
+    teacher_value_hats: list[list[float]] = field(default_factory=list)
+    teacher_constraint_critiques: list[list[dict[str, bool]]] = field(default_factory=list)
+    teacher_top_k_probs: list[list[list[dict[str, Any]]]] = field(default_factory=list)
 
     def validate(self) -> None:
         episode_count = len(self.observations)
@@ -61,6 +73,17 @@ class CollectedTrainingData:
             raise ValueError("All CollectedTrainingData fields must have the same episode count")
         if self.raw_observations and len(self.raw_observations) != episode_count:
             raise ValueError("raw_observations must match the episode count when provided")
+        for name, teacher_field in (
+            ("teacher_intentions", self.teacher_intentions),
+            ("teacher_rationales", self.teacher_rationales),
+            ("teacher_subgoals", self.teacher_subgoals),
+            ("teacher_value_hats", self.teacher_value_hats),
+            ("teacher_constraint_critiques", self.teacher_constraint_critiques),
+            ("teacher_top_k_probs", self.teacher_top_k_probs),
+        ):
+            if teacher_field and len(teacher_field) != episode_count:
+                msg = f"{name} must match the episode count when provided"
+                raise ValueError(msg)
 
     @property
     def num_episodes(self) -> int:

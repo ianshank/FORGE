@@ -146,6 +146,12 @@ class _EpisodeRollout:
     raw_observations: list[dict[str, float]]
     total_reward: float
     success: bool
+    teacher_intentions: list[int] | None = None
+    teacher_rationales: list[str] | None = None
+    teacher_subgoals: list[list[str]] | None = None
+    teacher_value_hats: list[float] | None = None
+    teacher_constraint_critiques: list[dict[str, bool]] | None = None
+    teacher_top_k_probs: list[list[dict[str, Any]]] | None = None
 
 
 def _copy_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -507,7 +513,14 @@ def _default_env_factory(config: dict[str, Any]) -> Any:
     return ForgeGymnasiumEnv(config=config)
 
 
-def _create_policy_agent(policy_name: str, action_space_size: int, seed: int) -> Any:
+def _create_policy_agent(
+    policy_name: str,
+    action_space_size: int,
+    seed: int,
+    *,
+    teacher_config: Any = None,
+    provider_factory: Callable[[Any], Any] | None = None,
+) -> Any:
     from forge.agents.base_agent import AgentConfig
 
     if policy_name == "random":
@@ -528,8 +541,83 @@ def _create_policy_agent(policy_name: str, action_space_size: int, seed: int) ->
             seed=seed,
         )
 
+    if policy_name == "llm":
+        if teacher_config is None:
+            msg = "policy='llm' requires a TeacherConfig"
+            raise ValueError(msg)
+        return _build_llm_agent(
+            teacher_config,
+            action_space_size,
+            seed,
+            provider_factory=provider_factory,
+        )
+
     msg = f"Unsupported MangoMAS collection policy: {policy_name}"
     raise ValueError(msg)
+
+
+def _default_provider_factory(teacher_config: Any) -> Any:
+    """Build a CognitiveProvider from a ``TeacherConfig``."""
+    from forge.cognitive.providers import create_provider
+
+    kwargs: dict[str, Any] = {}
+    if teacher_config.api_key:
+        kwargs["api_key"] = teacher_config.api_key
+    if teacher_config.base_url:
+        kwargs["base_url"] = teacher_config.base_url
+    if teacher_config.model:
+        kwargs["model"] = teacher_config.model
+    if teacher_config.timeout_secs:
+        kwargs["timeout_secs"] = teacher_config.timeout_secs
+    kwargs["max_retries"] = teacher_config.max_retries
+    kwargs["retry_backoff_secs"] = teacher_config.retry_backoff_secs
+    return create_provider(teacher_config.provider, **kwargs)
+
+
+def _build_llm_agent(
+    teacher_config: Any,
+    action_space_size: int,
+    seed: int,
+    *,
+    provider_factory: Callable[[Any], Any] | None = None,
+) -> Any:
+    """Instantiate a structured LLMAgent driven by ``teacher_config``."""
+    from forge.cognitive.llm_agent import LLMAgent, StructuredLLMAgentConfig
+
+    factory = provider_factory or _default_provider_factory
+    provider = factory(teacher_config)
+    response_schema_path = (
+        teacher_config.response_schema_path
+        if teacher_config.response_format_enabled
+        else ""
+    )
+    structured_config = StructuredLLMAgentConfig(
+        name="mangomas-llm",
+        provider_name=teacher_config.provider,
+        model=teacher_config.model,
+        temperature=teacher_config.temperature,
+        max_tokens=teacher_config.max_tokens,
+        system_prompt=teacher_config.system_prompt,
+        prompt_template_path=teacher_config.prompt_template_path,
+        response_schema_path=response_schema_path,
+        few_shot_examples_path=teacher_config.few_shot_examples_path,
+        include_legal_actions=teacher_config.include_legal_actions,
+        log_payloads=teacher_config.log_payloads,
+        validate_action=teacher_config.validate_action,
+        seed=teacher_config.seed if teacher_config.seed != 0 else None,
+        top_p=teacher_config.top_p,
+        timeout_secs=teacher_config.timeout_secs,
+        payload_preview_chars=teacher_config.payload_preview_chars,
+        legal_actions=tuple(range(action_space_size)),
+    )
+    logger.info(
+        "_build_llm_agent provider=%s model=%s action_space_size=%d",
+        teacher_config.provider,
+        teacher_config.model,
+        action_space_size,
+    )
+    _ = seed  # reserved for future seed-derived adapters; provider seeds via teacher_config.seed
+    return LLMAgent(structured_config, provider=provider)
 
 
 def _prepare_env_config(
@@ -587,6 +675,10 @@ def _collect_episode_rollout(
     drone_enabled: bool,
     agri_enabled: bool,
     hex_enabled: bool,
+    scenario_id: str = "",
+    episode_index: int = 0,
+    teacher_config: Any = None,
+    trace_writer: Any = None,
 ) -> _EpisodeRollout:
     obs, _info = env.reset(seed=episode_seed)
     enriched_obs = _augment_observation(obs, env_config, platform)
@@ -600,10 +692,18 @@ def _collect_episode_rollout(
     total_reward = 0.0
     final_info: Mapping[str, Any] | dict[str, Any] = {}
 
+    capture_teacher = teacher_config is not None
+    teacher_intentions: list[int] = []
+    teacher_rationales: list[str] = []
+    teacher_subgoals: list[list[str]] = []
+    teacher_value_hats: list[float] = []
+    teacher_constraint_critiques: list[dict[str, bool]] = []
+    teacher_top_k_probs: list[list[dict[str, Any]]] = []
+
     for _step in range(max_steps):
         episode_raw_observations.append(_extract_raw_observation(enriched_obs))
         flat_obs = flatten_obs(enriched_obs)
-        action_id, _trace = policy_agent.act(flat_obs)
+        action_id, trace_info = policy_agent.act(flat_obs)
         discrete_action = int(action_id)
         next_obs, reward, terminated, truncated, info = env.step(discrete_action)
         next_enriched_obs = _augment_observation(next_obs, env_config, platform)
@@ -623,6 +723,50 @@ def _collect_episode_rollout(
         episode_dones.append(1.0 if done else 0.0)
         total_reward += float(reward)
         episode_observations.append(observation_adapter.adapt(next_enriched_obs))
+
+        if capture_teacher and isinstance(trace_info, dict):
+            intention = trace_info.get("intention")
+            teacher_intentions.append(int(intention) if intention is not None else -1)
+            teacher_rationales.append(str(trace_info.get("rationale") or ""))
+            teacher_subgoals.append(list(trace_info.get("subgoals") or []))
+            teacher_value_hats.append(
+                float(trace_info.get("value_hat"))
+                if trace_info.get("value_hat") is not None
+                else 0.0
+            )
+            teacher_constraint_critiques.append(
+                dict(trace_info.get("constraint_critique") or {})
+            )
+            teacher_top_k_probs.append(list(trace_info.get("top_k_probs") or []))
+
+            if trace_writer is not None:
+                from forge.mangomas.teacher_trace import TeacherDecisionTrace
+
+                trace_writer.log(
+                    TeacherDecisionTrace(
+                        scenario_id=scenario_id,
+                        episode_index=episode_index,
+                        step_index=_step,
+                        observation=_extract_raw_observation(enriched_obs),
+                        legal_actions=list(range(int(env.action_space.n))),
+                        action_id=discrete_action,
+                        intention=teacher_intentions[-1]
+                        if teacher_intentions[-1] >= 0
+                        else None,
+                        subgoals=teacher_subgoals[-1],
+                        rationale=teacher_rationales[-1],
+                        value_hat=teacher_value_hats[-1],
+                        constraint_critique=teacher_constraint_critiques[-1],
+                        top_k_probs=teacher_top_k_probs[-1],
+                        provider=str(trace_info.get("provider") or ""),
+                        model=str(teacher_config.model),
+                        prompt_tokens=int(trace_info.get("prompt_tokens") or 0),
+                        completion_tokens=int(trace_info.get("completion_tokens") or 0),
+                        latency_ms=float(trace_info.get("latency_ms") or 0.0),
+                        schema_version=teacher_config.trace_schema_version,
+                    )
+                )
+
         enriched_obs = next_enriched_obs
         final_info = info if isinstance(info, Mapping) else {}
 
@@ -638,6 +782,12 @@ def _collect_episode_rollout(
         raw_observations=episode_raw_observations,
         total_reward=total_reward,
         success=_determine_episode_success(total_reward, final_info),
+        teacher_intentions=teacher_intentions if capture_teacher else None,
+        teacher_rationales=teacher_rationales if capture_teacher else None,
+        teacher_subgoals=teacher_subgoals if capture_teacher else None,
+        teacher_value_hats=teacher_value_hats if capture_teacher else None,
+        teacher_constraint_critiques=teacher_constraint_critiques if capture_teacher else None,
+        teacher_top_k_probs=teacher_top_k_probs if capture_teacher else None,
     )
 
 
@@ -651,12 +801,16 @@ def _collect_scenario_rollouts(
     observation_adapter: ObservationAdapter,
     policy_name: str,
     mangomas_config: MangoMASBridgeConfig,
+    teacher_config: Any = None,
+    provider_factory: Callable[[Any], Any] | None = None,
 ) -> tuple[list[_EpisodeRollout], list[float], list[bool]]:
     action_space_size = int(env.action_space.n)
     policy_agent = _create_policy_agent(
         policy_name,
         action_space_size,
         derive_seed(base_seed, f"policy:{scenario.scenario_id}"),
+        teacher_config=teacher_config,
+        provider_factory=provider_factory,
     )
     comm_vocab_size = int(env_config.get("agents", {}).get("comm_vocab_size", 0))
     drone_enabled = bool(env_config.get("drone", {}).get("enabled", False))
@@ -668,23 +822,49 @@ def _collect_scenario_rollouts(
     scenario_rewards: list[float] = []
     scenario_successes: list[bool] = []
     for episode_index in range(scenario_episodes):
-        rollout = _collect_episode_rollout(
-            env=env,
-            env_config=env_config,
-            episode_seed=derive_seed(base_seed, f"{scenario.scenario_id}:{episode_index}"),
-            max_steps=max_steps,
-            observation_adapter=observation_adapter,
-            policy_agent=policy_agent,
-            platform=mangomas_config.platform,
-            comm_vocab_size=comm_vocab_size,
-            drone_enabled=drone_enabled,
-            agri_enabled=agri_enabled,
-            hex_enabled=hex_enabled,
-        )
+        writer = _open_trace_writer_if_enabled(teacher_config, scenario.scenario_id, episode_index)
+        try:
+            rollout = _collect_episode_rollout(
+                env=env,
+                env_config=env_config,
+                episode_seed=derive_seed(base_seed, f"{scenario.scenario_id}:{episode_index}"),
+                max_steps=max_steps,
+                observation_adapter=observation_adapter,
+                policy_agent=policy_agent,
+                platform=mangomas_config.platform,
+                comm_vocab_size=comm_vocab_size,
+                drone_enabled=drone_enabled,
+                agri_enabled=agri_enabled,
+                hex_enabled=hex_enabled,
+                scenario_id=scenario.scenario_id,
+                episode_index=episode_index,
+                teacher_config=teacher_config,
+                trace_writer=writer,
+            )
+        finally:
+            if writer is not None:
+                writer.close()
         scenario_rollouts.append(rollout)
         scenario_rewards.append(rollout.total_reward)
         scenario_successes.append(rollout.success)
     return scenario_rollouts, scenario_rewards, scenario_successes
+
+
+def _open_trace_writer_if_enabled(
+    teacher_config: Any, scenario_id: str, episode_index: int
+) -> Any:
+    """Open a TeacherTraceWriter when teacher capture + output_root are enabled."""
+    if teacher_config is None or not teacher_config.output_root:
+        return None
+    from forge.mangomas.teacher_trace import TeacherTraceWriter
+
+    return TeacherTraceWriter(
+        teacher_config.output_root,
+        scenario_id,
+        episode_index,
+        shard_size=teacher_config.shard_size,
+        compress=teacher_config.compress_traces,
+    )
 
 
 def collect_training_data_from_scenarios(
@@ -697,8 +877,42 @@ def collect_training_data_from_scenarios(
     policy_name: str = "random",
     search_dirs: Sequence[str | Path] | None = None,
     env_factory: Callable[[dict[str, Any]], Any] | None = None,
+    teacher_config: Any = None,
+    provider_factory: Callable[[Any], Any] | None = None,
 ) -> ScenarioCollectionResult:
-    """Collect MangoMAS training data from resolved FORGE scenario rollouts."""
+    """Collect MangoMAS training data from resolved FORGE scenario rollouts.
+
+    When ``policy_name == "llm"`` a ``teacher_config`` must be supplied
+    (typically ``mangomas_config.teacher``). For ``teacher_config.concurrency
+    > 1`` the call dispatches into an asyncio path that runs episodes
+    concurrently while still writing teacher trace shards in
+    ``episode_index`` order — see :func:`_acollect_scenario_rollouts_concurrent`.
+    """
+    if policy_name == "llm" and teacher_config is None:
+        teacher_config = mangomas_config.teacher
+
+    if (
+        policy_name == "llm"
+        and teacher_config is not None
+        and int(getattr(teacher_config, "concurrency", 1)) > 1
+    ):
+        import asyncio
+
+        return asyncio.run(
+            _acollect_training_data_from_scenarios(
+                base_forge_config=base_forge_config,
+                mangomas_config=mangomas_config,
+                scenario_refs=scenario_refs,
+                total_episodes=total_episodes,
+                base_seed=base_seed,
+                policy_name=policy_name,
+                search_dirs=search_dirs,
+                env_factory=env_factory,
+                teacher_config=teacher_config,
+                provider_factory=provider_factory,
+            )
+        )
+
     scenarios = resolve_forge_scenarios(scenario_refs, search_dirs=search_dirs)
     episode_counts = _allocate_episode_counts(total_episodes, len(scenarios))
     observation_adapter = ObservationAdapter(
@@ -713,6 +927,12 @@ def collect_training_data_from_scenarios(
     rewards: list[np.ndarray] = []
     dones: list[np.ndarray] = []
     raw_observations: list[list[dict[str, float]]] = []
+    teacher_intentions: list[list[int]] = []
+    teacher_rationales: list[list[str]] = []
+    teacher_subgoals: list[list[list[str]]] = []
+    teacher_value_hats: list[list[float]] = []
+    teacher_constraint_critiques: list[list[dict[str, bool]]] = []
+    teacher_top_k_probs: list[list[list[dict[str, Any]]]] = []
     curriculum_outcomes: list[bool] = []
     scenario_summaries: list[ScenarioRolloutSummary] = []
 
@@ -741,6 +961,8 @@ def collect_training_data_from_scenarios(
                 observation_adapter=observation_adapter,
                 policy_name=policy_name,
                 mangomas_config=mangomas_config,
+                teacher_config=teacher_config,
+                provider_factory=provider_factory,
             )
             for rollout in scenario_rollouts:
                 observations.append(rollout.observations)
@@ -750,6 +972,15 @@ def collect_training_data_from_scenarios(
                 dones.append(rollout.dones)
                 raw_observations.append(rollout.raw_observations)
                 curriculum_outcomes.append(rollout.success)
+                if rollout.teacher_intentions is not None:
+                    teacher_intentions.append(rollout.teacher_intentions)
+                    teacher_rationales.append(rollout.teacher_rationales or [])
+                    teacher_subgoals.append(rollout.teacher_subgoals or [])
+                    teacher_value_hats.append(rollout.teacher_value_hats or [])
+                    teacher_constraint_critiques.append(
+                        rollout.teacher_constraint_critiques or []
+                    )
+                    teacher_top_k_probs.append(rollout.teacher_top_k_probs or [])
 
         finally:
             env.close()
@@ -781,8 +1012,33 @@ def collect_training_data_from_scenarios(
             rewards=rewards,
             dones=dones,
             raw_observations=raw_observations,
+            teacher_intentions=teacher_intentions,
+            teacher_rationales=teacher_rationales,
+            teacher_subgoals=teacher_subgoals,
+            teacher_value_hats=teacher_value_hats,
+            teacher_constraint_critiques=teacher_constraint_critiques,
+            teacher_top_k_probs=teacher_top_k_probs,
         ),
         curriculum_outcomes=curriculum_outcomes,
         scenario_summaries=scenario_summaries,
         resolved_scenarios=scenarios,
+    )
+
+
+async def _acollect_training_data_from_scenarios(
+    *,
+    base_forge_config: Mapping[str, Any],
+    mangomas_config: MangoMASBridgeConfig,
+    scenario_refs: Sequence[str | Path],
+    total_episodes: int,
+    base_seed: int,
+    policy_name: str,
+    search_dirs: Sequence[str | Path] | None,
+    env_factory: Callable[[dict[str, Any]], Any] | None,
+    teacher_config: Any,
+    provider_factory: Callable[[Any], Any] | None,
+) -> ScenarioCollectionResult:
+    """Async entry point — implemented in step 7."""
+    raise NotImplementedError(
+        "concurrent teacher collection not yet wired; set teacher.concurrency=1"
     )
