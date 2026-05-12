@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from forge.cognitive.llm_agent import LLMAgent, LLMAgentConfig
+from forge.cognitive.llm_agent import (
+    LLMAgent,
+    LLMAgentConfig,
+    StructuredLLMAgentConfig,
+)
 from forge.cognitive.prompt_builder import FewShotExample, PromptBuilder
 from forge.cognitive.providers import (
     AnthropicProvider,
@@ -27,5 +31,6 @@ __all__ = [
     "MockProvider",
     "OpenAIProvider",
     "PromptBuilder",
+    "StructuredLLMAgentConfig",
     "create_provider",
 ]
