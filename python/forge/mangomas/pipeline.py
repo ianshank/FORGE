@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     # so `NDArray` only needs to resolve for static type-checkers.
     from numpy.typing import NDArray
 
+from forge.mangomas.bc_trainer import BCTrainer, BCTrainerConfig
 from forge.mangomas.bdi_trainer import BDIPreTrainer
 from forge.mangomas.constitutional_trainer import ConstitutionalPreTrainer
 from forge.mangomas.curiosity_optimizer import CuriosityWeightOptimizer
@@ -33,6 +34,20 @@ logger = logging.getLogger(__name__)
 
 CuriosityEvaluateFn = Callable[[dict[str, float]], float]
 SweepEvaluateFn = Callable[[dict[str, Any], int], tuple[float, float, float]]
+
+
+def _flatten_teacher_critiques(
+    per_episode: list[list[dict[str, bool]]],
+    per_episode_step_counts: list[int],
+) -> list[dict[str, bool]] | None:
+    """Flatten per-episode teacher critique lists, truncated to step counts."""
+    if not per_episode:
+        return None
+    flat: list[dict[str, bool]] = []
+    for ep_idx, episode in enumerate(per_episode):
+        count = per_episode_step_counts[ep_idx] if ep_idx < len(per_episode_step_counts) else len(episode)
+        flat.extend(episode[:count])
+    return flat or None
 
 
 @dataclass
@@ -265,6 +280,15 @@ class MangoMASDroneTrainingPipeline:
         stage_artifacts: dict[str, Path] = {}
         stop_after_stage = self.config.pipeline.execution.stop_after_stage
 
+        stage_result, artifact = self._run_bc_stage(collected_data, run_dir, resolved_seed)
+        stage_results.append(stage_result)
+        if artifact is not None:
+            stage_artifacts["bc"] = artifact
+        if self._should_stop(stage_result.name, stop_after_stage):
+            return self._finalize_run(
+                run_dir, export_dir, resolved_seed, stage_results, stage_artifacts
+            )
+
         stage_result, artifact = self._run_bdi_stage(collected_data, run_dir, resolved_seed)
         stage_results.append(stage_result)
         if artifact is not None:
@@ -355,6 +379,69 @@ class MangoMASDroneTrainingPipeline:
         stage_dir.mkdir(parents=True, exist_ok=True)
         return stage_dir
 
+    def _run_bc_stage(
+        self,
+        collected_data: CollectedTrainingData,
+        run_dir: Path,
+        base_seed: int,
+    ) -> tuple[PipelineStageResult, Path | None]:
+        """Behavioural-cloning stage. No-op when no teacher data is present."""
+        started = time.perf_counter()
+        if not collected_data.teacher_intentions:
+            return (
+                PipelineStageResult(
+                    name="bc",
+                    status="skipped",
+                    duration_secs=time.perf_counter() - started,
+                    notes="no teacher data present; BC stage skipped",
+                ),
+                None,
+            )
+        stage_dir = self._stage_dir(run_dir, "bc")
+        bc_config = BCTrainerConfig(seed=derive_seed(base_seed, "bc"))
+        trainer = BCTrainer(config=bc_config)
+        num_actions = int(collected_data.flattened_action_ids().max()) + 1
+        dataset = trainer.build_dataset(
+            collected_data.step_observations(),
+            [
+                episode.astype(np.int64, copy=False)
+                for episode in collected_data.action_ids
+            ],
+            top_k_probs=collected_data.teacher_top_k_probs or None,
+            value_hats=collected_data.teacher_value_hats or None,
+            num_actions=num_actions,
+        )
+        if dataset.num_samples == 0:
+            return (
+                PipelineStageResult(
+                    name="bc",
+                    status="skipped",
+                    duration_secs=time.perf_counter() - started,
+                    notes="no BC samples after flattening",
+                ),
+                None,
+            )
+        result = trainer.train(dataset)
+        weights_path = stage_dir / "bc_weights.npz"
+        trainer.export_weights(weights_path)
+        duration = time.perf_counter() - started
+        return (
+            PipelineStageResult(
+                name="bc",
+                status="completed",
+                duration_secs=duration,
+                metrics={
+                    "num_samples": dataset.num_samples,
+                    "final_loss": result.final_loss,
+                    "final_top1_accuracy": result.final_top1_accuracy,
+                    "epochs_run": result.epochs_run,
+                    "seed": bc_config.seed,
+                },
+                outputs={"weights": str(weights_path)},
+            ),
+            weights_path,
+        )
+
     def _run_bdi_stage(
         self,
         collected_data: CollectedTrainingData,
@@ -375,6 +462,7 @@ class MangoMASDroneTrainingPipeline:
             collected_data.step_observations(),
             collected_data.step_action_names(),
             collected_data.step_rewards(),
+            teacher_intentions=collected_data.teacher_intentions or None,
         )
         result = trainer.train(dataset)
         weights_path = stage_dir / "bdi_weights.npz"
@@ -421,11 +509,16 @@ class MangoMASDroneTrainingPipeline:
             seed=derive_seed(base_seed, "constitutional"),
         )
         trainer = ConstitutionalPreTrainer(config=trainer_config)
+        teacher_critiques_flat = _flatten_teacher_critiques(
+            collected_data.teacher_constraint_critiques,
+            collected_data.per_episode_step_counts(),
+        )
         dataset = trainer.build_dataset(
             collected_data.flattened_step_observations(),
             collected_data.flattened_action_ids(),
             collected_data.flattened_rewards(),
             collected_data.flattened_raw_observations(),
+            teacher_constraint_critiques=teacher_critiques_flat,
         )
         result = trainer.train(dataset)
         weights_path = stage_dir / "constitutional_weights.npz"
