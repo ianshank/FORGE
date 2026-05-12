@@ -395,6 +395,10 @@ class LMStudioProvider(OpenAIProvider):
 
     def __init__(
         self,
+        # LM Studio's local server doesn't authenticate, but the openai SDK
+        # rejects an empty/None api_key at client construction time, so a
+        # placeholder string is required. Override only if you've put LM
+        # Studio behind a real auth proxy.
         api_key: str | None = "lm-studio",
         base_url: str | None = DEFAULT_LMSTUDIO_BASE_URL,
         *,

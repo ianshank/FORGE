@@ -166,7 +166,18 @@ class BCTrainer:
         If ``actor_critic`` is supplied it is interpreted as an
         ``ActorCriticNetwork`` and trained via the torch path. Otherwise
         the numpy path trains a linear softmax classifier.
+
+        Empty datasets are a no-op: the method logs a warning and returns
+        an empty :class:`BCTrainResult` (``epochs_run=0``) instead of
+        running zero-sample epochs that would silently report
+        ``loss=0.0, accuracy=0.0`` and look like a successful run.
         """
+        if dataset.num_samples == 0:
+            logger.warning(
+                "BCTrainer.train called with empty dataset; skipping training "
+                "(epochs_run=0). Check upstream collection produced teacher actions."
+            )
+            return BCTrainResult(epochs_run=0)
         if actor_critic is not None:
             return self._train_torch(dataset, actor_critic)
         return self._train_numpy(dataset)

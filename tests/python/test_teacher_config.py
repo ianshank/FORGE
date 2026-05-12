@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
 from forge.mangomas.config import (
     DEFAULT_TEACHER_PROVIDER,
     DEFAULT_TEACHER_SHARD_SIZE,
@@ -110,6 +111,33 @@ def test_apply_env_overrides_invalid_int_is_logged_and_skipped() -> None:
         assert cfg.n == 1
     finally:
         os.environ.pop("FORGE_SECTION_N", None)
+
+
+def test_apply_env_overrides_skips_unsupported_field_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Complex annotations (list/dict) used to silently take the raw string.
+
+    Now they're skipped with a WARNING — assigning a string to a list field
+    would silently corrupt downstream consumers, so the helper refuses.
+    """
+    import logging
+    import os
+    from dataclasses import field
+
+    @dataclass
+    class _Cfg:
+        items: list = field(default_factory=list)
+
+    cfg = _Cfg()
+    os.environ["FORGE_SECTION_ITEMS"] = "[a, b]"
+    caplog.set_level(logging.WARNING, logger="forge.utils.config_env")
+    try:
+        apply_env_overrides(cfg, "SECTION")
+    finally:
+        os.environ.pop("FORGE_SECTION_ITEMS", None)
+    assert cfg.items == []  # untouched
+    assert any("unsupported field type" in r.message for r in caplog.records)
 
 
 def test_apply_env_overrides_bool_parsing() -> None:

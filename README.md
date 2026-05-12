@@ -118,9 +118,13 @@ python scripts/train.py \
     --mangomas-config configs/cognitive/qwen14b_teacher.toml \
     --teacher-concurrency 4 \
     --teacher-output-root artifacts/teacher_traces \
-    --collection-report-path artifacts/teacher_traces/report.json \
-    --bc-train-after-collect
+    --collection-report-path artifacts/teacher_traces/report.json
 ```
+
+The BC stage runs automatically inside `MangoMASPipeline` whenever
+`CollectedTrainingData` carries teacher labels — no extra flag needed. Use
+`--agent mangomas` (instead of `mangomas-collect`) to chain collection +
+the BC / BDI / Constitutional pipeline in one invocation.
 
 Per-episode JSONL shards are written under
 `<output_root>/<scenario_id>/ep<episode:06d>-<shard:04d>.jsonl[.gz]` in

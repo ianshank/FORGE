@@ -195,12 +195,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Override teacher.output_root for JSONL trace shards.",
     )
-    parser.add_argument(
-        "--bc-train-after-collect",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Run the BC pipeline stage after collection (default: pipeline auto-decides).",
-    )
+    # The BC stage runs automatically inside MangoMASPipeline whenever
+    # CollectedTrainingData carries teacher labels (see pipeline._run_bc_stage).
+    # No CLI flag is needed for that decision today; if a future operator
+    # workflow requires forcing BC on/off, add a PipelineExecutionConfig
+    # field and surface it explicitly.
     args = parser.parse_args(argv)
 
     if args.eval_interval < 0:

@@ -96,6 +96,25 @@ def test_build_dataset_empty_returns_empty() -> None:
     assert dataset.num_samples == 0
 
 
+def test_train_on_empty_dataset_warns_and_skips(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Empty datasets are a no-op so we don't silently report 0/0 success."""
+    import logging
+
+    dataset = BCTrainer.build_dataset([], [], num_actions=3)
+    trainer = BCTrainer(BCTrainerConfig(num_epochs=10))
+    caplog.set_level(logging.WARNING, logger="forge.mangomas.bc_trainer")
+    result = trainer.train(dataset)
+    assert result.epochs_run == 0
+    assert result.final_loss == 0.0
+    assert any("empty dataset" in r.message for r in caplog.records)
+    # No weights are produced, so export must surface the missing-weights
+    # error rather than silently writing an empty file.
+    with pytest.raises(RuntimeError, match="no exportable weights"):
+        trainer.export_weights("/tmp/forge-bc-empty-skip.npz")
+
+
 def test_torch_path_skipped_when_torch_missing() -> None:
     """Skip when torch isn't installed; runs and updates weights when present."""
     pytest.importorskip("torch")

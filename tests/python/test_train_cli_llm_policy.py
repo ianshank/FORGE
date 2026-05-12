@@ -22,7 +22,6 @@ def test_cli_accepts_llm_policy_choice() -> None:
     )
     assert args.collection_policy == "llm"
     assert args.teacher_concurrency is None
-    assert args.bc_train_after_collect is None
 
 
 def test_cli_teacher_overrides_threaded(tmp_path: Path) -> None:
@@ -92,38 +91,24 @@ def test_cli_random_policy_unaffected_by_new_flags() -> None:
     assert args.teacher_concurrency is None
 
 
-def test_boolean_flag_absent_yields_none() -> None:
-    args = train._parse_args(
-        ["--agent", "mangomas-collect", "--collection-policy", "random", "--episodes", "1"]
-    )
-    assert args.bc_train_after_collect is None
+def test_cli_omits_bc_train_flag() -> None:
+    """Regression: --bc-train-after-collect was removed (was inert).
 
+    Forces a parser error because the flag no longer exists. The BC stage
+    decision lives in MangoMASPipeline._run_bc_stage and keys off the
+    presence of teacher data in CollectedTrainingData.
+    """
+    import pytest
 
-def test_boolean_flag_set_true_yields_true() -> None:
-    args = train._parse_args(
-        [
-            "--agent",
-            "mangomas-collect",
-            "--collection-policy",
-            "llm",
-            "--episodes",
-            "1",
-            "--bc-train-after-collect",
-        ]
-    )
-    assert args.bc_train_after_collect is True
-
-
-def test_boolean_flag_set_false_yields_false() -> None:
-    args = train._parse_args(
-        [
-            "--agent",
-            "mangomas-collect",
-            "--collection-policy",
-            "llm",
-            "--episodes",
-            "1",
-            "--no-bc-train-after-collect",
-        ]
-    )
-    assert args.bc_train_after_collect is False
+    with pytest.raises(SystemExit):
+        train._parse_args(
+            [
+                "--agent",
+                "mangomas-collect",
+                "--collection-policy",
+                "llm",
+                "--episodes",
+                "1",
+                "--bc-train-after-collect",
+            ]
+        )

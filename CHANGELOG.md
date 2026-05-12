@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preset `configs/cognitive/qwen14b_teacher.toml`. Override any field via
   `FORGE_TEACHER_<UPPER_SNAKE>` env vars or new CLI flags
   (`--teacher-config`, `--teacher-model`, `--teacher-base-url`,
-  `--teacher-concurrency`, `--teacher-output-root`, `--bc-train-after-collect`).
+  `--teacher-concurrency`, `--teacher-output-root`).
 - **`TeacherDecisionTrace` + `TeacherTraceWriter` / `TeacherTraceReader`**
   (`python/forge/mangomas/teacher_trace.py`): JSONL shards under
   `<output_root>/<scenario_id>/ep<episode:06d>-<shard:04d>.jsonl[.gz]`.

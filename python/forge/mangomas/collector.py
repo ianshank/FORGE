@@ -156,6 +156,7 @@ class _EpisodeRollout:
     teacher_completion_tokens: list[int] | None = None
     teacher_latency_ms: list[float] | None = None
     teacher_providers: list[str] | None = None
+    action_space_size: int = 0
 
 
 def _copy_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -806,6 +807,7 @@ def _collect_episode_rollout(
         teacher_completion_tokens=teacher_completion_tokens if capture_teacher else None,
         teacher_latency_ms=teacher_latency_ms if capture_teacher else None,
         teacher_providers=teacher_providers if capture_teacher else None,
+        action_space_size=int(env.action_space.n),
     )
 
 
@@ -1142,7 +1144,18 @@ async def _acollect_episode_rollout(
         if done:
             break
 
-    _ = scenario_id, episode_index, teacher_config  # reserved for future async-side trace emission
+    # scenario_id / episode_index / teacher_config are accepted for symmetry
+    # with the sync rollout signature; trace shards for the async path are
+    # written by _flush_rollout_to_writer after asyncio.gather, in
+    # episode_index order, so per-step trace emission does not happen here.
+    capture_teacher = teacher_config is not None
+    logger.debug(
+        "_acollect_episode_rollout scenario=%s episode=%d steps=%d capture_teacher=%s",
+        scenario_id,
+        episode_index,
+        len(episode_action_ids),
+        capture_teacher,
+    )
     return _EpisodeRollout(
         observations=np.asarray(episode_observations, dtype=np.float32),
         action_names=episode_action_names,
@@ -1152,16 +1165,17 @@ async def _acollect_episode_rollout(
         raw_observations=episode_raw_observations,
         total_reward=total_reward,
         success=_determine_episode_success(total_reward, final_info),
-        teacher_intentions=teacher_intentions,
-        teacher_rationales=teacher_rationales,
-        teacher_subgoals=teacher_subgoals,
-        teacher_value_hats=teacher_value_hats,
-        teacher_constraint_critiques=teacher_constraint_critiques,
-        teacher_top_k_probs=teacher_top_k_probs,
-        teacher_prompt_tokens=teacher_prompt_tokens,
-        teacher_completion_tokens=teacher_completion_tokens,
-        teacher_latency_ms=teacher_latency_ms,
-        teacher_providers=teacher_providers,
+        teacher_intentions=teacher_intentions if capture_teacher else None,
+        teacher_rationales=teacher_rationales if capture_teacher else None,
+        teacher_subgoals=teacher_subgoals if capture_teacher else None,
+        teacher_value_hats=teacher_value_hats if capture_teacher else None,
+        teacher_constraint_critiques=teacher_constraint_critiques if capture_teacher else None,
+        teacher_top_k_probs=teacher_top_k_probs if capture_teacher else None,
+        teacher_prompt_tokens=teacher_prompt_tokens if capture_teacher else None,
+        teacher_completion_tokens=teacher_completion_tokens if capture_teacher else None,
+        teacher_latency_ms=teacher_latency_ms if capture_teacher else None,
+        teacher_providers=teacher_providers if capture_teacher else None,
+        action_space_size=int(env.action_space.n),
     )
 
 
@@ -1301,7 +1315,15 @@ def _flush_rollout_to_writer(
     if rollout.teacher_intentions is None:
         return
     n = len(rollout.action_ids)
-    legal = list(range(int(rollout.action_ids.max()) + 1)) if n > 0 else []
+    # Use the env-reported action space size when available so trace
+    # legal_actions match what the agent could actually pick. Falling back
+    # to action_ids.max()+1 underestimates whenever an episode never
+    # exercises every legal action.
+    legal = (
+        list(range(int(rollout.action_space_size)))
+        if rollout.action_space_size > 0
+        else (list(range(int(rollout.action_ids.max()) + 1)) if n > 0 else [])
+    )
     for step_index in range(n):
         intent = rollout.teacher_intentions[step_index]
         writer.log(

@@ -173,6 +173,32 @@ def test_concurrent_collection_runs_episodes_in_parallel(tmp_path: Path) -> None
     assert provider.max_in_flight <= 4
 
 
+def test_async_traces_record_full_action_space_size(tmp_path: Path) -> None:
+    """Regression: async traces must record env.action_space.n as legal_actions.
+
+    Previously the async path computed legal_actions as
+    range(action_ids.max()+1), which underestimates whenever an episode
+    never exercises the highest legal action. _FakeEnv exposes action_space.n=4
+    but the scripted teacher always picks action_id=1, so without the fix
+    legal_actions would have collapsed to [0, 1].
+    """
+    provider = _ConcurrentTeacherProvider()
+    _run_collection(tmp_path, concurrency=4, provider=provider)
+    shards_dir = tmp_path / "traces" / "drone_patrol"
+    files = sorted(shards_dir.glob("*.jsonl"))
+    records = [
+        json.loads(line)
+        for shard in files
+        for line in shard.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert records, "expected at least one trace record"
+    for record in records:
+        assert record["legal_actions"] == [0, 1, 2, 3], (
+            f"expected full action space (n=4), got {record['legal_actions']}"
+        )
+
+
 def test_async_path_writes_shards_in_episode_index_order(tmp_path: Path) -> None:
     provider = _ConcurrentTeacherProvider()
     _run_collection(tmp_path, concurrency=4, provider=provider)
