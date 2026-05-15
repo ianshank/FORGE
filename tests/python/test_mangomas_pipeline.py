@@ -120,7 +120,9 @@ def test_pipeline_runs_all_available_stages(tmp_path: Path) -> None:
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert manifest["platform"] == "drone"
     assert manifest["resolved_seed"] == 123
-    assert len(manifest["stages"]) == 7
+    # BC stage was added in PR #42; it runs (and emits a `skipped` note) even
+    # when no teacher data is present, so the manifest now records 8 stages.
+    assert len(manifest["stages"]) == 8
 
     export_manifest = json.loads(result.export_manifest_path.read_text(encoding="utf-8"))
     assert set(export_manifest["components"]) == {

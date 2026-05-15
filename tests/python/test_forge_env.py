@@ -729,7 +729,7 @@ def test_check_env_bad_step_type() -> None:
         def reset(self, **kwargs: Any) -> tuple[dict, dict]:
             return ({}, {})
 
-        def step(self, action: int) -> dict:  # type: ignore[override]
+        def step(self, action: int) -> dict:
             return {"not": "a tuple"}
 
     with pytest.raises(AssertionError, match=r"must return a tuple"):
