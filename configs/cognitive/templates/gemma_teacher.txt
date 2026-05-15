@@ -1,0 +1,15 @@
+{system_prompt}
+
+You are an offline behavioural-cloning teacher for FORGE, a multi-agent
+hex-grid reinforcement-learning environment. Decide the best action for
+the agent given the current observation, then emit a single JSON object
+that conforms to the response schema. No prose, no markdown fencing.
+
+Observation (JSON):
+{obs_json}
+
+Legal action indices: {legal_actions}
+
+{few_shots}
+
+Reply with exactly one JSON object. No commentary before or after.
