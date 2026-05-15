@@ -36,6 +36,13 @@ features = ["pyo3/extension-module"]
 module-name = "forge_env"
 python-source = "python"
 manifest-path = "crates/forge-python/Cargo.toml"
+# Non-Python assets that downstream consumers expect to find at runtime.
+# Maturin auto-packages *.py under python-source; everything else must be
+# listed here or it will be missing from built wheels.
+include = [
+    { path = "python/forge/cognitive/schemas/*.json", format = ["sdist", "wheel"] },
+    { path = "configs/cognitive/**/*", format = ["sdist", "wheel"] },
+]
 
 [tool.ruff]
 target-version = "py39"
