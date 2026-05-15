@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+
 from forge.cognitive.providers import (
     CognitiveProvider,
     CompletionConfig,
@@ -183,7 +184,7 @@ class TestOpenAIProviderTokenCapture:
         fake_client.chat.completions.create.return_value = _fake_chat_response(
             "hi", 11, 7
         )
-        provider._client = fake_client  # noqa: SLF001 — testing internal
+        provider._client = fake_client
         resp = provider.complete("hello", CompletionConfig(model="m"))
         assert resp.text == "hi"
         assert resp.input_tokens == 11
@@ -196,7 +197,7 @@ class TestOpenAIProviderTokenCapture:
         fake_client.chat.completions.create.return_value = _fake_chat_response(
             "x", 1, 1
         )
-        provider._client = fake_client  # noqa: SLF001
+        provider._client = fake_client
         cfg = CompletionConfig(
             model="m",
             response_format={"type": "json_object"},
@@ -217,7 +218,7 @@ class TestOpenAIProviderTokenCapture:
         fake_client.chat.completions.create.return_value = _fake_chat_response(
             "x", 1, 1
         )
-        provider._client = fake_client  # noqa: SLF001
+        provider._client = fake_client
         provider.complete("hi", CompletionConfig(model="m"))
         call_kwargs = fake_client.chat.completions.create.call_args.kwargs
         assert "response_format" not in call_kwargs
@@ -232,13 +233,13 @@ class TestLMStudioProviderSync:
     def test_defaults(self) -> None:
         provider = LMStudioProvider()
         assert provider.name() == "lmstudio"
-        assert provider._base_url == "http://localhost:1234/v1"  # noqa: SLF001
-        assert provider._timeout_secs == 120.0  # noqa: SLF001
-        assert provider._max_retries == 2  # noqa: SLF001
+        assert provider._base_url == "http://localhost:1234/v1"
+        assert provider._timeout_secs == 120.0
+        assert provider._max_retries == 2
 
     def test_model_kwarg_sets_default_model(self, lmstudio_model_id: str) -> None:
         provider = LMStudioProvider(model=lmstudio_model_id)
-        assert provider._default_model == lmstudio_model_id  # noqa: SLF001
+        assert provider._default_model == lmstudio_model_id
 
     def test_complete_uses_lmstudio_provider_name_in_logs(self, caplog: pytest.LogCaptureFixture) -> None:
         provider = LMStudioProvider()
@@ -246,7 +247,7 @@ class TestLMStudioProviderSync:
         fake_client.chat.completions.create.return_value = _fake_chat_response(
             "ok", 4, 5
         )
-        provider._client = fake_client  # noqa: SLF001
+        provider._client = fake_client
         import logging
         caplog.set_level(logging.INFO, logger="forge.cognitive.providers")
         provider.complete("hi", CompletionConfig(model="qwen"))
@@ -259,7 +260,7 @@ class TestLMStudioProviderSync:
             RuntimeError("boom"),
             _fake_chat_response("ok", 1, 1),
         ]
-        provider._client = fake_client  # noqa: SLF001
+        provider._client = fake_client
         resp = provider.complete("hi", CompletionConfig(model="m"))
         assert resp.text == "ok"
         assert fake_client.chat.completions.create.call_count == 2
@@ -268,7 +269,7 @@ class TestLMStudioProviderSync:
         provider = LMStudioProvider(max_retries=1, retry_backoff_secs=0.0)
         fake_client = MagicMock()
         fake_client.chat.completions.create.side_effect = RuntimeError("boom")
-        provider._client = fake_client  # noqa: SLF001
+        provider._client = fake_client
         with pytest.raises(RuntimeError, match="boom"):
             provider.complete("hi", CompletionConfig(model="m"))
         assert fake_client.chat.completions.create.call_count == 2
@@ -282,8 +283,8 @@ class TestLMStudioProviderSync:
             max_retries=0,
         )
         assert isinstance(provider, LMStudioProvider)
-        assert provider._base_url == "http://example:9/v1"  # noqa: SLF001
-        assert provider._default_model == "qwen"  # noqa: SLF001
+        assert provider._base_url == "http://example:9/v1"
+        assert provider._default_model == "qwen"
 
     def test_default_api_key_is_module_constant(self) -> None:
         from forge.cognitive import providers as providers_mod
@@ -291,11 +292,11 @@ class TestLMStudioProviderSync:
         assert hasattr(providers_mod, "DEFAULT_LMSTUDIO_API_KEY")
         assert providers_mod.DEFAULT_LMSTUDIO_API_KEY == "lm-studio"
         provider = providers_mod.LMStudioProvider()
-        assert provider._api_key == providers_mod.DEFAULT_LMSTUDIO_API_KEY  # noqa: SLF001
+        assert provider._api_key == providers_mod.DEFAULT_LMSTUDIO_API_KEY
 
     def test_explicit_none_api_key_falls_back_to_default(self) -> None:
         from forge.cognitive import providers as providers_mod
 
         provider = providers_mod.LMStudioProvider(api_key=None)
         # Explicit None must collapse to the module constant, not stay None.
-        assert provider._api_key == providers_mod.DEFAULT_LMSTUDIO_API_KEY  # noqa: SLF001
+        assert provider._api_key == providers_mod.DEFAULT_LMSTUDIO_API_KEY

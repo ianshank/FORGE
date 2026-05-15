@@ -78,10 +78,14 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["forge_env"]
+known-first-party = ["forge", "forge_env"]
+
+[tool.ruff.lint.per-file-ignores]
+"python/forge/mangomas/collector.py" = ["PLR0915"]
 
 [tool.mypy]
 python_version = "3.9"
+mypy_path = "python"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -111,6 +115,8 @@ module = [
     "pettingzoo.*",
     "pytest",
     "pytest.*",
+    "jsonschema",
+    "jsonschema.*",
     "stable_baselines3",
     "stable_baselines3.*",
     "torch",

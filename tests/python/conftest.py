@@ -7,6 +7,7 @@ share a single source of truth.
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -28,7 +29,7 @@ def lmstudio_model_id(request: pytest.FixtureRequest) -> str:
     Provider behaviour MUST be identical across these — any test that
     diverges signals a model-specific code path that should not exist.
     """
-    return request.param
+    return cast(str, request.param)
 
 # ---------------------------------------------------------------------------
 # Mock observation data matching the native wrapper's expected structure.

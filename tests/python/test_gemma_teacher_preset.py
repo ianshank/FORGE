@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -11,9 +12,9 @@ SCHEMA_PATH = REPO_ROOT / "python" / "forge" / "cognitive" / "schemas" / "gemma_
 QWEN_SCHEMA_PATH = REPO_ROOT / "python" / "forge" / "cognitive" / "schemas" / "qwen_action.json"
 
 
-def _inner_schema(envelope: dict) -> dict:
+def _inner_schema(envelope: dict[str, Any]) -> dict[str, Any]:
     """Both schema files wrap the action schema in OpenAI's json_schema envelope."""
-    return envelope["json_schema"]["schema"]
+    return cast("dict[str, Any]", envelope["json_schema"]["schema"])
 
 
 def test_gemma_schema_file_exists() -> None:
@@ -77,14 +78,12 @@ def test_gemma_template_renders_with_observation_and_legal_actions() -> None:
     assert "google/gemma-4-e4b" not in rendered_a
 
 
-import jsonschema  # noqa: E402
-
 FEW_SHOTS_PATH = REPO_ROOT / "configs" / "cognitive" / "few_shots" / "gemma_teacher.jsonl"
 
 
-def _load_action_schema() -> dict:
+def _load_action_schema() -> dict[str, Any]:
     with SCHEMA_PATH.open(encoding="utf-8") as fh:
-        return json.load(fh)["json_schema"]["schema"]
+        return cast("dict[str, Any]", json.load(fh)["json_schema"]["schema"])
 
 
 def test_gemma_few_shots_file_exists() -> None:
@@ -104,17 +103,15 @@ def test_gemma_few_shots_use_observation_response_envelope() -> None:
 
 
 def test_gemma_few_shot_responses_validate_against_schema() -> None:
+    jsonschema = pytest.importorskip("jsonschema")
     schema = _load_action_schema()
     rows = [
         json.loads(ln)
         for ln in FEW_SHOTS_PATH.read_text(encoding="utf-8").splitlines()
         if ln.strip()
     ]
-    for idx, row in enumerate(rows):
-        try:
-            jsonschema.validate(instance=row["response"], schema=schema)
-        except jsonschema.ValidationError as exc:
-            pytest.fail(f"few-shot row {idx} response violates schema: {exc.message}")
+    for row in rows:
+        jsonschema.validate(instance=row["response"], schema=schema)
 
 
 def test_gemma_few_shots_loadable_by_prompt_builder() -> None:
@@ -184,13 +181,13 @@ def test_gemma_toml_loads_via_mangomas_bridge() -> None:
 DEFAULT_TOML_PATH = REPO_ROOT / "configs" / "cognitive" / "default.toml"
 
 
-def _read_toml(path: Path) -> dict:
+def _read_toml(path: Path) -> dict[str, Any]:
     try:
         import tomllib as _toml
     except ModuleNotFoundError:  # pragma: no cover - py39/py310
-        import tomli as _toml  # type: ignore[import-not-found]
+        import tomli as _toml
     with path.open("rb") as fh:
-        return _toml.load(fh)
+        return cast("dict[str, Any]", _toml.load(fh))
 
 
 def test_default_cognitive_lmstudio_model_is_gemma() -> None:

@@ -318,7 +318,7 @@ class OpenAIProvider(CognitiveProvider):
                     output_tokens=completion_tokens,
                     latency_ms=latency_ms,
                 )
-            except Exception as exc:  # noqa: BLE001 — provider retries any transient
+            except Exception as exc:
                 last_exc = exc
                 logger.warning(
                     "provider=%s request failed attempt=%d err=%s",
@@ -369,7 +369,7 @@ class OpenAIProvider(CognitiveProvider):
                     output_tokens=completion_tokens,
                     latency_ms=latency_ms,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 last_exc = exc
                 logger.warning(
                     "provider=%s async request failed attempt=%d err=%s",
