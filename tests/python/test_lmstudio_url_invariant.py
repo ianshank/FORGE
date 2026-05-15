@@ -8,20 +8,21 @@ LM Studio docs / partial curl examples), the SDK will hit
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from forge.cognitive import LMStudioProvider
 from forge.mangomas.config import MangoMASBridgeConfig
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from conftest import REPO_ROOT  # noqa: E402 - pytest adds tests/python to sys.path
+
 GEMMA_PRESET = REPO_ROOT / "configs" / "cognitive" / "gemma_e4b_teacher.toml"
 QWEN_PRESET = REPO_ROOT / "configs" / "cognitive" / "qwen14b_teacher.toml"
 
 
 def test_default_base_url_ends_in_v1() -> None:
     provider = LMStudioProvider()
-    assert provider._base_url.endswith("/v1"), provider._base_url
-    assert "/api/" not in provider._base_url, provider._base_url
+    base_url = provider._base_url
+    assert base_url is not None, "LMStudioProvider must set _base_url to a non-None default"
+    assert base_url.endswith("/v1"), base_url
+    assert "/api/" not in base_url, base_url
 
 
 def test_gemma_preset_base_url_ends_in_v1() -> None:

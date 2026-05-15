@@ -17,18 +17,25 @@ classifiers = [
 #   pip install -e ".[cleanrl]"   -- CleanRL CLI (tyro)
 #   pip install -e ".[wandb]"     -- Weights & Biases
 #   pip install -e ".[mlflow]"    -- MLflow
+#   pip install -e ".[teacher]"   -- LM Studio offline teacher (openai + jsonschema)
 #   pip install -e ".[all]"       -- everything
 sb3        = ["stable-baselines3>=2.0", "torch>=2.0"]
 cleanrl    = ["torch>=2.0"]
 wandb      = ["wandb>=0.16"]
 mlflow     = ["mlflow>=2.0"]
 mousedroid = ["huggingface-hub>=0.20", "torch>=2.0"]
+# LM Studio offline-teacher pipeline (cognitive providers + structured BC):
+#   - openai SDK    -> sync/async OpenAI-compatible HTTP client
+#   - jsonschema    -> validates few-shot exemplars against the action schema
+teacher    = ["openai>=1.0,<2.0", "jsonschema>=4.0,<5.0"]
 all        = [
     "stable-baselines3>=2.0",
     "torch>=2.0",
     "wandb>=0.16",
     "mlflow>=2.0",
     "huggingface-hub>=0.20",
+    "openai>=1.0,<2.0",
+    "jsonschema>=4.0,<5.0",
 ]
 
 [tool.maturin]
@@ -117,6 +124,10 @@ module = [
     "pytest.*",
     "jsonschema",
     "jsonschema.*",
+    # `scripts/run_lmstudio_demo.py` is imported dynamically by tests after
+    # inserting `scripts/` into sys.path at runtime. Mypy doesn't follow
+    # that mutation, so suppress the missing-stub error there.
+    "run_lmstudio_demo",
     "stable_baselines3",
     "stable_baselines3.*",
     "torch",

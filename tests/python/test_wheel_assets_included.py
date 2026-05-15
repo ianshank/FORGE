@@ -6,17 +6,11 @@ explicit include entry or they will not ship in built wheels.
 """
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
+from conftest import REPO_ROOT, read_toml  # noqa: E402 - pytest adds tests/python to sys.path
 
-def _read_pyproject() -> dict[str, Any]:
-    try:
-        import tomllib as _toml
-    except ModuleNotFoundError:  # pragma: no cover - py39/py310
-        import tomli as _toml
-    with (Path(__file__).resolve().parents[2] / "pyproject.toml").open("rb") as fh:
-        return cast("dict[str, Any]", _toml.load(fh))
+PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 
 
 def _include_paths(maturin_table: dict[str, Any]) -> list[str]:
@@ -33,7 +27,7 @@ def _include_paths(maturin_table: dict[str, Any]) -> list[str]:
 
 
 def test_maturin_includes_cognitive_schemas() -> None:
-    data = _read_pyproject()
+    data = read_toml(PYPROJECT_PATH)
     paths = _include_paths(data["tool"]["maturin"])
     assert any("python/forge/cognitive/schemas" in p for p in paths), (
         "[tool.maturin] include must cover python/forge/cognitive/schemas/*.json "
@@ -42,7 +36,7 @@ def test_maturin_includes_cognitive_schemas() -> None:
 
 
 def test_maturin_includes_cognitive_configs() -> None:
-    data = _read_pyproject()
+    data = read_toml(PYPROJECT_PATH)
     paths = _include_paths(data["tool"]["maturin"])
     assert any("configs/cognitive" in p for p in paths), (
         "[tool.maturin] include must cover configs/cognitive/** so wheels ship "

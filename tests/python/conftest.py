@@ -3,11 +3,16 @@
 Centralises mock observation data and native-env factory so that
 ``test_gymnasium_env``, ``test_pettingzoo_env`` and ``test_jax_env``
 share a single source of truth.
+
+Also exposes shared filesystem helpers (``REPO_ROOT``, ``read_toml``)
+used by config / preset / asset tests so each test file does not roll
+its own ``Path(__file__).resolve().parents[N]`` and TOML loader.
 """
 
 from __future__ import annotations
 
-from typing import cast
+from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,9 +23,43 @@ from forge_env.gymnasium_env import (
     _DEFAULT_VIEW_SIDE,
 )
 
+# ---------------------------------------------------------------------------
+# Shared filesystem helpers.
+# ---------------------------------------------------------------------------
+
+#: Absolute path to the repository root, regardless of which ``tests/python/``
+#: file imports it. Computed once at module import so tests stay fast.
+REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+
+
+def read_toml(path: Path) -> dict[str, Any]:
+    """Load a TOML file as a dict, falling back to ``tomli`` on py3.9/3.10.
+
+    Used by every preset / pyproject / config test instead of each file
+    importing tomllib + tomli individually.
+    """
+    try:
+        import tomllib as _toml
+    except ModuleNotFoundError:  # pragma: no cover - py39/py310
+        import tomli as _toml
+    with path.open("rb") as fh:
+        return cast("dict[str, Any]", _toml.load(fh))
+
+
+# ---------------------------------------------------------------------------
+# LM Studio shared parametrisation.
+# ---------------------------------------------------------------------------
+
+#: Canonical model ids exercised by every LM-Studio-touching test. Adding a
+#: third id here automatically parametrises every test using the fixture.
+LMSTUDIO_SUPPORTED_MODEL_IDS: tuple[str, ...] = (
+    "qwen2.5-14b-instruct",
+    "google/gemma-4-e4b",
+)
+
 
 @pytest.fixture(
-    params=("qwen2.5-14b-instruct", "google/gemma-4-e4b"),
+    params=LMSTUDIO_SUPPORTED_MODEL_IDS,
     ids=("qwen", "gemma"),
 )
 def lmstudio_model_id(request: pytest.FixtureRequest) -> str:

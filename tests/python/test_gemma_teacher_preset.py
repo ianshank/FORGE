@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from conftest import REPO_ROOT, read_toml  # noqa: E402 - pytest adds tests/python to sys.path
+
 SCHEMA_PATH = REPO_ROOT / "python" / "forge" / "cognitive" / "schemas" / "gemma_action.json"
 QWEN_SCHEMA_PATH = REPO_ROOT / "python" / "forge" / "cognitive" / "schemas" / "qwen_action.json"
 
@@ -181,22 +181,13 @@ def test_gemma_toml_loads_via_mangomas_bridge() -> None:
 DEFAULT_TOML_PATH = REPO_ROOT / "configs" / "cognitive" / "default.toml"
 
 
-def _read_toml(path: Path) -> dict[str, Any]:
-    try:
-        import tomllib as _toml
-    except ModuleNotFoundError:  # pragma: no cover - py39/py310
-        import tomli as _toml
-    with path.open("rb") as fh:
-        return cast("dict[str, Any]", _toml.load(fh))
-
-
 def test_default_cognitive_lmstudio_model_is_gemma() -> None:
-    data = _read_toml(DEFAULT_TOML_PATH)
+    data = read_toml(DEFAULT_TOML_PATH)
     assert data["cognitive"]["lmstudio"]["model"] == "google/gemma-4-e4b"
 
 
 def test_default_cognitive_structured_paths_point_at_gemma_assets() -> None:
-    structured = _read_toml(DEFAULT_TOML_PATH)["cognitive"]["structured"]
+    structured = read_toml(DEFAULT_TOML_PATH)["cognitive"]["structured"]
     assert structured["prompt_template_path"].endswith("gemma_teacher.txt")
     assert structured["response_schema_path"].endswith("gemma_action.json")
     assert structured["few_shot_examples_path"].endswith("gemma_teacher.jsonl")

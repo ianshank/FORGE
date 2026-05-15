@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import logging
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from conftest import REPO_ROOT
+
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 GEMMA_PRESET = REPO_ROOT / "configs" / "cognitive" / "gemma_e4b_teacher.toml"
 
