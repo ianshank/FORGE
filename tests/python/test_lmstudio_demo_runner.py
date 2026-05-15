@@ -35,20 +35,22 @@ def fake_completion_response() -> MagicMock:
 def test_check_pings_provider_and_logs_latency(
     fake_completion_response: MagicMock, caplog: pytest.LogCaptureFixture
 ) -> None:
-    import run_lmstudio_demo  # noqa: PLC0415
+    import run_lmstudio_demo
 
     fake_provider = MagicMock()
     fake_provider.complete.return_value = fake_completion_response
-    with patch.object(run_lmstudio_demo, "_build_provider", return_value=fake_provider):
-        with caplog.at_level(logging.INFO, logger="run_lmstudio_demo"):
-            exit_code = run_lmstudio_demo.main(["--check", "--config", str(GEMMA_PRESET)])
+    with (
+        patch.object(run_lmstudio_demo, "_build_provider", return_value=fake_provider),
+        caplog.at_level(logging.INFO, logger="run_lmstudio_demo"),
+    ):
+        exit_code = run_lmstudio_demo.main(["--check", "--config", str(GEMMA_PRESET)])
     assert exit_code == 0
     assert fake_provider.complete.call_count == 1
     assert any("latency_ms=42.0" in rec.message for rec in caplog.records)
 
 
 def test_check_returns_nonzero_on_provider_error() -> None:
-    import run_lmstudio_demo  # noqa: PLC0415
+    import run_lmstudio_demo
 
     fake_provider = MagicMock()
     fake_provider.complete.side_effect = RuntimeError("connection refused")
@@ -59,7 +61,7 @@ def test_check_returns_nonzero_on_provider_error() -> None:
 
 def test_no_action_flag_is_a_parser_error() -> None:
     """Running without --check should be a usage error, not a silent no-op."""
-    import run_lmstudio_demo  # noqa: PLC0415
+    import run_lmstudio_demo
 
     with pytest.raises(SystemExit) as exc_info:
         run_lmstudio_demo.main(["--config", str(GEMMA_PRESET)])
@@ -70,15 +72,17 @@ def test_no_action_flag_is_a_parser_error() -> None:
 def test_log_level_debug_emits_debug_records(
     fake_completion_response: MagicMock, caplog: pytest.LogCaptureFixture
 ) -> None:
-    import run_lmstudio_demo  # noqa: PLC0415
+    import run_lmstudio_demo
 
     fake_provider = MagicMock()
     fake_provider.complete.return_value = fake_completion_response
-    with patch.object(run_lmstudio_demo, "_build_provider", return_value=fake_provider):
-        with caplog.at_level(logging.DEBUG, logger="run_lmstudio_demo"):
-            exit_code = run_lmstudio_demo.main(
-                ["--check", "--config", str(GEMMA_PRESET), "--log-level", "DEBUG"]
-            )
+    with (
+        patch.object(run_lmstudio_demo, "_build_provider", return_value=fake_provider),
+        caplog.at_level(logging.DEBUG, logger="run_lmstudio_demo"),
+    ):
+        exit_code = run_lmstudio_demo.main(
+            ["--check", "--config", str(GEMMA_PRESET), "--log-level", "DEBUG"]
+        )
     assert exit_code == 0
     debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG]
     assert debug_records, "expected at least one DEBUG record at --log-level DEBUG"

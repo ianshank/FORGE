@@ -20,11 +20,16 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING
 
 from forge.cognitive import CompletionConfig, create_provider
-from forge.cognitive.providers import CognitiveProvider
-from forge.mangomas.config import MangoMASBridgeConfig, TeacherConfig
+from forge.mangomas.config import MangoMASBridgeConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from forge.cognitive.providers import CognitiveProvider
+    from forge.mangomas.config import TeacherConfig
 
 logger = logging.getLogger("run_lmstudio_demo")
 
@@ -70,7 +75,7 @@ def _ping(provider: CognitiveProvider, teacher_cfg: TeacherConfig) -> int:
                 timeout_secs=teacher_cfg.timeout_secs,
             ),
         )
-    except Exception as exc:  # noqa: BLE001 - top-level CLI handler
+    except Exception as exc:
         logger.error("ping failed err=%s", exc)
         return 1
     logger.info(
