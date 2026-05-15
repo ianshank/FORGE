@@ -203,3 +203,25 @@ def test_default_cognitive_structured_paths_point_at_gemma_assets() -> None:
     assert structured["prompt_template_path"].endswith("gemma_teacher.txt")
     assert structured["response_schema_path"].endswith("gemma_action.json")
     assert structured["few_shot_examples_path"].endswith("gemma_teacher.jsonl")
+
+
+SNAPSHOT_PATH = REPO_ROOT / "tests" / "python" / "snapshots" / "gemma_prompt_minimal.txt"
+
+
+def test_gemma_prompt_matches_snapshot() -> None:
+    """Byte-for-byte pin on the rendered prompt for a fixed input.
+
+    Defends against silent corruption of the template's prose or
+    placeholder ordering — a determinism check alone wouldn't catch
+    a template that ignored all inputs.
+    """
+    builder = PromptBuilder(template_path=str(TEMPLATE_PATH), few_shot_examples_path=None)
+    obs = {"position": [0, 0], "health": 1.0, "visible_resources": [], "visible_enemies": []}
+    rendered = builder.render(
+        obs, legal_actions=[0, 1, 2, 3], system_prompt="You are a teacher."
+    )
+    expected = SNAPSHOT_PATH.read_text(encoding="utf-8")
+    assert rendered == expected, (
+        "Rendered prompt drifted from snapshot.\n"
+        f"--- expected ---\n{expected!r}\n--- got ---\n{rendered!r}"
+    )
