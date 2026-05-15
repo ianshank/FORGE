@@ -24,6 +24,10 @@ DEFAULT_LMSTUDIO_MODEL: str = ""
 DEFAULT_LMSTUDIO_TIMEOUT_SECS: float = 120.0
 DEFAULT_LMSTUDIO_MAX_RETRIES: int = 2
 DEFAULT_LMSTUDIO_RETRY_BACKOFF_SECS: float = 1.0
+# LM Studio's local server doesn't authenticate, but the openai SDK rejects
+# an empty/None api_key at client construction time, so a placeholder string
+# is required. Override only if you've put LM Studio behind a real auth proxy.
+DEFAULT_LMSTUDIO_API_KEY: str = "lm-studio"
 DEFAULT_PAYLOAD_PREVIEW_CHARS: int = 256
 
 
@@ -395,11 +399,7 @@ class LMStudioProvider(OpenAIProvider):
 
     def __init__(
         self,
-        # LM Studio's local server doesn't authenticate, but the openai SDK
-        # rejects an empty/None api_key at client construction time, so a
-        # placeholder string is required. Override only if you've put LM
-        # Studio behind a real auth proxy.
-        api_key: str | None = "lm-studio",
+        api_key: str | None = DEFAULT_LMSTUDIO_API_KEY,
         base_url: str | None = DEFAULT_LMSTUDIO_BASE_URL,
         *,
         model: str | None = None,
@@ -408,6 +408,11 @@ class LMStudioProvider(OpenAIProvider):
         retry_backoff_secs: float = DEFAULT_LMSTUDIO_RETRY_BACKOFF_SECS,
         payload_preview_chars: int = DEFAULT_PAYLOAD_PREVIEW_CHARS,
     ) -> None:
+        # Explicit None must collapse to the module constant so callers
+        # passing api_key=None (e.g. when reading an empty env var) still get
+        # a working client.
+        if api_key is None:
+            api_key = DEFAULT_LMSTUDIO_API_KEY
         super().__init__(
             api_key=api_key,
             base_url=base_url,

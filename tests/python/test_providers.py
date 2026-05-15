@@ -284,3 +284,18 @@ class TestLMStudioProviderSync:
         assert isinstance(provider, LMStudioProvider)
         assert provider._base_url == "http://example:9/v1"  # noqa: SLF001
         assert provider._default_model == "qwen"  # noqa: SLF001
+
+    def test_default_api_key_is_module_constant(self) -> None:
+        from forge.cognitive import providers as providers_mod
+
+        assert hasattr(providers_mod, "DEFAULT_LMSTUDIO_API_KEY")
+        assert providers_mod.DEFAULT_LMSTUDIO_API_KEY == "lm-studio"
+        provider = providers_mod.LMStudioProvider()
+        assert provider._api_key == providers_mod.DEFAULT_LMSTUDIO_API_KEY  # noqa: SLF001
+
+    def test_explicit_none_api_key_falls_back_to_default(self) -> None:
+        from forge.cognitive import providers as providers_mod
+
+        provider = providers_mod.LMStudioProvider(api_key=None)
+        # Explicit None must collapse to the module constant, not stay None.
+        assert provider._api_key == providers_mod.DEFAULT_LMSTUDIO_API_KEY  # noqa: SLF001
