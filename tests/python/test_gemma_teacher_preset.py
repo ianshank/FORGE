@@ -127,3 +127,56 @@ def test_gemma_few_shots_loadable_by_prompt_builder() -> None:
     obs = {"position": [0, 0]}
     rendered = builder.render(obs, legal_actions=[0, 1])
     assert "Example 1:" in rendered, "few-shot examples must appear in rendered prompt"
+
+
+from forge.mangomas.config import (  # noqa: E402
+    DEFAULT_TEACHER_MAX_RETRIES,
+    DEFAULT_TEACHER_MAX_TOKENS,
+    DEFAULT_TEACHER_PAYLOAD_PREVIEW_CHARS,
+    DEFAULT_TEACHER_RETRY_BACKOFF_SECS,
+    DEFAULT_TEACHER_SEED,
+    DEFAULT_TEACHER_SHARD_SIZE,
+    DEFAULT_TEACHER_TEMPERATURE,
+    DEFAULT_TEACHER_TIMEOUT_SECS,
+    DEFAULT_TEACHER_TOP_P,
+    DEFAULT_TEACHER_TRACE_SCHEMA_VERSION,
+    MangoMASBridgeConfig,
+)
+
+TOML_PATH = REPO_ROOT / "configs" / "cognitive" / "gemma_e4b_teacher.toml"
+
+
+def test_gemma_toml_loads_via_mangomas_bridge() -> None:
+    bridge = MangoMASBridgeConfig.from_toml(TOML_PATH)
+    cfg = bridge.teacher
+    # Identity:
+    assert cfg.enabled is True
+    assert cfg.provider == "lmstudio"
+    assert cfg.base_url == "http://localhost:1234/v1"
+    assert cfg.model == "google/gemma-4-e4b"
+    # Sampling — every field, against the constants:
+    assert cfg.temperature == DEFAULT_TEACHER_TEMPERATURE
+    assert cfg.top_p == DEFAULT_TEACHER_TOP_P
+    assert cfg.max_tokens == DEFAULT_TEACHER_MAX_TOKENS
+    assert cfg.seed == DEFAULT_TEACHER_SEED
+    # Transport:
+    assert cfg.timeout_secs == DEFAULT_TEACHER_TIMEOUT_SECS
+    assert cfg.max_retries == DEFAULT_TEACHER_MAX_RETRIES
+    assert cfg.retry_backoff_secs == DEFAULT_TEACHER_RETRY_BACKOFF_SECS
+    # Concurrency: explicitly bumped to 4 in the preset, matches Qwen.
+    assert cfg.concurrency == 4
+    # Asset paths — backwards-compat: same filename grammar as the Qwen preset.
+    assert cfg.prompt_template_path.endswith("gemma_teacher.txt")
+    assert cfg.response_schema_path.endswith("gemma_action.json")
+    assert cfg.few_shot_examples_path.endswith("gemma_teacher.jsonl")
+    # Trace + flags:
+    assert cfg.shard_size == DEFAULT_TEACHER_SHARD_SIZE
+    assert cfg.trace_schema_version == DEFAULT_TEACHER_TRACE_SCHEMA_VERSION
+    assert cfg.payload_preview_chars == DEFAULT_TEACHER_PAYLOAD_PREVIEW_CHARS
+    assert cfg.compress_traces is True
+    assert cfg.response_format_enabled is True
+    assert cfg.validate_action is True
+    assert cfg.include_legal_actions is True
+    assert cfg.log_payloads is False
+    assert cfg.system_prompt == ""
+    assert cfg.output_root == "artifacts/teacher_traces"
