@@ -10,6 +10,14 @@ keywords.workspace = true
 categories.workspace = true
 description = "Performance benchmarks for the FORGE simulation platform"
 
+# `cargo bench -p forge-bench -- --save-baseline current` (criterion flag)
+# would otherwise be forwarded to the default libtest harness on src/lib.rs,
+# which rejects `--save-baseline` and aborts the whole bench run. Disabling
+# the libtest bench harness keeps the explicit [[bench]] criterion targets
+# below as the only consumers of those flags.
+[lib]
+bench = false
+
 [features]
 # Enables the `allocation_audit` binary which installs `dhat` as the global
 # allocator. Off by default so normal builds do not link a profiling
