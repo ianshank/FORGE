@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 import pytest
+
 from forge.utils.logging_config import JsonFormatter, setup_logging
 
 logger = logging.getLogger(__name__)

@@ -8,10 +8,9 @@ LM Studio docs / partial curl examples), the SDK will hit
 
 from __future__ import annotations
 
+from conftest import REPO_ROOT
 from forge.cognitive import LMStudioProvider
 from forge.mangomas.config import MangoMASBridgeConfig
-
-from conftest import REPO_ROOT  # noqa: E402 - pytest adds tests/python to sys.path
 
 GEMMA_PRESET = REPO_ROOT / "configs" / "cognitive" / "gemma_e4b_teacher.toml"
 QWEN_PRESET = REPO_ROOT / "configs" / "cognitive" / "qwen14b_teacher.toml"

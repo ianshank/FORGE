@@ -7,6 +7,7 @@ Does NOT test PPOTrainer (covered in test_mappo.py).
 from __future__ import annotations
 
 import numpy as np
+
 from forge.agents.base_agent import AgentConfig
 from forge.agents.random_agent import RandomAgent
 from forge.testing.env_factory import RealisticFakeEnv

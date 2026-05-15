@@ -69,6 +69,26 @@ def test_no_action_flag_is_a_parser_error() -> None:
     assert exc_info.value.code == 2
 
 
+def test_default_config_path_loads_into_real_teacher_config() -> None:
+    """Regression: the default --config must be a MangoMASBridgeConfig-shape
+    TOML with a [teacher] section, NOT the cognitive-provider default.toml.
+
+    Otherwise the demo helper silently loads an empty TeacherConfig and
+    pings the mock provider instead of LM Studio. Caught in Gemini review.
+    """
+    import run_lmstudio_demo
+
+    from forge.mangomas.config import MangoMASBridgeConfig
+
+    cfg = MangoMASBridgeConfig.from_toml(run_lmstudio_demo.DEFAULT_CONFIG_PATH).teacher
+    assert cfg.enabled is True, (
+        f"default config {run_lmstudio_demo.DEFAULT_CONFIG_PATH} must have "
+        "[teacher].enabled=true so --check actually pings LM Studio"
+    )
+    assert cfg.provider == "lmstudio", cfg.provider
+    assert cfg.model, "[teacher].model must be set in the default preset"
+
+
 def test_log_level_debug_emits_debug_records(
     fake_completion_response: MagicMock, caplog: pytest.LogCaptureFixture
 ) -> None:

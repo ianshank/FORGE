@@ -6,6 +6,7 @@ import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from forge.utils.dashboard_client import DashboardClient, _to_camel_case
 
 logger = logging.getLogger(__name__)

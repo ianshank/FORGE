@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+
 from forge.mangomas.adapters import ActionSpaceAdapter, ObservationAdapter
 from forge.mangomas.batch import BatchCollector, EpisodeData
 from forge.mangomas.bdi_trainer import BDIPreTrainer

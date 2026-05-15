@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from conftest import REPO_ROOT, read_toml  # noqa: E402 - pytest adds tests/python to sys.path
+from conftest import REPO_ROOT, read_toml
 
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 

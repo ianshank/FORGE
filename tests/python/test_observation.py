@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+
 from forge.utils.observation import compute_obs_dim, flatten_obs
 
 logger = logging.getLogger(__name__)

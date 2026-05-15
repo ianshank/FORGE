@@ -6,6 +6,7 @@ import logging
 
 import numpy as np
 import pytest
+
 from forge.models.world_model import IdentityWorldModel, WorldModel
 
 logger = logging.getLogger(__name__)

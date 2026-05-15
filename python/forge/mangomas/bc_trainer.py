@@ -122,8 +122,11 @@ class BCTrainer:
             zip(observations, teacher_action_ids)
         ):
             steps = min(int(ep_obs.shape[0]), int(ep_actions.shape[0]))
-            ep_topk = (top_k_probs or [None])[ep_idx] if top_k_probs else None
-            ep_values = (value_hats or [None])[ep_idx] if value_hats else None
+            # `top_k_probs` / `value_hats` are Optional[Sequence[...]]; the
+            # truthiness check on the same expression narrows them to the
+            # non-None branch so the indexing is type-safe.
+            ep_topk = top_k_probs[ep_idx] if top_k_probs else None
+            ep_values = value_hats[ep_idx] if value_hats else None
             for t in range(steps):
                 flat_obs.append(ep_obs[t])
                 flat_actions.append(int(ep_actions[t]))

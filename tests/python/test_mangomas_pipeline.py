@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 import numpy as np
+
 from forge.mangomas.config import (
     MangoMASBridgeConfig,
     PipelineConfig,

@@ -391,7 +391,10 @@ class LMStudioProvider(OpenAIProvider):
     LM Studio exposes an OpenAI-compatible HTTP API. This subclass supplies
     LM-Studio-appropriate defaults (local base URL, longer timeout, light
     retry policy) so callers can construct it with no arguments and get a
-    sensible client for a workstation running Qwen 14B locally.
+    sensible client for a workstation running any chat-tuned model
+    (Gemma 4 e4b by default; Qwen 2.5 14B Instruct and other OpenAI-
+    compatible models work identically — the provider treats the model id
+    as an opaque string).
     """
 
     _provider_name = "lmstudio"

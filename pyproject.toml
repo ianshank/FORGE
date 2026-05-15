@@ -89,6 +89,11 @@ known-first-party = ["forge", "forge_env"]
 
 [tool.ruff.lint.per-file-ignores]
 "python/forge/mangomas/collector.py" = ["PLR0915"]
+# `scripts/calibrate_agri.py` calls `to_fixed(<float literal>)` in dataclass
+# defaults. `to_fixed` is a pure function returning `int`, so the default is
+# immutable; RUF009 fires only because it conservatively flags any function
+# call. Suppressed file-wide to keep the calibration table readable.
+"scripts/calibrate_agri.py" = ["RUF009"]
 
 [tool.mypy]
 python_version = "3.9"
@@ -140,6 +145,8 @@ module = [
     "mlflow.*",
     "huggingface_hub",
     "huggingface_hub.*",
+    "huggingface_hub.cli",
+    "huggingface_hub.cli.*",
     "minari",
     "minari.*",
     "onnxruntime",
@@ -162,6 +169,14 @@ module = [
     "tomli_w.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# numpy operations (np.array, np.concatenate, np.mean) are typed `Any` in the
+# stubs, so functions returning derived ndarrays trip `warn_return_any`.
+# Suppress just `no-any-return` on the adapter module rather than weakening
+# the workspace-wide setting.
+module = "forge.mangomas.adapters"
+disable_error_code = ["no-any-return"]
 # Prevent mypy from descending into third-party source files (e.g. torch uses
 # Python 3.10+ pattern matching which is incompatible with our py3.9 target).
 follow_imports = "skip"

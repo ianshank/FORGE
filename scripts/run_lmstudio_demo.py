@@ -33,7 +33,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("run_lmstudio_demo")
 
-DEFAULT_CONFIG_PATH = Path("configs/cognitive/default.toml")
+#: Demo helper default. Points at the gemma preset because that is the
+#: ``MangoMASBridgeConfig``-shape TOML this script expects (``[teacher]``
+#: section). ``configs/cognitive/default.toml`` uses a different
+#: ``[cognitive]`` schema consumed by the cognitive provider factory, not
+#: by ``MangoMASBridgeConfig.from_toml`` — pointing at it would silently
+#: load an empty TeacherConfig and ping the mock provider. Override with
+#: ``--config`` to use any other ``[teacher]``-shaped preset (e.g. qwen14b).
+DEFAULT_CONFIG_PATH = Path("configs/cognitive/gemma_e4b_teacher.toml")
 # Single source for the ping-call max_tokens — kept tiny so the helper is fast.
 PING_MAX_TOKENS: int = 64
 PING_PROMPT: str = 'Reply with the JSON object {"ok": true}. No prose.'
@@ -47,7 +54,7 @@ def _build_provider(teacher_cfg: TeacherConfig) -> CognitiveProvider:
         teacher_cfg.base_url,
         teacher_cfg.model,
     )
-    return create_provider(
+    provider: CognitiveProvider = create_provider(
         teacher_cfg.provider,
         base_url=teacher_cfg.base_url,
         model=teacher_cfg.model,
@@ -55,6 +62,7 @@ def _build_provider(teacher_cfg: TeacherConfig) -> CognitiveProvider:
         max_retries=teacher_cfg.max_retries,
         retry_backoff_secs=teacher_cfg.retry_backoff_secs,
     )
+    return provider
 
 
 def _ping(provider: CognitiveProvider, teacher_cfg: TeacherConfig) -> int:
@@ -96,7 +104,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--config",
         type=Path,
         default=DEFAULT_CONFIG_PATH,
-        help="TOML config (defaults to configs/cognitive/default.toml).",
+        help=(
+            f"MangoMASBridgeConfig TOML preset (defaults to {DEFAULT_CONFIG_PATH}). "
+            "Must contain a [teacher] section."
+        ),
     )
     parser.add_argument(
         "--check", action="store_true", help="Ping the endpoint and print latency."

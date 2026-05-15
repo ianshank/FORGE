@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+
 from forge.mangomas.bdi_trainer import (
     DEFAULT_ACTION_INTENTION_MAP,
     BDIDataset,

@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from conftest import REPO_ROOT, read_toml  # noqa: E402 - pytest adds tests/python to sys.path
+from conftest import REPO_ROOT, read_toml
 
 SCHEMA_PATH = REPO_ROOT / "python" / "forge" / "cognitive" / "schemas" / "gemma_action.json"
 QWEN_SCHEMA_PATH = REPO_ROOT / "python" / "forge" / "cognitive" / "schemas" / "qwen_action.json"

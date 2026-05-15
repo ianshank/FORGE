@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+
 from forge.cognitive.providers import (
     CognitiveProvider,
     CompletionConfig,
@@ -273,7 +274,7 @@ def test_llm_policy_without_teacher_config_raises(tmp_path: Path) -> None:
     scenario_path = tmp_path / "drone_patrol.toml"
     _write_scenario(scenario_path)
 
-    bridge = MangoMASBridgeConfig()
+    MangoMASBridgeConfig()
     # Default teacher.enabled is False but the dataclass still exists, so the
     # collector accepts it. Force-clear concurrency to take the sync path and
     # set the provider model so the factory tries to spin up a real provider —

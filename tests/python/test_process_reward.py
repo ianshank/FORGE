@@ -6,6 +6,7 @@ import logging
 
 import numpy as np
 import pytest
+
 from forge.models.process_reward import ConstantRewardModel, ProcessRewardModel
 
 logger = logging.getLogger(__name__)

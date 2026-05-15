@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
 from forge.utils.weight_loader import (
     _HF_MISSING_MSG,
     _TORCH_MISSING_MSG,
