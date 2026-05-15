@@ -9,11 +9,26 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from forge_env.gymnasium_env import (
     _DEFAULT_CARRY_CAPACITY,
     _DEFAULT_GRID_CHANNELS,
     _DEFAULT_VIEW_SIDE,
 )
+
+
+@pytest.fixture(
+    params=("qwen2.5-14b-instruct", "google/gemma-4-e4b"),
+    ids=("qwen", "gemma"),
+)
+def lmstudio_model_id(request: pytest.FixtureRequest) -> str:
+    """Model ids that LM Studio should round-trip without inspection.
+
+    Provider behaviour MUST be identical across these — any test that
+    diverges signals a model-specific code path that should not exist.
+    """
+    return request.param
 
 # ---------------------------------------------------------------------------
 # Mock observation data matching the native wrapper's expected structure.

@@ -236,9 +236,9 @@ class TestLMStudioProviderSync:
         assert provider._timeout_secs == 120.0  # noqa: SLF001
         assert provider._max_retries == 2  # noqa: SLF001
 
-    def test_model_kwarg_sets_default_model(self) -> None:
-        provider = LMStudioProvider(model="qwen2.5-14b-instruct")
-        assert provider._default_model == "qwen2.5-14b-instruct"  # noqa: SLF001
+    def test_model_kwarg_sets_default_model(self, lmstudio_model_id: str) -> None:
+        provider = LMStudioProvider(model=lmstudio_model_id)
+        assert provider._default_model == lmstudio_model_id  # noqa: SLF001
 
     def test_complete_uses_lmstudio_provider_name_in_logs(self, caplog: pytest.LogCaptureFixture) -> None:
         provider = LMStudioProvider()

@@ -72,7 +72,7 @@ def test_acomplete_default_runs_in_thread() -> None:
     assert result.text == "sync:ping"
 
 
-def test_lmstudio_acomplete_uses_async_client() -> None:
+def test_lmstudio_acomplete_uses_async_client(lmstudio_model_id: str) -> None:
     provider = LMStudioProvider(max_retries=0, retry_backoff_secs=0.0)
     fake_async_client = MagicMock()
     fake_async_client.chat.completions.create = AsyncMock(
@@ -80,13 +80,15 @@ def test_lmstudio_acomplete_uses_async_client() -> None:
     )
     provider._aclient = fake_async_client  # noqa: SLF001
 
-    cfg = CompletionConfig(model="m", seed=1, response_format={"type": "json_object"})
+    cfg = CompletionConfig(
+        model=lmstudio_model_id, seed=1, response_format={"type": "json_object"}
+    )
     resp = asyncio.run(provider.acomplete("ping", cfg))
     assert resp.text == "pong"
     assert resp.input_tokens == 3
     assert resp.output_tokens == 4
     call_kwargs = fake_async_client.chat.completions.create.call_args.kwargs
-    assert call_kwargs["model"] == "m"
+    assert call_kwargs["model"] == lmstudio_model_id
     assert call_kwargs["seed"] == 1
     assert call_kwargs["response_format"] == {"type": "json_object"}
 
