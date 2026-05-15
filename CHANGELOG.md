@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Gemma 4 e4b LM Studio Teacher (2026-05-15)
+
+- **`configs/cognitive/gemma_e4b_teacher.toml`**: LM Studio teacher preset for
+  the `google/gemma-4-e4b` model, with companion template
+  (`configs/cognitive/templates/gemma_teacher.txt`), action schema
+  (`python/forge/cognitive/schemas/gemma_action.json`), and few-shot exemplars
+  (`configs/cognitive/few_shots/gemma_teacher.jsonl`). Loadable via
+  `MangoMASBridgeConfig.from_toml`.
+- **`scripts/run_lmstudio_demo.py`**: reusable local helper. `--check` pings
+  the configured LM Studio endpoint with the preset's model and logs
+  `tokens_in/out/latency_ms`. No hard-coded model ids, URLs, or timeouts —
+  every value flows through `TeacherConfig`. For real collection runs, use
+  `scripts/train.py --collection-policy llm`.
+- **`tests/python/test_lmstudio_url_invariant.py`**: regression test pinning
+  the LM Studio base URL to `/v1` (and rejecting any `/api/...` path), so a
+  future "fix" can never silently break the OpenAI-compatible request route.
+- **`tests/python/snapshots/gemma_prompt_minimal.txt`**: byte-stable snapshot
+  of the Gemma prompt rendering for a fixed observation. Catches silent
+  template corruption that a determinism check alone would miss.
+- **`tests/python/test_lmstudio_live_smoke.py`**: gated
+  (`FORGE_LMSTUDIO_LIVE=1`) live smoke test that round-trips the Gemma preset
+  against a running LM Studio instance.
+- **`DEFAULT_LMSTUDIO_API_KEY`** constant in
+  `python/forge/cognitive/providers.py` — removes the last inline literal in
+  the LM Studio client and gives downstream tests a single symbol to override.
+
+### Changed — Gemma 4 e4b LM Studio Teacher (2026-05-15)
+
+- **`configs/cognitive/default.toml`** `[cognitive.lmstudio].model` now
+  defaults to `google/gemma-4-e4b`; `[cognitive.structured]` paths point at
+  the new Gemma assets. The Qwen preset
+  (`configs/cognitive/qwen14b_teacher.toml`) remains the authoritative
+  `MangoMASBridgeConfig`-shape file for callers that name it explicitly.
+- **LM Studio provider tests** (`test_providers.py`,
+  `test_lmstudio_provider_async.py`) are now parametrised across the qwen +
+  gemma model ids via a shared `lmstudio_model_id` fixture in `conftest.py`,
+  proving the provider is model-agnostic at the transport layer.
+- **`scripts/train.py`** `--teacher-model` help string now headlines Gemma
+  with Qwen retained as a sibling example.
+- **`.github/workflows/ci.yml`** triggers on PRs and pushes targeting
+  `v0.2/implementation` in addition to `main`/`master`/`develop`. Previously
+  PRs against `v0.2/implementation` skipped every CI job.
+- **`[tool.maturin]`** in `pyproject.toml` now includes JSON schemas under
+  `python/forge/cognitive/schemas/` and TOML/prompt/few-shot files under
+  `configs/cognitive/**` in sdist/wheel builds, so installed wheels carry
+  the full LM Studio teacher surface.
+
 ### Added
 
 #### LM Studio + Qwen 14B Teacher for Offline BC / SFT

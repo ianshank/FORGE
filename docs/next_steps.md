@@ -45,11 +45,12 @@ gained `cache: pip` keyed off `demo_ui/backend/requirements.txt` and
 still runs after the test step. `playwright==1.48.*` is pinned in
 `demo_ui/pyproject.toml` for reproducibility.
 
-### 5b. ✅ LM Studio + Qwen 14B Offline Teacher Pipeline — COMPLETED
+### 5b. ✅ LM Studio Offline Teacher Pipeline — COMPLETED
 
-Behavioural-cloning data pipeline driven by a locally-served Qwen 2.5 14B
-Instruct (or any OpenAI-compatible endpoint). One LLM call per env step
-amortises across four trainers (BC, BDI, Constitutional, future RSSM).
+Behavioural-cloning data pipeline driven by a locally-served Gemma 4 e4b
+(default) or Qwen 2.5 14B Instruct, or any other OpenAI-compatible
+endpoint. One LLM call per env step amortises across four trainers (BC,
+BDI, Constitutional, future RSSM).
 
 - `LMStudioProvider` + async `acomplete` path in `forge.cognitive.providers`
 - `PromptBuilder` + JSON Schema for deterministic structured decisions
@@ -65,7 +66,8 @@ amortises across four trainers (BC, BDI, Constitutional, future RSSM).
   written in `episode_index` order so traces are byte-identical for the
   same `base_seed` regardless of `concurrency`.
 
-See `docs/architecture.md` §3.9 and `configs/cognitive/qwen14b_teacher.toml`.
+See `docs/architecture.md` §3.9, `configs/cognitive/gemma_e4b_teacher.toml`
+(default), and `configs/cognitive/qwen14b_teacher.toml` (alternative).
 
 ### 5. ✅ Docker Container for Demo UI — COMPLETED
 

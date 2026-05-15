@@ -712,7 +712,8 @@ This control-plane split is intentional: branch-specific coverage work focuses o
 
 The teacher pipeline produces structured `(action_id, intention, subgoals,
 rationale, value_hat, constraint_critique, top_k_probs)` decisions from a
-local LLM (LM Studio + Qwen 2.5 14B Instruct by default). One LLM call is
+local LLM (LM Studio + Gemma 4 e4b by default; Qwen 2.5 14B Instruct preset
+retained at `configs/cognitive/qwen14b_teacher.toml`). One LLM call is
 amortised across four trainers — `BCTrainer` plus the existing
 `BDIPreTrainer`, `ConstitutionalPreTrainer`, and (future) `RSSMPreTrainer`.
 
@@ -756,7 +757,8 @@ amortised across four trainers — `BCTrainer` plus the existing
                         ▼
    ┌──────────────────────────────────────────────┐
    │ LM Studio (out-of-process)                   │
-   │   Qwen 2.5 14B Instruct                      │
+   │   Gemma 4 e4b (default)                      │
+   │   Qwen 2.5 14B Instruct (alternative)        │
    └──────────────────────────────────────────────┘
 
                         ▲ (per-step trace_info)
