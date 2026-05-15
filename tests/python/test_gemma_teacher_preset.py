@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import jsonschema
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -75,3 +76,54 @@ def test_gemma_template_renders_with_observation_and_legal_actions() -> None:
     assert "0, 1, 2, 3" in rendered_a
     # Model id stays in TOML, not template.
     assert "google/gemma-4-e4b" not in rendered_a
+
+
+import jsonschema  # noqa: E402
+
+FEW_SHOTS_PATH = REPO_ROOT / "configs" / "cognitive" / "few_shots" / "gemma_teacher.jsonl"
+
+
+def _load_action_schema() -> dict:
+    with SCHEMA_PATH.open(encoding="utf-8") as fh:
+        return json.load(fh)["json_schema"]["schema"]
+
+
+def test_gemma_few_shots_file_exists() -> None:
+    assert FEW_SHOTS_PATH.is_file()
+
+
+def test_gemma_few_shots_use_observation_response_envelope() -> None:
+    rows = [
+        json.loads(ln)
+        for ln in FEW_SHOTS_PATH.read_text(encoding="utf-8").splitlines()
+        if ln.strip()
+    ]
+    assert len(rows) >= 3, "expect at least 3 few-shot examples"
+    for idx, row in enumerate(rows):
+        assert "observation" in row, f"row {idx} missing 'observation'"
+        assert "response" in row, f"row {idx} missing 'response'"
+
+
+def test_gemma_few_shot_responses_validate_against_schema() -> None:
+    schema = _load_action_schema()
+    rows = [
+        json.loads(ln)
+        for ln in FEW_SHOTS_PATH.read_text(encoding="utf-8").splitlines()
+        if ln.strip()
+    ]
+    for idx, row in enumerate(rows):
+        try:
+            jsonschema.validate(instance=row["response"], schema=schema)
+        except jsonschema.ValidationError as exc:
+            pytest.fail(f"few-shot row {idx} response violates schema: {exc.message}")
+
+
+def test_gemma_few_shots_loadable_by_prompt_builder() -> None:
+    """Constructor proves _load_few_shots accepts the file shape."""
+    builder = PromptBuilder(
+        template_path=str(TEMPLATE_PATH),
+        few_shot_examples_path=str(FEW_SHOTS_PATH),
+    )
+    obs = {"position": [0, 0]}
+    rendered = builder.render(obs, legal_actions=[0, 1])
+    assert "Example 1:" in rendered, "few-shot examples must appear in rendered prompt"
