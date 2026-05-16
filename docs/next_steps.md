@@ -82,9 +82,28 @@ The full three-service Docker Compose stack is now deployed:
 
 **New Docker next steps:**
 
-- Publish images to Docker Hub (`ianshank/forge-simulation`, `forge-dashboard`, `forge-demo`)
-- Add multi-arch builds (`linux/amd64` + `linux/arm64`) via `docker buildx`
-- Tag images on GitHub release with semantic versions
+- ✅ Publish images to Docker Hub — `.github/workflows/ci.yml` `docker` job now
+  pushes the existing `docker/Dockerfile` (the only image currently published
+  by CI) in parallel to GHCR and `docker.io/${{ vars.DOCKERHUB_NAMESPACE }}/forge`.
+  Docker Hub leg is opt-in: gated by `if: vars.DOCKERHUB_NAMESPACE != ''` so
+  the job stays green until the user provisions:
+  - Repo variable `DOCKERHUB_NAMESPACE` (e.g. `ianshank`)
+  - Repo variable `DOCKERHUB_USERNAME` (e.g. `ianshank`)
+  - Repo secret `DOCKERHUB_TOKEN` (PAT with `Read, Write, Delete` on the
+    `forge` repo on Docker Hub; create the repo first)
+  Follow-up images (`forge-dashboard`, `forge-demo`) wait for the dashboard
+  and demo Dockerfiles to be added to the existing CI build (they exist on
+  disk under `docker/` but aren't built by the workflow today).
+- ✅ Multi-arch (`linux/amd64` + `linux/arm64`) via `docker buildx` — already
+  present in the existing job, now applied to both registries.
+- ✅ Semver tags on GitHub release — already present via
+  `docker/metadata-action@v5` `type=semver,pattern={{version}}` /
+  `{{major}}.{{minor}}`, now applied to both registries.
+- Post-push smoke probe: pulls the first GHCR-emitted tag (NOT
+  `github.sha`, which is the full 40-char SHA that metadata-action's
+  `type=sha,prefix=` never emits) and runs `/health` against
+  `127.0.0.1:8080` with a 30 s retry budget. Container `logs` + `inspect`
+  dumped on failure for debuggability.
 
 ---
 
