@@ -1,10 +1,24 @@
 name: CI
 
 on:
+  # NOTE: keep this list in sync with the repository's actual default branch.
+  # GitHub's web UI for changing the default branch does NOT update workflow
+  # filters, so a renamed/relocated default silently disables CI on PRs that
+  # target it. Add the current default first to fail loud if anyone removes it.
   push:
-    branches: [main, master, develop, v0.2/implementation]
+    branches:
+      - claude/plan-forge-environment-htAoK
+      - main
+      - master
+      - develop
+      - v0.2/implementation
   pull_request:
-    branches: [main, master, develop, v0.2/implementation]
+    branches:
+      - claude/plan-forge-environment-htAoK
+      - main
+      - master
+      - develop
+      - v0.2/implementation
   workflow_dispatch:
     inputs:
       run_lmstudio:
