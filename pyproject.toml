@@ -186,4 +186,7 @@ testpaths = ["tests/python"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short --cov=python --cov-report=term-missing --cov-fail-under=85"
+addopts = "-v --tb=short -m 'not lmstudio' --cov=python --cov-report=term-missing --cov-fail-under=85"
+markers = [
+  "lmstudio: opt-in tests requiring a running LM Studio (or OpenAI-compatible) endpoint.",
+]
