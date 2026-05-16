@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -15,8 +14,7 @@ import train  # type: ignore[import]  # noqa: E402 - import follows sys.path mut
 
 
 def test_cli_accepts_llm_policy_choice() -> None:
-    argparse.ArgumentParser()
-    # We use train._COLLECTION_POLICY_CHOICES indirectly via _parse_args.
+    # We use train._COLLECTION_POLICY_CHOICES indirectly via parse_args.
     args = train.parse_args(
         ["--agent", "mangomas-collect", "--collection-policy", "llm", "--episodes", "1"]
     )

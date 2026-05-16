@@ -274,11 +274,10 @@ def test_llm_policy_without_teacher_config_raises(tmp_path: Path) -> None:
     scenario_path = tmp_path / "drone_patrol.toml"
     _write_scenario(scenario_path)
 
-    MangoMASBridgeConfig()
-    # Default teacher.enabled is False but the dataclass still exists, so the
-    # collector accepts it. Force-clear concurrency to take the sync path and
-    # set the provider model so the factory tries to spin up a real provider —
-    # we exercise the validation error via _create_policy_agent directly.
+    # _create_policy_agent should reject policy='llm' when no teacher_config
+    # is plumbed through, since downstream code unconditionally dereferences
+    # it. The error message must mention "TeacherConfig" so callers can
+    # diagnose without reading source.
     import pytest
 
     with pytest.raises(ValueError, match="requires a TeacherConfig"):

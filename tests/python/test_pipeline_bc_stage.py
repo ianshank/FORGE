@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from forge.mangomas.config import MangoMASBridgeConfig
 from forge.mangomas.pipeline import CollectedTrainingData, MangoMASDroneTrainingPipeline
@@ -34,18 +33,24 @@ def _empty_episode(n_steps: int = 3) -> tuple[
 
 def _collected(*, with_teacher: bool, num_actions: int = 4) -> CollectedTrainingData:
     obs, names, ids, rewards, dones, raw = _empty_episode(3)
-    teacher_intentions = [[0, 1, 2]] if with_teacher else []
-    teacher_rationales = [["", "", ""]] if with_teacher else []
-    teacher_subgoals = [[[], [], []]] if with_teacher else []
-    teacher_value_hats = [[0.0, 0.0, 0.0]] if with_teacher else []
-    teacher_constraint_critiques = [[{}, {}, {}]] if with_teacher else []
-    teacher_top_k_probs = [
+    teacher_intentions: list[list[int]] = [[0, 1, 2]] if with_teacher else []
+    teacher_rationales: list[list[str]] = [["", "", ""]] if with_teacher else []
+    teacher_subgoals: list[list[list[str]]] = [[[], [], []]] if with_teacher else []
+    teacher_value_hats: list[list[float]] = [[0.0, 0.0, 0.0]] if with_teacher else []
+    teacher_constraint_critiques: list[list[dict[str, bool]]] = (
+        [[{}, {}, {}]] if with_teacher else []
+    )
+    teacher_top_k_probs: list[list[list[dict[str, float]]]] = (
         [
-            [{"action_id": 0, "prob": 0.9}],
-            [{"action_id": 1, "prob": 0.9}],
-            [{"action_id": 2, "prob": 0.9}],
+            [
+                [{"action_id": 0, "prob": 0.9}],
+                [{"action_id": 1, "prob": 0.9}],
+                [{"action_id": 2, "prob": 0.9}],
+            ]
         ]
-    ] if with_teacher else []
+        if with_teacher
+        else []
+    )
     # Set teacher actions in the ids array so BC sees them via collected_data.action_ids
     if with_teacher:
         ids = np.asarray([0, 1, 2], dtype=np.int64)
@@ -93,17 +98,6 @@ def test_bc_stage_runs_when_teacher_data_present(tmp_path: Path) -> None:
     assert "weights" in bc.outputs
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Pre-existing BC trainer bug: when action_space_sizes > max observed "
-        "action_id, the teacher's top_k one-hot rows are sized to num_actions "
-        "but `target` is broadcast against the smaller `probs` matrix, raising "
-        "ValueError in bc_trainer._train_numpy. Filed in branch hygiene scan; "
-        "needs a dedicated fix that sizes target consistently with the actor."
-    ),
-    raises=ValueError,
-    strict=True,
-)
 def test_bc_stage_uses_action_space_sizes_when_provided(tmp_path: Path) -> None:
     """Regression: if collected_data.action_space_sizes is set, BC sizes the
     actor against that, not against the (potentially smaller) max action_id

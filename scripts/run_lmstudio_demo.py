@@ -83,8 +83,11 @@ def _ping(provider: CognitiveProvider, teacher_cfg: TeacherConfig) -> int:
                 timeout_secs=teacher_cfg.timeout_secs,
             ),
         )
-    except Exception as exc:
-        logger.error("ping failed err=%s", exc)
+    except Exception:
+        # `logger.exception` records the traceback at ERROR level so connection
+        # / auth / serialisation issues are immediately diagnosable from the
+        # log line (`logger.error("err=%s", exc)` would have dropped it).
+        logger.exception("ping failed")
         return 1
     logger.info(
         "ping ok tokens_in=%d tokens_out=%d latency_ms=%.1f",
