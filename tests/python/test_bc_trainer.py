@@ -36,7 +36,7 @@ def toy_actor_critic_factory():
                 self.actor = nn.Linear(state_dim, num_actions)
                 self.critic = nn.Linear(state_dim, 1)
 
-            def forward(self, x):
+            def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
                 return self.actor(x), self.critic(x)
 
         return _ToyActorCritic()
@@ -239,6 +239,11 @@ def test_torch_path_kl_only_branch(
     initial_state = {k: v.detach().clone() for k, v in net.state_dict().items()}
     weight_before = net.actor.weight.detach().clone()
 
+    # BCTrainer._train_torch calls torch.randperm without consuming its own
+    # config.seed for torch's global RNG, so we set it explicitly here. Both
+    # the KL-active run and the CE-only baseline below must share the same
+    # batch ordering for the loss comparison to be deterministic.
+    torch.manual_seed(DEFAULT_BC_SEED)
     result = trainer.train(dataset, actor_critic=net)
 
     assert result.epochs_run == 3
@@ -263,6 +268,9 @@ def test_torch_path_kl_only_branch(
             teacher_top_k_probs=None,
             teacher_value_hats=None,
         )
+        # Reset torch RNG to the same starting point so the CE-only baseline
+        # sees the identical batch shuffle the KL-active run saw above.
+        torch.manual_seed(DEFAULT_BC_SEED)
         ce_only = ce_only_trainer.train(ce_only_dataset, actor_critic=net2)
         assert result.final_loss > ce_only.final_loss + 1e-6, (
             f"KL term did not contribute: kl_active_loss={result.final_loss:.6f} "
