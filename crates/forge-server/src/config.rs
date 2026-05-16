@@ -250,4 +250,183 @@ mod tests {
         assert_eq!(config.bind_addr.port(), 9090);
         assert_eq!(config.bind_addr.ip().to_string(), "127.0.0.1");
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // from_env override coverage. Env vars are process-global, so we
+    // serialize these tests under a single mutex and a scoped guard
+    // that restores prior state on drop — they can run alongside the
+    // wider test suite safely.
+    // ──────────────────────────────────────────────────────────────────
+
+    use std::sync::Mutex;
+
+    /// Process-wide guard so env-var tests don't race each other or
+    /// other tests that read `FORGE_SERVER_*`.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// RAII guard that records, then restores, the chosen env vars.
+    struct EnvScope {
+        previous: Vec<(&'static str, Option<String>)>,
+    }
+    impl EnvScope {
+        fn new(keys: &[&'static str]) -> Self {
+            let previous = keys
+                .iter()
+                .map(|k| (*k, std::env::var(k).ok()))
+                .collect::<Vec<_>>();
+            for k in keys {
+                std::env::remove_var(k);
+            }
+            Self { previous }
+        }
+    }
+    impl Drop for EnvScope {
+        fn drop(&mut self) {
+            for (k, v) in &self.previous {
+                match v {
+                    Some(val) => std::env::set_var(k, val),
+                    None => std::env::remove_var(k),
+                }
+            }
+        }
+    }
+
+    const ALL_KEYS: &[&str] = &[
+        "FORGE_SERVER_BIND",
+        "FORGE_SERVER_PORT",
+        "FORGE_SERVER_TICK_MS",
+        "FORGE_SERVER_BROADCAST_CAPACITY",
+        "FORGE_SERVER_LOG_FILTER",
+        "FORGE_SERVER_ALLOWED_ORIGINS",
+    ];
+
+    #[test]
+    fn test_from_env_bind_override_valid() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_BIND", "127.0.0.1:7777");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(cfg.bind_addr.port(), 7777);
+        assert_eq!(cfg.bind_addr.ip().to_string(), "127.0.0.1");
+    }
+
+    #[test]
+    fn test_from_env_bind_override_invalid_falls_back() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_BIND", "not a socket addr");
+        let cfg = ServerConfig::from_env();
+        // On parse failure, defaults must apply.
+        assert_eq!(cfg.bind_addr, ServerConfig::default().bind_addr);
+    }
+
+    #[test]
+    fn test_from_env_port_only_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_PORT", "9001");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(cfg.bind_addr.port(), 9001);
+    }
+
+    #[test]
+    fn test_from_env_port_invalid_falls_back() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_PORT", "abc");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(
+            cfg.bind_addr.port(),
+            forge_types::constants::DEFAULT_SERVER_PORT
+        );
+    }
+
+    #[test]
+    fn test_from_env_bind_takes_precedence_over_port() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_BIND", "127.0.0.1:1111");
+        std::env::set_var("FORGE_SERVER_PORT", "2222");
+        let cfg = ServerConfig::from_env();
+        // BIND wins; PORT is ignored.
+        assert_eq!(cfg.bind_addr.port(), 1111);
+    }
+
+    #[test]
+    fn test_from_env_tick_ms_override_valid() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_TICK_MS", "33");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(cfg.tick_interval_ms, 33);
+    }
+
+    #[test]
+    fn test_from_env_tick_ms_invalid_falls_back() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_TICK_MS", "fast");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(cfg.tick_interval_ms, DEFAULT_TICK_INTERVAL_MS);
+    }
+
+    #[test]
+    fn test_from_env_broadcast_capacity_override_valid() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_BROADCAST_CAPACITY", "512");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(cfg.broadcast_capacity, 512);
+    }
+
+    #[test]
+    fn test_from_env_broadcast_capacity_invalid_falls_back() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_BROADCAST_CAPACITY", "huge");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(cfg.broadcast_capacity, DEFAULT_BROADCAST_CAPACITY);
+    }
+
+    #[test]
+    fn test_from_env_log_filter_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_LOG_FILTER", "warn");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(cfg.log_filter, "warn");
+    }
+
+    #[test]
+    fn test_from_env_allowed_origins_parses_comma_separated() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var(
+            "FORGE_SERVER_ALLOWED_ORIGINS",
+            "https://a.example, https://b.example ,https://c.example",
+        );
+        let cfg = ServerConfig::from_env();
+        assert_eq!(
+            cfg.allowed_origins,
+            vec![
+                "https://a.example".to_string(),
+                "https://b.example".to_string(),
+                "https://c.example".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_serde_default_helpers_round_trip_through_empty_toml() {
+        // Force every serde-default helper to run by deserializing an
+        // empty struct literal — covers the `default_*` free functions.
+        let toml_str = ""; // every field uses its serde default
+        let cfg: ServerConfig = toml::from_str(toml_str).unwrap();
+        let baseline = ServerConfig::default();
+        assert_eq!(cfg.bind_addr, baseline.bind_addr);
+        assert_eq!(cfg.broadcast_capacity, baseline.broadcast_capacity);
+        assert_eq!(cfg.tick_interval_ms, baseline.tick_interval_ms);
+        assert_eq!(cfg.log_filter, baseline.log_filter);
+        assert_eq!(cfg.allowed_origins, baseline.allowed_origins);
+    }
 }

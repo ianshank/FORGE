@@ -748,4 +748,183 @@ mod tests {
             }
         }
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Coverage gap fills (Direction::all, HexDirection, TerrainProperties,
+    // Grid::get_mut / get_pos_mut / in_bounds).
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_direction_all_lists_every_variant() {
+        let all = Direction::all();
+        assert_eq!(all.len(), 4);
+        assert!(all.contains(&Direction::Up));
+        assert!(all.contains(&Direction::Down));
+        assert!(all.contains(&Direction::Left));
+        assert!(all.contains(&Direction::Right));
+    }
+
+    #[test]
+    fn test_direction_opposite_round_trip_all_variants() {
+        for dir in Direction::all() {
+            assert_eq!(dir.opposite().opposite(), dir, "opposite is involution");
+        }
+        assert_eq!(Direction::Down.opposite(), Direction::Up);
+        assert_eq!(Direction::Right.opposite(), Direction::Left);
+    }
+
+    #[test]
+    fn test_hex_direction_constants_match_repr() {
+        assert_eq!(HexDirection::ALL.len(), 6);
+        for (idx, dir) in HexDirection::ALL.iter().enumerate() {
+            assert_eq!(*dir as u8, idx as u8, "index {idx} aligns with repr");
+        }
+    }
+
+    #[test]
+    fn test_hex_direction_offset_even_row_each_variant() {
+        assert_eq!(HexDirection::NE.offset_even_row(), (0, -1));
+        assert_eq!(HexDirection::E.offset_even_row(), (1, 0));
+        assert_eq!(HexDirection::SE.offset_even_row(), (0, 1));
+        assert_eq!(HexDirection::SW.offset_even_row(), (-1, 1));
+        assert_eq!(HexDirection::W.offset_even_row(), (-1, 0));
+        assert_eq!(HexDirection::NW.offset_even_row(), (-1, -1));
+    }
+
+    #[test]
+    fn test_hex_direction_offset_odd_row_each_variant() {
+        assert_eq!(HexDirection::NE.offset_odd_row(), (1, -1));
+        assert_eq!(HexDirection::E.offset_odd_row(), (1, 0));
+        assert_eq!(HexDirection::SE.offset_odd_row(), (1, 1));
+        assert_eq!(HexDirection::SW.offset_odd_row(), (0, 1));
+        assert_eq!(HexDirection::W.offset_odd_row(), (-1, 0));
+        assert_eq!(HexDirection::NW.offset_odd_row(), (0, -1));
+    }
+
+    #[test]
+    fn test_hex_direction_offset_for_parity_dispatches() {
+        for dir in HexDirection::ALL {
+            assert_eq!(dir.offset_for_parity(false), dir.offset_even_row());
+            assert_eq!(dir.offset_for_parity(true), dir.offset_odd_row());
+        }
+    }
+
+    #[test]
+    fn test_hex_direction_from_index_full_range() {
+        for (idx, expected) in HexDirection::ALL.iter().enumerate() {
+            assert_eq!(HexDirection::from_index(idx as u8), Some(*expected));
+        }
+        assert_eq!(HexDirection::from_index(6), None);
+        assert_eq!(HexDirection::from_index(u8::MAX), None);
+    }
+
+    #[test]
+    fn test_hex_direction_opposite_is_involution() {
+        for dir in HexDirection::ALL {
+            assert_eq!(dir.opposite().opposite(), dir);
+        }
+        assert_eq!(HexDirection::NE.opposite(), HexDirection::SW);
+        assert_eq!(HexDirection::E.opposite(), HexDirection::W);
+        assert_eq!(HexDirection::SE.opposite(), HexDirection::NW);
+    }
+
+    #[test]
+    fn test_terrain_properties_default_is_walkable_flat() {
+        let p = TerrainProperties::default();
+        assert!(p.passable);
+        assert!(!p.blocks_los);
+        assert_eq!(p.movement_cost, 1.0);
+        assert_eq!(p.concealment_bonus, 0.0);
+        assert_eq!(p.defense_bonus, 0.0);
+    }
+
+    #[test]
+    fn test_terrain_properties_for_each_terrain_variant() {
+        // Walk every variant — exercise every match arm in for_terrain.
+        for variant_idx in 0..11u8 {
+            let terrain = TerrainType::from_u8(variant_idx)
+                .unwrap_or_else(|| panic!("missing variant for {variant_idx}"));
+            let props = TerrainProperties::for_terrain(terrain);
+            // Sanity: blocking terrain implies impassable.
+            if props.blocks_los {
+                assert!(!props.passable, "{terrain:?} blocks LOS but is passable");
+            }
+            // Sanity: f64::MAX movement cost ↔ impassable.
+            if props.movement_cost == f64::MAX {
+                assert!(
+                    !props.passable,
+                    "{terrain:?} has MAX cost yet claims passable"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_terrain_properties_for_terrain_specific_values() {
+        let ground = TerrainProperties::for_terrain(TerrainType::Ground);
+        assert!(ground.passable && !ground.blocks_los);
+
+        let wall = TerrainProperties::for_terrain(TerrainType::Wall);
+        assert!(wall.blocks_los && !wall.passable);
+        assert!(wall.defense_bonus > 0.0);
+
+        let forest = TerrainProperties::for_terrain(TerrainType::Forest);
+        assert!(forest.passable);
+        assert!(forest.concealment_bonus > 0.0);
+
+        let ice = TerrainProperties::for_terrain(TerrainType::Ice);
+        assert!(ice.movement_cost < 1.0); // slippery
+
+        let mountain = TerrainProperties::for_terrain(TerrainType::Mountain);
+        assert!(mountain.blocks_los && !mountain.passable);
+
+        let pasture = TerrainProperties::for_terrain(TerrainType::Pasture);
+        assert_eq!(pasture.movement_cost, 1.0);
+    }
+
+    #[test]
+    fn test_grid_get_mut_returns_mutable_reference() {
+        let mut grid = Grid::new(4, 4);
+        {
+            let tile = grid.get_mut(2, 2).expect("in-bounds");
+            tile.terrain = TerrainType::Lava;
+            tile.elevation = 99;
+        }
+        let t = grid.get(2, 2).unwrap();
+        assert_eq!(t.terrain, TerrainType::Lava);
+        assert_eq!(t.elevation, 99);
+    }
+
+    #[test]
+    fn test_grid_get_mut_oob_returns_none() {
+        let mut grid = Grid::new(4, 4);
+        assert!(grid.get_mut(4, 0).is_none());
+        assert!(grid.get_mut(0, 4).is_none());
+        assert!(grid.get_mut(99, 99).is_none());
+    }
+
+    #[test]
+    fn test_grid_get_pos_mut_round_trip() {
+        let mut grid = Grid::new(8, 8);
+        let pos = Position::new(3, 5);
+        grid.get_pos_mut(&pos).unwrap().terrain = TerrainType::Sand;
+        assert_eq!(grid.get_pos(&pos).unwrap().terrain, TerrainType::Sand);
+
+        let bad = Position::new(100, 100);
+        assert!(grid.get_pos_mut(&bad).is_none());
+    }
+
+    #[test]
+    fn test_grid_in_bounds_matches_get() {
+        let grid = Grid::new(4, 4);
+        for x in 0..6u16 {
+            for y in 0..6u16 {
+                assert_eq!(
+                    grid.in_bounds(x, y),
+                    grid.get(x, y).is_some(),
+                    "in_bounds disagrees with get for ({x},{y})"
+                );
+            }
+        }
+    }
 }
