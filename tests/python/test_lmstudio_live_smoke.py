@@ -111,5 +111,13 @@ def test_lmstudio_round_trip_parametrised_by_model_id(lmstudio_model_id: str) ->
         ),
     )
     assert resp.text, f"empty response from local LM Studio for model={cfg.model}"
+    # PING_PROMPT requests a strict {"ok": true} response; parsing + field
+    # validation proves the model is actually following instructions rather
+    # than just returning any non-empty string. Mirrors the assertion in
+    # test_gemma_preset_round_trips_against_local_lmstudio for parity.
+    parsed = json.loads(resp.text)
+    assert parsed.get("ok") in (True, "true", 1), (
+        f"unexpected response content for model={cfg.model}: {resp.text!r}"
+    )
     assert resp.latency_ms > 0
     logger.debug("lmstudio round-trip ok: latency_ms=%s", resp.latency_ms)
