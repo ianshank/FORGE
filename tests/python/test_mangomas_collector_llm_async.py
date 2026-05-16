@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+
 from forge.cognitive.providers import (
     CognitiveProvider,
     CompletionConfig,
@@ -204,7 +205,7 @@ def test_async_path_writes_shards_in_episode_index_order(tmp_path: Path) -> None
     _run_collection(tmp_path, concurrency=4, provider=provider)
     shards_dir = tmp_path / "traces" / "drone_patrol"
     files = sorted(shards_dir.glob("*.jsonl"))
-    # 4 episodes × shard_size=10 → 4 shards, one per episode.
+    # 4 episodes x shard_size=10 -> 4 shards, one per episode.
     assert len(files) == 4
     names = [f.name for f in files]
     assert names == [

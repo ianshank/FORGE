@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from forge.mangomas.bdi_trainer import BDIPreTrainer
 from forge.mangomas.config import BDITrainerConfig
 

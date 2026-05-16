@@ -127,7 +127,8 @@ def _build_grid_obs(
     attenuated = raw * attenuation[:, :, np.newaxis]
     # Scale channel 0 (terrain type proxy) by health to simulate awareness.
     attenuated[:, :, 0] *= float(health)
-    return attenuated.reshape(-1).astype(np.float32)
+    result: np.ndarray = attenuated.reshape(-1).astype(np.float32)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +186,10 @@ class RealisticFakeEnv:
             dtype=np.float32,
         )
 
-        return np.concatenate([grid_part, inventory_part, scalar_part]).astype(np.float32)
+        result: np.ndarray = np.concatenate(
+            [grid_part, inventory_part, scalar_part]
+        ).astype(np.float32)
+        return result
 
     def _make_info(self) -> dict:
         return {

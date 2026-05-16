@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from forge.cognitive.llm_agent import LLMAgent, LLMAgentConfig
 from forge.cognitive.providers import MockProvider
 

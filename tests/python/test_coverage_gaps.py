@@ -26,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
 from forge.agents.base_agent import AgentConfig
 from forge.agents.mcts_agent import MCTSAgent, MCTSConfig, MCTSNode
 from forge.agents.random_agent import RandomAgent

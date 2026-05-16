@@ -1,5 +1,5 @@
 [run]
-source = forge,forge_env
+source = forge,forge_env,run_lmstudio_demo
 
 [report]
 # Exclude modules requiring torch/jax (not available in CI without GPU)

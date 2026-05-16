@@ -6,6 +6,7 @@ import logging
 import random
 
 import numpy as np
+
 from forge.utils.seed import derive_seed, set_all_seeds
 
 logger = logging.getLogger(__name__)

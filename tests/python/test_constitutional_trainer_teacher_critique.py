@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from forge.mangomas.config import ConstitutionalTrainerConfig
 from forge.mangomas.constitutional_trainer import ConstitutionalPreTrainer
 
@@ -69,7 +70,7 @@ def test_penalty_recomputed_with_merged_violations() -> None:
         teacher_constraint_critiques=critiques,
         teacher_severity_default=1.5,
     )
-    # 2 teacher flags × severity 1.5 × penalty_weight 2.0 = 6.0
+    # 2 teacher flags x severity 1.5 x penalty_weight 2.0 = 6.0
     assert dataset.penalties[0] == 6.0
     assert dataset.penalties[1] == 0.0
 

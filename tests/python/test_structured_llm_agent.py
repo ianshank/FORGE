@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+
 from forge.cognitive.llm_agent import LLMAgent, StructuredLLMAgentConfig
 from forge.cognitive.providers import (
     CognitiveProvider,
@@ -15,6 +16,9 @@ from forge.cognitive.providers import (
     CompletionResponse,
     MockProvider,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _write(tmp_path: Path, name: str, content: str) -> Path:
@@ -249,7 +253,7 @@ def test_structured_agent_does_not_keep_reasoning_history_by_default(
     agent = LLMAgent(cfg, provider=provider)
     for _ in range(5):
         agent.act(np.zeros(2, dtype=np.float32))
-    assert agent._reasoning_history == []  # noqa: SLF001 — invariant under test
+    assert agent._reasoning_history == []
 
 
 def test_structured_agent_keep_history_can_be_enabled(tmp_path: Path) -> None:
@@ -263,7 +267,7 @@ def test_structured_agent_keep_history_can_be_enabled(tmp_path: Path) -> None:
     agent = LLMAgent(cfg, provider=provider)
     for _ in range(3):
         agent.act(np.zeros(2, dtype=np.float32))
-    assert len(agent._reasoning_history) == 3  # noqa: SLF001
+    assert len(agent._reasoning_history) == 3
 
 
 def test_reasoning_history_max_caps_legacy_agent() -> None:
@@ -274,4 +278,4 @@ def test_reasoning_history_max_caps_legacy_agent() -> None:
     obs = np.zeros(4, dtype=np.float32)
     for _ in range(8):
         agent.act(obs)
-    assert len(agent._reasoning_history) == 3  # noqa: SLF001
+    assert len(agent._reasoning_history) == 3

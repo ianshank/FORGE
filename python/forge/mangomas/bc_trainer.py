@@ -122,8 +122,11 @@ class BCTrainer:
             zip(observations, teacher_action_ids)
         ):
             steps = min(int(ep_obs.shape[0]), int(ep_actions.shape[0]))
-            ep_topk = (top_k_probs or [None])[ep_idx] if top_k_probs else None
-            ep_values = (value_hats or [None])[ep_idx] if value_hats else None
+            # `top_k_probs` / `value_hats` are Optional[Sequence[...]]; the
+            # truthiness check on the same expression narrows them to the
+            # non-None branch so the indexing is type-safe.
+            ep_topk = top_k_probs[ep_idx] if top_k_probs else None
+            ep_values = value_hats[ep_idx] if value_hats else None
             for t in range(steps):
                 flat_obs.append(ep_obs[t])
                 flat_actions.append(int(ep_actions[t]))
@@ -183,8 +186,30 @@ class BCTrainer:
         return self._train_numpy(dataset)
 
     def _resolve_num_actions(self, dataset: BCDataset) -> int:
+        """Resolve the actor's output dimensionality.
+
+        Priority (highest first):
+
+        1. Explicit ``BCTrainerConfig.num_actions`` when set — the caller has
+           authoritative knowledge of the action space.
+        2. The dataset's ``teacher_top_k_probs`` column count — sized by
+           :meth:`build_dataset` from the per-scenario ``num_actions``, so it
+           reflects the true env action space even when the observed action
+           ids are a strict subset.
+        3. ``teacher_action_ids.max() + 1`` — last-resort fallback for
+           datasets with no top-k matrix (e.g. greedy teachers).
+
+        Previously this method skipped (2), which produced a shape mismatch
+        in the KL term when the actor was sized smaller than the top-k
+        matrix (regression covered by
+        ``tests/python/test_pipeline_bc_stage.py::
+        test_bc_stage_uses_action_space_sizes_when_provided``).
+        """
         if self.config.num_actions > 0:
             return self.config.num_actions
+        topk = dataset.teacher_top_k_probs
+        if topk is not None and topk.size > 0 and topk.shape[1] > 0:
+            return int(topk.shape[1])
         if dataset.num_samples == 0:
             return 1
         return int(dataset.teacher_action_ids.max()) + 1

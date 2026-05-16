@@ -6,6 +6,7 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from forge.training.loggers import (
     CompositeLogger,
     ForgeLogger,

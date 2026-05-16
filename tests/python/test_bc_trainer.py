@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+
 from forge.mangomas.bc_trainer import BCDataset, BCTrainer, BCTrainerConfig
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _synthetic_episodes(

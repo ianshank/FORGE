@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master, develop, v0.2/implementation]
   pull_request:
-    branches: [main, master, develop]
+    branches: [main, master, develop, v0.2/implementation]
 
 env:
   CARGO_TERM_COLOR: always
@@ -147,9 +147,17 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install lint tools
+        # Pin tooling versions because:
+        # - mypy >= 2.0 dropped Python 3.9 support; pyproject sets
+        #   python_version = "3.9" to match `requires-python = ">=3.9"`.
+        # - numpy >= 2.0 bundles type stubs that misinterpret the
+        #   `np.savez(path, **weights)` idiom used by every FORGE
+        #   trainer's export path, raising spurious arg-type errors.
+        #   numpy 1.26's stubs accept the **kwargs form. Modernising
+        #   the call sites is staged separately.
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy numpy
+          pip install "ruff>=0.13,<0.16" "mypy>=1.11,<2.0" "numpy>=1.26,<2.0"
       - name: Ruff lint
         run: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
       - name: Mypy type check
@@ -165,10 +173,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Create + activate virtualenv
+        # maturin >= 1.x refuses to install into the system Python and needs
+        # an explicit venv or conda env. setup-python doesn't create one, so
+        # we make one here and `source` it for every subsequent shell.
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install maturin pytest pytest-cov numpy gymnasium httpx \
+          pip install maturin pytest pytest-cov numpy gymnasium httpx jsonschema \
             stable-baselines3
           pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Build native extension
@@ -195,8 +211,11 @@ jobs:
           pip install pytest pytest-cov numpy gymnasium httpx toml
           pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Run unit tests (no maturin)
+        # Smoke-only run — disable the workspace 85% coverage gate that
+        # pyproject.toml's [tool.pytest.ini_options].addopts applies by
+        # default (only one test file is exercised here).
         run: |
-          pytest tests/python/test_mangomas_smoke.py -v
+          pytest tests/python/test_mangomas_smoke.py -v --no-cov
 
   demo-ui:
     name: Demo UI Tests

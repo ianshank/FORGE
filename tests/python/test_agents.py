@@ -7,6 +7,7 @@ import tempfile
 
 import numpy as np
 import pytest
+
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.agents.mcts_agent import MCTSAgent, MCTSConfig, MCTSNode
 from forge.agents.random_agent import RandomAgent

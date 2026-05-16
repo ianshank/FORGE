@@ -53,12 +53,10 @@ pub fn process_altitude_changes(agents: &mut [Agent], actions: &[Action], config
                     );
                 }
             }
-            Action::Land => {
-                if agent.altitude > 0 {
-                    let old = agent.altitude;
-                    agent.altitude = 0;
-                    trace!(agent_id = agent.id, old_altitude = old, "landed");
-                }
+            Action::Land if agent.altitude > 0 => {
+                let old = agent.altitude;
+                agent.altitude = 0;
+                trace!(agent_id = agent.id, old_altitude = old, "landed");
             }
             Action::Ascend => {
                 if agent.altitude < config.max_altitude && agent.battery >= config.ascend_cost {
@@ -74,18 +72,14 @@ pub fn process_altitude_changes(agents: &mut [Agent], actions: &[Action], config
                     );
                 }
             }
-            Action::Descend => {
-                if agent.altitude > 0 {
-                    agent.altitude -= 1;
-                    deduct_battery(agent, config.descend_cost);
-                    trace!(agent_id = agent.id, altitude = agent.altitude, "descended");
-                }
+            Action::Descend if agent.altitude > 0 => {
+                agent.altitude -= 1;
+                deduct_battery(agent, config.descend_cost);
+                trace!(agent_id = agent.id, altitude = agent.altitude, "descended");
             }
-            Action::Hover => {
-                if agent.altitude > 0 {
-                    deduct_battery(agent, config.hover_cost);
-                    trace!(agent_id = agent.id, altitude = agent.altitude, "hovering");
-                }
+            Action::Hover if agent.altitude > 0 => {
+                deduct_battery(agent, config.hover_cost);
+                trace!(agent_id = agent.id, altitude = agent.altitude, "hovering");
             }
             _ => {}
         }

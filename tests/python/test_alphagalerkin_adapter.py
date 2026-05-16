@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
 from forge.adapters.alphagalerkin_adapter import (
     ALPHAGALERKIN_AVAILABLE,
     AlphaGalerkinAgent,

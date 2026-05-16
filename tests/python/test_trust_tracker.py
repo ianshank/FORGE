@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from forge.social.trust_tracker import SocialConfig, TrustTracker
 
 

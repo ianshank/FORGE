@@ -18,13 +18,15 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import numpy as np
     from collections.abc import Mapping
+
+    import numpy as np
 
 from forge.agents.base_agent import AgentConfig, BaseAgent
 from forge.cognitive.prompt_builder import PromptBuilder
@@ -145,7 +147,8 @@ class LLMAgent(BaseAgent):
         if not path.exists():
             msg = f"response_schema_path does not exist: {path}"
             raise FileNotFoundError(msg)
-        return json.loads(path.read_text(encoding="utf-8"))
+        payload: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        return payload
 
     def _build_completion_config(self) -> CompletionConfig:
         cfg = self._structured_config
@@ -192,11 +195,12 @@ class LLMAgent(BaseAgent):
             return self._build_prompt(observation)
         structured = self._structured_observation(observation)
         legal = self._structured_config.legal_actions or None
-        return self._prompt_builder.render(
+        rendered: str = self._prompt_builder.render(
             structured,
             legal_actions=legal,
             system_prompt=self._structured_config.system_prompt,
         )
+        return rendered
 
     def _structured_observation(
         self, observation: np.ndarray
@@ -274,7 +278,7 @@ class LLMAgent(BaseAgent):
             v = float(value)
         except (TypeError, ValueError):
             return None
-        if v != v:  # NaN
+        if math.isnan(v):
             return 0.0
         return max(-clip, min(clip, v))
 
@@ -300,22 +304,27 @@ class LLMAgent(BaseAgent):
                 "agent=structured top-level JSON is not an object; falling back"
             )
             return ({}, self._parse_action(text))
-        action_raw = parsed.get("action_id")
+        action_raw: Any = parsed.get("action_id")
+        if action_raw is None:
+            msg = f"teacher response missing action_id: {parsed!r}"
+            if cfg.validate_action:
+                raise ValueError(msg)
+            logger.warning(msg)
+            return (parsed, 0)
         try:
             action_id = int(action_raw)
         except (TypeError, ValueError) as exc:
-            msg = f"teacher response missing or non-integer action_id: {action_raw!r}"
+            msg = f"teacher response non-integer action_id: {action_raw!r}"
             if cfg.validate_action:
                 raise ValueError(msg) from exc
             logger.warning(msg)
             return (parsed, 0)
-        if cfg.validate_action and cfg.legal_actions:
-            if action_id not in cfg.legal_actions:
-                msg = (
-                    f"teacher action_id={action_id} not in legal_actions="
-                    f"{cfg.legal_actions}"
-                )
-                raise ValueError(msg)
+        if cfg.validate_action and cfg.legal_actions and action_id not in cfg.legal_actions:
+            msg = (
+                f"teacher action_id={action_id} not in legal_actions="
+                f"{cfg.legal_actions}"
+            )
+            raise ValueError(msg)
         return (parsed, action_id)
 
     def _build_prompt(self, observation: np.ndarray) -> str:

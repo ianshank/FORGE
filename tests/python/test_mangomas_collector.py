@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 import numpy as np
 import pytest
+
 from forge.mangomas.collector import (
     collect_training_data_from_scenarios,
     decode_action_name,

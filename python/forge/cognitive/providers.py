@@ -24,6 +24,10 @@ DEFAULT_LMSTUDIO_MODEL: str = ""
 DEFAULT_LMSTUDIO_TIMEOUT_SECS: float = 120.0
 DEFAULT_LMSTUDIO_MAX_RETRIES: int = 2
 DEFAULT_LMSTUDIO_RETRY_BACKOFF_SECS: float = 1.0
+# LM Studio's local server doesn't authenticate, but the openai SDK rejects
+# an empty/None api_key at client construction time, so a placeholder string
+# is required. Override only if you've put LM Studio behind a real auth proxy.
+DEFAULT_LMSTUDIO_API_KEY: str = "lm-studio"
 DEFAULT_PAYLOAD_PREVIEW_CHARS: int = 256
 
 
@@ -314,7 +318,7 @@ class OpenAIProvider(CognitiveProvider):
                     output_tokens=completion_tokens,
                     latency_ms=latency_ms,
                 )
-            except Exception as exc:  # noqa: BLE001 — provider retries any transient
+            except Exception as exc:
                 last_exc = exc
                 logger.warning(
                     "provider=%s request failed attempt=%d err=%s",
@@ -365,7 +369,7 @@ class OpenAIProvider(CognitiveProvider):
                     output_tokens=completion_tokens,
                     latency_ms=latency_ms,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 last_exc = exc
                 logger.warning(
                     "provider=%s async request failed attempt=%d err=%s",
@@ -387,7 +391,10 @@ class LMStudioProvider(OpenAIProvider):
     LM Studio exposes an OpenAI-compatible HTTP API. This subclass supplies
     LM-Studio-appropriate defaults (local base URL, longer timeout, light
     retry policy) so callers can construct it with no arguments and get a
-    sensible client for a workstation running Qwen 14B locally.
+    sensible client for a workstation running any chat-tuned model
+    (Gemma 4 e4b by default; Qwen 2.5 14B Instruct and other OpenAI-
+    compatible models work identically — the provider treats the model id
+    as an opaque string).
     """
 
     _provider_name = "lmstudio"
@@ -395,11 +402,7 @@ class LMStudioProvider(OpenAIProvider):
 
     def __init__(
         self,
-        # LM Studio's local server doesn't authenticate, but the openai SDK
-        # rejects an empty/None api_key at client construction time, so a
-        # placeholder string is required. Override only if you've put LM
-        # Studio behind a real auth proxy.
-        api_key: str | None = "lm-studio",
+        api_key: str | None = DEFAULT_LMSTUDIO_API_KEY,
         base_url: str | None = DEFAULT_LMSTUDIO_BASE_URL,
         *,
         model: str | None = None,
@@ -408,6 +411,11 @@ class LMStudioProvider(OpenAIProvider):
         retry_backoff_secs: float = DEFAULT_LMSTUDIO_RETRY_BACKOFF_SECS,
         payload_preview_chars: int = DEFAULT_PAYLOAD_PREVIEW_CHARS,
     ) -> None:
+        # Explicit None must collapse to the module constant so callers
+        # passing api_key=None (e.g. when reading an empty env var) still get
+        # a working client.
+        if api_key is None:
+            api_key = DEFAULT_LMSTUDIO_API_KEY
         super().__init__(
             api_key=api_key,
             base_url=base_url,
