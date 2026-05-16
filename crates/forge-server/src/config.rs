@@ -285,9 +285,14 @@ mod tests {
                 .collect::<Vec<_>>();
             // Diagnostic trace — visible under `cargo test -- --nocapture` so a
             // future flake (e.g. a new test that forgets to acquire this scope)
-            // is debuggable from the test output alone.
+            // is debuggable from the test output alone. Only print when the var
+            // was actually set (`is_some()`); otherwise the noise would drown
+            // out real pollution signals (10+ tests × 6 keys = 60 spurious
+            // lines per test run with --nocapture).
             for (k, original) in &previous {
-                eprintln!("[env-scope] clearing {k} (was: {original:?})");
+                if let Some(val) = original {
+                    eprintln!("[env-scope] clearing {k} (was: {val:?})");
+                }
             }
             for k in keys {
                 std::env::remove_var(k);
