@@ -341,7 +341,7 @@ class MuZeroMCTS:
             Probability distribution over actions.
         """
         if temperature == 0.0:
-            probs = np.zeros_like(visit_counts)
+            probs: np.ndarray = np.zeros_like(visit_counts)
             best = np.argmax(visit_counts)
             probs[best] = 1.0
             return probs
@@ -349,17 +349,21 @@ class MuZeroMCTS:
         # Temperature-scaled softmax over log visit counts
         total = visit_counts.sum()
         if total == 0:
-            return np.ones_like(visit_counts) / len(visit_counts)
+            uniform_zero: np.ndarray = np.ones_like(visit_counts) / len(visit_counts)
+            return uniform_zero
 
         counts_temp = visit_counts ** (1.0 / temperature)
         total_temp = counts_temp.sum()
         if total_temp == 0:
-            return np.ones_like(visit_counts) / len(visit_counts)
-        return counts_temp / total_temp
+            uniform_temp: np.ndarray = np.ones_like(visit_counts) / len(visit_counts)
+            return uniform_temp
+        weighted: np.ndarray = counts_temp / total_temp
+        return weighted
 
 
 def _softmax(logits: np.ndarray) -> np.ndarray:
     """Numerically stable softmax over a 1D array."""
     shifted = logits - logits.max()
     exp_vals = np.exp(shifted)
-    return exp_vals / exp_vals.sum()
+    result: np.ndarray = exp_vals / exp_vals.sum()
+    return result
