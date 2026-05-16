@@ -853,6 +853,47 @@ mod tests {
         );
     }
 
+    /// Verify each compression algorithm actually round-trips a real row.
+    /// Catches the regression where `Gzip` would compile but fail at write
+    /// time without the `flate2` feature on the `parquet` dep.
+    /// (review thread r3252813119)
+    #[test]
+    fn test_every_compression_writes_and_reads_back() {
+        for compression in [
+            ParquetCompression::None,
+            ParquetCompression::Snappy,
+            ParquetCompression::Gzip,
+            ParquetCompression::Zstd,
+        ] {
+            let dir = tempdir().unwrap();
+            let cfg = HfExportConfig {
+                output_dir: dir.path().to_path_buf(),
+                shard_size_rows: 8,
+                compression,
+                ..Default::default()
+            };
+            let traj = make_trajectory(1, "compr", 4, 1);
+            let manifest = write_parquet_shards(std::iter::once(traj), &cfg)
+                .unwrap_or_else(|e| panic!("write failed for {compression:?}: {e:?}"));
+            assert_eq!(manifest.row_count, 4, "compression={compression:?}");
+            assert!(!manifest.shard_paths.is_empty());
+
+            // Round-trip read to confirm bytes are decompressible.
+            let mut total = 0u64;
+            for path in &manifest.shard_paths {
+                let file = File::open(path).unwrap();
+                let reader = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
+                for batch in reader.build().unwrap() {
+                    total += batch.unwrap().num_rows() as u64;
+                }
+            }
+            assert_eq!(
+                total, manifest.row_count,
+                "read-back row count mismatch for {compression:?}"
+            );
+        }
+    }
+
     #[test]
     fn test_write_parquet_shards_emits_dataset_info_json() {
         let dir = tempdir().unwrap();

@@ -21,9 +21,11 @@ thiserror = { workspace = true }
 chrono = "0.4"
 # HuggingFace Datasets (Parquet) export, gated behind the `hf` feature so
 # the default build stays lean. Pinned to a single major to keep the dep
-# graph stable across the workspace.
+# graph stable across the workspace. `flate2` enables gzip codec support
+# at runtime (without it, `ParquetCompression::Gzip` would fail when
+# writing actual rows).
 arrow = { version = "53", optional = true }
-parquet = { version = "53", default-features = false, features = ["arrow", "snap", "zstd"], optional = true }
+parquet = { version = "53", default-features = false, features = ["arrow", "snap", "zstd", "flate2"], optional = true }
 
 [features]
 default = []

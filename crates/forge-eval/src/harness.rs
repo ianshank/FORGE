@@ -147,6 +147,10 @@ impl EvalHarness {
     }
 
     /// Runs evaluation for a single scenario (set of episodes with the same config).
+    ///
+    /// Episodes run in parallel. If [`EvalConfig::parallelism`] is non-zero,
+    /// a dedicated [`rayon::ThreadPool`] of that size is used; otherwise
+    /// rayon's global pool is used (one worker per logical core).
     #[instrument(skip(self, agent_factory), fields(scenario_id = %scenario.id, tier = scenario.tier))]
     fn evaluate_scenario<F>(
         &self,
@@ -161,23 +165,45 @@ impl EvalHarness {
             .max_steps
             .unwrap_or(self.config.max_steps_per_episode);
 
-        let episodes: Vec<EpisodeResult> = (0..self.config.episodes_per_scenario)
-            .into_par_iter()
-            .map(|episode_idx| {
-                let seed = self.config.base_seed.wrapping_add(episode_idx as u64);
-                self.run_single_episode_persisted(
-                    &scenario.id,
-                    seed,
-                    max_steps,
-                    &scenario.forge_config,
-                    agent_meta,
-                    agent_factory,
-                )
-            })
-            .collect();
+        let run_episodes = || -> Vec<EpisodeResult> {
+            (0..self.config.episodes_per_scenario)
+                .into_par_iter()
+                .map(|episode_idx| {
+                    let seed = self.config.base_seed.wrapping_add(episode_idx as u64);
+                    self.run_single_episode_persisted(
+                        &scenario.id,
+                        seed,
+                        max_steps,
+                        &scenario.forge_config,
+                        agent_meta,
+                        agent_factory,
+                    )
+                })
+                .collect()
+        };
+
+        let episodes: Vec<EpisodeResult> = if self.config.parallelism == 0 {
+            run_episodes()
+        } else {
+            match rayon::ThreadPoolBuilder::new()
+                .num_threads(self.config.parallelism as usize)
+                .build()
+            {
+                Ok(pool) => pool.install(run_episodes),
+                Err(e) => {
+                    warn!(
+                        parallelism = self.config.parallelism,
+                        error = %e,
+                        "Failed to build local rayon pool, falling back to global"
+                    );
+                    run_episodes()
+                }
+            }
+        };
 
         debug!(
             scenario_id = %scenario.id,
+            parallelism = self.config.parallelism,
             episodes = episodes.len(),
             "Scenario evaluation complete"
         );
@@ -311,8 +337,10 @@ impl EvalHarness {
             actions[0] = action;
 
             // Snapshot observation set for trajectory recording before stepping.
+            // `current_obs` is overwritten at end-of-iteration, so it's safe to
+            // move (`mem::take`) rather than clone in the hot loop.
             let pre_step_obs = if trajectory_builder.is_some() {
-                Some(current_obs.clone())
+                Some(std::mem::take(&mut current_obs))
             } else {
                 None
             };
@@ -333,7 +361,7 @@ impl EvalHarness {
                 builder.record_tick(action_ids);
             }
 
-            let step_result = current_world.step(&actions);
+            let mut step_result = current_world.step(&actions);
             let reward = step_result.rewards.first().copied().unwrap_or(0.0);
             total_reward += reward as f64;
             step_count += 1;
@@ -346,12 +374,21 @@ impl EvalHarness {
             }
 
             if let (Some(builder), Some(pre_obs)) = (trajectory_builder.as_mut(), pre_step_obs) {
-                let responses = vec![response.clone()];
+                // Trajectory rows must stay rectangular: build a `responses`
+                // vec sized to the real agent count, with the controlled
+                // agent at index 0 and a Noop sentinel for the rest. This
+                // keeps `actions/reasoning/confidences/decision_times_ms`
+                // aligned with `observations/rewards` for downstream readers.
+                let mut responses = Vec::with_capacity(num_agents);
+                responses.push(response);
+                for _ in 1..num_agents {
+                    responses.push(forge_types::agent_interface::AgentResponse::from_action(0));
+                }
                 builder.record_step(
                     step_count.saturating_sub(1),
                     pre_obs,
                     &responses,
-                    step_result.rewards.clone(),
+                    std::mem::take(&mut step_result.rewards),
                     current_world.terminated,
                     current_world.truncated,
                 );
@@ -372,11 +409,30 @@ impl EvalHarness {
 
         // Persist artefacts. Errors are logged but never block the episode result.
         if output.enabled && output.is_valid() {
+            // Build per-agent name + metadata vectors sized to the real
+            // agent count. The controlled agent's name and metadata go at
+            // index 0; sentinel placeholders fill the rest. This keeps
+            // `agent_names.len()` consistent with `final_rewards.len()` and
+            // with the per-tick action vectors recorded in the replay.
+            let num_agents = current_world.agents.len().max(1);
+            let mut agent_names_vec = Vec::with_capacity(num_agents);
+            let mut agent_metadata_vec = Vec::with_capacity(num_agents);
+            agent_names_vec.push(agent_name.clone());
+            agent_metadata_vec.push(agent_meta.clone());
+            for idx in 1..num_agents {
+                agent_names_vec.push(format!("uncontrolled_{idx}"));
+                agent_metadata_vec.push(AgentMetadata::default());
+            }
+            // Pad final_rewards too, so length matches agent_names.
+            if per_agent_rewards.len() < num_agents {
+                per_agent_rewards.resize(num_agents, 0.0);
+            }
+
             if output.write_replays {
                 if let Some(builder) = replay_builder.take() {
                     let replay = builder
-                        .agent_names(vec![agent_name.clone()])
-                        .agent_metadata(vec![agent_meta.clone()])
+                        .agent_names(agent_names_vec.clone())
+                        .agent_metadata(agent_metadata_vec.clone())
                         .scenario_id(scenario_id.to_string())
                         .final_rewards(per_agent_rewards.clone())
                         .build();
@@ -389,8 +445,8 @@ impl EvalHarness {
                 if let Some(builder) = trajectory_builder.take() {
                     let traj = builder
                         .seed(seed)
-                        .agent_names(vec![agent_name])
-                        .agent_metadata(vec![agent_meta.clone()])
+                        .agent_names(agent_names_vec)
+                        .agent_metadata(agent_metadata_vec)
                         .scenario_id(scenario_id.to_string())
                         .build(per_agent_rewards.clone());
                     if let Err(e) = output::write_trajectory(output, scenario_id, seed, &traj) {
@@ -988,5 +1044,163 @@ mod tests {
         assert_eq!(card.scenario_results.len(), 1);
         assert_eq!(card.scenario_results[0].scenario_id, "default");
         assert_eq!(card.tier_scores[0].tier, 1);
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Review-feedback fills.
+    // ──────────────────────────────────────────────────────────────────
+
+    /// `EvalConfig.parallelism` must actually constrain the rayon pool used
+    /// for a scenario. We verify by counting how many distinct
+    /// `rayon::current_num_threads()` values are observed across episodes.
+    /// (review thread r3252771987)
+    #[test]
+    fn test_parallelism_field_constrains_rayon_pool() {
+        use std::sync::Arc;
+        use std::sync::Mutex;
+
+        struct ProbeAgent {
+            observed: Arc<Mutex<Vec<usize>>>,
+        }
+        impl AgentInterface for ProbeAgent {
+            fn select_action(
+                &mut self,
+                _obs: &forge_types::observation::Observation,
+                _agent_idx: usize,
+            ) -> forge_types::agent_interface::AgentResponse {
+                self.observed
+                    .lock()
+                    .unwrap()
+                    .push(rayon::current_num_threads());
+                forge_types::agent_interface::AgentResponse::from_action(0)
+            }
+            fn name(&self) -> &str {
+                "ProbeAgent"
+            }
+            fn metadata(&self) -> AgentMetadata {
+                AgentMetadata::heuristic("ProbeAgent")
+            }
+        }
+
+        let observed: Arc<Mutex<Vec<usize>>> = Arc::new(Mutex::new(Vec::new()));
+
+        let mut config = make_eval_config();
+        config.parallelism = 2;
+        config.episodes_per_scenario = 4;
+        let harness = EvalHarness::new(config);
+        let observed_clone = observed.clone();
+        let card = harness.evaluate(&move || {
+            Box::new(ProbeAgent {
+                observed: observed_clone.clone(),
+            }) as Box<dyn AgentInterface>
+        });
+
+        assert_eq!(card.summary.total_episodes, 4);
+        let widths = observed.lock().unwrap().clone();
+        assert!(!widths.is_empty(), "agent must have been polled");
+        // Every observation of `current_num_threads()` from inside the
+        // scoped pool must report exactly 2.
+        for w in &widths {
+            assert_eq!(*w, 2, "expected rayon pool width 2, saw {w}");
+        }
+    }
+
+    /// Multi-agent trajectory rows must stay rectangular: each step's
+    /// `actions/reasoning/confidences/decision_times_ms` length matches
+    /// `observations.len()` even when only agent 0 is controlled.
+    /// (review thread r3252813062)
+    #[test]
+    fn test_trajectory_recording_is_rectangular_for_multi_agent() {
+        use forge_replay::trajectory::TrajectoryBuilder;
+        // We can't easily inspect the harness-internal builder without
+        // persistence, so go through the on-disk path with a 2-agent world
+        // and read back the JSONL.
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = make_eval_config();
+        config.base_forge_config.agents.num_agents = 2;
+        config.episodes_per_scenario = 1;
+        config.max_steps_per_episode = 3;
+        config.base_forge_config.task.max_episode_length = 3;
+        config.output = OutputConfig {
+            enabled: true,
+            dir: dir.path().to_path_buf(),
+            write_replays: true,
+            write_trajectories: true,
+            write_scorecard: false,
+            ..OutputConfig::default()
+        };
+
+        let harness = EvalHarness::new(config.clone());
+        let suite = ScenarioSuite::from_scenarios(vec![Scenario::new(
+            "multi",
+            1,
+            config.base_forge_config.clone(),
+        )]);
+        let _ = harness.evaluate_suite(&suite, &|| Box::new(NoopEvalAgent));
+
+        let traj_path = config.output.trajectory_path("multi", config.base_seed);
+        let blob = std::fs::read_to_string(&traj_path).unwrap();
+        for (line_idx, line) in blob.lines().enumerate() {
+            let step: forge_replay::trajectory::TrajectoryStep =
+                serde_json::from_str(line).unwrap();
+            let obs_len = step.observations.len();
+            assert!(obs_len > 0, "line {line_idx}: empty observations");
+            assert_eq!(
+                step.actions.len(),
+                obs_len,
+                "line {line_idx}: actions vs observations mismatch"
+            );
+            assert_eq!(step.reasoning.len(), obs_len);
+            assert_eq!(step.confidences.len(), obs_len);
+            assert_eq!(step.decision_times_ms.len(), obs_len);
+            assert_eq!(step.rewards.len(), obs_len);
+        }
+
+        // Metadata vectors must also align with num_agents.
+        let meta_path = config
+            .output
+            .trajectory_metadata_path("multi", config.base_seed);
+        let meta: forge_replay::trajectory::TrajectoryMetadata =
+            serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+        assert_eq!(meta.agent_names.len(), 2);
+        assert_eq!(meta.agent_metadata.len(), 2);
+        assert_eq!(meta.final_rewards.len(), 2);
+
+        // Builder sanity (unrelated, just confirms the imported type still works).
+        let _ = TrajectoryBuilder::new();
+    }
+
+    /// Replay metadata must also size `agent_names` to the agent count.
+    #[test]
+    fn test_replay_metadata_sized_to_num_agents() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = make_eval_config();
+        config.base_forge_config.agents.num_agents = 3;
+        config.episodes_per_scenario = 1;
+        config.max_steps_per_episode = 2;
+        config.base_forge_config.task.max_episode_length = 2;
+        config.output = OutputConfig {
+            enabled: true,
+            dir: dir.path().to_path_buf(),
+            write_replays: true,
+            write_trajectories: false,
+            write_scorecard: false,
+            ..OutputConfig::default()
+        };
+        let harness = EvalHarness::new(config.clone());
+        let suite = ScenarioSuite::from_scenarios(vec![Scenario::new(
+            "replay_multi",
+            1,
+            config.base_forge_config.clone(),
+        )]);
+        let _ = harness.evaluate_suite(&suite, &|| Box::new(NoopEvalAgent));
+
+        let path = config.output.replay_path("replay_multi", config.base_seed);
+        let replay =
+            forge_replay::compact::CompactReplay::from_bytes(&std::fs::read(&path).unwrap())
+                .unwrap();
+        assert_eq!(replay.metadata.agent_names.len(), 3);
+        assert_eq!(replay.metadata.agent_metadata.len(), 3);
+        assert_eq!(replay.metadata.final_rewards.len(), 3);
     }
 }

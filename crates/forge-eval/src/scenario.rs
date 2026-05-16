@@ -67,6 +67,37 @@ impl Scenario {
         }
     }
 
+    /// Returns true if `id` is safe to use as a path component.
+    ///
+    /// The scenario `id` ends up baked into on-disk artefact paths (via
+    /// [`crate::output::OutputConfig::scenario_dir`]), so we reject any
+    /// id that could escape the configured output directory.
+    pub fn is_safe_path_component(id: &str) -> bool {
+        if id.is_empty() {
+            return false;
+        }
+        // Reject parent-directory references, drive letters, NUL, and
+        // path separators of either platform. Whitespace-only ids are
+        // also rejected to avoid silently-empty directories.
+        if id.trim().is_empty() {
+            return false;
+        }
+        for ch in id.chars() {
+            // ASCII path separators on Unix/Windows and the NUL byte are
+            // never safe regardless of OS.
+            if matches!(ch, '/' | '\\' | '\0') {
+                return false;
+            }
+        }
+        // Reject components like `..` and `.` even when they only appear
+        // by themselves; reject any literal "..", anywhere, since callers
+        // may not normalise.
+        if id == "." || id == ".." || id.contains("..") {
+            return false;
+        }
+        true
+    }
+
     /// Validates the scenario, returning all issues found.
     ///
     /// An empty `Vec` means the scenario is valid.
@@ -75,6 +106,11 @@ impl Scenario {
         let mut errors = Vec::new();
         if self.id.is_empty() {
             errors.push("scenario id must not be empty".to_string());
+        } else if !Self::is_safe_path_component(&self.id) {
+            errors.push(format!(
+                "scenario id {:?} contains invalid path characters (must not include '/', '\\\\', NUL, '..', or be a path traversal component)",
+                self.id
+            ));
         }
         if self.tier < TIER_MIN || self.tier > TIER_MAX {
             errors.push(format!(
@@ -160,21 +196,38 @@ impl ScenarioSuite {
             });
         }
 
-        let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
-            .map_err(|e| ScenarioError::Io {
+        let read = std::fs::read_dir(dir).map_err(|e| ScenarioError::Io {
+            path: dir.to_path_buf(),
+            message: e.to_string(),
+        })?;
+        // Propagate every per-entry I/O failure instead of silently
+        // dropping it via `filter_map(Result::ok)`. A partial suite is
+        // worse than a loud failure.
+        let mut entries: Vec<PathBuf> = Vec::new();
+        for entry in read {
+            let entry = entry.map_err(|e| ScenarioError::Io {
                 path: dir.to_path_buf(),
-                message: e.to_string(),
-            })?
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| {
-                p.is_file()
-                    && p.extension()
-                        .and_then(|x| x.to_str())
-                        .map(|x| x.eq_ignore_ascii_case(SCENARIO_FILE_EXTENSION))
-                        .unwrap_or(false)
-            })
-            .collect();
+                message: format!("read_dir entry failed: {e}"),
+            })?;
+            let path = entry.path();
+            let is_toml = path
+                .extension()
+                .and_then(|x| x.to_str())
+                .map(|x| x.eq_ignore_ascii_case(SCENARIO_FILE_EXTENSION))
+                .unwrap_or(false);
+            if !is_toml {
+                continue;
+            }
+            // `is_file` can itself fail on broken symlinks or permission
+            // issues — surface those rather than silently skip.
+            let meta = entry.metadata().map_err(|e| ScenarioError::Io {
+                path: path.clone(),
+                message: format!("metadata failed: {e}"),
+            })?;
+            if meta.is_file() {
+                entries.push(path);
+            }
+        }
         entries.sort();
 
         let mut scenarios = Vec::with_capacity(entries.len());
@@ -554,6 +607,97 @@ mod tests {
             assert!(DEFAULT_TIER <= TIER_MAX);
         };
         assert_eq!(SCENARIO_FILE_EXTENSION, "toml");
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Path-traversal hardening (review thread r3252771992).
+    // ──────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_safe_path_component_accepts_normal_ids() {
+        for id in [
+            "alpha",
+            "alpha_beta",
+            "scenario-1",
+            "tier3_easy",
+            "v1.2.3",
+            "a b c", // spaces are OK; only path separators are rejected
+        ] {
+            assert!(
+                Scenario::is_safe_path_component(id),
+                "expected {id:?} to be a safe path component"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_safe_path_component_rejects_traversal_chars() {
+        for id in [
+            "",
+            "   ",
+            ".",
+            "..",
+            "../escape",
+            "..\\escape",
+            "a/b",
+            "a\\b",
+            "foo/../bar",
+            "with\0null",
+            "trail..ing",
+        ] {
+            assert!(
+                !Scenario::is_safe_path_component(id),
+                "expected {id:?} to be REJECTED as a path component"
+            );
+        }
+    }
+
+    #[test]
+    fn test_scenario_validate_rejects_path_traversal_id() {
+        let mut s = Scenario::new("ok", 1, small_config());
+        s.id = "../escape".to_string();
+        let errors = s.validate();
+        assert!(
+            errors.iter().any(|e| e.contains("invalid path characters")),
+            "missing path-traversal error in {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_scenario_load_file_rejects_path_traversal_id() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("bad.toml");
+        let mut s = Scenario::new("ok", 1, small_config());
+        s.id = "../escape".to_string();
+        std::fs::write(&path, toml::to_string(&s).unwrap()).unwrap();
+        let err = Scenario::load_file(&path).unwrap_err();
+        match err {
+            ScenarioError::Invalid { errors, .. } => {
+                assert!(errors.iter().any(|e| e.contains("invalid path characters")));
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // load_dir error propagation (review thread r3252813091).
+    //
+    // Dangling symlinks don't reliably trigger the new metadata() error
+    // path because `DirEntry::metadata()` returns the symlink's own
+    // metadata, not the target's. We assert the *non-error* invariant
+    // instead: a directory with no `.toml` entries surfaces as
+    // SuiteInvalid (not silently empty).
+    // ──────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_load_dir_with_only_symlinks_does_not_panic() {
+        // Regression for the change away from `filter_map(Result::ok)`:
+        // ensure the new entry-by-entry loop handles odd entry kinds
+        // (no `.toml` files at all → SuiteInvalid).
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("not-a-scenario.md"), "ignore me").unwrap();
+        let err = ScenarioSuite::load_dir(dir.path()).unwrap_err();
+        assert!(matches!(err, ScenarioError::SuiteInvalid { .. }));
     }
 
     mod prop {
