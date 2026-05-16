@@ -89,8 +89,10 @@ The full three-service Docker Compose stack is now deployed:
   the job stays green until the user provisions:
   - Repo variable `DOCKERHUB_NAMESPACE` (e.g. `ianshank`)
   - Repo variable `DOCKERHUB_USERNAME` (e.g. `ianshank`)
-  - Repo secret `DOCKERHUB_TOKEN` (PAT with `Read, Write, Delete` on the
-    `forge` repo on Docker Hub; create the repo first)
+  - Repo secret `DOCKERHUB_TOKEN` (PAT with `Read & Write` on the `forge`
+    repo on Docker Hub — least-privilege; `Delete` is NOT required for the
+    publish flow and should be withheld unless image-deletion is also wired
+    into CI. Create the Docker Hub repo manually before generating the PAT.)
   Follow-up images (`forge-dashboard`, `forge-demo`) wait for the dashboard
   and demo Dockerfiles to be added to the existing CI build (they exist on
   disk under `docker/` but aren't built by the workflow today).
@@ -99,7 +101,7 @@ The full three-service Docker Compose stack is now deployed:
 - ✅ Semver tags on GitHub release — already present via
   `docker/metadata-action@v5` `type=semver,pattern={{version}}` /
   `{{major}}.{{minor}}`, now applied to both registries.
-- Post-push smoke probe: pulls the first GHCR-emitted tag (NOT
+- ✅ Post-push smoke probe: pulls the first GHCR-emitted tag (NOT
   `github.sha`, which is the full 40-char SHA that metadata-action's
   `type=sha,prefix=` never emits) and runs `/health` against
   `127.0.0.1:8080` with a 30 s retry budget. Container `logs` + `inspect`
