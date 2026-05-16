@@ -4,6 +4,8 @@ use forge_types::config::ForgeConfig;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
+use crate::output::OutputConfig;
+
 /// Configuration for an evaluation run.
 ///
 /// All parameters are configurable — no hard-coded values.
@@ -21,10 +23,14 @@ pub struct EvalConfig {
     pub tiers: Vec<u8>,
     /// Number of parallel evaluation threads (0 = use rayon default).
     pub parallelism: u32,
-    /// Whether to record compact replays for each episode.
+    /// Whether to record compact replays for each episode (in memory).
     pub record_replays: bool,
-    /// Whether to record full trajectories for each episode.
+    /// Whether to record full trajectories for each episode (in memory).
     pub record_trajectories: bool,
+    /// On-disk artefact configuration. Disabled by default — when enabled,
+    /// the harness persists replays and trajectories under
+    /// [`OutputConfig::dir`].
+    pub output: OutputConfig,
     /// Base FORGE config to use for scenarios that don't specify their own.
     pub base_forge_config: ForgeConfig,
 }
@@ -45,6 +51,7 @@ impl Default for EvalConfig {
             parallelism: 0,
             record_replays: false,
             record_trajectories: false,
+            output: OutputConfig::default(),
             base_forge_config: forge_config,
         }
     }
@@ -75,6 +82,7 @@ impl EvalConfig {
         if self.base_forge_config.agents.num_agents == 0 {
             errors.push("num_agents must be > 0".to_string());
         }
+        errors.extend(self.output.validate());
 
         errors
     }

@@ -10,6 +10,9 @@
 //!   against FORGE scenarios, collecting per-episode results.
 //! - **Scorecard** ([`scorecard`]): Aggregated evaluation results across scenarios
 //!   and difficulty tiers, suitable for leaderboards and reports.
+//! - **Scenario suite** ([`scenario`]): Composable scenario definitions and
+//!   on-disk suites loaded from TOML.
+//! - **Output** ([`output`]): Persistence of replays, trajectories, and scorecards.
 //! - **Config** ([`config`]): Evaluation configuration with sensible defaults.
 //!
 //! # Architecture
@@ -20,4 +23,9 @@
 
 pub mod config;
 pub mod harness;
+pub mod output;
+pub mod scenario;
 pub mod scorecard;
+
+pub use output::{OutputConfig, ScorecardFormat};
+pub use scenario::{Scenario, ScenarioError, ScenarioSuite};
