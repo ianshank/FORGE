@@ -5,10 +5,20 @@ on:
     branches: [main, master, develop, v0.2/implementation]
   pull_request:
     branches: [main, master, develop, v0.2/implementation]
+  workflow_dispatch:
+    inputs:
+      run_lmstudio:
+        description: "Run opt-in LM Studio live-smoke job (requires vars.LMSTUDIO_SERVICE_IMAGE)"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # Mirrors forge.cognitive.providers.DEFAULT_LMSTUDIO_BASE_URL — keep these
+  # two strings in lock-step. Used by the opt-in `python-test-lmstudio` job.
+  LMSTUDIO_PORT: "1234"
+  LMSTUDIO_BASE_URL: "http://localhost:1234/v1"
 
 jobs:
   fmt:
@@ -196,6 +206,62 @@ jobs:
             --cov-report=term-missing \
             --cov-fail-under=85 \
             --cov-config=.coveragerc
+
+  python-test-lmstudio:
+    # Opt-in live-smoke test against a real OpenAI-compatible LLM endpoint.
+    # Triggered only via workflow_dispatch with `run_lmstudio=true`. Requires
+    # the repo variable `LMSTUDIO_SERVICE_IMAGE` to be set to a tested OCI
+    # image exposing the OpenAI v1 API on $LMSTUDIO_PORT. Document the chosen
+    # image in docs/architecture.md §3.9 before enabling.
+    name: Python LM Studio Smoke (opt-in)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_lmstudio
+    services:
+      lmstudio:
+        image: ${{ vars.LMSTUDIO_SERVICE_IMAGE }}
+        ports:
+          - "1234:1234"
+        options: >-
+          --health-cmd "curl -sf http://localhost:1234/v1/models || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      # `base_url` is sourced from configs/cognitive/gemma_e4b_teacher.toml,
+      # which already mirrors DEFAULT_LMSTUDIO_BASE_URL (see workflow-level
+      # LMSTUDIO_BASE_URL env, kept in lock-step). No FORGE_TEACHER_BASE_URL
+      # override is needed — overriding it would mask config drift.
+      FORGE_LMSTUDIO_LIVE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Create + activate virtualenv
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest numpy gymnasium httpx jsonschema
+      - name: Build native extension
+        run: maturin develop
+      - name: Run lmstudio smoke (marker-selected, no coverage)
+        run: pytest tests/python/test_lmstudio_live_smoke.py -m lmstudio --no-cov -v
+      - name: Dump LM Studio service logs on failure
+        if: failure()
+        run: |
+          echo "::group::LM Studio service container logs"
+          docker logs "$(docker ps -aqf 'name=lmstudio' | head -n1)" 2>&1 || true
+          echo "::endgroup::"
+          echo "::group::LM Studio container inspect"
+          docker inspect "$(docker ps -aqf 'name=lmstudio' | head -n1)" \
+            --format '{{json .State}}' 2>&1 || true
+          echo "::endgroup::"
 
   python-test-fast:
     name: Python Tests (no native)
