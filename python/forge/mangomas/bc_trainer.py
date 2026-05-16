@@ -37,6 +37,14 @@ DEFAULT_BC_BATCH_SIZE: int = 64
 DEFAULT_BC_KL_WEIGHT: float = 1.0
 DEFAULT_BC_VALUE_LOSS_WEIGHT: float = 0.5
 DEFAULT_BC_SEED: int = 42
+# Glorot/Xavier-uniform init scale = sqrt(numerator / (fan_in + fan_out)).
+# numerator=6.0 reproduces symmetric Glorot uniform; swap to 2.0 for He
+# or 1.0 for unit-variance without forking the trainer.
+DEFAULT_BC_INIT_SCALE_NUMERATOR: float = 6.0
+# Additive epsilon inside log() for CE and KL terms; prevents log(0)
+# while staying small enough not to perturb gradients at typical softmax
+# probabilities.
+DEFAULT_BC_NUMERICAL_EPSILON: float = 1e-8
 
 
 @dataclass
@@ -50,6 +58,8 @@ class BCTrainerConfig:
     value_loss_weight: float = DEFAULT_BC_VALUE_LOSS_WEIGHT
     seed: int = DEFAULT_BC_SEED
     num_actions: int = 0  # 0 → inferred from teacher_action_ids.max()+1
+    init_scale_numerator: float = DEFAULT_BC_INIT_SCALE_NUMERATOR
+    numerical_epsilon: float = DEFAULT_BC_NUMERICAL_EPSILON
 
 
 @dataclass
@@ -218,7 +228,7 @@ class BCTrainer:
         rng = np.random.default_rng(self.config.seed)
         n_actions = self._resolve_num_actions(dataset)
         state_dim = dataset.state_dim or 1
-        scale = np.sqrt(6.0 / (state_dim + n_actions))
+        scale = np.sqrt(self.config.init_scale_numerator / (state_dim + n_actions))
         w = rng.uniform(-scale, scale, (n_actions, state_dim)).astype(np.float32)
         b = np.zeros(n_actions, dtype=np.float32)
 
@@ -239,7 +249,7 @@ class BCTrainer:
                 logits_max = logits.max(axis=1, keepdims=True)
                 exp_logits = np.exp(logits - logits_max)
                 probs = exp_logits / exp_logits.sum(axis=1, keepdims=True)
-                ce = -np.log(probs[np.arange(len(y)), y] + 1e-8)
+                ce = -np.log(probs[np.arange(len(y)), y] + self.config.numerical_epsilon)
                 loss = float(ce.mean())
 
                 if (
@@ -247,7 +257,7 @@ class BCTrainer:
                     and self.config.kl_weight > 0.0
                 ):
                     target = dataset.teacher_top_k_probs[idx]
-                    eps = 1e-8
+                    eps = self.config.numerical_epsilon
                     kl = (
                         target
                         * (np.log(target + eps) - np.log(probs + eps))

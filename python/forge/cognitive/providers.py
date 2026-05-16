@@ -24,6 +24,10 @@ DEFAULT_LMSTUDIO_MODEL: str = ""
 DEFAULT_LMSTUDIO_TIMEOUT_SECS: float = 120.0
 DEFAULT_LMSTUDIO_MAX_RETRIES: int = 2
 DEFAULT_LMSTUDIO_RETRY_BACKOFF_SECS: float = 1.0
+# Multiplicative base for retry backoff: delay = backoff_secs * base ** attempt.
+# Default 2.0 yields 1s, 2s, 4s, 8s, ... ; tune lower (e.g. 1.5) for gentler
+# ramps against rate-limited deployments.
+DEFAULT_LMSTUDIO_RETRY_BACKOFF_BASE: float = 2.0
 # LM Studio's local server doesn't authenticate, but the openai SDK rejects
 # an empty/None api_key at client construction time, so a placeholder string
 # is required. Override only if you've put LM Studio behind a real auth proxy.
@@ -215,6 +219,7 @@ class OpenAIProvider(CognitiveProvider):
         timeout_secs: float | None = None,
         max_retries: int = 0,
         retry_backoff_secs: float = DEFAULT_LMSTUDIO_RETRY_BACKOFF_SECS,
+        retry_backoff_base: float = DEFAULT_LMSTUDIO_RETRY_BACKOFF_BASE,
         payload_preview_chars: int = DEFAULT_PAYLOAD_PREVIEW_CHARS,
     ) -> None:
         self._api_key = api_key
@@ -222,6 +227,7 @@ class OpenAIProvider(CognitiveProvider):
         self._timeout_secs = timeout_secs
         self._max_retries = max_retries
         self._retry_backoff_secs = retry_backoff_secs
+        self._retry_backoff_base = retry_backoff_base
         self._payload_preview_chars = payload_preview_chars
         self._client: Any = None
         self._aclient: Any = None
@@ -328,7 +334,7 @@ class OpenAIProvider(CognitiveProvider):
                 )
                 if attempt >= self._max_retries:
                     break
-                time.sleep(self._retry_backoff_secs * (2**attempt))
+                time.sleep(self._retry_backoff_secs * (self._retry_backoff_base ** attempt))
                 attempt += 1
         assert last_exc is not None  # for type narrowing
         raise last_exc
@@ -379,7 +385,7 @@ class OpenAIProvider(CognitiveProvider):
                 )
                 if attempt >= self._max_retries:
                     break
-                await asyncio.sleep(self._retry_backoff_secs * (2**attempt))
+                await asyncio.sleep(self._retry_backoff_secs * (self._retry_backoff_base ** attempt))
                 attempt += 1
         assert last_exc is not None
         raise last_exc
@@ -409,6 +415,7 @@ class LMStudioProvider(OpenAIProvider):
         timeout_secs: float | None = DEFAULT_LMSTUDIO_TIMEOUT_SECS,
         max_retries: int = DEFAULT_LMSTUDIO_MAX_RETRIES,
         retry_backoff_secs: float = DEFAULT_LMSTUDIO_RETRY_BACKOFF_SECS,
+        retry_backoff_base: float = DEFAULT_LMSTUDIO_RETRY_BACKOFF_BASE,
         payload_preview_chars: int = DEFAULT_PAYLOAD_PREVIEW_CHARS,
     ) -> None:
         # Explicit None must collapse to the module constant so callers
@@ -422,6 +429,7 @@ class LMStudioProvider(OpenAIProvider):
             timeout_secs=timeout_secs,
             max_retries=max_retries,
             retry_backoff_secs=retry_backoff_secs,
+            retry_backoff_base=retry_backoff_base,
             payload_preview_chars=payload_preview_chars,
         )
         if model:

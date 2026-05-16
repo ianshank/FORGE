@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from forge.mangomas.config import (
+    DEFAULT_TEACHER_BASE_URL,
     DEFAULT_TEACHER_PROVIDER,
     DEFAULT_TEACHER_SHARD_SIZE,
     MangoMASBridgeConfig,
@@ -22,7 +23,7 @@ def test_teacher_config_defaults() -> None:
     cfg = TeacherConfig()
     assert cfg.enabled is False
     assert cfg.provider == DEFAULT_TEACHER_PROVIDER
-    assert cfg.base_url == "http://localhost:1234/v1"
+    assert cfg.base_url == DEFAULT_TEACHER_BASE_URL
     assert cfg.temperature == 0.0
     assert cfg.top_p == 1.0
     assert cfg.concurrency == 1
