@@ -176,7 +176,12 @@ mod tests {
 
     #[test]
     fn test_from_env_defaults() {
-        // Without env vars set, should use defaults
+        // Env vars are process-global; without the lock + scope this test fails
+        // under any ambient `FORGE_SERVER_PORT` set in the dev shell or by a
+        // sibling cargo test. Reuses the `ENV_LOCK`/`EnvScope`/`ALL_KEYS`
+        // machinery declared below in this same `mod tests`.
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
         let config = ServerConfig::from_env();
         assert_eq!(
             config.bind_addr.port(),
@@ -232,6 +237,10 @@ mod tests {
     #[test]
     fn test_from_env_defaults_when_no_env_vars() {
         // Without any FORGE_SERVER_ env vars, from_env should return defaults.
+        // Lock + scope clear ambient pollution so this is deterministic regardless
+        // of dev-shell state. See note on `test_from_env_defaults` above.
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
         let config = ServerConfig::from_env();
         let default_config = ServerConfig::default();
         assert_eq!(config.bind_addr, default_config.bind_addr);
@@ -274,6 +283,12 @@ mod tests {
                 .iter()
                 .map(|k| (*k, std::env::var(k).ok()))
                 .collect::<Vec<_>>();
+            // Diagnostic trace — visible under `cargo test -- --nocapture` so a
+            // future flake (e.g. a new test that forgets to acquire this scope)
+            // is debuggable from the test output alone.
+            for (k, original) in &previous {
+                eprintln!("[env-scope] clearing {k} (was: {original:?})");
+            }
             for k in keys {
                 std::env::remove_var(k);
             }
