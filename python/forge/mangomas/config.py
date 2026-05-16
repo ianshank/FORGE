@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from forge.cognitive.providers import DEFAULT_LMSTUDIO_BASE_URL
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_SEED = 42
@@ -39,7 +41,9 @@ DEFAULT_PIPELINE_LOG_FILE = "pipeline.log"
 DEFAULT_PIPELINE_MANIFEST = "pipeline_manifest.json"
 
 DEFAULT_TEACHER_PROVIDER = "lmstudio"
-DEFAULT_TEACHER_BASE_URL = "http://localhost:1234/v1"
+# Single source of truth lives in forge.cognitive.providers; aliasing keeps
+# config.py's TeacherConfig stable without duplicating the URL literal.
+DEFAULT_TEACHER_BASE_URL = DEFAULT_LMSTUDIO_BASE_URL
 DEFAULT_TEACHER_MODEL = ""
 DEFAULT_TEACHER_TEMPERATURE = 0.0
 DEFAULT_TEACHER_TOP_P = 1.0

@@ -30,6 +30,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_SHARD_SIZE: int = 1000
 DEFAULT_COMPRESS: bool = True
 DEFAULT_SCHEMA_VERSION: str = "1.0"
+# Per-shard byte cap (MB) before the writer rotates to a fresh file.
+# Override via TeacherTraceWriter(..., max_file_size_mb=N) or by plumbing
+# through TeacherConfig in callers that already own a config struct.
+DEFAULT_MAX_FILE_SIZE_MB: int = 100
 
 
 @dataclass
@@ -80,7 +84,7 @@ class TeacherTraceWriter:
         *,
         shard_size: int = DEFAULT_SHARD_SIZE,
         compress: bool = DEFAULT_COMPRESS,
-        max_file_size_mb: int = 100,
+        max_file_size_mb: int = DEFAULT_MAX_FILE_SIZE_MB,
     ) -> None:
         self._output_root = Path(output_root)
         self._scenario_id = scenario_id

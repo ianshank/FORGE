@@ -23,6 +23,8 @@ def test_cli_accepts_llm_policy_choice() -> None:
 
 
 def test_cli_teacher_overrides_threaded(tmp_path: Path) -> None:
+    from forge.mangomas.config import DEFAULT_TEACHER_BASE_URL, MangoMASBridgeConfig
+
     args = train.parse_args(
         [
             "--agent",
@@ -34,7 +36,7 @@ def test_cli_teacher_overrides_threaded(tmp_path: Path) -> None:
             "--teacher-model",
             "qwen2.5-14b-instruct",
             "--teacher-base-url",
-            "http://localhost:1234/v1",
+            DEFAULT_TEACHER_BASE_URL,
             "--teacher-concurrency",
             "8",
             "--teacher-output-root",
@@ -42,12 +44,10 @@ def test_cli_teacher_overrides_threaded(tmp_path: Path) -> None:
         ]
     )
 
-    from forge.mangomas.config import MangoMASBridgeConfig
-
     bridge = MangoMASBridgeConfig()
     train._apply_mangomas_cli_overrides(bridge, args)
     assert bridge.teacher.model == "qwen2.5-14b-instruct"
-    assert bridge.teacher.base_url == "http://localhost:1234/v1"
+    assert bridge.teacher.base_url == DEFAULT_TEACHER_BASE_URL
     assert bridge.teacher.concurrency == 8
     assert bridge.teacher.output_root == str(tmp_path)
 

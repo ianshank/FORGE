@@ -8,6 +8,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from forge.cognitive.providers import (
+    DEFAULT_LMSTUDIO_BASE_URL,
+    DEFAULT_LMSTUDIO_MAX_RETRIES,
+    DEFAULT_LMSTUDIO_TIMEOUT_SECS,
     CognitiveProvider,
     CompletionConfig,
     CompletionResponse,
@@ -233,9 +236,9 @@ class TestLMStudioProviderSync:
     def test_defaults(self) -> None:
         provider = LMStudioProvider()
         assert provider.name() == "lmstudio"
-        assert provider._base_url == "http://localhost:1234/v1"
-        assert provider._timeout_secs == 120.0
-        assert provider._max_retries == 2
+        assert provider._base_url == DEFAULT_LMSTUDIO_BASE_URL
+        assert provider._timeout_secs == DEFAULT_LMSTUDIO_TIMEOUT_SECS
+        assert provider._max_retries == DEFAULT_LMSTUDIO_MAX_RETRIES
 
     def test_model_kwarg_sets_default_model(self, lmstudio_model_id: str) -> None:
         provider = LMStudioProvider(model=lmstudio_model_id)
@@ -274,6 +277,28 @@ class TestLMStudioProviderSync:
             provider.complete("hi", CompletionConfig(model="m"))
         assert fake_client.chat.completions.create.call_count == 2
 
+    def test_retry_backoff_base_scales_sleep_durations(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The new retry_backoff_base parameter must actually drive the
+        delay sequence: delay[attempt] = backoff_secs * base ** attempt.
+        Without this assertion, the kwarg is only exercised by construction
+        (covers DEFAULT_LMSTUDIO_RETRY_BACKOFF_BASE behaviour)."""
+        from forge.cognitive import providers as providers_mod
+
+        sleeps: list[float] = []
+        monkeypatch.setattr(providers_mod.time, "sleep", sleeps.append)
+        # backoff_secs=1.0 + base=3.0 -> expected delays [1.0, 3.0] for 2 retries.
+        provider = LMStudioProvider(
+            max_retries=2, retry_backoff_secs=1.0, retry_backoff_base=3.0
+        )
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.side_effect = RuntimeError("boom")
+        provider._client = fake_client
+        with pytest.raises(RuntimeError, match="boom"):
+            provider.complete("hi", CompletionConfig(model="m"))
+        assert sleeps == [1.0 * 3.0**0, 1.0 * 3.0**1]  # [1.0, 3.0]
+
     def test_factory_passes_kwargs(self) -> None:
         provider = create_provider(
             "lmstudio",
@@ -300,3 +325,32 @@ class TestLMStudioProviderSync:
         provider = providers_mod.LMStudioProvider(api_key=None)
         # Explicit None must collapse to the module constant, not stay None.
         assert provider._api_key == providers_mod.DEFAULT_LMSTUDIO_API_KEY
+
+
+class TestTruncate:
+    """Covers providers._truncate (used in payload-preview logging)."""
+
+    def test_text_shorter_than_limit_passes_through(self) -> None:
+        from forge.cognitive.providers import _truncate
+
+        assert _truncate("abc", 10) == "abc"
+
+    def test_text_at_exactly_limit_is_unmodified(self) -> None:
+        from forge.cognitive.providers import _truncate
+
+        assert _truncate("abcde", 5) == "abcde"
+
+    def test_text_longer_than_limit_gets_ellipsis_marker(self) -> None:
+        from forge.cognitive.providers import _truncate
+
+        # Note the marker is literal: "...<truncated>". The limit applies
+        # to the leading slice, not the total returned length.
+        result = _truncate("abcdefghij", 3)
+        assert result == "abc...<truncated>"
+
+    def test_non_positive_limit_disables_truncation(self) -> None:
+        from forge.cognitive.providers import _truncate
+
+        long = "x" * 1000
+        assert _truncate(long, 0) == long
+        assert _truncate(long, -5) == long

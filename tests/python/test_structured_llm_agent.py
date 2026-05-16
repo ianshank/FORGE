@@ -279,3 +279,49 @@ def test_reasoning_history_max_caps_legacy_agent() -> None:
     for _ in range(8):
         agent.act(obs)
     assert len(agent._reasoning_history) == 3
+
+
+def test_clip_value_handles_nan_and_non_float(tmp_path: Path) -> None:
+    """Covers llm_agent.py:_clip_value — NaN must collapse to 0.0 and a
+    non-float value (dict / object) must return None instead of crashing
+    the per-step trace pipeline."""
+    cfg = StructuredLLMAgentConfig(
+        name="structured",
+        prompt_template_path=str(_structured_template(tmp_path)),
+        validate_action=False,
+    )
+    agent = LLMAgent(cfg, provider=_RecordingProvider(_good_response()))
+    # NaN — math.isnan branch returns the configured floor (0.0).
+    assert agent._clip_value(float("nan")) == 0.0
+    # Non-convertible value — except (TypeError, ValueError) branch returns None.
+    assert agent._clip_value({"unparseable": "dict"}) is None
+    # None passthrough — guards the early-return at the top of _clip_value.
+    assert agent._clip_value(None) is None
+
+
+def test_parse_structured_non_int_action_with_validate_off(tmp_path: Path) -> None:
+    """Covers llm_agent.py: when ``action_id`` is non-integer AND
+    ``validate_action=False``, the agent must log + fall back to 0 instead
+    of raising — so an unhappy LLM response doesn't kill the rollout."""
+    cfg = StructuredLLMAgentConfig(
+        name="structured",
+        prompt_template_path=str(_structured_template(tmp_path)),
+        validate_action=False,
+        legal_actions=(0, 1, 2),
+    )
+    response = json.dumps(
+        {
+            "action_id": "not-an-int",
+            "intention": 0,
+            "subgoals": [],
+            "rationale": "",
+            "value_hat": 0.1,
+            "constraint_critique": {},
+        }
+    )
+    agent = LLMAgent(cfg, provider=_RecordingProvider(response))
+    # Must NOT raise; fallback action is 0 and the original non-int payload
+    # is preserved on the trace for downstream debugging.
+    action_id, trace = agent.act(np.zeros(1, dtype=np.float32))
+    assert action_id == 0
+    assert trace["action_id"] == 0

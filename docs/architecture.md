@@ -826,6 +826,71 @@ defaults to off:
 DAgger, DPO / preference data, Rust HTTP client, vectorised step-level
 concurrency.
 
+### 3.9.1 Config-Driven Constants (2026-05-16)
+
+Every numerical / string constant that ever flows through the teacher
+pipeline at runtime is now sourced from a config struct field, defaulted
+from a module-level `DEFAULT_*` constant. This conforms to the project-wide
+"no hard-coded values" rule from `CLAUDE.md` and lets deployments override
+without forking.
+
+```
+forge.cognitive.providers
+  DEFAULT_LMSTUDIO_BASE_URL            "http://localhost:1234/v1"
+  DEFAULT_LMSTUDIO_TIMEOUT_SECS        120.0
+  DEFAULT_LMSTUDIO_MAX_RETRIES         2
+  DEFAULT_LMSTUDIO_RETRY_BACKOFF_SECS  1.0
+  DEFAULT_LMSTUDIO_RETRY_BACKOFF_BASE  2.0   ← delay = backoff_secs * base ** attempt
+  DEFAULT_LMSTUDIO_API_KEY             "lm-studio"
+  DEFAULT_PAYLOAD_PREVIEW_CHARS        256
+        │  (consumed via __init__ kwargs of OpenAIProvider / LMStudioProvider)
+        ▼
+forge.cognitive.llm_agent
+  DEFAULT_LEGACY_PARSE_KEYWORD         "action"
+  DEFAULT_LEGACY_PARSE_STRIP_CHARS     ":,. "
+        │  (consumed via LLMAgentConfig.legacy_parse_keyword /
+        │   legacy_parse_strip_chars; read inside _parse_action)
+        ▼
+forge.mangomas.config.TeacherConfig
+  base_url            = DEFAULT_TEACHER_BASE_URL (alias of
+                        DEFAULT_LMSTUDIO_BASE_URL — single source of truth)
+  retry_backoff_secs  = DEFAULT_TEACHER_RETRY_BACKOFF_SECS
+  shard_size          = DEFAULT_TEACHER_SHARD_SIZE
+        │  (drives StructuredLLMAgentConfig + LMStudioProvider construction)
+        ▼
+forge.mangomas.teacher_trace
+  DEFAULT_SHARD_SIZE           1000
+  DEFAULT_COMPRESS             True
+  DEFAULT_SCHEMA_VERSION       "1.0"
+  DEFAULT_MAX_FILE_SIZE_MB     100    ← per-shard byte cap before rotation
+        │  (consumed by TeacherTraceWriter.__init__ kwargs)
+        ▼
+forge.mangomas.bc_trainer
+  DEFAULT_BC_LEARNING_RATE         3e-4
+  DEFAULT_BC_NUM_EPOCHS            30
+  DEFAULT_BC_BATCH_SIZE            64
+  DEFAULT_BC_KL_WEIGHT             1.0
+  DEFAULT_BC_VALUE_LOSS_WEIGHT     0.5
+  DEFAULT_BC_SEED                  42
+  DEFAULT_BC_INIT_SCALE_NUMERATOR  6.0   ← Glorot uniform (2.0 = He, 1.0 = unit-variance)
+  DEFAULT_BC_NUMERICAL_EPSILON     1e-8  ← shared by CE log + KL log
+                                          (was duplicated literal at 2 sites)
+```
+
+**Override surface.** Two complementary paths:
+
+* **TOML** — `configs/cognitive/*.toml` populates `TeacherConfig`, which
+  in turn instantiates `StructuredLLMAgentConfig` + `LMStudioProvider`.
+  Preferred for deployment-wide changes.
+* **Programmatic** — pass the keyword argument directly when constructing
+  `BCTrainer(BCTrainerConfig(numerical_epsilon=1e-6))` or
+  `OpenAIProvider(retry_backoff_base=1.5, ...)`. Preferred for tests,
+  ablations, and per-experiment tuning.
+
+**Backwards compatibility.** Every new field defaults to the value of
+the literal it replaced, so the surface change is purely additive: callers
+that don't pass the new kwargs see identical behaviour.
+
 ---
 
 ## Level 4: Code-Level Detail
