@@ -7,10 +7,41 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from forge.mangomas.bc_trainer import BCDataset, BCTrainer, BCTrainerConfig
+from forge.mangomas.bc_trainer import (
+    DEFAULT_BC_KL_WEIGHT,
+    DEFAULT_BC_SEED,
+    BCDataset,
+    BCTrainer,
+    BCTrainerConfig,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@pytest.fixture
+def toy_actor_critic_factory():
+    """Factory `(state_dim, num_actions) -> _ToyActorCritic`.
+
+    Consolidates the inline `_ToyActorCritic` class previously duplicated by
+    each torch-path test. Skips immediately if torch isn't installed.
+    """
+    torch = pytest.importorskip("torch")
+    nn = torch.nn
+
+    def _factory(state_dim: int, num_actions: int):
+        class _ToyActorCritic(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.actor = nn.Linear(state_dim, num_actions)
+                self.critic = nn.Linear(state_dim, 1)
+
+            def forward(self, x):
+                return self.actor(x), self.critic(x)
+
+        return _ToyActorCritic()
+
+    return _factory
 
 
 def _synthetic_episodes(
@@ -119,24 +150,13 @@ def test_train_on_empty_dataset_warns_and_skips(
         trainer.export_weights("/tmp/forge-bc-empty-skip.npz")
 
 
-def test_torch_path_skipped_when_torch_missing() -> None:
+def test_torch_path_skipped_when_torch_missing(toy_actor_critic_factory) -> None:
     """Skip when torch isn't installed; runs and updates weights when present."""
-    pytest.importorskip("torch")
     import torch
-    from torch import nn
-
-    class _ToyActorCritic(nn.Module):
-        def __init__(self, state_dim: int, num_actions: int) -> None:
-            super().__init__()
-            self.actor = nn.Linear(state_dim, num_actions)
-            self.critic = nn.Linear(state_dim, 1)
-
-        def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-            return self.actor(x), self.critic(x)
 
     obs, actions = _synthetic_episodes(4, 8, state_dim=3, num_actions=2)
     dataset = BCTrainer.build_dataset(obs, actions, num_actions=2)
-    net = _ToyActorCritic(3, 2)
+    net = toy_actor_critic_factory(3, 2)
     before = net.actor.weight.detach().clone()
     trainer = BCTrainer(
         BCTrainerConfig(num_epochs=3, learning_rate=0.05, seed=7)
@@ -146,21 +166,10 @@ def test_torch_path_skipped_when_torch_missing() -> None:
     assert not torch.allclose(before, after)
 
 
-def test_torch_path_uses_value_loss_when_value_hats_supplied() -> None:
+def test_torch_path_uses_value_loss_when_value_hats_supplied(toy_actor_critic_factory) -> None:
     """Covers bc_trainer.py:330-341 — value-loss term only fires when both
     teacher_value_hats are present AND value_loss_weight > 0."""
-    pytest.importorskip("torch")
     import torch
-    from torch import nn
-
-    class _ToyActorCritic(nn.Module):
-        def __init__(self, state_dim: int, num_actions: int) -> None:
-            super().__init__()
-            self.actor = nn.Linear(state_dim, num_actions)
-            self.critic = nn.Linear(state_dim, 1)
-
-        def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-            return self.actor(x), self.critic(x)
 
     obs, actions = _synthetic_episodes(4, 8, state_dim=3, num_actions=2)
     teacher_values: list[list[float]] = [
@@ -170,7 +179,7 @@ def test_torch_path_uses_value_loss_when_value_hats_supplied() -> None:
         obs, actions, num_actions=2, value_hats=teacher_values
     )
     assert dataset.teacher_value_hats is not None
-    net = _ToyActorCritic(3, 2)
+    net = toy_actor_critic_factory(3, 2)
     critic_before = net.critic.weight.detach().clone()
     trainer = BCTrainer(
         BCTrainerConfig(
@@ -184,6 +193,81 @@ def test_torch_path_uses_value_loss_when_value_hats_supplied() -> None:
     critic_after = net.critic.weight.detach()
     # value_loss_weight > 0 must produce gradient flow into the critic head.
     assert not torch.allclose(critic_before, critic_after)
+
+
+@pytest.mark.parametrize(
+    "kl_weight,expect_kl_in_loss",
+    [(DEFAULT_BC_KL_WEIGHT, True), (0.0, False)],
+    ids=["kl_active", "kl_disabled"],
+)
+def test_torch_path_kl_only_branch(
+    toy_actor_critic_factory, kl_weight: float, expect_kl_in_loss: bool
+) -> None:
+    """Covers bc_trainer.py:336-339 — KL branch fires when teacher_top_k_probs
+    is supplied AND teacher_value_hats is None AND kl_weight > 0.
+
+    The KL term contributes positively to the loss, so the active run's final
+    loss must exceed the CE-only baseline (same initial weights, same seed)
+    by at least a small float-noise tolerance.
+    """
+    import torch
+
+    rng = np.random.default_rng(DEFAULT_BC_SEED)
+    n, state_dim, num_actions = 32, 8, 4
+    x = rng.standard_normal((n, state_dim)).astype(np.float32)
+    y = rng.integers(0, num_actions, size=n).astype(np.int64)
+    topk = rng.dirichlet(np.ones(num_actions), size=n).astype(np.float32)
+
+    dataset = BCDataset(
+        observations=x,
+        teacher_action_ids=y,
+        teacher_top_k_probs=topk,
+        teacher_value_hats=None,  # forces KL-only branch
+    )
+    cfg = BCTrainerConfig(
+        num_epochs=3,
+        kl_weight=kl_weight,
+        value_loss_weight=0.0,
+        seed=DEFAULT_BC_SEED,
+    )
+    trainer = BCTrainer(cfg)
+    net = toy_actor_critic_factory(state_dim, num_actions)
+
+    # Snapshot PRE-training weights so the CE-only baseline starts from the
+    # same initialisation. Without this, net2.load_state_dict(net.state_dict())
+    # after `trainer.train(...)` would copy POST-training weights into net2.
+    initial_state = {k: v.detach().clone() for k, v in net.state_dict().items()}
+    weight_before = net.actor.weight.detach().clone()
+
+    result = trainer.train(dataset, actor_critic=net)
+
+    assert result.epochs_run == 3
+    assert not torch.equal(weight_before, net.actor.weight.detach()), (
+        "weights must update under torch path"
+    )
+
+    if expect_kl_in_loss:
+        ce_only_trainer = BCTrainer(
+            BCTrainerConfig(
+                num_epochs=3,
+                kl_weight=0.0,
+                value_loss_weight=0.0,
+                seed=DEFAULT_BC_SEED,
+            )
+        )
+        net2 = toy_actor_critic_factory(state_dim, num_actions)
+        net2.load_state_dict(initial_state)
+        ce_only_dataset = BCDataset(
+            observations=x,
+            teacher_action_ids=y,
+            teacher_top_k_probs=None,
+            teacher_value_hats=None,
+        )
+        ce_only = ce_only_trainer.train(ce_only_dataset, actor_critic=net2)
+        assert result.final_loss > ce_only.final_loss + 1e-6, (
+            f"KL term did not contribute: kl_active_loss={result.final_loss:.6f} "
+            f"ce_only_loss={ce_only.final_loss:.6f}"
+        )
 
 
 def test_resolve_num_actions_falls_back_when_topk_has_zero_columns() -> None:
