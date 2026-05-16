@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+
 from forge.mangomas.config import ConstitutionalTrainerConfig
 from forge.mangomas.constitutional_trainer import (
     DEFAULT_CONSTRAINTS,

@@ -7,6 +7,7 @@ Rust extension is required.
 from __future__ import annotations
 
 import numpy as np
+
 from forge.testing.env_factory import (
     FakeEnvConfig,
     RealisticFakeEnv,

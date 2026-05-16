@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
 from forge.mangomas.config import (
     DEFAULT_TEACHER_PROVIDER,
     DEFAULT_TEACHER_SHARD_SIZE,
@@ -13,6 +13,9 @@ from forge.mangomas.config import (
     TeacherConfig,
 )
 from forge.utils.config_env import apply_env_overrides
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_teacher_config_defaults() -> None:

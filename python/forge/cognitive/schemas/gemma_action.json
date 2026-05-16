@@ -1,0 +1,62 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "forge_teacher_decision_gemma",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action_id",
+        "intention",
+        "subgoals",
+        "rationale",
+        "value_hat",
+        "constraint_critique"
+      ],
+      "properties": {
+        "action_id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into the legal_actions list for the chosen action."
+        },
+        "intention": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7,
+          "description": "BDI intention bucket (0..7)."
+        },
+        "subgoals": {
+          "type": "array",
+          "items": {"type": "string"},
+          "maxItems": 8
+        },
+        "rationale": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "value_hat": {
+          "type": "number",
+          "description": "Teacher estimate of return for the chosen action."
+        },
+        "constraint_critique": {
+          "type": "object",
+          "additionalProperties": {"type": "boolean"},
+          "description": "Named constraint -> violation flag."
+        },
+        "top_k_probs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action_id", "prob"],
+            "properties": {
+              "action_id": {"type": "integer", "minimum": 0},
+              "prob": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+            }
+          }
+        }
+      }
+    }
+  }
+}

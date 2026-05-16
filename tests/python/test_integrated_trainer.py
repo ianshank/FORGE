@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+
 from forge.integration.integrated_trainer import (
     IntegratedTrainer,
     IntegrationTrainerConfig,

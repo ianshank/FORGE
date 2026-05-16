@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 from forge.training.muzero_buffer import (
     DEFAULT_BUFFER_CAPACITY,
     GameHistory,

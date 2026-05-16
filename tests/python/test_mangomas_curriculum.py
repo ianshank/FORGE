@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+
 from forge.mangomas.config import CurriculumConfig
 from forge.mangomas.curriculum_controller import (
     CAR_TIERS,

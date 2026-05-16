@@ -175,7 +175,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--teacher-model",
         type=str,
         default=None,
-        help="Override teacher.model (e.g. qwen2.5-14b-instruct).",
+        help="Override teacher.model (e.g. google/gemma-4-e4b, qwen2.5-14b-instruct).",
     )
     parser.add_argument(
         "--teacher-base-url",

@@ -23,12 +23,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 
+from train import _DEFAULT_EPISODES, _DEFAULT_SEED, parse_args
+
 from forge.agents.base_agent import AgentConfig
 from forge.agents.mcts_agent import MCTSAgent, MCTSConfig, MCTSNode
 from forge.agents.random_agent import RandomAgent
 from forge.training.trainer import Trainer, TrainerConfig
 from forge.utils.observation import compute_obs_dim, flatten_obs
-from train import _DEFAULT_EPISODES, _DEFAULT_SEED, parse_args
 
 # ============================================================
 # Shared observation utility tests

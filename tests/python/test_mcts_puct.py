@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from forge.agents.mcts_agent import MCTSAgent, MCTSConfig, MCTSEvaluator, MCTSNode
 
 # ---------------------------------------------------------------------------

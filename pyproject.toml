@@ -17,18 +17,25 @@ classifiers = [
 #   pip install -e ".[cleanrl]"   -- CleanRL CLI (tyro)
 #   pip install -e ".[wandb]"     -- Weights & Biases
 #   pip install -e ".[mlflow]"    -- MLflow
+#   pip install -e ".[teacher]"   -- LM Studio offline teacher (openai + jsonschema)
 #   pip install -e ".[all]"       -- everything
 sb3        = ["stable-baselines3>=2.0", "torch>=2.0"]
 cleanrl    = ["torch>=2.0"]
 wandb      = ["wandb>=0.16"]
 mlflow     = ["mlflow>=2.0"]
 mousedroid = ["huggingface-hub>=0.20", "torch>=2.0"]
+# LM Studio offline-teacher pipeline (cognitive providers + structured BC):
+#   - openai SDK    -> sync/async OpenAI-compatible HTTP client
+#   - jsonschema    -> validates few-shot exemplars against the action schema
+teacher    = ["openai>=1.0,<2.0", "jsonschema>=4.0,<5.0"]
 all        = [
     "stable-baselines3>=2.0",
     "torch>=2.0",
     "wandb>=0.16",
     "mlflow>=2.0",
     "huggingface-hub>=0.20",
+    "openai>=1.0,<2.0",
+    "jsonschema>=4.0,<5.0",
 ]
 
 [tool.maturin]
@@ -36,6 +43,13 @@ features = ["pyo3/extension-module"]
 module-name = "forge_env"
 python-source = "python"
 manifest-path = "crates/forge-python/Cargo.toml"
+# Non-Python assets that downstream consumers expect to find at runtime.
+# Maturin auto-packages *.py under python-source; everything else must be
+# listed here or it will be missing from built wheels.
+include = [
+    { path = "python/forge/cognitive/schemas/*.json", format = ["sdist", "wheel"] },
+    { path = "configs/cognitive/**/*", format = ["sdist", "wheel"] },
+]
 
 [tool.ruff]
 target-version = "py39"
@@ -71,10 +85,19 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["forge_env"]
+known-first-party = ["forge", "forge_env"]
+
+[tool.ruff.lint.per-file-ignores]
+"python/forge/mangomas/collector.py" = ["PLR0915"]
+# `scripts/calibrate_agri.py` calls `to_fixed(<float literal>)` in dataclass
+# defaults. `to_fixed` is a pure function returning `int`, so the default is
+# immutable; RUF009 fires only because it conservatively flags any function
+# call. Suppressed file-wide to keep the calibration table readable.
+"scripts/calibrate_agri.py" = ["RUF009"]
 
 [tool.mypy]
 python_version = "3.9"
+mypy_path = "python"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -104,6 +127,12 @@ module = [
     "pettingzoo.*",
     "pytest",
     "pytest.*",
+    "jsonschema",
+    "jsonschema.*",
+    # `scripts/run_lmstudio_demo.py` is imported dynamically by tests after
+    # inserting `scripts/` into sys.path at runtime. Mypy doesn't follow
+    # that mutation, so suppress the missing-stub error there.
+    "run_lmstudio_demo",
     "stable_baselines3",
     "stable_baselines3.*",
     "torch",
@@ -116,6 +145,8 @@ module = [
     "mlflow.*",
     "huggingface_hub",
     "huggingface_hub.*",
+    "huggingface_hub.cli",
+    "huggingface_hub.cli.*",
     "minari",
     "minari.*",
     "onnxruntime",
@@ -138,6 +169,14 @@ module = [
     "tomli_w.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# numpy operations (np.array, np.concatenate, np.mean) are typed `Any` in the
+# stubs, so functions returning derived ndarrays trip `warn_return_any`.
+# Suppress just `no-any-return` on the adapter module rather than weakening
+# the workspace-wide setting.
+module = "forge.mangomas.adapters"
+disable_error_code = ["no-any-return"]
 # Prevent mypy from descending into third-party source files (e.g. torch uses
 # Python 3.10+ pattern matching which is incompatible with our py3.9 target).
 follow_imports = "skip"

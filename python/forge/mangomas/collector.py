@@ -738,11 +738,8 @@ def _collect_episode_rollout(
             teacher_intentions.append(int(intention) if intention is not None else -1)
             teacher_rationales.append(str(trace_info.get("rationale") or ""))
             teacher_subgoals.append(list(trace_info.get("subgoals") or []))
-            teacher_value_hats.append(
-                float(trace_info.get("value_hat"))
-                if trace_info.get("value_hat") is not None
-                else 0.0
-            )
+            value_hat = trace_info.get("value_hat")
+            teacher_value_hats.append(float(value_hat) if value_hat is not None else 0.0)
             teacher_constraint_critiques.append(
                 dict(trace_info.get("constraint_critique") or {})
             )
@@ -1126,11 +1123,8 @@ async def _acollect_episode_rollout(
             teacher_intentions.append(int(intention) if intention is not None else -1)
             teacher_rationales.append(str(trace_info.get("rationale") or ""))
             teacher_subgoals.append(list(trace_info.get("subgoals") or []))
-            teacher_value_hats.append(
-                float(trace_info.get("value_hat"))
-                if trace_info.get("value_hat") is not None
-                else 0.0
-            )
+            value_hat = trace_info.get("value_hat")
+            teacher_value_hats.append(float(value_hat) if value_hat is not None else 0.0)
             teacher_constraint_critiques.append(
                 dict(trace_info.get("constraint_critique") or {})
             )

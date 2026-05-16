@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gzip
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from forge.mangomas.teacher_trace import (
     DEFAULT_SCHEMA_VERSION,
@@ -12,6 +12,9 @@ from forge.mangomas.teacher_trace import (
     TeacherTraceReader,
     TeacherTraceWriter,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_trace(step: int = 0) -> TeacherDecisionTrace:

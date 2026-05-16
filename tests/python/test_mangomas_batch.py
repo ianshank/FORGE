@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 from forge.mangomas.batch import BatchCollector, BatchResult, EpisodeData
 from forge.mangomas.config import BatchCollectorConfig
 

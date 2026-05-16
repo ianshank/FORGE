@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
 from forge.cognitive.prompt_builder import PromptBuilder
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _write(tmp_path: Path, name: str, content: str) -> Path:

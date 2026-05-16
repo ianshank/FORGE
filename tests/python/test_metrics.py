@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 import pytest
+
 from forge.utils.metrics import MetricsTracker
 
 logger = logging.getLogger(__name__)

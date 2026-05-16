@@ -18,10 +18,12 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from types import TracebackType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from forge.traces.trace_logger import TraceLogger
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 logger = logging.getLogger(__name__)
 
@@ -222,9 +224,9 @@ class TeacherTraceReader:
         import gzip
 
         opener = gzip.open if path.suffix == ".gz" else open
-        with opener(path, "rt", encoding="utf-8") as f:  # type: ignore[operator]
-            for line in f:
-                line = line.strip()
+        with opener(path, "rt", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
                 if not line:
                     continue
                 yield TeacherDecisionTrace(**json.loads(line))

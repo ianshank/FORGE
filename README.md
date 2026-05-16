@@ -1,6 +1,6 @@
 # FORGE
 
-**Fast Open-source Runtime for Generalist Environments**
+Fast Open-source Runtime for Generalist Environments
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
@@ -100,26 +100,36 @@ The stage pipeline writes manifests, logs, and exported weight bundles under `ar
 #### LM Studio Teacher (offline behavioural cloning)
 
 For high-leverage but slow guidance, FORGE can use a locally-served LLM (e.g.
-Qwen 2.5 14B Instruct via [LM Studio](https://lmstudio.ai/)) as an **offline
-teacher** that produces structured `(action_id, intention, subgoals,
-rationale, value_hat, constraint_critique, top_k_probs)` decisions. The
-collector amortises one LLM call across four trainers — BC, BDI,
-Constitutional, and (future) RSSM — by writing rich teacher traces to JSONL
-shards.
+Gemma 4 e4b via [LM Studio](https://lmstudio.ai/) — Qwen 2.5-14B preset retained
+as `configs/cognitive/qwen14b_teacher.toml`) as an **offline teacher** that
+produces structured `(action_id, intention, subgoals, rationale, value_hat,
+constraint_critique, top_k_probs)` decisions. The collector amortises one LLM
+call across four trainers — BC, BDI, Constitutional, and (future) RSSM — by
+writing rich teacher traces to JSONL shards.
+
+Quick smoke check (no training, just a one-shot ping):
 
 ```bash
-# 1. Start LM Studio with Qwen 2.5 14B Instruct exposed at http://localhost:1234
+python scripts/run_lmstudio_demo.py --check \
+    --config configs/cognitive/gemma_e4b_teacher.toml
+```
+
+```bash
+# 1. Start LM Studio with google/gemma-4-e4b exposed at http://localhost:1234
 # 2. Collect 4 parallel-episode teacher traces and run the BC stage
 python scripts/train.py \
     --agent mangomas-collect \
     --collection-policy llm \
     --episodes 4 \
     --scenario hex_patrol \
-    --mangomas-config configs/cognitive/qwen14b_teacher.toml \
+    --mangomas-config configs/cognitive/gemma_e4b_teacher.toml \
     --teacher-concurrency 4 \
     --teacher-output-root artifacts/teacher_traces \
     --collection-report-path artifacts/teacher_traces/report.json
 ```
+
+To use the prior Qwen 2.5-14B preset, swap `gemma_e4b_teacher.toml` for
+`qwen14b_teacher.toml` — both presets are first-class.
 
 The BC stage runs automatically inside `MangoMASPipeline` whenever
 `CollectedTrainingData` carries teacher labels — no extra flag needed. Use
@@ -205,7 +215,7 @@ graph TD
     forge_core --> forge_bench
 ```
 
-```
+```text
 FORGE/
 ├── crates/          # 23 Rust crates (see diagram above)
 ├── python/          # forge_env wrappers, forge training package
@@ -226,7 +236,7 @@ For full C4 architecture diagrams, see [`docs/architecture.md`](docs/architectur
 ### Observation Space
 
 | Key | Shape | Dtype | Description |
-|-----|-------|-------|-------------|
+| --- | --- | --- | --- |
 | `grid_view` | `(11, 11, 7)` | `uint8` | 7-channel tile features in agent's vision radius |
 | `inventory` | `(capacity, 2)` | `uint16` | `(item_type, count)` per slot; 255 = empty |
 | `health` | `()` | `float32` | Normalized health `[0.0, 1.0]` |
@@ -240,7 +250,7 @@ For full C4 architecture diagrams, see [`docs/architecture.md`](docs/architectur
 ### Action Space
 
 | Range | Action |
-|-------|--------|
+| --- | --- |
 | `0` | Noop |
 | `1-4` | Move (Up, Down, Left, Right) |
 | `5` | Pick Up resource at current tile |
@@ -258,7 +268,7 @@ When `world.grid_type = "Hex"`, the action space appends 6 hex-movement actions 
 `forge_types::action::Action` provides both panicking and fallible encoder variants:
 
 | Method | Returns | Use when |
-|--------|---------|----------|
+| --- | --- | --- |
 | `to_discrete()` | `u32` | Base actions only; you've already validated parameters |
 | `to_discrete_full(comm_vocab_size)` | `u32` | Canonical full layout; you've already validated parameters |
 | `to_discrete_configured(...)` | `u32` | Config-driven layout; you've already validated parameters |
@@ -301,7 +311,7 @@ env = ForgeEnv(config=config)
 FORGE ships with 9 default recipes:
 
 | Recipe | Inputs | Output | Tier |
-|--------|--------|--------|------|
+| --- | --- | --- | --- |
 | Axe | 2 Wood + 1 Stone | 1 Axe | 1 |
 | Pickaxe | 2 Wood + 2 Stone | 1 Pickaxe | 1 |
 | Plank | 2 Wood | 2 Plank | 1 |
@@ -329,7 +339,7 @@ Biome thresholds are scale-responsive — increasing `biome_scale` creates more 
 
 The task DSL supports composable objectives with 7 logical operators:
 
-```
+```text
 Atom(predicate)           — single goal (navigate, collect, etc.)
 And([tasks])              — all must be completed
 Or([tasks])               — any may be completed
@@ -379,7 +389,7 @@ The MCTS planner uses PUCT selection (`Q(s,a) + c * P(s,a) * sqrt(N_parent) / (1
 ## Python Wrappers
 
 | Wrapper | Purpose |
-|---------|---------|
+| --- | --- |
 | `ForgeGymnasiumEnv` | Single-agent [Gymnasium](https://gymnasium.farama.org/) compatibility |
 | `ForgeParallelEnv` | Multi-agent [PettingZoo](https://pettingzoo.farama.org/) Parallel API |
 | `ForgeJaxEnv` | JAX-vectorized batched environment for hardware acceleration |
@@ -464,7 +474,7 @@ mypy python/ scripts/ --config-file pyproject.toml
 Benchmarked on a single core:
 
 | Metric | Value |
-|--------|-------|
+| --- | --- |
 | Steps/second (from Python) | 130,000+ |
 | Microseconds/step | ~7.5 μs |
 | World creation (64x64) | ~3.5 ms |
@@ -475,7 +485,7 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 ## Examples
 
 | File | Description |
-|------|-------------|
+| --- | --- |
 | [`forge_demo.py`](examples/forge_demo.py) | Comprehensive 8-section showcase of all capabilities |
 | [`basic_navigation.py`](examples/basic_navigation.py) | Random walk with position/health/stamina tracking |
 | [`crafting_demo.py`](examples/crafting_demo.py) | Resource gathering and crafting system |
@@ -487,18 +497,18 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 ## Scripts
 
 | File | Description |
-|------|-------------|
+| --- | --- |
 | [`scripts/train.py`](scripts/train.py) | Training loop with checkpointing |
 | [`scripts/evaluate.py`](scripts/evaluate.py) | Model evaluation and metrics |
 | [`scripts/demo.py`](scripts/demo.py) | Launch demo server |
 | [`scripts/replay_viewer.py`](scripts/replay_viewer.py) | Replay visualization tool |
 | [`scripts/export_edge.py`](scripts/export_edge.py) | Export models for edge deployment |
 
-## Configuration
+## Configuration Files
 
 FORGE uses TOML configuration files under `configs/`:
 
-```
+```text
 configs/
 ├── agents/          # Agent configs (mappo_default, mcts_default, hybrid_default, mousedroid)
 ├── cognitive/       # Cognitive system configs
@@ -518,7 +528,7 @@ All config structs derive `Clone, Debug, Serialize, Deserialize` and implement `
 FORGE ships a production-ready three-service Docker Compose stack:
 
 | Service | Image | URL | Description |
-|---------|-------|-----|-------------|
+| --- | --- | --- | --- |
 | `simulation` | `rust:1.85` + `python:3.11-slim` | `http://localhost:8080` | Rust simulation server + `forge_env` native extension |
 | `dashboard` | `node:20` → `nginx:1.27-alpine` | `http://localhost:3000` | React dashboard via nginx reverse proxy |
 | `demo` | `python:3.11-slim` | `http://localhost:8765` | FastAPI/uvicorn demo UI |
@@ -557,8 +567,8 @@ docker build -f docker/Dockerfile.demo -t forge-demo .
 
 ## Project Stats
 
-| | |
-|---|---|
+| Area | Details |
+| --- | --- |
 | Rust workspace | 23 crates (2,186+ unit tests, 29 integration tests) |
 | Rust coverage | `cargo-tarpaulin` gated at 85% line coverage |
 | Python surface | `forge_env` wrappers plus `forge` training, MangoMAS bridge, traces, and utilities |

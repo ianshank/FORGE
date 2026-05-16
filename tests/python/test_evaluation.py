@@ -11,6 +11,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from forge.evaluation import EvalConfig, EvalResult, Evaluator
 
 # ---------------------------------------------------------------------------

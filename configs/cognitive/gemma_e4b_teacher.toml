@@ -1,0 +1,37 @@
+# Opinionated preset for an offline LM Studio Gemma 4 e4b teacher.
+#
+# Pair this with `scripts/train.py --collection-policy llm
+# --mangomas-config configs/cognitive/gemma_e4b_teacher.toml` to collect
+# behavioural-cloning data from a locally-running LM Studio server.
+#
+# Effective request URL: <base_url>/chat/completions
+# (LM Studio's OpenAI-compatible endpoint — NOT /api/v1/chat).
+
+platform = "drone"
+
+[teacher]
+enabled = true
+provider = "lmstudio"
+base_url = "http://localhost:1234/v1"
+model = "google/gemma-4-e4b"
+temperature = 0.0
+top_p = 1.0
+max_tokens = 1024
+seed = 42
+timeout_secs = 120.0
+max_retries = 2
+retry_backoff_secs = 1.0
+concurrency = 4
+prompt_template_path = "configs/cognitive/templates/gemma_teacher.txt"
+response_schema_path = "python/forge/cognitive/schemas/gemma_action.json"
+few_shot_examples_path = "configs/cognitive/few_shots/gemma_teacher.jsonl"
+system_prompt = ""
+output_root = "artifacts/teacher_traces"
+log_payloads = false
+validate_action = true
+include_legal_actions = true
+response_format_enabled = true
+shard_size = 1000
+compress_traces = true
+trace_schema_version = "1.0"
+payload_preview_chars = 256

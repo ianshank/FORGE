@@ -482,10 +482,17 @@ class MangoMASDroneTrainingPipeline:
             config=trainer_config,
             overrides=self.config.transfer.bdi_mapping_overrides,
         )
+        # BDIPreTrainer.build_dataset expects list[list[float]] for rewards
+        # but step_rewards() returns list[ndarray[float32]]. Convert with
+        # .tolist() so the type matches without changing the trainer's
+        # public signature.
+        step_rewards_lists: list[list[float]] = [
+            [float(r) for r in arr] for arr in collected_data.step_rewards()
+        ]
         dataset = trainer.build_dataset(
             collected_data.step_observations(),
             collected_data.step_action_names(),
-            collected_data.step_rewards(),
+            step_rewards_lists,
             teacher_intentions=collected_data.teacher_intentions or None,
         )
         result = trainer.train(dataset)
@@ -811,7 +818,7 @@ class MangoMASDroneTrainingPipeline:
         if not exported_any:
             return None
 
-        manifest_path = exporter.finalize() / "manifest.json"
+        manifest_path: Path = exporter.finalize() / "manifest.json"
         stage_results.append(
             PipelineStageResult(
                 name="export",

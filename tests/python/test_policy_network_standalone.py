@@ -17,6 +17,7 @@ import numpy as np
 if TYPE_CHECKING:
     from pathlib import Path
 import pytest
+
 from forge.config import DEFAULT_ACTION_SIZE
 from forge.models.policy_network import RandomPolicyNetwork
 
@@ -97,6 +98,7 @@ class TestActorCriticNetworkStandalone:
     def test_save_load_roundtrip_via_tmp_path(self, tmp_path: Path) -> None:
         """Save and load through a tmp_path directory."""
         import torch
+
         from forge.models.policy_network import ActorCriticNetwork
 
         net1 = ActorCriticNetwork(
@@ -150,6 +152,7 @@ class TestActorCriticNetworkStandalone:
     def test_parameters_returns_list(self) -> None:
         """parameters() should return a non-empty list of torch Parameters."""
         import torch
+
         from forge.models.policy_network import ActorCriticNetwork
 
         net = ActorCriticNetwork(

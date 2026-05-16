@@ -10,6 +10,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from forge.cognitive.providers import (
     CognitiveProvider,
     CompletionConfig,
@@ -72,21 +73,23 @@ def test_acomplete_default_runs_in_thread() -> None:
     assert result.text == "sync:ping"
 
 
-def test_lmstudio_acomplete_uses_async_client() -> None:
+def test_lmstudio_acomplete_uses_async_client(lmstudio_model_id: str) -> None:
     provider = LMStudioProvider(max_retries=0, retry_backoff_secs=0.0)
     fake_async_client = MagicMock()
     fake_async_client.chat.completions.create = AsyncMock(
         return_value=_fake_chat_response("pong", 3, 4)
     )
-    provider._aclient = fake_async_client  # noqa: SLF001
+    provider._aclient = fake_async_client
 
-    cfg = CompletionConfig(model="m", seed=1, response_format={"type": "json_object"})
+    cfg = CompletionConfig(
+        model=lmstudio_model_id, seed=1, response_format={"type": "json_object"}
+    )
     resp = asyncio.run(provider.acomplete("ping", cfg))
     assert resp.text == "pong"
     assert resp.input_tokens == 3
     assert resp.output_tokens == 4
     call_kwargs = fake_async_client.chat.completions.create.call_args.kwargs
-    assert call_kwargs["model"] == "m"
+    assert call_kwargs["model"] == lmstudio_model_id
     assert call_kwargs["seed"] == 1
     assert call_kwargs["response_format"] == {"type": "json_object"}
 
@@ -114,7 +117,7 @@ def test_async_retry_on_transient_error_then_succeeds() -> None:
     fake_async_client.chat.completions.create = AsyncMock(
         side_effect=[RuntimeError("boom"), _fake_chat_response("ok", 1, 1)]
     )
-    provider._aclient = fake_async_client  # noqa: SLF001
+    provider._aclient = fake_async_client
     resp = asyncio.run(provider.acomplete("p", CompletionConfig(model="m")))
     assert resp.text == "ok"
     assert fake_async_client.chat.completions.create.call_count == 2
@@ -126,7 +129,7 @@ def test_async_giveup_after_max_retries() -> None:
     fake_async_client.chat.completions.create = AsyncMock(
         side_effect=RuntimeError("boom")
     )
-    provider._aclient = fake_async_client  # noqa: SLF001
+    provider._aclient = fake_async_client
     with pytest.raises(RuntimeError, match="boom"):
         asyncio.run(provider.acomplete("p", CompletionConfig(model="m")))
     assert fake_async_client.chat.completions.create.call_count == 2

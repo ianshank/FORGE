@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 from forge.mangomas.config import CuriosityOptimizerConfig
 from forge.mangomas.curiosity_optimizer import (
     DEFAULT_CURIOSITY_CHANNELS,
