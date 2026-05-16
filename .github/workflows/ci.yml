@@ -19,10 +19,20 @@ on:
       - master
       - develop
       - v0.2/implementation
+  workflow_dispatch:
+    inputs:
+      run_lmstudio:
+        description: "Run opt-in LM Studio live-smoke job (requires vars.LMSTUDIO_SERVICE_IMAGE)"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # Mirrors forge.cognitive.providers.DEFAULT_LMSTUDIO_BASE_URL — keep these
+  # two strings in lock-step. Used by the opt-in `python-test-lmstudio` job.
+  LMSTUDIO_PORT: "1234"
+  LMSTUDIO_BASE_URL: "http://localhost:1234/v1"
 
 jobs:
   fmt:
@@ -211,6 +221,62 @@ jobs:
             --cov-fail-under=85 \
             --cov-config=.coveragerc
 
+  python-test-lmstudio:
+    # Opt-in live-smoke test against a real OpenAI-compatible LLM endpoint.
+    # Triggered only via workflow_dispatch with `run_lmstudio=true`. Requires
+    # the repo variable `LMSTUDIO_SERVICE_IMAGE` to be set to a tested OCI
+    # image exposing the OpenAI v1 API on $LMSTUDIO_PORT. Document the chosen
+    # image in docs/architecture.md §3.9 before enabling.
+    name: Python LM Studio Smoke (opt-in)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_lmstudio
+    services:
+      lmstudio:
+        image: ${{ vars.LMSTUDIO_SERVICE_IMAGE }}
+        ports:
+          - "1234:1234"
+        options: >-
+          --health-cmd "curl -sf http://localhost:1234/v1/models || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      # `base_url` is sourced from configs/cognitive/gemma_e4b_teacher.toml,
+      # which already mirrors DEFAULT_LMSTUDIO_BASE_URL (see workflow-level
+      # LMSTUDIO_BASE_URL env, kept in lock-step). No FORGE_TEACHER_BASE_URL
+      # override is needed — overriding it would mask config drift.
+      FORGE_LMSTUDIO_LIVE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Create + activate virtualenv
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest numpy gymnasium httpx jsonschema
+      - name: Build native extension
+        run: maturin develop
+      - name: Run lmstudio smoke (marker-selected, no coverage)
+        run: pytest tests/python/test_lmstudio_live_smoke.py -m lmstudio --no-cov -v
+      - name: Dump LM Studio service logs on failure
+        if: failure()
+        run: |
+          echo "::group::LM Studio service container logs"
+          docker logs "$(docker ps -aqf 'name=lmstudio' | head -n1)" 2>&1 || true
+          echo "::endgroup::"
+          echo "::group::LM Studio container inspect"
+          docker inspect "$(docker ps -aqf 'name=lmstudio' | head -n1)" \
+            --format '{{json .State}}' 2>&1 || true
+          echo "::endgroup::"
+
   python-test-fast:
     name: Python Tests (no native)
     runs-on: ubuntu-latest
@@ -265,7 +331,7 @@ jobs:
           kill $SERVER_PID
 
   docker:
-    name: Docker Build & Publish (GHCR)
+    name: Docker Build & Publish (GHCR + optional Docker Hub)
     runs-on: ubuntu-latest
     needs: [test, clippy, fmt, python-test]
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v')
@@ -284,8 +350,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract metadata
-        id: meta
+      - name: Extract GHCR metadata
+        id: meta_ghcr
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
@@ -294,14 +360,93 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=
-      - name: Build and push
+      - name: Build and push to GHCR
+        id: build_ghcr
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta_ghcr.outputs.tags }}
+          labels: ${{ steps.meta_ghcr.outputs.labels }}
+          cache-from: type=gha,scope=docker-ghcr
+          cache-to: type=gha,mode=max,scope=docker-ghcr
+
+      # ──────────────────────────────────────────────────────────────────
+      # Docker Hub parallel publish — opt-in.
+      # Triggers only when the repo variable DOCKERHUB_NAMESPACE is set
+      # (Settings → Secrets and variables → Actions → Variables) and the
+      # secret DOCKERHUB_TOKEN exists. Until both are provisioned, the
+      # whole Docker Hub path skips cleanly and CI stays green.
+      # Reuses the buildx + QEMU setup above (single setup, two pushes);
+      # the second build is near-free thanks to the shared layer cache
+      # (`docker-shared` scope) populated by the GHCR build.
+      # ──────────────────────────────────────────────────────────────────
+      - name: Log in to Docker Hub
+        if: vars.DOCKERHUB_NAMESPACE != ''
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Extract Docker Hub metadata
+        if: vars.DOCKERHUB_NAMESPACE != ''
+        id: meta_dockerhub
+        uses: docker/metadata-action@v5
+        with:
+          images: docker.io/${{ vars.DOCKERHUB_NAMESPACE }}/forge
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+      - name: Build and push to Docker Hub
+        if: vars.DOCKERHUB_NAMESPACE != ''
+        id: build_dockerhub
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta_dockerhub.outputs.tags }}
+          labels: ${{ steps.meta_dockerhub.outputs.labels }}
+          cache-from: |
+            type=gha,scope=docker-ghcr
+            type=gha,scope=docker-dockerhub
+          cache-to: type=gha,mode=max,scope=docker-dockerhub
+
+      # ──────────────────────────────────────────────────────────────────
+      # Post-push smoke — pull the *first* GHCR tag we just produced
+      # (`steps.meta_ghcr.outputs.tags` is multi-line; head -n1 picks the
+      # first concrete reference, NOT `${{ github.sha }}` which is the full
+      # 40-char SHA that metadata-action's `type=sha,prefix=` never emits).
+      # On failure, surface container logs + state so a smoke regression is
+      # debuggable from the Actions log alone.
+      # ──────────────────────────────────────────────────────────────────
+      - name: Smoke-pull GHCR image and /health probe
+        env:
+          IMAGE_TAGS: ${{ steps.meta_ghcr.outputs.tags }}
+        run: |
+          set -euo pipefail
+          IMAGE="$(printf '%s\n' "$IMAGE_TAGS" | head -n1)"
+          echo "Smoke-testing $IMAGE"
+          docker pull "$IMAGE"
+          docker run -d --name forge-smoke -p 8080:8080 "$IMAGE"
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:8080/health"; then ok=1; break; fi
+            sleep 1
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::health probe failed after 30s; container logs follow"
+            echo "::group::forge-smoke logs"
+            docker logs forge-smoke 2>&1 || true
+            echo "::endgroup::"
+            echo "::group::forge-smoke inspect"
+            docker inspect forge-smoke --format '{{json .State}}' 2>&1 || true
+            echo "::endgroup::"
+            exit 1
+          fi
+          docker rm -f forge-smoke

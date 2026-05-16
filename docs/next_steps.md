@@ -82,9 +82,30 @@ The full three-service Docker Compose stack is now deployed:
 
 **New Docker next steps:**
 
-- Publish images to Docker Hub (`ianshank/forge-simulation`, `forge-dashboard`, `forge-demo`)
-- Add multi-arch builds (`linux/amd64` + `linux/arm64`) via `docker buildx`
-- Tag images on GitHub release with semantic versions
+- ✅ Publish images to Docker Hub — `.github/workflows/ci.yml` `docker` job now
+  pushes the existing `docker/Dockerfile` (the only image currently published
+  by CI) in parallel to GHCR and `docker.io/${{ vars.DOCKERHUB_NAMESPACE }}/forge`.
+  Docker Hub leg is opt-in: gated by `if: vars.DOCKERHUB_NAMESPACE != ''` so
+  the job stays green until the user provisions:
+  - Repo variable `DOCKERHUB_NAMESPACE` (e.g. `ianshank`)
+  - Repo variable `DOCKERHUB_USERNAME` (e.g. `ianshank`)
+  - Repo secret `DOCKERHUB_TOKEN` (PAT with `Read & Write` on the `forge`
+    repo on Docker Hub — least-privilege; `Delete` is NOT required for the
+    publish flow and should be withheld unless image-deletion is also wired
+    into CI. Create the Docker Hub repo manually before generating the PAT.)
+  Follow-up images (`forge-dashboard`, `forge-demo`) wait for the dashboard
+  and demo Dockerfiles to be added to the existing CI build (they exist on
+  disk under `docker/` but aren't built by the workflow today).
+- ✅ Multi-arch (`linux/amd64` + `linux/arm64`) via `docker buildx` — already
+  present in the existing job, now applied to both registries.
+- ✅ Semver tags on GitHub release — already present via
+  `docker/metadata-action@v5` `type=semver,pattern={{version}}` /
+  `{{major}}.{{minor}}`, now applied to both registries.
+- ✅ Post-push smoke probe: pulls the first GHCR-emitted tag (NOT
+  `github.sha`, which is the full 40-char SHA that metadata-action's
+  `type=sha,prefix=` never emits) and runs `/health` against
+  `127.0.0.1:8080` with a 30 s retry budget. Container `logs` + `inspect`
+  dumped on failure for debuggability.
 
 ---
 
@@ -225,12 +246,12 @@ surfaced during triage.
 | Replace `panic!` on enum variants in non-step crates | Medium | ~20 sites in `crates/forge-proposal`, `crates/forge-server/src/ws_handler.rs`, `crates/forge-mangomas/src/curriculum/task_mapping.rs`, and `crates/forge-types/src/{task,action}.rs` should become `Result` returns or `unreachable!` with safety proof. Out of scope for the alloc-fix branch |
 | Replace `.unwrap()` on TOML parsing in `crates/forge-scenario/src/config.rs` | Medium | ~15 sites; move to `?` and propagate `Result` |
 | Real LM Studio integration smoke test | Low | Today CI exercises only the mocked provider path. Add an opt-in `pytest -m lmstudio` job that spins up the `mlc-llm/qwen` Docker image and runs a 1-episode hex_patrol collection end-to-end. |
-| Torch path coverage for `BCTrainer._train_torch` | Medium | The numpy path is fully covered; the torch path has one happy-path test that's `pytest.importorskip("torch")`-gated. Add KL-only and value-loss-only branches to the test once torch becomes a CI dependency. |
+| Torch path coverage for `BCTrainer._train_torch` | ✅ Done | KL-only branch (lines 336-339) covered by `test_torch_path_kl_only_branch` (parametrised over `DEFAULT_BC_KL_WEIGHT` active vs. `0.0`, deterministic via `DEFAULT_BC_SEED`); value-loss branch covered by `test_torch_path_uses_value_loss_when_value_hats_supplied` (2026-05-16). Inline `_ToyActorCritic` consolidated into module-scoped `toy_actor_critic_factory` fixture (no duplication across the three torch tests). Local coverage on `bc_trainer.py` rose to 97.45% with all torch-path branches reached. |
 | DAgger / DPO follow-on for the teacher pipeline | Medium | Out of scope for the BC PR but a natural next step. The teacher trace schema (`TeacherDecisionTrace`) already records `top_k_probs` and `value_hat`, which DPO would consume directly. Belongs in a separate `forge.mangomas.dpo_trainer` module. |
 | Vectorised step-level teacher concurrency | Low | Today concurrency is at the episode level (one LLM call per step, parallelised across episodes). Step-level batching would require a real vec-env under the teacher and is not justified at Qwen 14B latencies. Revisit when sub-100ms quantised inference is available. |
 | Workspace `dev-dependencies` consolidation | Low | `proptest` + `tracing-subscriber` declared per-crate in 15 crates; promote to `workspace.dev-dependencies` |
 | Commented-out `println!` in `forge-data` | Low | Either delete or convert to `tracing::info!` in `generator.rs`, `lib.rs`, `minari.rs`, `maze.rs`, `edge_replay.rs` |
-| `forge-server::config::tests::test_from_env_defaults` env-pollution flake | High | Sibling tests in `crates/forge-server/src/config.rs` mutate `FORGE_SERVER_BIND` / `FORGE_SERVER_PORT` via `std::env::set_var` without snapshot/restore. Wrap env-touching tests in `serial_test::serial` or a manual scoped guard. Surfaced 2026-05-16 during PR #45 post-merge `cargo test --workspace` (asserted port 7777 instead of 8080). |
+| `forge-server::config::tests::test_from_env_defaults` env-pollution flake | ✅ Done | Fixed by wrapping `test_from_env_defaults` and `test_from_env_defaults_when_no_env_vars` with the existing `ENV_LOCK` + `EnvScope::new(ALL_KEYS)` machinery in `crates/forge-server/src/config.rs` (the helpers already existed in `mod tests` for the other override tests). Added `eprintln!` diagnostic inside `EnvScope::new` for forensic visibility under `--nocapture`. Reproducer (20 iterations with ambient `FORGE_SERVER_PORT=7777`): pre-fix 20/20 fail, post-fix 0/20 fail. |
 | `forge_demo.py demo_day_night` uses out-of-range `default_vision_radius=5` | Medium | The `AgentConfig.default_vision_radius` range was tightened to `[0, 4]` at commit `c3741fe`; `examples/forge_demo.py:492 demo_day_night()` still passes `5`, raising `ValueError: configuration error: ...value 5 out of range [0, 4]` and breaking the demo's day/night section. Either widen the range or update the demo's config. Caught by `demo_ui/tests/test_sections.py::test_section_contains_keywords[daynight-keywords5]`. |
 | `torch.jit.trace` deprecation in MuZero export | Low | `python/forge/models/muzero_export.py:145` calls `torch.jit.trace`, which torch is deprecating in favour of `torch.compile` / `torch.export`. Pre-empt removal: switch the rep/dyn/pred traces to `torch.export`. Surfaced as 4 failures in the `numpy-deprec` sweep (`pytest -W error::DeprecationWarning`). |
 | Dashboard `npm ci` does not install `eslint` into `node_modules/.bin/` | Medium | `dashboard/package.json` lists `eslint ^8.57.0` in devDependencies but a fresh `npm ci` produces no `node_modules/.bin/eslint`. Likely lock-file drift or a missing peer-dep (`@typescript-eslint/parser` + `@typescript-eslint/eslint-plugin` are not in devDependencies either, yet `lint` script targets `.ts,.tsx`). Fix the dep chain or convert `lint` to a Vite/Biome-based runner. |
