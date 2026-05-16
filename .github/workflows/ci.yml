@@ -147,9 +147,15 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install lint tools
+        # mypy >= 2.0 dropped Python 3.9 support; pyproject sets
+        # python_version = "3.9" to match the project's requires-python.
+        # numpy >= 2.4 ships new savez stubs that conflict with how
+        # several FORGE trainers call np.savez(path, **dict) — keeping
+        # numpy < 2.4 lets the existing call sites type-check while
+        # work to update them is staged separately.
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy numpy
+          pip install "ruff>=0.13,<0.16" "mypy>=1.11,<2.0" "numpy>=1.26,<2.4"
       - name: Ruff lint
         run: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
       - name: Mypy type check
