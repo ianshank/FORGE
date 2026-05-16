@@ -277,6 +277,28 @@ class TestLMStudioProviderSync:
             provider.complete("hi", CompletionConfig(model="m"))
         assert fake_client.chat.completions.create.call_count == 2
 
+    def test_retry_backoff_base_scales_sleep_durations(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The new retry_backoff_base parameter must actually drive the
+        delay sequence: delay[attempt] = backoff_secs * base ** attempt.
+        Without this assertion, the kwarg is only exercised by construction
+        (covers DEFAULT_LMSTUDIO_RETRY_BACKOFF_BASE behaviour)."""
+        from forge.cognitive import providers as providers_mod
+
+        sleeps: list[float] = []
+        monkeypatch.setattr(providers_mod.time, "sleep", sleeps.append)
+        # backoff_secs=1.0 + base=3.0 -> expected delays [1.0, 3.0] for 2 retries.
+        provider = LMStudioProvider(
+            max_retries=2, retry_backoff_secs=1.0, retry_backoff_base=3.0
+        )
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.side_effect = RuntimeError("boom")
+        provider._client = fake_client
+        with pytest.raises(RuntimeError, match="boom"):
+            provider.complete("hi", CompletionConfig(model="m"))
+        assert sleeps == [1.0 * 3.0**0, 1.0 * 3.0**1]  # [1.0, 3.0]
+
     def test_factory_passes_kwargs(self) -> None:
         provider = create_provider(
             "lmstudio",

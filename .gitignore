@@ -129,3 +129,11 @@ cobertura.xml
 # Playwright artefacts (demo_ui/tests/test_e2e_browser.py)
 playwright-report/
 .playwright/
+
+# Per-validation toolchain pin + per-gate triage logs emitted by the
+# post-merge validation harness (see docs/architecture.md §3.9 and the
+# Phase E aggregation in the validation plan).
+.test-env.txt
+.test-env.json
+summary-pr*.md
+

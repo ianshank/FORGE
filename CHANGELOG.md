@@ -9,6 +9,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Teacher Pipeline Config Hoisting (2026-05-16)
+
+Hoisted five inline numeric/string literals from the LM Studio teacher
+pipeline into module-level `DEFAULT_*` constants + corresponding config
+struct fields, per the project-wide "no hard-coded values" rule. All
+defaults match the prior literals — behaviour is preserved.
+
+- **`BCTrainerConfig.init_scale_numerator`** (default
+  `DEFAULT_BC_INIT_SCALE_NUMERATOR = 6.0`) — Glorot-uniform weight init
+  scale. Swap to `2.0` for He or `1.0` for unit-variance without
+  forking the trainer. Replaces the inline `6.0` at
+  `python/forge/mangomas/bc_trainer.py` `_train_numpy`.
+- **`BCTrainerConfig.numerical_epsilon`** (default
+  `DEFAULT_BC_NUMERICAL_EPSILON = 1e-8`) — shared additive epsilon
+  inside `log()` for both the CE and KL terms. Replaces two duplicated
+  `1e-8` literals.
+- **`OpenAIProvider.retry_backoff_base`** (default
+  `DEFAULT_LMSTUDIO_RETRY_BACKOFF_BASE = 2.0`) — multiplicative base for
+  the exponential backoff (`delay = backoff_secs * base ** attempt`).
+  Threaded through to `LMStudioProvider`. Replaces the inline `2**attempt`
+  in both the sync and async retry loops.
+- **`LLMAgentConfig.legacy_parse_keyword` / `.legacy_parse_strip_chars`**
+  (defaults `DEFAULT_LEGACY_PARSE_KEYWORD = "action"`,
+  `DEFAULT_LEGACY_PARSE_STRIP_CHARS = ":,. "`) — tokens used by the
+  free-text fallback parser when the LLM ignores the structured
+  `response_format`. Promotes the private module constants to public
+  config fields so deployments that train models against alternative
+  phrasings (e.g. `"move:"`) can override without forking.
+- **`teacher_trace.DEFAULT_MAX_FILE_SIZE_MB`** (default `100`) — per-shard
+  byte cap for `TeacherTraceWriter` before rotation. Was an inline default
+  argument; now a module constant that callers can reference or override.
+- **Single source of truth for the LM Studio base URL.**
+  `forge.mangomas.config.DEFAULT_TEACHER_BASE_URL` now aliases
+  `forge.cognitive.providers.DEFAULT_LMSTUDIO_BASE_URL` instead of
+  redefining the same `"http://localhost:1234/v1"` literal. Four test
+  files (`test_providers.py`, `test_teacher_config.py`,
+  `test_gemma_teacher_preset.py`, `test_train_cli_llm_policy.py`) now
+  import the constant and assert against it.
+
+### Added — Regression Tests for Previously-Uncovered Branches (2026-05-16)
+
+Six new tests targeting branches the coverage report flagged as
+uncovered. Coverage moved from **93.62% → 93.77%** on a 7,146-statement
+surface; the 85% gate at `pyproject.toml` `[tool.pytest.ini_options]
+addopts --cov-fail-under=85` is unaffected.
+
+- `test_providers.py::TestTruncate` — four cases covering
+  `_truncate` (passthrough, exact-limit, ellipsis-marker, non-positive
+  limit disables truncation).
+- `test_structured_llm_agent.py::test_clip_value_handles_nan_and_non_float`
+  — NaN must collapse to the configured floor (`0.0`), non-float values
+  (dicts) must return `None`, `None` passthrough.
+- `test_structured_llm_agent.py::test_parse_structured_non_int_action_with_validate_off`
+  — non-integer `action_id` with `validate_action=False` logs a warning
+  and falls back to `0` instead of raising, so a misbehaving LLM doesn't
+  kill a rollout.
+- `test_bc_trainer.py::test_torch_path_uses_value_loss_when_value_hats_supplied`
+  — torch path's value-loss-weight branch (critic head must update when
+  `teacher_value_hats` are present and `value_loss_weight > 0`).
+- `test_bc_trainer.py::test_resolve_num_actions_falls_back_when_topk_has_zero_columns`
+  — degenerate teacher (`teacher_top_k_probs` shape `(N, 0)`) falls back
+  to `teacher_action_ids.max() + 1` instead of returning `0`.
+
 ### Added — Gemma 4 e4b LM Studio Teacher (2026-05-15)
 
 - **`configs/cognitive/gemma_e4b_teacher.toml`**: LM Studio teacher preset for
