@@ -546,4 +546,158 @@ mod tests {
         assert_eq!(obs_space.flat_shape[0], 100);
         assert_eq!(obs_space.grid_shape.2, constants::OBS_FEATURES_PER_TILE);
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // ActionSpace::new_full coverage — exercises the drone/agri/hex
+    // branches that the default `new()` path skips.
+    // ──────────────────────────────────────────────────────────────────
+
+    /// Number of fixed drone action names appended in `new_full` (excluding
+    /// the 10 DropPayload slots). Kept in sync with `observation.rs:285-293`.
+    const DRONE_FIXED_ACTION_COUNT: usize = 9;
+    /// Number of payload-slot drone actions.
+    const DRONE_PAYLOAD_SLOTS: usize = 10;
+    /// Total drone action surface added by `new_full`.
+    const DRONE_TOTAL: usize = DRONE_FIXED_ACTION_COUNT + DRONE_PAYLOAD_SLOTS;
+    /// Number of fixed agri action names (Multispectral/Thermal/Relay/Report).
+    const AGRI_FIXED_ACTION_COUNT: usize = 4;
+    /// Number of agri spray-slot actions.
+    const AGRI_SPRAY_SLOTS: usize = 10;
+    /// Total agri action surface.
+    const AGRI_TOTAL: usize = AGRI_FIXED_ACTION_COUNT + AGRI_SPRAY_SLOTS;
+    /// Number of hex movement action names appended.
+    const HEX_ACTION_COUNT: usize = 6;
+
+    #[test]
+    fn test_action_space_new_full_drone_extends_names() {
+        let comm = 0u16;
+        let base = ActionSpace::new(comm, false);
+        let with_drone = ActionSpace::new_full(comm, true, false, false);
+        assert_eq!(
+            with_drone.action_names.len(),
+            base.action_names.len() + DRONE_TOTAL,
+            "drone flag must append exactly {DRONE_TOTAL} names"
+        );
+        // Spot-check a few of the names introduced by the drone branch.
+        for label in [
+            "Ascend",
+            "Descend",
+            "Hover",
+            "TakeOff",
+            "Land",
+            "Scan Up",
+            "Scan Down",
+            "Scan Left",
+            "Scan Right",
+        ] {
+            assert!(
+                with_drone.action_names.iter().any(|n| n == label),
+                "missing drone label: {label}"
+            );
+        }
+        for i in 0..DRONE_PAYLOAD_SLOTS {
+            let expected = format!("DropPayload Slot {i}");
+            assert!(
+                with_drone.action_names.iter().any(|n| n == &expected),
+                "missing {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_action_space_new_full_agri_requires_drone() {
+        let comm = 0u16;
+        // Agri without drone: branch is gated and adds nothing.
+        let only_agri = ActionSpace::new_full(comm, false, true, false);
+        let base = ActionSpace::new(comm, false);
+        assert_eq!(
+            only_agri.action_names.len(),
+            base.action_names.len(),
+            "agri-only must not add names (drone is required)"
+        );
+
+        // Drone + agri: adds drone + agri name sets.
+        let drone_agri = ActionSpace::new_full(comm, true, true, false);
+        assert_eq!(
+            drone_agri.action_names.len(),
+            base.action_names.len() + DRONE_TOTAL + AGRI_TOTAL
+        );
+        for label in [
+            "Scan Multispectral",
+            "Scan Thermal",
+            "Relay Soil Data",
+            "Generate Report",
+        ] {
+            assert!(
+                drone_agri.action_names.iter().any(|n| n == label),
+                "missing agri label: {label}"
+            );
+        }
+        for i in 0..AGRI_SPRAY_SLOTS {
+            let expected = format!("Spray Slot {i}");
+            assert!(
+                drone_agri.action_names.iter().any(|n| n == &expected),
+                "missing {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_action_space_new_full_hex_appends_six_directions() {
+        let comm = 0u16;
+        let base = ActionSpace::new(comm, false);
+        let hex = ActionSpace::new_full(comm, false, false, true);
+        assert_eq!(
+            hex.action_names.len(),
+            base.action_names.len() + HEX_ACTION_COUNT,
+            "hex flag must append exactly {HEX_ACTION_COUNT} direction names"
+        );
+        for label in [
+            "Move NE", "Move E", "Move SE", "Move SW", "Move W", "Move NW",
+        ] {
+            assert!(
+                hex.action_names.iter().any(|n| n == label),
+                "missing hex label: {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_action_space_new_full_all_flags_compose() {
+        let comm = 4u16;
+        let full = ActionSpace::new_full(comm, true, true, true);
+        // Drone + agri + hex labels should all be present.
+        for label in [
+            "Ascend",
+            "DropPayload Slot 0",
+            "Spray Slot 0",
+            "Scan Multispectral",
+            "Move NE",
+            "Move NW",
+        ] {
+            assert!(
+                full.action_names.iter().any(|n| n == label),
+                "missing label under full flags: {label}"
+            );
+        }
+        // n must match action_names length.
+        assert_eq!(full.n as usize, full.action_names.len());
+    }
+
+    #[test]
+    fn test_action_space_new_full_n_matches_space_size_full() {
+        let comm = 3u16;
+        for &drone in &[false, true] {
+            for &agri in &[false, true] {
+                for &hex in &[false, true] {
+                    let space = ActionSpace::new_full(comm, drone, agri, hex);
+                    let expected = crate::action::Action::space_size_full(comm, drone, agri, hex);
+                    assert_eq!(
+                        space.n, expected,
+                        "n mismatch for drone={drone} agri={agri} hex={hex}"
+                    );
+                }
+            }
+        }
+    }
 }

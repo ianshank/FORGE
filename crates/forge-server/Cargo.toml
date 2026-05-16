@@ -29,5 +29,7 @@ name = "forge-server"
 path = "src/main.rs"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["test-util", "macros"] }
+tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread", "net"] }
 proptest = { workspace = true }
+toml = { workspace = true }
+tokio-tungstenite = "0.24"

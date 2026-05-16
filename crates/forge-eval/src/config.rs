@@ -4,6 +4,8 @@ use forge_types::config::ForgeConfig;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
+use crate::output::OutputConfig;
+
 /// Configuration for an evaluation run.
 ///
 /// All parameters are configurable — no hard-coded values.
@@ -21,10 +23,22 @@ pub struct EvalConfig {
     pub tiers: Vec<u8>,
     /// Number of parallel evaluation threads (0 = use rayon default).
     pub parallelism: u32,
-    /// Whether to record compact replays for each episode.
+    /// If `true`, the harness builds a [`forge_replay::compact::CompactReplay`]
+    /// for each episode. The replay is only persisted on disk when
+    /// [`OutputConfig::enabled`] **and** [`OutputConfig::write_replays`] are
+    /// both true; otherwise the builder is constructed and dropped (useful
+    /// only when paired with `output.enabled = true`). For an observable
+    /// effect, set `output.enabled = true` and `output.write_replays = true`.
     pub record_replays: bool,
-    /// Whether to record full trajectories for each episode.
+    /// If `true`, the harness builds a [`forge_replay::trajectory::Trajectory`]
+    /// for each episode. Same persistence rule as
+    /// [`record_replays`](Self::record_replays): on-disk emission requires
+    /// `output.enabled = true` **and** `output.write_trajectories = true`.
     pub record_trajectories: bool,
+    /// On-disk artefact configuration. Disabled by default — when enabled,
+    /// the harness persists replays and trajectories under
+    /// [`OutputConfig::dir`].
+    pub output: OutputConfig,
     /// Base FORGE config to use for scenarios that don't specify their own.
     pub base_forge_config: ForgeConfig,
 }
@@ -45,6 +59,7 @@ impl Default for EvalConfig {
             parallelism: 0,
             record_replays: false,
             record_trajectories: false,
+            output: OutputConfig::default(),
             base_forge_config: forge_config,
         }
     }
@@ -75,6 +90,7 @@ impl EvalConfig {
         if self.base_forge_config.agents.num_agents == 0 {
             errors.push("num_agents must be > 0".to_string());
         }
+        errors.extend(self.output.validate());
 
         errors
     }

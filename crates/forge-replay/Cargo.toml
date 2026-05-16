@@ -19,9 +19,23 @@ bincode = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 chrono = "0.4"
+# HuggingFace Datasets (Parquet) export, gated behind the `hf` feature so
+# the default build stays lean. Pinned to a single major to keep the dep
+# graph stable across the workspace. `flate2` enables gzip codec support
+# at runtime (without it, `ParquetCompression::Gzip` would fail when
+# writing actual rows).
+arrow = { version = "53", optional = true }
+parquet = { version = "53", default-features = false, features = ["arrow", "snap", "zstd", "flate2"], optional = true }
+
+[features]
+default = []
+# Enables HuggingFace Datasets-compatible Parquet export via
+# `forge_replay::hf`. Pulls in `arrow` + `parquet` (heavy).
+hf = ["dep:arrow", "dep:parquet"]
 
 [dev-dependencies]
 proptest = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
 tempfile = "3"
+toml = { workspace = true }
