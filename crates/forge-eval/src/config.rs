@@ -41,6 +41,28 @@ pub struct EvalConfig {
     pub output: OutputConfig,
     /// Base FORGE config to use for scenarios that don't specify their own.
     pub base_forge_config: ForgeConfig,
+    // --- Phase B fields (additive; default None = exporter disabled) ---
+    /// Absolute path of an MLflow `mlruns/` tracking directory. When set,
+    /// the harness invokes the MLflow filesystem-layout exporter after the
+    /// scorecard is built, writing the run + nested per-scenario child
+    /// runs that `mlflow ui --backend-store-uri <dir>` can visualize.
+    /// `None` (the default) leaves Phase 1 behaviour byte-identical.
+    pub mlflow_tracking_uri: Option<std::path::PathBuf>,
+    /// Absolute path of the HuggingFace-export root directory. When set,
+    /// the harness writes a `DatasetDict`-compatible directory under
+    /// `<huggingface_export_root>/<run_id>/` that `datasets.load_from_disk`
+    /// can open and `huggingface-cli upload` can push to the Hub.
+    /// `None` (the default) leaves Phase 1 behaviour byte-identical.
+    pub huggingface_export_root: Option<std::path::PathBuf>,
+    /// Stable run identifier shared by every Phase B exporter target.
+    /// `None` triggers a UUIDv4 hex run id at [`crate::RunManifest::capture`]
+    /// time. Set explicitly to make multiple Phase B exporters write under
+    /// the same id, or to re-export an existing scorecard idempotently.
+    pub run_id: Option<String>,
+    /// Experiment grouping mirrored to MLflow's experiment name and to the
+    /// HF dataset card's `pretty_name`. `None` defaults to
+    /// `"forge-eval-default"` in the manifest.
+    pub experiment_name: Option<String>,
 }
 
 impl Default for EvalConfig {
@@ -61,6 +83,10 @@ impl Default for EvalConfig {
             record_trajectories: false,
             output: OutputConfig::default(),
             base_forge_config: forge_config,
+            mlflow_tracking_uri: None,
+            huggingface_export_root: None,
+            run_id: None,
+            experiment_name: None,
         }
     }
 }

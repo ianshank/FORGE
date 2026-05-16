@@ -18,7 +18,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
-chrono = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 toml = { workspace = true }
 rayon = "1"
 # Phase B exporters: MLflow meta.yaml + HF dataset card frontmatter
