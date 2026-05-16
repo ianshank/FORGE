@@ -68,7 +68,7 @@ def lmstudio_model_id(request: pytest.FixtureRequest) -> str:
     Provider behaviour MUST be identical across these — any test that
     diverges signals a model-specific code path that should not exist.
     """
-    return cast(str, request.param)
+    return cast("str", request.param)
 
 # ---------------------------------------------------------------------------
 # Mock observation data matching the native wrapper's expected structure.

@@ -12,7 +12,7 @@ import pytest
 # ---------------------------------------------------------------------------
 pytest.importorskip("stable_baselines3", reason="SB3 required")
 
-from forge_env.sb3_callbacks import (  # noqa: E402 - import gated by pytest.importorskip above
+from forge_env.sb3_callbacks import (
     _EPISODE_KEY,
     _TASK_SUCCESS_KEY,
     ForgeCurriculumCallback,

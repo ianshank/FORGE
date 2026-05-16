@@ -213,7 +213,9 @@ class TestSectionStateMachine:
             "gate green until the root cause (Runner state-update missing "
             "a CI-hostile sleep / WS heartbeat?) is fixed."
         ),
-        strict=False,
+        # strict=True so an XPASS (worldgen now reaches `pass` in CI) fails
+        # the suite and forces the xfail to be removed instead of lingering.
+        strict=True,
     )
     def test_worldgen_idle_to_running_to_pass(self, fresh_page: Page) -> None:
         """Clicking the worldgen section button drives the full state machine."""
@@ -250,7 +252,9 @@ class TestTerminalStream:
             "minimum span count because the worldgen run never completes "
             "within the CI Playwright timeout."
         ),
-        strict=False,
+        # strict=True so an XPASS (worldgen now reaches `pass` in CI) fails
+        # the suite and forces the xfail to be removed instead of lingering.
+        strict=True,
     )
     def test_terminal_accumulates_spans_no_failures(self, fresh_page: Page) -> None:
         errors: list[str] = []
@@ -304,7 +308,9 @@ class TestWorldCanvas:
             "to reach `pass` before sampling the canvas; that never "
             "happens within the CI Playwright timeout."
         ),
-        strict=False,
+        # strict=True so an XPASS (worldgen now reaches `pass` in CI) fails
+        # the suite and forces the xfail to be removed instead of lingering.
+        strict=True,
     )
     def test_world_canvas_paints_pixels(self, fresh_page: Page) -> None:
         fresh_page.locator(WORLDGEN_BTN).click()
