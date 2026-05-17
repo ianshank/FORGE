@@ -202,7 +202,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # workflow requires forcing BC on/off, add a PipelineExecutionConfig
     # field and surface it explicitly.
     parser.add_argument(
-        "--mlflow",
+        "--mlflow-enabled",
         action="store_true",
         default=False,
         help="Enable MLflow experiment tracking for this run.",
@@ -244,11 +244,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Optional MLflow artifact location for new experiments.",
     )
     parser.add_argument(
-        "--mlflow-tag",
+        "--mlflow-tags",
         action="append",
         default=[],
         metavar="KEY=VALUE",
-        help="Add an MLflow tag in KEY=VALUE form. Repeatable.",
+        help="Add MLflow tags in KEY=VALUE or KEY=VAL,KEY=VAL form. Repeatable.",
     )
     parser.add_argument(
         "--mlflow-system-metrics",
@@ -411,7 +411,7 @@ def _build_mlflow_settings(args: argparse.Namespace) -> Any:
 
     base = MlflowSettings.from_env()
     cli_tags: dict[str, str] = {}
-    for entry in getattr(args, "mlflow_tag", []) or []:
+    for entry in getattr(args, "mlflow_tags", []) or []:
         cli_tags.update(parse_tag_string(entry))
 
     default_run_name = f"{args.agent}-seed{args.seed}"
@@ -424,7 +424,7 @@ def _build_mlflow_settings(args: argparse.Namespace) -> Any:
         run_name=(args.mlflow_run_name or base.run_name or default_run_name),
         artifact_location=args.mlflow_artifact_location,
         tags=cli_tags,
-        log_system_metrics=args.mlflow_system_metrics or base.log_system_metrics,
+        log_system_metrics=True if args.mlflow_system_metrics else None,
     )
 
 
@@ -469,7 +469,7 @@ def _flatten_for_params(obj: Any, prefix: str = "") -> dict[str, Any]:
             return flat
         flat[prefix] = ",".join(str(item) for item in obj)
     elif obj is not None:
-        flat[prefix] = obj
+        flat[prefix] = str(obj)
     return flat
 
 
@@ -479,7 +479,7 @@ def _maybe_make_mlflow_logger(args: argparse.Namespace, config: Any) -> Any:
     Falls back to ``None`` so existing callers and CI workflows that
     don't opt in remain untouched.
     """
-    if not getattr(args, "mlflow", False):
+    if not getattr(args, "mlflow_enabled", False):
         return None
     try:
         from forge.training.loggers import MLflowLogger

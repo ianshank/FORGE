@@ -176,7 +176,6 @@ python scripts/train.py --agent mappo --mlflow-enabled \
 | `--mlflow-artifact-location LOC` | server default | Artifact store root |
 | `--mlflow-tags KEY=VAL,…` | env / none | Comma-separated tag bag (merged with `FORGE_MLFLOW_TAGS`) |
 | `--mlflow-system-metrics` | off | Enable system-metrics daemon |
-| `--mlflow-config PATH` | none | Upload a config file as a run artifact |
 
 ### Environment variables
 

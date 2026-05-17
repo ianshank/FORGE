@@ -441,7 +441,14 @@ class MLflowLogger(ForgeLogger):
             except Exception as exc:
                 # TOCTOU: another process created the experiment between our
                 # get_experiment_by_name check and create_experiment call.
-                if "already exists" not in str(exc).lower():
+                # Prefer checking MlflowException.error_code (stable across
+                # versions and locales) and fall back to message inspection for
+                # any non-MlflowException raise.
+                mlflow_exc_cls = getattr(mlflow_module, "MlflowException", None)
+                if mlflow_exc_cls and isinstance(exc, mlflow_exc_cls):
+                    if getattr(exc, "error_code", "") != "RESOURCE_ALREADY_EXISTS":
+                        raise
+                elif "already exists" not in str(exc).lower():
                     raise
                 logger.debug(
                     "Experiment '%s' created concurrently; proceeding normally",
