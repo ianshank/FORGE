@@ -184,20 +184,50 @@ impl EvalHarness {
     /// doesn't change.
     fn build_phase_b_exporters(&self) -> Vec<(Box<dyn Exporter>, String)> {
         let mut sinks: Vec<(Box<dyn Exporter>, String)> = Vec::new();
-        if let Some(uri) = &self.config.mlflow_tracking_uri {
-            sinks.push((
-                Box::new(MlflowExporter::new(uri.clone())),
-                uri.display().to_string(),
-            ));
+
+        // MLflow HTTP sink takes precedence over the filesystem sink when
+        // configured — the long-run pipeline (Slice 3+) targets a real
+        // tracking server, but the filesystem sink stays available for
+        // dev iteration without a server. Only one is dispatched per run
+        // to avoid double-recording the same scorecard.
+        #[cfg(feature = "http-mlflow")]
+        {
+            if let Some(uri) = &self.config.mlflow_http_tracking_uri {
+                match crate::exporters::mlflow_http::MlflowHttpSink::from_config(&self.config) {
+                    Ok(sink) => {
+                        sinks.push((Box::new(sink), uri.clone()));
+                    }
+                    Err(e) => {
+                        warn!(
+                            error = %e,
+                            tracking_uri = %uri,
+                            "mlflow_http_tracking_uri is set but the HTTP sink could not be built; \
+                             falling back to filesystem sink if configured"
+                        );
+                    }
+                }
+            }
         }
+
+        // Filesystem sink fires unless the HTTP sink already took its slot.
+        // This keeps existing `mlflow_tracking_uri`-only configs working
+        // byte-identically post-rebase.
+        let http_active = sinks.iter().any(|(s, _)| s.name() == "mlflow-http");
+        if !http_active {
+            if let Some(uri) = &self.config.mlflow_tracking_uri {
+                sinks.push((
+                    Box::new(MlflowExporter::new(uri.clone())),
+                    uri.display().to_string(),
+                ));
+            }
+        }
+
         if let Some(root) = &self.config.huggingface_export_root {
             sinks.push((
                 Box::new(HuggingFaceExporter::new(root.clone())),
                 root.display().to_string(),
             ));
         }
-        // Future: MLflow HTTP sink (Slice 2) → one push here, nothing else
-        // changes. Same shape applies to any new Phase B sink.
         sinks
     }
 

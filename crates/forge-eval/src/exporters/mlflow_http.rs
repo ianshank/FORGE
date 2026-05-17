@@ -10,16 +10,23 @@
 //! remains HTTP/TLS-free. (The feature gate lives at the module's
 //! declaration site in `mod.rs`; no inner `#![cfg(...)]` needed.)
 
-use std::time::Duration;
+use std::cell::Cell;
+use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::blocking::{Client, RequestBuilder, Response};
 use reqwest::StatusCode;
 use serde_json::{json, Value};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 
-use super::mlflow_payload::{MetricSample, ParamKv, TagKv};
-use super::ExportError;
+use super::mlflow_payload::{
+    build_run_payload, ArtifactRef, ArtifactSource, MetricSample, ParamKv, RunPayload, TagKv,
+};
+use super::{ExportError, Exporter};
+use crate::config::EvalConfig;
+use crate::manifest::RunManifest;
+use crate::scorecard::Scorecard;
 
 // ─── Defaults (kept here as the canonical home; EvalConfig::Default reads them) ──
 //
@@ -530,6 +537,251 @@ fn extract_string(value: &Value, path: &[&str]) -> Result<String, ExportError> {
         .ok_or_else(|| ExportError::Http(format!("response field `{}` not a string", path.join("."))))
 }
 
+/// Wall-clock milliseconds since Unix epoch. Mirrors the
+/// `mlflow_fs::now_ms` helper so HTTP + filesystem sinks agree on the
+/// stamp recorded for create_run / set_terminated.
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+// ─── MlflowHttpSink ────────────────────────────────────────────────────────
+
+/// MLflow HTTP tracking-server sink. Consumes the same
+/// [`super::mlflow_payload::RunPayload`] as [`super::mlflow_fs::MlflowFsSink`]
+/// and serialises it as REST calls.
+///
+/// Construction goes through [`MlflowHttpSink::from_config`] which mirrors
+/// the public `EvalConfig` HTTP fields so callers can ship the sink end-to-end
+/// without instantiating the lower-level [`MlflowHttpClient`] /
+/// [`HttpClientConfig`] structs directly.
+pub struct MlflowHttpSink {
+    client: MlflowHttpClient,
+    experiment_name: String,
+}
+
+impl std::fmt::Debug for MlflowHttpSink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MlflowHttpSink")
+            .field("client", &self.client)
+            .field("experiment_name", &self.experiment_name)
+            .finish()
+    }
+}
+
+impl MlflowHttpSink {
+    /// Construct a sink from an `EvalConfig`. Reads
+    /// `mlflow_http_tracking_uri`, `mlflow_http_timeout_ms`,
+    /// `mlflow_http_max_retries`, `mlflow_http_backoff_base_ms`,
+    /// `mlflow_http_batch_size`, `mlflow_http_token`, and falls back to
+    /// `"forge-eval-default"` when `experiment_name` is `None` (mirroring
+    /// `RunManifest`'s default).
+    ///
+    /// Returns [`ExportError::InvalidTarget`] when the tracking URI is
+    /// absent or malformed.
+    pub fn from_config(cfg: &EvalConfig) -> Result<Self, ExportError> {
+        let uri = cfg.mlflow_http_tracking_uri.as_ref().ok_or_else(|| {
+            ExportError::InvalidTarget("mlflow_http_tracking_uri must be set".to_string())
+        })?;
+        let base = Url::parse(uri)
+            .map_err(|e| ExportError::InvalidTarget(format!("bad http tracking uri: {e}")))?;
+        let http_cfg = HttpClientConfig {
+            timeout_ms: cfg.mlflow_http_timeout_ms,
+            max_retries: cfg.mlflow_http_max_retries,
+            backoff_base_ms: cfg.mlflow_http_backoff_base_ms,
+            batch_size: cfg.mlflow_http_batch_size,
+            bearer_token: cfg.mlflow_http_token.clone(),
+            user_agent: DEFAULT_USER_AGENT.to_string(),
+        };
+        let client = MlflowHttpClient::new(base, http_cfg)?;
+        let experiment_name = cfg
+            .experiment_name
+            .clone()
+            .unwrap_or_else(|| "forge-eval-default".to_string());
+        Ok(Self { client, experiment_name })
+    }
+
+    /// Borrow the underlying HTTP client. Exposed for tests + advanced
+    /// callers that need to issue ad-hoc requests against the same auth
+    /// + retry policy.
+    pub fn client(&self) -> &MlflowHttpClient {
+        &self.client
+    }
+
+    /// Experiment name the sink resolves on every export.
+    pub fn experiment_name(&self) -> &str {
+        &self.experiment_name
+    }
+}
+
+impl Exporter for MlflowHttpSink {
+    fn name(&self) -> &'static str {
+        "mlflow-http"
+    }
+
+    #[instrument(skip_all, fields(experiment = %self.experiment_name))]
+    fn export(
+        &self,
+        scorecard: &Scorecard,
+        manifest: &RunManifest,
+        artifacts_dir: &Path,
+    ) -> Result<(), ExportError> {
+        let start_ms = now_ms();
+        let payload = build_run_payload(scorecard, manifest, artifacts_dir, start_ms)?;
+        let exp_id = self.client.get_or_create_experiment(&self.experiment_name)?;
+        info!(
+            run_id = %payload.run_id,
+            experiment_id = %exp_id,
+            children = payload.children.len(),
+            "mlflow-http: exporting suite"
+        );
+        self.write_run(&exp_id, &payload, artifacts_dir, start_ms)?;
+        for child in &payload.children {
+            self.write_run(&exp_id, child, artifacts_dir, start_ms)?;
+        }
+        info!(run_id = %payload.run_id, "mlflow-http: export complete");
+        Ok(())
+    }
+}
+
+impl MlflowHttpSink {
+    /// Submit a single payload (parent OR child) to the server: create the
+    /// run, stream params/tags/metrics via log_batch, upload artefacts via
+    /// log_artifact, and mark FINISHED. A scopeguard ensures the run lands
+    /// as FAILED rather than wedged in RUNNING if any of the intermediate
+    /// calls returns Err.
+    fn write_run(
+        &self,
+        experiment_id: &str,
+        payload: &RunPayload,
+        artifacts_dir: &Path,
+        start_ms: u64,
+    ) -> Result<(), ExportError> {
+        let server_run_id = self
+            .client
+            .create_run(experiment_id, start_ms, &payload.tags)?;
+
+        // `success` flips to true on the happy-path terminator. The
+        // scopeguard runs on Drop regardless of how we exit and only fires
+        // the FAILED update when success is still false (panic OR `?` early-
+        // return). `Cell<bool>` gives interior mutability so the closure can
+        // borrow `&success` while we set it after the closure is constructed.
+        let success = Cell::new(false);
+        let server_id_for_guard = server_run_id.clone();
+        let client_for_guard = &self.client;
+        let success_for_guard = &success;
+        let guard = scopeguard::guard((), |_| {
+            if !success_for_guard.get() {
+                if let Err(e) = client_for_guard.set_terminated(
+                    &server_id_for_guard,
+                    RunStatus::Failed,
+                    now_ms(),
+                ) {
+                    error!(
+                        run_id = %server_id_for_guard,
+                        error = %e,
+                        "failed to mark mlflow run as FAILED on abort"
+                    );
+                } else {
+                    warn!(run_id = %server_id_for_guard, "mlflow run marked FAILED on abort");
+                }
+            }
+        });
+
+        // Params + metrics: tags already shipped via create_run.
+        self.client
+            .log_batch(&server_run_id, &payload.metrics, &payload.params, &[])?;
+
+        for artifact in &payload.artifact_refs {
+            self.upload_artifact(&server_run_id, artifact, artifacts_dir)?;
+        }
+
+        self.client
+            .set_terminated(&server_run_id, RunStatus::Finished, now_ms())?;
+        success.set(true);
+        // Disarm the guard (success branch). `into_inner` is explicit so a
+        // future refactor that moves work past this point still triggers the
+        // guard until the new terminator runs.
+        scopeguard::ScopeGuard::into_inner(guard);
+
+        debug!(
+            run_id = %server_run_id,
+            tier_metrics = payload.metrics.len(),
+            params = payload.params.len(),
+            artefacts = payload.artifact_refs.len(),
+            "mlflow-http: run written"
+        );
+        Ok(())
+    }
+
+    /// Stream one artefact ref into the server. Inline bytes ship verbatim;
+    /// File / Directory sources are read on demand so a 1000-episode run
+    /// with gigabytes of replays doesn't blow heap.
+    fn upload_artifact(
+        &self,
+        run_id: &str,
+        artifact: &ArtifactRef,
+        artifacts_dir: &Path,
+    ) -> Result<(), ExportError> {
+        match &artifact.source {
+            ArtifactSource::Inline(bytes) => {
+                self.client.log_artifact(run_id, &artifact.rel_path, bytes)
+            }
+            ArtifactSource::File(p) => {
+                let bytes = std::fs::read(p)?;
+                self.client.log_artifact(run_id, &artifact.rel_path, &bytes)
+            }
+            ArtifactSource::Directory(src) => {
+                upload_dir_recursively(&self.client, run_id, &artifact.rel_path, src)
+            }
+        }?;
+        let _ = artifacts_dir; // reserved for relative-path resolution in future
+        Ok(())
+    }
+}
+
+/// Walk `src` recursively, uploading each file under
+/// `<rel_root>/<file_path_relative_to_src>`. Mirrors `mlflow_fs`'s
+/// `copy_subdir_if_exists` but with HTTP semantics. Silently no-ops if
+/// `src` does not exist (matches the FsSink behaviour for optional
+/// replays/trajectories subdirs).
+fn upload_dir_recursively(
+    client: &MlflowHttpClient,
+    run_id: &str,
+    rel_root: &str,
+    src: &Path,
+) -> Result<(), ExportError> {
+    if !src.exists() || !src.is_dir() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let child_rel = if rel_root.is_empty() {
+            name_str.to_string()
+        } else {
+            format!("{}/{}", rel_root, name_str)
+        };
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            upload_dir_recursively(client, run_id, &child_rel, &path)?;
+        } else if ty.is_file() {
+            let bytes = std::fs::read(&path)?;
+            client.log_artifact(run_id, &child_rel, &bytes)?;
+        } else {
+            debug!(
+                src = %path.display(),
+                "mlflow-http sink: skipping non-file/non-dir entry"
+            );
+        }
+    }
+    Ok(())
+}
+
 // ─── Status helpers ────────────────────────────────────────────────────────
 
 /// Internal helper: map a `reqwest::Error` to our `ExportError`.
@@ -909,5 +1161,170 @@ mod tests {
         assert_eq!(RunStatus::Failed.as_str(), "FAILED");
         assert_eq!(RunStatus::Killed.as_str(), "KILLED");
         assert_eq!(RunStatus::Scheduled.as_str(), "SCHEDULED");
+    }
+
+    // ─── MlflowHttpSink tests ──────────────────────────────────────────────
+
+    use crate::manifest::{RunManifest, MANIFEST_SOURCE_NAME, UNKNOWN};
+    use crate::scorecard::{ScenarioResult, Scorecard, SummaryStats, TierScore};
+    use chrono::Utc;
+    use forge_types::agent_interface::AgentMetadata;
+
+    fn fixture_scorecard_with_n_scenarios(n: usize) -> Scorecard {
+        let scenarios: Vec<ScenarioResult> = (0..n)
+            .map(|i| ScenarioResult::from_episodes(format!("s{i}"), 1, vec![]))
+            .collect();
+        Scorecard {
+            agent_metadata: AgentMetadata::heuristic("TestAgent"),
+            timestamp: "1970-01-01T00:00:00Z".to_string(),
+            overall_score: 0.0,
+            tier_scores: vec![TierScore {
+                tier: 1,
+                success_rate: 0.0,
+                mean_reward: 0.0,
+                mean_steps_to_completion: 0.0,
+                episodes_evaluated: 0,
+                scenarios_count: n as u32,
+            }],
+            scenario_results: scenarios,
+            summary: SummaryStats {
+                total_episodes: 0,
+                total_steps: 0,
+                wall_clock_seconds: 0.0,
+                mean_decision_latency_ms: 0.0,
+            },
+        }
+    }
+
+    fn fixture_manifest() -> RunManifest {
+        RunManifest {
+            run_id: "parent-run".to_string(),
+            experiment_name: "test-exp".to_string(),
+            timestamp: Utc::now(),
+            git_sha: UNKNOWN.to_string(),
+            git_branch: UNKNOWN.to_string(),
+            rustc_version: UNKNOWN.to_string(),
+            user: UNKNOWN.to_string(),
+            config_hash: "h".to_string(),
+            scenario_file_hashes: vec![],
+            source_name: MANIFEST_SOURCE_NAME.to_string(),
+        }
+    }
+
+    fn http_sink_from_url(url: &str, max_retries: u32) -> MlflowHttpSink {
+        // Struct-literal init keeps clippy's field_reassign_with_default
+        // happy while still inheriting Default::default() for every field
+        // the tests don't care about.
+        let cfg = EvalConfig {
+            mlflow_http_tracking_uri: Some(url.to_string()),
+            mlflow_http_max_retries: max_retries,
+            mlflow_http_backoff_base_ms: 1,
+            experiment_name: Some("test-exp".to_string()),
+            ..EvalConfig::default()
+        };
+        MlflowHttpSink::from_config(&cfg).unwrap()
+    }
+
+    /// Happy-path: 0 scenarios = 1 parent run only. Asserts the full
+    /// create-run → log-batch → log-artifact (4 inline) → set-terminated
+    /// FINISHED sequence happens exactly once and the experiment is
+    /// resolved up front.
+    #[test]
+    fn mlflow_http_sink_writes_parent_run_only_when_no_scenarios() {
+        let mut server = Server::new();
+        let _get_exp = server
+            .mock("GET", "/api/2.0/mlflow/experiments/get-by-name")
+            .match_query(Matcher::UrlEncoded("experiment_name".into(), "test-exp".into()))
+            .with_status(200)
+            .with_body(json!({"experiment": {"experiment_id": "0"}}).to_string())
+            .create();
+        let _create_run = server
+            .mock("POST", "/api/2.0/mlflow/runs/create")
+            .with_status(200)
+            .with_body(json!({"run": {"info": {"run_id": "server-parent"}}}).to_string())
+            .expect(1)
+            .create();
+        let _log_batch = server
+            .mock("POST", "/api/2.0/mlflow/runs/log-batch")
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create();
+        // 4 inline artefacts on the parent: scorecard.json, scorecard.md,
+        // manifest.json, tier_success_rates.html.
+        let _log_artifact = server
+            .mock("PUT", Matcher::Regex(
+                r"^/api/2\.0/mlflow-artifacts/artifacts/.+$".to_string(),
+            ))
+            .match_query(Matcher::UrlEncoded("run_id".into(), "server-parent".into()))
+            .with_status(200)
+            .expect(4)
+            .create();
+        let set_terminated_finished = server
+            .mock("POST", "/api/2.0/mlflow/runs/update")
+            .match_body(Matcher::PartialJson(json!({
+                "run_id": "server-parent",
+                "status": "FINISHED",
+            })))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create();
+        let sink = http_sink_from_url(&server.url(), 0);
+        sink.export(
+            &fixture_scorecard_with_n_scenarios(0),
+            &fixture_manifest(),
+            Path::new(""),
+        )
+        .unwrap();
+        set_terminated_finished.assert();
+    }
+
+    /// Scopeguard contract: when a mid-export call (log_batch here) returns
+    /// the retry budget is exhausted, the sink propagates Err — AND the
+    /// run lands in FAILED, not RUNNING. Without the scopeguard the run
+    /// would be wedged in RUNNING in the UI.
+    #[test]
+    fn mlflow_http_sink_scopeguard_marks_run_failed_on_mid_export_error() {
+        let mut server = Server::new();
+        let _get_exp = server
+            .mock("GET", "/api/2.0/mlflow/experiments/get-by-name")
+            .match_query(Matcher::UrlEncoded("experiment_name".into(), "test-exp".into()))
+            .with_status(200)
+            .with_body(json!({"experiment": {"experiment_id": "0"}}).to_string())
+            .create();
+        let _create_run = server
+            .mock("POST", "/api/2.0/mlflow/runs/create")
+            .with_status(200)
+            .with_body(json!({"run": {"info": {"run_id": "doomed-run"}}}).to_string())
+            .expect(1)
+            .create();
+        // Every log-batch attempt returns 503 → after the retry budget is
+        // exhausted, the sink's `?` propagates and the scopeguard fires.
+        let _log_batch_fail = server
+            .mock("POST", "/api/2.0/mlflow/runs/log-batch")
+            .with_status(503)
+            .with_body("server down")
+            .create();
+        // The set_terminated(FAILED, ...) call the scopeguard MUST issue.
+        let set_terminated_failed = server
+            .mock("POST", "/api/2.0/mlflow/runs/update")
+            .match_body(Matcher::PartialJson(json!({
+                "run_id": "doomed-run",
+                "status": "FAILED",
+            })))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create();
+        let sink = http_sink_from_url(&server.url(), 0);
+        let result = sink.export(
+            &fixture_scorecard_with_n_scenarios(0),
+            &fixture_manifest(),
+            Path::new(""),
+        );
+        assert!(matches!(result, Err(ExportError::Retryable(_))), "got {result:?}");
+        // The critical contract: FAILED was sent — run isn't wedged in RUNNING.
+        set_terminated_failed.assert();
     }
 }
