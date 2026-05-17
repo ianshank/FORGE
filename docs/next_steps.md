@@ -4,6 +4,78 @@ Post-demo-UI priorities, roughly in order of impact.
 
 ---
 
+## Minecraft RL Integration — Remaining Phases (PR #53)
+
+Branch `claude/minecraft-rl-agent-integration-xnJjt` landed the
+env-trait foundation (Phases 1, 2, 3 Rust, 3 Node, 5 Rust v2 replay)
+in PR #53. The remaining phases are the work needed to actually run an
+agent against a real Minecraft server end-to-end.
+
+### Phase 3 mineflayer wire-up (Node entry point)
+
+- `mc-bot/src/index.js` — spin up the mineflayer bot, attach
+  prismarine-viewer on `viewer.port`, plumb `applyReset` +
+  `RewardConfig` + `ActionMap` into the WS event loop.
+- Needs a real Minecraft server (Paper/vanilla) to exercise; CI gate
+  can use `flying-squid` mock server but real-bot work happens off-CI.
+- Action execution mapping (`ActionKind` → mineflayer commands) —
+  implementation guide already documented in `mc-bot/src/action_map.js`
+  validators and `configs/minecraft/action_map.toml` comments.
+
+### Phase 4 — `forge-mc-runner` + ONNX hot-reload + bench
+
+- New crate `crates/forge-mc-runner/` with `Runner<E: FlatObsEnv>`,
+  `LatentPlanner<M: LatentForwardModel>`, `TrajectoryWriter`,
+  `HotReloadWatcher`. Drives an episode loop, writes `TrajectoryV2`
+  files, swaps ONNX between episodes.
+- Additive `OnnxMuZeroModel::reload()` method on
+  `crates/forge-agent/src/latent_mcts/onnx_model.rs` with fixed
+  mutex-acquisition order (representation → dynamics → prediction)
+  to make deadlock structurally impossible.
+- `model_manifest.json` (sha256 + version) is the swap signal; reload
+  only happens between episodes (doc + test).
+- `crates/forge-bench/benches/latent_mcts_inference.rs` Criterion
+  bench (NEW — the gap identified in the original audit) measures
+  per-decision latency at 1 / 8 / 25 / 50 / 100 / 200 simulation
+  budgets using `StubLatentModel` plus an optional `OnnxMuZeroModel`
+  feature-gated variant.
+
+### Phase 5 — Python MuZero trainer (`muzero_mc/`)
+
+- `python/forge/training/muzero_mc/` — `trainer.py`, `replay.py`,
+  `exporter.py`, `manifest.py`, `bootstrap.py`, `cli.py`.
+- Consumes `TrajectoryV2` jsonl, trains representation / dynamics /
+  prediction nets in PyTorch, exports ONNX, writes manifest atomic
+  (tmp-file + rename) with monotonic version.
+- Needs `torch>=2.3` + `onnx>=1.16` + `onnxruntime>=1.18` (will be
+  declared under `[project.optional-dependencies] minecraft`).
+- Cross-runtime CI test (`tests/python/training/test_onnx_compat.py`)
+  exports a tiny bundle from PyTorch and round-trips it through
+  Rust's `OnnxMuZeroModel::load` to catch opset / `ort` version drift.
+
+### Phase 6 — End-to-end glue
+
+- `scripts/mc_run.sh` — orchestrates docker-compose + runner + trainer.
+- `docker/mc-bot.Dockerfile` + `docker/compose.minecraft.yml` ship a
+  Paper server + the Node bot + the Rust runner together.
+- `examples/minecraft/quickstart.md` 10-minute getting-started runbook.
+- `tests/e2e_full_loop.py` (nightly, not PR-gated) drives a 3-episode
+  loop ending with a `model_manifest.version == 1` reload.
+- Prometheus `/metrics` endpoint on `runner.metrics_port` exposes
+  `forge_mc_episode_total`, `forge_mc_episode_reward_sum`,
+  `forge_mc_planning_latency_ms`, `forge_mc_model_version`,
+  `forge_mc_protocol_error_total` for any dashboard the team picks.
+
+### Open decisions (deferred from v2 plan §10)
+
+- JS test runner: `node:test` (current, zero-dep) vs `vitest` (faster).
+- Mineflayer / MC version pin (proposal: `1.20.4`).
+- Replay compression: JSONL plain vs gzip vs zstd — measure first.
+- Dashboard panel framework — defer to the existing dashboard team's
+  Vite/React stack vs writing a standalone panel.
+
+---
+
 ## Immediate (v0.2)
 
 ### 0. ✅ Hex Grid Rollout Hardening — COMPLETED

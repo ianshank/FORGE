@@ -9,6 +9,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Minecraft RL Integration: env-trait foundation + Node bridge (2026-05-17)
+
+Introduces the env-agnostic abstraction layer that lets FORGE's
+`latent_mcts` planner drive arbitrary environments — first concrete
+new env: Minecraft (via a Node mc-bot speaking a versioned WebSocket
+protocol). v1 trajectory format, classical `forge-agent::mcts`,
+`forge-python::ForgeEnv`, and every existing FORGE workflow are
+**untouched** — this is purely additive.
+
+New crates / packages:
+
+- **`forge-env`** (new crate) — generic `Env`, `FlatObsEnv`, `StepInto`
+  traits + `ObsSpec` / `ActionSpec` / `DType` space descriptors and
+  `EnvError`. No `forge-types` dependency; consumable by any backend.
+  Trait is dyn-compatible (`StepOutput<Obs, Info>` projection, not
+  `Self`).
+- **`forge-env-forge`** (new crate) — `WorldEnv` + `FlatForgeEnv`
+  shims over `forge_core::WorldState`. `FlatForgeEnv` implements
+  `StepInto` for zero-alloc buffer reuse. 200-step lockstep parity
+  test gates backwards compatibility (`tests/forge_env_parity.rs`).
+- **`forge-env-mc`** (new crate) — sync `tungstenite`-backed
+  WebSocket client to a Node mc-bot. Loads
+  `configs/minecraft/{action_map,rewards}.toml`, performs a strict
+  `Hello` handshake (schema_version + action_count + obs_dim +
+  schema_id), and surfaces JSON `ServerMsg` errors as
+  `McEnvError::Protocol`. Intentionally NOT `StepInto` (zero-alloc
+  carve-out documented at crate level). Mock-server integration tests
+  cover handshake mismatches, full short episodes, binary-frame
+  rejection, server-close, and unexpected-Hello mid-episode.
+- **`forge-replay::v2`** (additive module) — `TrajectoryV2` /
+  `StepV2` carrying flat-tensor obs + MCTS `policy_target` +
+  scalar `value_target`. `TRAJECTORY_FORMAT_VERSION = 2` pinned;
+  readers fail fast on mismatch. v1 `Trajectory` untouched.
+  `FromV1Options` + `from_v1()` migration converter takes a
+  caller-supplied flatten closure (multi-agent-aware).
+- **`mc-bot/`** (new Node package, ESM, Node 22+) — protocol builders
+  + parser, `ActionMap` loader/validator with dense-id check,
+  `RewardConfig` with the same canonical-hash contract, composable
+  `RewardFn` registry (survival, inventory_acquired, distance_to_goal,
+  health_delta, composite), teleport-based `applyReset`. Builtins are
+  explicit factory exports (no auto-registration via side-effects) to
+  dodge ESM TDZ traps in circular imports.
+
+Cross-language regression gates (BLOCKER fix from peer review):
+
+- `crates/forge-env-mc/src/action_map.rs::xlang_schema_id_pinned_to_known_good`
+  ↔ `mc-bot/test/schema_id.test.js::"xlang schema_id matches Rust"`
+  both pin `587b13077b8c7cd90503f9ee5e1bae1bb92bdf738c8abc51d2ff6deb1908224f`.
+- `crates/forge-env-mc/src/reward_config.rs::xlang_rewards_schema_id_pinned_to_known_good`
+  ↔ `mc-bot/test/reward_config.test.js::"hash matches Rust pinned constant"`
+  both pin `451b10f995371924a374633e5c42deab35c137fbbc65bc8f551bf2bd7844b478`.
+  Rust side coerces whole TOML floats to integers (`100.0 → 100`) so
+  V8's `JSON.stringify` and Rust's serde produce byte-identical
+  canonical strings.
+
+Config files (no hard-coded values inline):
+
+- `configs/minecraft/action_map.toml` — 12 default discrete actions
+  (noop, 4 moves, jump, attack, use, 4 looks). Dense ids enforced.
+- `configs/minecraft/rewards.toml` — default `composite` reward
+  combining `distance_to_goal` (clip=100) and `survival` (value=0.01)
+  with target `{0, 64, 0}`. Folded into the global `schema_id`.
+
+Documentation:
+
+- `docs/plans/minecraft_rl_integration_plan_v1.md` — initial six-phase
+  plan (foundational design).
+- `docs/plans/minecraft_rl_integration_plan_v2.md` — peer-review
+  revisions: reward subsystem, episode reset, `Action: Copy` removed,
+  binary-frame deferred, zero-alloc carve-out explicit,
+  cross-runtime ONNX round-trip CI test, bootstrap ONNX exporter,
+  `from_v1` multi-agent fix, `Cow<'_, str>` for `name()`, Phase 6
+  narrowed to standalone viewer + Prometheus metrics.
+- `README.md`, `Agent.md`, `CLAUDE.md`, `docs/architecture.md`,
+  `docs/next_steps.md` updated for the env-trait abstraction.
+
+Test counts:
+
+- Rust new tests: **168** across `forge-env`, `forge-env-forge`,
+  `forge-env-mc`, `forge-replay::v2`. Full workspace
+  `cargo test --workspace`: 2473+ tests pass, zero failures.
+- Node `mc-bot/`: **66 tests** via `node --test` (no install needed
+  for the dep-free modules).
+- Coverage (cargo-tarpaulin) on new Rust files: **97.2% / 523 of 538
+  lines**; every file ≥ 93%.
+
 ### Changed — Teacher Pipeline Config Hoisting (2026-05-16)
 
 Hoisted five inline numeric/string literals from the LM Studio teacher

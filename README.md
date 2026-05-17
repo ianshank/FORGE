@@ -428,6 +428,40 @@ python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765
 
 **Features:** Live terminal streaming via SSE, ASCII world canvas with colored tiles, real-time stats panel (steps/sec, seed, progress), section navigation, PASS/FAIL badges, and quick mode toggle.
 
+## Minecraft Integration (in progress)
+
+FORGE ships an env-agnostic Minecraft RL bridge so the same `latent_mcts`
+planner that drives `WorldState` can act in a real Minecraft server.
+Architecture and contracts are documented in
+[`docs/plans/minecraft_rl_integration_plan_v2.md`](docs/plans/minecraft_rl_integration_plan_v2.md);
+the v2 plan supersedes v1 with peer-review fixes (reward subsystem,
+episode reset, dynamic env names, dyn-compatible trait).
+
+What's landed on the `claude/minecraft-rl-agent-integration-xnJjt`
+branch (PR #53):
+
+- **`forge-env`** — generic `Env` / `FlatObsEnv` / `StepInto` trait
+  crate (no FORGE deps).
+- **`forge-env-forge`** — `WorldEnv` + `FlatForgeEnv` (single-agent
+  `Env` impl over `WorldState`, parity-tested for 200-step lockstep).
+- **`forge-env-mc`** — sync WebSocket client to a Node mc-bot;
+  `schema_id` cross-checked at handshake against
+  `configs/minecraft/{action_map,rewards}.toml`.
+- **`forge-replay::v2`** — env-agnostic `TrajectoryV2` (flat-tensor obs
+  + MCTS policy/value targets; `format_version=2` pinned).
+- **`mc-bot/`** — Node 22 ESM package with protocol, action map,
+  reward registry, and episode reset; xlang regression gates pin the
+  canonical sha256 of both action map and rewards config.
+
+What's not yet on this branch (out of scope for the env-trait
+foundation): `forge-mc-runner` Rust binary, ONNX hot-reload, Python
+MuZero trainer, docker-compose orchestration, prismarine-viewer
+wire-up. See [`docs/next_steps.md`](docs/next_steps.md) for the
+remaining phases and follow-up priorities.
+
+Coverage on new Minecraft-integration code: **97.2%** (per-file ≥ 93%).
+Workspace `cargo test --workspace`: 2473+ tests, all green.
+
 ## MangoMAS Integration
 
 FORGE includes a Python-side MangoMAS bridge for training and evaluation workflows that need a configurable control plane on top of the deterministic Rust simulator.

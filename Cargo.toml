@@ -23,6 +23,9 @@ members = [
     "crates/forge-cloud",
     "crates/forge-edge",
     "crates/forge-civ",
+    "crates/forge-env",
+    "crates/forge-env-forge",
+    "crates/forge-env-mc",
 ]
 resolver = "2"
 
@@ -99,6 +102,9 @@ forge-cloud = { path = "crates/forge-cloud" }
 forge-edge = { path = "crates/forge-edge" }
 forge-data = { path = "crates/forge-data" }
 forge-civ = { path = "crates/forge-civ" }
+forge-env = { path = "crates/forge-env" }
+forge-env-forge = { path = "crates/forge-env-forge" }
+forge-env-mc = { path = "crates/forge-env-mc" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
