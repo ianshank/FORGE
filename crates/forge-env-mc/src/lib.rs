@@ -10,12 +10,12 @@
 //! per the loaded `action_map.toml` + `rewards.toml`; this crate just
 //! marshals messages on the wire.
 //!
-//! ## Zero-alloc carve-out
+//! ## Zero-alloc note
 //!
-//! [`MinecraftEnv`] does **not** implement [`forge_env::StepInto`]. Every
-//! step performs WebSocket I/O (JSON parse → fresh `Vec<f32>`), which is
-//! fundamentally incompatible with the FORGE zero-alloc hot-path
-//! contract. CI's allocation audit excludes this crate's module path.
+//! [`MinecraftEnv`]'s `reset_into` and `step_into` reuse the caller's
+//! `Vec<f32>` buffer for the observation payload, satisfying the
+//! buffer-filling contract. Network I/O (WebSocket read, JSON parse) still
+//! allocates; this is unavoidable and excluded from the CI zero-alloc gate.
 //!
 //! ## Protocol
 //!

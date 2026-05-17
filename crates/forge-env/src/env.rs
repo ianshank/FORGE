@@ -41,7 +41,7 @@ impl<Obs: Default, Info: Default> Default for StepOutput<Obs, Info> {
 /// Implementors are typically wrappers around a simulation backend
 /// (FORGE's `WorldState`, a Minecraft WebSocket client, etc.). The trait
 /// is deliberately minimal: reset, step, and space description. Optional
-/// extensions live in companion traits ([`StepInto`], [`FlatObsEnv`]).
+/// extensions live in the companion trait [`FlatObsEnv`].
 ///
 /// ## Threading
 ///
@@ -50,10 +50,19 @@ impl<Obs: Default, Info: Default> Default for StepOutput<Obs, Info> {
 /// not supported — use one env per worker. `Sync` is deliberately not
 /// required because most concrete envs hold non-thread-safe state
 /// (WebSocket clients, mutable RNGs).
+///
+/// ## Zero-allocation contract
+///
+/// The required methods `reset_into` and `step_into` are buffer-filling:
+/// the caller owns the output and passes a mutable reference. Reusing the
+/// same buffer across calls makes the hot path allocation-free.
+///
+/// Convenience allocating wrappers `reset` and `step` are provided as
+/// default methods for ergonomic use outside the hot path.
 pub trait Env: Send {
-    /// Concrete observation type produced by `reset`/`step`.
+    /// Concrete observation type produced by `reset_into`/`step_into`.
     type Obs;
-    /// Concrete action type accepted by `step`.
+    /// Concrete action type accepted by `step_into`.
     type Action: Send;
     /// Auxiliary per-step info. Must implement [`Default`] so
     /// [`StepOutput`] can be constructed ergonomically.
@@ -61,21 +70,25 @@ pub trait Env: Send {
     /// Concrete error type returned by fallible operations.
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Reset the environment to an initial state and return the first
-    /// observation.
+    /// Reset the environment to an initial state, filling `out` with
+    /// the initial observation.
+    ///
+    /// Reward, terminated, and truncated are **not** set — they are not
+    /// meaningful at episode start.
     ///
     /// `seed` is honoured by deterministic envs; envs with no notion of
     /// seeding are free to ignore it.
-    fn reset(
-        &mut self,
-        seed: Option<u64>,
-    ) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error>;
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Self::Obs) -> Result<(), Self::Error>;
 
-    /// Advance the environment by one step.
-    fn step(
+    /// Advance the environment by one step, filling `out` in place.
+    ///
+    /// Callers that reuse the same buffer across steps get an
+    /// allocation-free hot path.
+    fn step_into(
         &mut self,
         action: Self::Action,
-    ) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error>;
+        out: &mut StepOutput<Self::Obs, Self::Info>,
+    ) -> Result<(), Self::Error>;
 
     /// Description of the observation space.
     fn obs_spec(&self) -> &ObsSpec;
@@ -95,26 +108,36 @@ pub trait Env: Send {
     fn close(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
-}
 
-/// Opt-in zero-allocation step variant.
-///
-/// Implementors fill the provided `out` buffer in place rather than
-/// returning a freshly allocated [`StepOutput`]. The caller is
-/// responsible for reusing the buffer across calls; doing so makes the
-/// hot path allocation-free.
-///
-/// Wire-bound envs (e.g. `forge-env-mc::MinecraftEnv`) intentionally do
-/// not implement this trait — their step path performs unavoidable I/O
-/// allocation. Such envs are excluded from the zero-allocation CI gate
-/// by module path.
-pub trait StepInto: Env {
-    /// Step in place. After this call, `out` reflects the new state.
-    fn step_into(
+    /// Allocating convenience wrapper for `reset_into`.
+    ///
+    /// Returns only the initial observation; reward and episode flags are
+    /// not meaningful at reset time. Call `reset_into` directly if you
+    /// already own a buffer.
+    fn reset(&mut self, seed: Option<u64>) -> Result<Self::Obs, Self::Error>
+    where
+        Self::Obs: Default,
+    {
+        let mut obs = Self::Obs::default();
+        self.reset_into(seed, &mut obs)?;
+        Ok(obs)
+    }
+
+    /// Allocating convenience wrapper for `step_into`.
+    ///
+    /// Allocates a fresh [`StepOutput`] per call. Call `step_into`
+    /// directly and reuse a buffer to avoid per-step allocation.
+    fn step(
         &mut self,
         action: Self::Action,
-        out: &mut StepOutput<Self::Obs, Self::Info>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error>
+    where
+        Self::Obs: Default,
+    {
+        let mut out = StepOutput::default();
+        self.step_into(action, &mut out)?;
+        Ok(out)
+    }
 }
 
 /// Marker trait for envs whose observations are flat `Vec<f32>` and
@@ -171,24 +194,25 @@ mod tests {
         type Info = MockInfo;
         type Error = EnvError;
 
-        fn reset(
+        fn reset_into(
             &mut self,
             _seed: Option<u64>,
-        ) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error> {
+            out: &mut Vec<f32>,
+        ) -> Result<(), Self::Error> {
             if self.closed {
                 return Err(EnvError::Closed);
             }
             self.tick = 0;
-            Ok(StepOutput {
-                obs: vec![0.0; self.obs_spec.num_elements()],
-                reward: 0.0,
-                terminated: false,
-                truncated: false,
-                info: MockInfo { tick: 0 },
-            })
+            out.clear();
+            out.resize(self.obs_spec.num_elements(), 0.0);
+            Ok(())
         }
 
-        fn step(&mut self, action: u32) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error> {
+        fn step_into(
+            &mut self,
+            action: u32,
+            out: &mut StepOutput<Vec<f32>, MockInfo>,
+        ) -> Result<(), Self::Error> {
             if self.closed {
                 return Err(EnvError::Closed);
             }
@@ -200,13 +224,14 @@ mod tests {
                 });
             }
             self.tick += 1;
-            Ok(StepOutput {
-                obs: vec![0.0; self.obs_spec.num_elements()],
-                reward: action as f32,
-                terminated: false,
-                truncated: false,
-                info: MockInfo { tick: self.tick },
-            })
+            // Reuse the obs buffer — resize keeps capacity if already big enough.
+            out.obs.clear();
+            out.obs.resize(self.obs_spec.num_elements(), 0.0);
+            out.reward = action as f32;
+            out.terminated = false;
+            out.truncated = false;
+            out.info.tick = self.tick;
+            Ok(())
         }
 
         fn obs_spec(&self) -> &ObsSpec {
@@ -236,39 +261,11 @@ mod tests {
         }
     }
 
-    impl StepInto for MockFlatEnv {
-        fn step_into(
-            &mut self,
-            action: u32,
-            out: &mut StepOutput<Vec<f32>, MockInfo>,
-        ) -> Result<(), Self::Error> {
-            if self.closed {
-                return Err(EnvError::Closed);
-            }
-            let n = self.action_spec.discrete_n().unwrap();
-            if action >= n {
-                return Err(EnvError::InvalidAction {
-                    action_id: action,
-                    space_n: n,
-                });
-            }
-            self.tick += 1;
-            // Reuse the obs buffer — resize keeps capacity if it's already big enough.
-            out.obs.clear();
-            out.obs.resize(self.obs_spec.num_elements(), 0.0);
-            out.reward = action as f32;
-            out.terminated = false;
-            out.truncated = false;
-            out.info.tick = self.tick;
-            Ok(())
-        }
-    }
-
     #[test]
     fn env_reset_and_step_produce_correct_obs_dim() {
         let mut env = MockFlatEnv::new(16, 4);
-        let r = env.reset(Some(42)).unwrap();
-        assert_eq!(r.obs.len(), 16);
+        let obs = env.reset(Some(42)).unwrap();
+        assert_eq!(obs.len(), 16);
         let s = env.step(2).unwrap();
         assert_eq!(s.obs.len(), 16);
         assert_eq!(s.reward, 2.0);
@@ -335,6 +332,16 @@ mod tests {
     }
 
     #[test]
+    fn reset_into_reuses_buffer_capacity() {
+        let mut env = MockFlatEnv::new(128, 4);
+        let mut obs: Vec<f32> = Vec::with_capacity(128);
+        let initial_cap = obs.capacity();
+        env.reset_into(Some(1), &mut obs).unwrap();
+        assert_eq!(obs.len(), 128);
+        assert_eq!(obs.capacity(), initial_cap, "reset_into must reuse obs buffer");
+    }
+
+    #[test]
     fn step_output_default_constructs_from_defaultable_types() {
         let out: StepOutput<Vec<f32>, MockInfo> = StepOutput::default();
         assert!(out.obs.is_empty());
@@ -352,23 +359,18 @@ mod tests {
         type Action = u32;
         type Info = ();
         type Error = EnvError;
-        fn reset(&mut self, _seed: Option<u64>) -> Result<StepOutput<(), ()>, EnvError> {
-            Ok(StepOutput {
-                obs: (),
-                reward: 0.0,
-                terminated: false,
-                truncated: false,
-                info: (),
-            })
+        fn reset_into(&mut self, _seed: Option<u64>, _out: &mut ()) -> Result<(), EnvError> {
+            Ok(())
         }
-        fn step(&mut self, _action: u32) -> Result<StepOutput<(), ()>, EnvError> {
-            Ok(StepOutput {
-                obs: (),
-                reward: 0.0,
-                terminated: false,
-                truncated: false,
-                info: (),
-            })
+        fn step_into(
+            &mut self,
+            _action: u32,
+            out: &mut StepOutput<(), ()>,
+        ) -> Result<(), EnvError> {
+            out.reward = 0.0;
+            out.terminated = false;
+            out.truncated = false;
+            Ok(())
         }
         fn obs_spec(&self) -> &ObsSpec {
             unreachable!()

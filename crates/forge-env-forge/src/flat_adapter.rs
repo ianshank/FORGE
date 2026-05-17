@@ -18,7 +18,7 @@
 
 use std::borrow::Cow;
 
-use forge_env::{ActionSpec, Env, FlatObsEnv, ObsSpec, StepInto, StepOutput};
+use forge_env::{ActionSpec, Env, FlatObsEnv, ObsSpec, StepOutput};
 use forge_types::config::ForgeConfig;
 use forge_types::observation::{Observation, StepInfo};
 use tracing::instrument;
@@ -150,6 +150,12 @@ pub struct FlatForgeEnv {
     flattener: ObsFlattener,
     obs_spec: ObsSpec,
     action_spec: ActionSpec,
+    /// Cached typed-obs buffer for `reset_into` — avoids allocating a
+    /// fresh `Observation` each episode.
+    inner_obs_buf: forge_types::observation::Observation,
+    /// Cached inner step-output buffer for `step_into` — avoids
+    /// allocating a fresh `StepOutput<Observation, StepInfo>` each step.
+    inner_step_buf: StepOutput<forge_types::observation::Observation, forge_types::observation::StepInfo>,
 }
 
 impl FlatForgeEnv {
@@ -167,6 +173,8 @@ impl FlatForgeEnv {
             flattener,
             obs_spec,
             action_spec,
+            inner_obs_buf: forge_types::observation::Observation::default(),
+            inner_step_buf: StepOutput::default(),
         })
     }
 }
@@ -178,32 +186,32 @@ impl Env for FlatForgeEnv {
     type Error = ForgeEnvError;
 
     #[instrument(skip_all, fields(env = "forge-flat"))]
-    fn reset(
+    fn reset_into(
         &mut self,
         seed: Option<u64>,
-    ) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error> {
-        let inner = self.inner.reset(seed)?;
-        let flat = self.flattener.flatten(&inner.obs);
-        Ok(StepOutput {
-            obs: flat,
-            reward: inner.reward,
-            terminated: inner.terminated,
-            truncated: inner.truncated,
-            info: inner.info,
-        })
+        out: &mut Vec<f32>,
+    ) -> Result<(), Self::Error> {
+        self.inner.reset_into(seed, &mut self.inner_obs_buf)?;
+        self.flattener.flatten_into(&self.inner_obs_buf, out);
+        Ok(())
     }
 
     #[instrument(skip_all, fields(env = "forge-flat", action_id = action))]
-    fn step(&mut self, action: u32) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error> {
-        let inner = self.inner.step_from_discrete(action)?;
-        let flat = self.flattener.flatten(&inner.obs);
-        Ok(StepOutput {
-            obs: flat,
-            reward: inner.reward,
-            terminated: inner.terminated,
-            truncated: inner.truncated,
-            info: inner.info,
-        })
+    fn step_into(
+        &mut self,
+        action: u32,
+        out: &mut StepOutput<Vec<f32>, Self::Info>,
+    ) -> Result<(), Self::Error> {
+        // Decode action before mutably borrowing inner_step_buf.
+        let typed_action = self.inner.decode_action(action)?;
+        self.inner.step_into(typed_action, &mut self.inner_step_buf)?;
+        self.flattener
+            .flatten_into(&self.inner_step_buf.obs, &mut out.obs);
+        out.reward = self.inner_step_buf.reward;
+        out.terminated = self.inner_step_buf.terminated;
+        out.truncated = self.inner_step_buf.truncated;
+        out.info = self.inner_step_buf.info.clone();
+        Ok(())
     }
 
     fn obs_spec(&self) -> &ObsSpec {
@@ -232,23 +240,6 @@ impl FlatObsEnv for FlatForgeEnv {
     /// test in `tests/forge_env_parity.rs` gates this invariant in CI.
     fn num_actions(&self) -> u32 {
         self.action_spec.discrete_n().unwrap_or(0)
-    }
-}
-
-impl StepInto for FlatForgeEnv {
-    fn step_into(
-        &mut self,
-        action: u32,
-        out: &mut StepOutput<Self::Obs, Self::Info>,
-    ) -> Result<(), Self::Error> {
-        let inner = self.inner.step_from_discrete(action)?;
-        // Reuse out.obs's capacity.
-        self.flattener.flatten_into(&inner.obs, &mut out.obs);
-        out.reward = inner.reward;
-        out.terminated = inner.terminated;
-        out.truncated = inner.truncated;
-        out.info = inner.info;
-        Ok(())
     }
 }
 

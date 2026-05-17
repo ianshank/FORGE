@@ -197,8 +197,7 @@ fn reset_and_steps_drive_a_full_short_episode() {
 
     let mut env = MinecraftEnv::connect(cfg, map).unwrap();
     let r = env.reset(Some(42)).unwrap();
-    assert_eq!(r.obs.len(), OBS_DIM);
-    assert_eq!(r.info.tick, 0);
+    assert_eq!(r.len(), OBS_DIM);
     for expected_tick in 1..=5u64 {
         let s = env.step(0).unwrap();
         assert_eq!(s.info.tick, expected_tick);
