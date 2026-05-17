@@ -62,6 +62,49 @@ pub const SPLIT_ALL: &str = "all";
 /// formatter and the test below catches the contract change.
 pub(crate) const HF_DATA_SHARD_FILENAME: &str = "data-00000-of-00001.jsonl";
 
+/// Glob pattern used inside the dataset card's `configs[].data_files[].path`
+/// entries to tell `datasets.load_dataset` which JSONL shards belong to a
+/// given split. Must stay in sync with [`HF_DATA_SHARD_FILENAME`].
+pub(crate) const HF_DATA_GLOB: &str = "data-*.jsonl";
+
+// Static fields baked into every dataset card's YAML frontmatter. Kept as
+// module-level constants (not literals inside `render_dataset_card`) so
+// the contract is explicit + greppable + adjustable without touching the
+// rendering code.
+const FRONTMATTER_LANGUAGE: &str = "en";
+const FRONTMATTER_LICENSE: &str = "apache-2.0";
+const FRONTMATTER_TASK_CATEGORY: &str = "reinforcement-learning";
+const FRONTMATTER_TAGS: &[&str] = &["forge", "simulation", "evaluation", "benchmark"];
+const FRONTMATTER_CONFIG_DEFAULT: &str = "default";
+
+/// Typed mirror of the HF Hub dataset-card YAML frontmatter. Serialising
+/// through `serde_yaml` (rather than hand-rolling the YAML string)
+/// guarantees that any colon, quote, or other reserved character in
+/// caller-controlled fields like `pretty_name` is properly escaped and
+/// the resulting card stays parseable.
+#[derive(Debug, Serialize)]
+struct DatasetCardFrontmatter {
+    language: Vec<String>,
+    license: String,
+    pretty_name: String,
+    size_categories: Vec<String>,
+    task_categories: Vec<String>,
+    tags: Vec<String>,
+    configs: Vec<DatasetCardConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct DatasetCardConfig {
+    config_name: String,
+    data_files: Vec<DatasetCardDataFile>,
+}
+
+#[derive(Debug, Serialize)]
+struct DatasetCardDataFile {
+    split: String,
+    path: String,
+}
+
 /// HuggingFace `datasets` exporter writing a `DatasetDict` directory
 /// under `<export_root>/<run_id>/`.
 #[derive(Debug, Clone)]
@@ -226,14 +269,30 @@ fn render_dataset_card(
     let pretty_name = format!("FORGE Evaluation — {}", manifest.experiment_name);
     let size_category = size_category_for(records.len());
 
-    // configs[].data_files[] — one entry per split.
-    let mut configs_block = String::from("configs:\n  - config_name: default\n    data_files:\n");
-    for split in split_names {
-        configs_block.push_str(&format!(
-            "      - split: {}\n        path: \"{}/data-*.jsonl\"\n",
-            split, split
-        ));
-    }
+    // YAML frontmatter — serialize via `serde_yaml` so any special chars
+    // in user-controlled strings (pretty_name embeds manifest.experiment_name)
+    // are properly escaped. Hand-rolled string interpolation here would
+    // happily emit invalid YAML for a name containing a colon or a quote.
+    let frontmatter = DatasetCardFrontmatter {
+        language: vec![FRONTMATTER_LANGUAGE.to_string()],
+        license: FRONTMATTER_LICENSE.to_string(),
+        pretty_name: pretty_name.clone(),
+        size_categories: vec![size_category.to_string()],
+        task_categories: vec![FRONTMATTER_TASK_CATEGORY.to_string()],
+        tags: FRONTMATTER_TAGS.iter().map(|s| (*s).to_string()).collect(),
+        configs: vec![DatasetCardConfig {
+            config_name: FRONTMATTER_CONFIG_DEFAULT.to_string(),
+            data_files: split_names
+                .iter()
+                .map(|split| DatasetCardDataFile {
+                    split: split.clone(),
+                    path: format!("{split}/{HF_DATA_GLOB}"),
+                })
+                .collect(),
+        }],
+    };
+    let frontmatter_yaml = serde_yaml::to_string(&frontmatter)
+        .unwrap_or_else(|e| format!("# frontmatter serialization failed: {e}\n"));
 
     // Per-split episode counts table.
     let mut splits_table = String::from("| Split | Episodes |\n|---|---|\n");
@@ -254,20 +313,7 @@ fn render_dataset_card(
 
     format!(
         r#"---
-language:
-  - en
-license: apache-2.0
-pretty_name: "{pretty_name}"
-size_categories:
-  - "{size_category}"
-task_categories:
-  - reinforcement-learning
-tags:
-  - forge
-  - simulation
-  - evaluation
-  - benchmark
-{configs_block}---
+{frontmatter_yaml}---
 
 # FORGE Evaluation Run `{run_id}`
 
@@ -308,9 +354,7 @@ git checkout {git_sha}
 cargo run -p forge-eval --bin run_suite -- --config <path/to/eval.toml>
 ```
 "#,
-        pretty_name = pretty_name,
-        size_category = size_category,
-        configs_block = configs_block,
+        frontmatter_yaml = frontmatter_yaml,
         run_id = manifest.run_id,
         timestamp = manifest.timestamp.to_rfc3339(),
         git_sha = manifest.git_sha,

@@ -12,7 +12,11 @@ import pytest
 # ---------------------------------------------------------------------------
 pytest.importorskip("stable_baselines3", reason="SB3 required")
 
-from forge_env.sb3_callbacks import (
+# Import after importorskip so the test file itself doesn't crash at collect
+# time when SB3 isn't installed. E402 would normally flag this, but the
+# guarded-import pattern is the correct way to express "this module is an
+# optional runtime dependency" with pytest.
+from forge_env.sb3_callbacks import (  # noqa: E402
     _EPISODE_KEY,
     _TASK_SUCCESS_KEY,
     ForgeCurriculumCallback,

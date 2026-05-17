@@ -294,7 +294,15 @@ fn write_param(run_dir: &Path, name: &str, value: &str) -> Result<(), ExportErro
     let dir = run_dir.join(MLFLOW_SUBDIR_PARAMS);
     fs::create_dir_all(&dir)?;
     let v = truncate_at_char_boundary(value, PARAM_MAX_LEN);
-    fs::write(dir.join(sanitize(name)), v)?;
+    // `sanitize()` preserves `/` (it's part of MLflow's allowed key set),
+    // so a key like `forge/eval/x` produces a path with nested
+    // directories. Ensure they exist before write_all to avoid
+    // `NotFound` from the leaf write.
+    let path = dir.join(sanitize(name));
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, v)?;
     Ok(())
 }
 
@@ -328,6 +336,12 @@ fn write_metric(
     let dir = run_dir.join(MLFLOW_SUBDIR_METRICS);
     fs::create_dir_all(&dir)?;
     let path = dir.join(sanitize(name));
+    // Sanitised metric keys may contain `/` (e.g. `tier_t1/success_rate`)
+    // which `join` interprets as path separators. Ensure intermediate
+    // dirs exist before opening the leaf for append.
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let mut file = File::options().create(true).append(true).open(&path)?;
     // MLflow's metric format: "<timestamp_ms> <value> <step>\n"
     writeln!(
@@ -343,7 +357,13 @@ fn write_metric(
 fn write_tag(run_dir: &Path, name: &str, value: &str) -> Result<(), ExportError> {
     let dir = run_dir.join(MLFLOW_SUBDIR_TAGS);
     fs::create_dir_all(&dir)?;
-    fs::write(dir.join(sanitize(name)), value)?;
+    let path = dir.join(sanitize(name));
+    // Same `/` -> nested dir issue as params/metrics; create the chain
+    // first so the write doesn't error on a missing intermediate.
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, value)?;
     Ok(())
 }
 
@@ -511,6 +531,49 @@ mod tests {
         assert!(written.len() <= PARAM_MAX_LEN);
         // Round-trip through `chars().count()` to confirm UTF-8 validity.
         let _char_count = written.chars().count();
+    }
+
+    /// Regression for nested sanitised keys (e.g. `forge/eval/x`):
+    /// `sanitize()` preserves `/` so the leaf path lives under a
+    /// subdirectory that doesn't exist by default. The write helpers
+    /// must create the parent chain before the leaf write.
+    #[test]
+    fn write_param_creates_nested_parent_dirs_for_slashed_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_param(tmp.path(), "forge/eval/nested_key", "v").unwrap();
+        let leaf = tmp
+            .path()
+            .join(MLFLOW_SUBDIR_PARAMS)
+            .join("forge")
+            .join("eval")
+            .join("nested_key");
+        assert_eq!(fs::read_to_string(leaf).unwrap(), "v");
+    }
+
+    #[test]
+    fn write_metric_creates_nested_parent_dirs_for_slashed_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_metric(tmp.path(), "tier_t1/success_rate", 0.5, 1, 0).unwrap();
+        let leaf = tmp
+            .path()
+            .join(MLFLOW_SUBDIR_METRICS)
+            .join("tier_t1")
+            .join("success_rate");
+        let body = fs::read_to_string(leaf).unwrap();
+        assert!(body.starts_with("1 0.5"), "got body={body:?}");
+        assert!(body.ends_with(" 0\n"), "got body={body:?}");
+    }
+
+    #[test]
+    fn write_tag_creates_nested_parent_dirs_for_slashed_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_tag(tmp.path(), "forge/run_id", "abc").unwrap();
+        let leaf = tmp
+            .path()
+            .join(MLFLOW_SUBDIR_TAGS)
+            .join("forge")
+            .join("run_id");
+        assert_eq!(fs::read_to_string(leaf).unwrap(), "abc");
     }
 
     #[test]

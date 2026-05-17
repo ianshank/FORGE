@@ -48,11 +48,20 @@ from uuid import uuid4
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from forge.mangomas.collector import ScenarioCollectionResult
+
 # scripts/_e2e_progress.py lives next to this file; sys.path mutation here
 # matches the test harness in tests/python/test_e2e_progress.py.
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
+
+# python/ holds the in-tree ``forge`` package (collector, BCTrainer, config).
+# Mirrors the path-mutation guard in scripts/train.py so this orchestrator
+# runs from a fresh checkout without ``pip install -e .``.
+_PYTHON_PKG_DIR = Path(__file__).resolve().parents[1] / "python"
+if _PYTHON_PKG_DIR.is_dir() and str(_PYTHON_PKG_DIR) not in sys.path:
+    sys.path.insert(0, str(_PYTHON_PKG_DIR))
 
 from _e2e_progress import ProgressState  # noqa: E402
 from _e2e_progress import load as load_progress  # noqa: E402
@@ -67,6 +76,7 @@ logger = logging.getLogger(__name__)
 FORGE_E2E_ENV_VARS: tuple[str, ...] = (
     "FORGE_MLFLOW_TRACKING_URI",
     "FORGE_E2E_EPISODES",
+    "FORGE_E2E_BATCH_SIZE",
     "FORGE_E2E_OUTPUT_DIR",
     "FORGE_EVAL_CLI_BIN",
     "FORGE_HF_EXPORT_ROOT",
@@ -83,7 +93,11 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[1]
 # Default location of the Rust CLI bin produced by
 # ``cargo build -p forge-eval --bin forge-eval-longrun --features http-mlflow --release``.
 # CI overrides via ``FORGE_EVAL_CLI_BIN`` when the binary lives elsewhere.
-DEFAULT_EVAL_CLI_BIN: Path = REPO_ROOT / "target" / "release" / "forge-eval-longrun"
+# Cargo appends ``.exe`` on Windows (``os.name == "nt"``); resolving the
+# suffix here keeps the existence check in ``run_eval_subprocess`` portable
+# without forcing every Windows caller to set ``FORGE_EVAL_CLI_BIN``.
+_EVAL_CLI_BIN_NAME: str = "forge-eval-longrun.exe" if os.name == "nt" else "forge-eval-longrun"
+DEFAULT_EVAL_CLI_BIN: Path = REPO_ROOT / "target" / "release" / _EVAL_CLI_BIN_NAME
 
 # Default output root for orchestrator-owned artefacts (scorecard, BC
 # weights, progress checkpoint). The Rust binary writes its own per-run
@@ -103,6 +117,7 @@ class E2ELongConfig:
     run_id: str
     eval_cli_bin: Path
     mlflow_tracking_uri: str
+    mlflow_batch_size: int
     hf_export_root: Path
     output_root: Path
     teacher_preset: str
@@ -147,6 +162,10 @@ class E2ELongConfig:
 
         # ---- exporter targets -------------------------------------------
         mlflow_uri = _from_env("FORGE_MLFLOW_TRACKING_URI", str(data["mlflow"]["tracking_uri"]))
+        # MLflow log-batch chunk size: env override wins; otherwise the TOML
+        # preset value flows through. Forwarded to the Rust CLI via the
+        # FORGE_E2E_BATCH_SIZE env var so the preset leaf is no longer dead.
+        mlflow_batch_size = int(_from_env("FORGE_E2E_BATCH_SIZE", str(data["mlflow"]["batch_size"])))
         hf_root = Path(_from_env("FORGE_HF_EXPORT_ROOT", str(data["huggingface"]["export_root"])))
         if not hf_root.is_absolute():
             hf_root = REPO_ROOT / hf_root
@@ -170,6 +189,7 @@ class E2ELongConfig:
             run_id=run_id,
             eval_cli_bin=eval_cli_bin,
             mlflow_tracking_uri=mlflow_uri,
+            mlflow_batch_size=mlflow_batch_size,
             hf_export_root=hf_root,
             output_root=output_root,
             teacher_preset=teacher_preset,
@@ -183,7 +203,8 @@ def _read_toml(path: Path) -> dict[str, Any]:
     except ModuleNotFoundError:  # pragma: no cover - py39/py310
         import tomli as _toml
     with path.open("rb") as fh:
-        return _toml.load(fh)
+        loaded: dict[str, Any] = _toml.load(fh)
+    return loaded
 
 
 def run_collection(
@@ -191,7 +212,7 @@ def run_collection(
     *,
     remaining_episodes: int,
     start_seed: int,
-):
+) -> ScenarioCollectionResult:
     """Drive the MangoMAS scenario collector against the LM Studio teacher.
 
     Returns the raw :class:`ScenarioCollectionResult`. Lazy-imports the
@@ -297,10 +318,20 @@ def run_eval_subprocess(cfg: E2ELongConfig, weights_path: Path) -> None:
         raise FileNotFoundError(msg)
 
     suite_dir = REPO_ROOT / "configs" / "scenarios"
+    # Derive per-scenario episode budget from the orchestrator's total
+    # (the Rust harness multiplies episodes_per_scenario by len(suite));
+    # round up so a non-divisible total never silently truncates the run.
+    num_scenarios = max(1, len(cfg.scenario_refs))
+    episodes_per_scenario = max(1, -(-cfg.total_episodes // num_scenarios))
     env = {
         **os.environ,
         "FORGE_E2E_SUITE": str(suite_dir),
         "FORGE_E2E_EPISODES": str(cfg.total_episodes),
+        # The Rust CLI reads FORGE_E2E_EPISODES_PER_SCENARIO; without this
+        # the binary would always default to 1, ignoring --episodes /
+        # FORGE_E2E_EPISODES entirely.
+        "FORGE_E2E_EPISODES_PER_SCENARIO": str(episodes_per_scenario),
+        "FORGE_E2E_BATCH_SIZE": str(cfg.mlflow_batch_size),
         "FORGE_MLFLOW_TRACKING_URI": cfg.mlflow_tracking_uri,
         "FORGE_E2E_EXPERIMENT_NAME": cfg.experiment_name,
         "FORGE_E2E_RUN_ID": cfg.run_id,
@@ -311,11 +342,13 @@ def run_eval_subprocess(cfg: E2ELongConfig, weights_path: Path) -> None:
         "FORGE_E2E_BC_WEIGHTS": str(weights_path),
     }
     logger.info(
-        "eval subprocess start: bin=%s suite=%s uri=%s episodes=%d run_id=%s",
+        "eval subprocess start: bin=%s suite=%s uri=%s episodes=%d eps_per_scn=%d batch=%d run_id=%s",
         cfg.eval_cli_bin,
         suite_dir,
         cfg.mlflow_tracking_uri,
         cfg.total_episodes,
+        episodes_per_scenario,
+        cfg.mlflow_batch_size,
         cfg.run_id,
     )
     subprocess.run([str(cfg.eval_cli_bin)], env=env, check=True)
@@ -381,6 +414,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         remaining = cfg.total_episodes - progress.episodes_completed
         start_seed = cfg.base_seed + progress.episodes_completed
         result = run_collection(cfg, remaining_episodes=remaining, start_seed=start_seed)
+        # Run BC training BEFORE marking the collection step complete so a
+        # crash here doesn't permanently skip the trainer on resume (would
+        # otherwise leave bc_weights.npz missing/stale and proceed to eval).
+        weights_path = run_bc_training(result, cfg)
         progress = ProgressState(
             run_id=progress.run_id,
             episodes_completed=cfg.total_episodes,
@@ -388,7 +425,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             last_seed=start_seed,
         )
         save_progress(progress_path, progress)
-        weights_path = run_bc_training(result, cfg)
     else:
         logger.info(
             "collection already complete (episodes_completed=%d >= total=%d); skipping",

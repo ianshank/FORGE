@@ -31,9 +31,33 @@ env:
   MLFLOW_PORT: "5000"
 
 jobs:
+  preflight:
+    # Service containers on the dependent job start BEFORE any `steps:`
+    # run, so any preflight done as a step inside that job is too late
+    # to short-circuit on a missing image variable. Splitting preflight
+    # into its own job lets `needs: preflight` gate service startup
+    # entirely.
+    name: Preflight — required repo variables
+    runs-on: ubuntu-latest
+    if: inputs.run_e2e_long
+    steps:
+      - name: Require service-image variables
+        run: |
+          missing=0
+          if [ -z "${{ vars.MLFLOW_SERVICE_IMAGE }}" ]; then
+            echo "::error::Repo variable MLFLOW_SERVICE_IMAGE is not set (e.g. ghcr.io/mlflow/mlflow:v2.16.2)"
+            missing=1
+          fi
+          if [ -z "${{ vars.LMSTUDIO_SERVICE_IMAGE }}" ]; then
+            echo "::error::Repo variable LMSTUDIO_SERVICE_IMAGE is not set"
+            missing=1
+          fi
+          exit "$missing"
+
   e2e-long:
     name: E2E Long Run (LM Studio + MLflow HTTP)
     runs-on: ubuntu-latest
+    needs: preflight
     if: inputs.run_e2e_long
     timeout-minutes: 360
     services:
@@ -65,19 +89,6 @@ jobs:
       FORGE_HF_EXPORT_ROOT: "artifacts/e2e-long/hf"
       FORGE_E2E_OUTPUT_DIR: "artifacts/e2e-long"
     steps:
-      - name: Preflight — require service-image variables
-        # Fail fast and loud if the operator forgot to set the repo variables;
-        # otherwise the service block would silently fail and the failure
-        # mode would look like an LM Studio / MLflow outage.
-        run: |
-          if [ -z "${{ vars.MLFLOW_SERVICE_IMAGE }}" ]; then
-            echo "::error::Repo variable MLFLOW_SERVICE_IMAGE is not set (e.g. ghcr.io/mlflow/mlflow:v2.16.2)"
-            exit 1
-          fi
-          if [ -z "${{ vars.LMSTUDIO_SERVICE_IMAGE }}" ]; then
-            echo "::error::Repo variable LMSTUDIO_SERVICE_IMAGE is not set"
-            exit 1
-          fi
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2

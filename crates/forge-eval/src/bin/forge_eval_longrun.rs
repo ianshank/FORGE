@@ -108,6 +108,14 @@ pub struct Cli {
     #[arg(long, env = "FORGE_E2E_BATCH_SIZE", default_value_t = DEFAULT_LOG_BATCH_SIZE)]
     pub http_batch_size: usize,
 
+    /// Optional HuggingFace dataset export root. When set, the harness's
+    /// Phase B dispatcher additionally writes a per-run JSONL tree under
+    /// `<hf_export_root>/<manifest.run_id>/` for `datasets.load_dataset`
+    /// consumers. Env-bound to `FORGE_HF_EXPORT_ROOT` so CI can wire it
+    /// the same way the Python orchestrator does without an extra flag.
+    #[arg(long, env = "FORGE_HF_EXPORT_ROOT")]
+    pub hf_export_root: Option<PathBuf>,
+
     /// Output directory for `scorecard.json`. The Python orchestrator
     /// (Slice 4) reads this file to verify the run completed.
     #[arg(long, env = "FORGE_E2E_OUTPUT_DIR")]
@@ -127,6 +135,7 @@ impl Cli {
             mlflow_http_batch_size: self.http_batch_size,
             experiment_name: Some(self.experiment_name.clone()),
             run_id: self.run_id.clone(),
+            huggingface_export_root: self.hf_export_root.clone(),
             ..EvalConfig::default()
         }
     }
@@ -169,6 +178,19 @@ pub fn run(cli: &Cli) -> Result<i32> {
     info!(scenarios = suite.scenarios.len(), "scenario suite loaded");
 
     let cfg = cli.to_eval_config();
+    // Validate before constructing the harness so bad CLI/env input fails
+    // fast with a structured error rather than silently degrading inside
+    // the best-effort Phase B exporter dispatcher (which logs warnings on
+    // exporter failure and would otherwise yield an exit-0 "success" for
+    // a config the harness can't honour, e.g. an oversized batch size).
+    let cfg_errors = cfg.validate();
+    if !cfg_errors.is_empty() {
+        anyhow::bail!(
+            "invalid evaluation configuration ({} error(s)): {}",
+            cfg_errors.len(),
+            cfg_errors.join("; ")
+        );
+    }
     let harness = EvalHarness::new(cfg);
     info!("running eval suite — exporter dispatch is automatic via EvalHarness");
     let factory = noop_agent_factory();
@@ -366,6 +388,8 @@ mod tests {
             "exp",
             "--run-id",
             "r",
+            "--hf-export-root",
+            "out/hf",
         ]);
         let cfg = cli.to_eval_config();
         assert_eq!(cfg.episodes_per_scenario, 5);
@@ -376,6 +400,33 @@ mod tests {
         assert_eq!(cfg.mlflow_http_batch_size, 7);
         assert_eq!(cfg.experiment_name.as_deref(), Some("exp"));
         assert_eq!(cfg.run_id.as_deref(), Some("r"));
+        assert_eq!(
+            cfg.huggingface_export_root.as_deref(),
+            Some(std::path::Path::new("out/hf")),
+            "--hf-export-root must flow into EvalConfig so the harness's HF exporter is enabled in Phase B"
+        );
+    }
+
+    /// `--hf-export-root` is optional — when omitted, `EvalConfig`'s
+    /// `huggingface_export_root` stays `None` and the harness skips the
+    /// HF exporter without erroring out.
+    #[test]
+    fn cli_omits_hf_export_root_when_flag_absent() {
+        let cli = parse(&[
+            "forge-eval-longrun",
+            "--suite",
+            "s",
+            "--tracking-uri",
+            "http://h",
+            "--output-dir",
+            "o",
+        ]);
+        let cfg = cli.to_eval_config();
+        assert!(
+            cfg.huggingface_export_root.is_none(),
+            "no --hf-export-root flag must leave HF disabled, got {:?}",
+            cfg.huggingface_export_root,
+        );
     }
 
     #[test]

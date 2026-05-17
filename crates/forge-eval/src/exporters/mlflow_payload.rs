@@ -321,6 +321,17 @@ pub fn build_run_payload(
             key: "forge.eval.scenario_count".to_string(),
             value: manifest.scenario_file_hashes.len().to_string(),
         },
+        // Stable, client-side run id. The MLflow REST API assigns its own
+        // server-side run id on create_run (the payload's run_id field is
+        // ignored by the server), so this tag is the only way downstream
+        // consumers (HuggingFace exporter writes under <hf_root>/<run_id>,
+        // filesystem MLflow under <fs_root>/<run_id>) can correlate a
+        // server-side MLflow run back to the manifest-anchored run id
+        // shared across all exporters.
+        TagKv {
+            key: "forge.run_id".to_string(),
+            value: manifest.run_id.clone(),
+        },
     ];
 
     // Artefact refs — inline bytes for small derived files, dir refs for

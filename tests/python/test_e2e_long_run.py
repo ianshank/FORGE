@@ -26,7 +26,13 @@ from typing import Any
 import pytest
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
-EVAL_BIN: Path = REPO_ROOT / "target" / "release" / "forge-eval-longrun"
+# MLflow client-side correlation tag carrying the manifest run id (since the
+# REST API assigns its own server-side run id on create_run). HuggingFace
+# and FS-MLflow exporters key their per-run subdir off this same id, so we
+# read it back to navigate to their on-disk output.
+FORGE_RUN_ID_TAG: str = "forge.run_id"
+_EVAL_BIN_NAME: str = "forge-eval-longrun.exe" if os.name == "nt" else "forge-eval-longrun"
+EVAL_BIN: Path = REPO_ROOT / "target" / "release" / _EVAL_BIN_NAME
 PRESET_PATH: Path = REPO_ROOT / "configs" / "eval" / "e2e_long_preset.toml"
 ORCHESTRATOR: Path = REPO_ROOT / "scripts" / "run_e2e_long.py"
 
@@ -96,6 +102,13 @@ def test_e2e_long_run_emits_consumable_mlflow_and_hf(tmp_path: Path) -> None:
         f"parent run must terminate FINISHED, got status={parent.info.status!r}"
     )
     assert "overall_score" in parent.data.metrics, "overall_score metric must be logged on parent"
+    # Manifest run id is broadcast as a tag on every parent run so HF /
+    # filesystem-MLflow consumers can join on it without depending on the
+    # server-assigned MLflow run_id.
+    manifest_run_id = parent.data.tags.get(FORGE_RUN_ID_TAG)
+    assert manifest_run_id, (
+        f"parent run must carry the {FORGE_RUN_ID_TAG!r} tag for cross-exporter correlation"
+    )
 
     # ---- HuggingFace consumer validation -------------------------------
     # We assert the export tree exists + that `datasets.load_dataset` parses
@@ -106,7 +119,7 @@ def test_e2e_long_run_emits_consumable_mlflow_and_hf(tmp_path: Path) -> None:
     hf_root = Path(hf_root_env) if hf_root_env else REPO_ROOT / "artifacts" / "e2e-long" / "hf"
     if not hf_root.is_absolute():
         hf_root = REPO_ROOT / hf_root
-    run_dir = hf_root / parent.info.run_id
+    run_dir = hf_root / manifest_run_id
     jsonl_files = sorted(run_dir.rglob("*.jsonl"))
     assert jsonl_files, f"HF export must contain at least one .jsonl under {run_dir}"
     ds: Any = datasets.load_dataset("json", data_files=[str(p) for p in jsonl_files])

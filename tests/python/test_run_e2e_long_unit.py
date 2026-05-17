@@ -247,6 +247,7 @@ def _make_cfg(tmp_path: Path, *, eval_cli_bin: Path) -> run_e2e_long.E2ELongConf
         run_id="rid-x",
         eval_cli_bin=eval_cli_bin,
         mlflow_tracking_uri="http://m:5000",
+        mlflow_batch_size=100,
         hf_export_root=tmp_path / "hf",
         output_root=tmp_path,
         teacher_preset="gemma_e4b_teacher",

@@ -231,9 +231,32 @@ impl std::fmt::Debug for MlflowHttpClient {
 impl MlflowHttpClient {
     /// Build a client targeting `base` (e.g. `http://localhost:5000`) with
     /// the supplied [`HttpClientConfig`]. Returns
-    /// [`ExportError::InvalidTarget`] when the underlying `reqwest`
-    /// builder can't construct the client (e.g. invalid TLS config).
+    /// [`ExportError::InvalidTarget`] when the base URL uses a scheme
+    /// other than `http`/`https` (e.g. `file:`, `data:`, `ftp:`) — the
+    /// MLflow REST contract only speaks HTTP — or when the underlying
+    /// `reqwest` builder can't construct the client (e.g. invalid TLS
+    /// config).
     pub fn new(base: Url, cfg: HttpClientConfig) -> Result<Self, ExportError> {
+        // Guard against schemes that `Url::parse` will happily accept but
+        // `reqwest` either can't speak or would silently downgrade. Doing
+        // this once in the single constructor protects every caller
+        // (`MlflowHttpSink::from_config`, integration tests, future
+        // callers) without duplicating the check.
+        match base.scheme() {
+            "http" | "https" => {}
+            other => {
+                return Err(ExportError::InvalidTarget(format!(
+                    "mlflow tracking uri must use http or https, got scheme {other:?} (base={base})"
+                )));
+            }
+        }
+        tracing::debug!(
+            base = %base,
+            timeout_ms = cfg.timeout_ms,
+            max_retries = cfg.max_retries,
+            batch_size = cfg.batch_size,
+            "constructing MLflow HTTP client"
+        );
         let http = Client::builder()
             .timeout(Duration::from_millis(cfg.timeout_ms))
             .user_agent(cfg.user_agent)
@@ -1487,6 +1510,29 @@ mod tests {
         };
         let err = MlflowHttpSink::from_config(&cfg).unwrap_err();
         assert!(matches!(err, ExportError::InvalidTarget(_)), "got {err:?}");
+    }
+
+    /// `from_config` must reject non-HTTP(S) schemes. `Url::parse` will
+    /// happily accept things like `file:///tmp/x` and `ftp://h/p`, but
+    /// the MLflow REST contract only speaks HTTP — the sink would
+    /// otherwise fail much later with an opaque transport error.
+    #[test]
+    fn mlflow_http_sink_from_config_rejects_non_http_schemes() {
+        for bad in [
+            "file:///tmp/mlflow",
+            "ftp://mlflow.example.com",
+            "ws://mlflow.example.com",
+        ] {
+            let cfg = EvalConfig {
+                mlflow_http_tracking_uri: Some(bad.to_string()),
+                ..EvalConfig::default()
+            };
+            let err = MlflowHttpSink::from_config(&cfg).unwrap_err();
+            assert!(
+                matches!(err, ExportError::InvalidTarget(_)),
+                "scheme {bad} must be InvalidTarget, got {err:?}",
+            );
+        }
     }
 
     /// `from_config` with no `experiment_name` falls back to the
