@@ -1,0 +1,87 @@
+# Minecraft action map — single source of truth for the discrete action
+# space shared between the Rust client (`forge-env-mc`) and the Node bot
+# (`mc-bot`). Both load this file at startup and compute a SHA256 of its
+# canonical form, folded into the global `schema_id`.
+#
+# Hard rules:
+# - `id`s must be dense, starting at 0.
+# - Bumping any `id` is a breaking schema change. Add new actions at the
+#   tail; never rotate existing ids.
+# - The `kind` tag determines which other fields are valid.
+#
+# Action kinds:
+#   noop          — { ticks: u32 }
+#   move          — { direction: "forward"|"back"|"left"|"right", ticks }
+#   jump          — no extra fields, 1 tick
+#   attack        — left-click, 1 tick
+#   use           — right-click, 1 tick
+#   place         — { hotbar_slot: u8 (0..=8) }
+#   select_slot   — { hotbar_slot: u8 (0..=8) }
+#   look          — { yaw_deg: f32, pitch_deg: f32 }
+
+schema_version = 1
+
+[[action]]
+id = 0
+kind = "noop"
+ticks = 1
+
+[[action]]
+id = 1
+kind = "move"
+direction = "forward"
+ticks = 4
+
+[[action]]
+id = 2
+kind = "move"
+direction = "back"
+ticks = 4
+
+[[action]]
+id = 3
+kind = "move"
+direction = "left"
+ticks = 4
+
+[[action]]
+id = 4
+kind = "move"
+direction = "right"
+ticks = 4
+
+[[action]]
+id = 5
+kind = "jump"
+
+[[action]]
+id = 6
+kind = "attack"
+
+[[action]]
+id = 7
+kind = "use"
+
+[[action]]
+id = 8
+kind = "look"
+yaw_deg = 15.0
+pitch_deg = 0.0
+
+[[action]]
+id = 9
+kind = "look"
+yaw_deg = -15.0
+pitch_deg = 0.0
+
+[[action]]
+id = 10
+kind = "look"
+yaw_deg = 0.0
+pitch_deg = 15.0
+
+[[action]]
+id = 11
+kind = "look"
+yaw_deg = 0.0
+pitch_deg = -15.0
