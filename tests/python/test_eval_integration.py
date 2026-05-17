@@ -8,18 +8,12 @@ Validates that:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-# Ensure the scripts/ and python/ directories are importable.
-_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(_ROOT / "scripts"))
-sys.path.insert(0, str(_ROOT / "python"))
-
-from train import parse_args  # noqa: E402
+# scripts/ and python/ are placed on sys.path by the root conftest.py.
+from train import parse_args
 
 _DEFAULT_EVAL_INTERVAL = 0
 _DEFAULT_EVAL_EPISODES = 10

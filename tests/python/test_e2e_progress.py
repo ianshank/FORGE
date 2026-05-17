@@ -9,18 +9,16 @@ prayer.
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-# scripts/_e2e_progress.py is imported by run_e2e_long.py via the same
-# sys.path mutation the test makes here; mirroring it keeps test + runtime
-# imports identical.
-SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
+# scripts/ is placed on sys.path by the root conftest.py (_ensure_importable),
+# matching how run_e2e_long.py is imported at runtime.
+from _e2e_progress import ProgressState, load, save
 
-from _e2e_progress import ProgressState, load, save  # noqa: E402
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _state(**overrides: object) -> ProgressState:

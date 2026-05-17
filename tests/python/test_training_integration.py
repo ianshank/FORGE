@@ -12,17 +12,12 @@ Also covers previously untested code paths:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 
-# Ensure python/ and scripts/ are importable.
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
-
+# python/ and scripts/ are placed on sys.path by the root conftest.py.
 from train import _DEFAULT_EPISODES, _DEFAULT_SEED, parse_args
 
 from forge.agents.base_agent import AgentConfig

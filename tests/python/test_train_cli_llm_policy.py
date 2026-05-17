@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+# scripts/ is placed on sys.path by the root conftest.py (_ensure_importable).
+import train  # type: ignore[import]
 
-import train  # type: ignore[import]  # noqa: E402 - import follows sys.path mutation above
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def test_cli_accepts_llm_policy_choice() -> None:
