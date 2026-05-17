@@ -116,10 +116,12 @@ impl MinecraftEnv {
         }
     }
 
-    fn map_observation(
+    /// Fill `out` from a server message. Used by `step_into`.
+    fn fill_step_output(
         &self,
         msg: ServerMsg,
-    ) -> Result<StepOutput<Vec<f32>, MinecraftStepInfo>, McEnvError> {
+        out: &mut StepOutput<Vec<f32>, MinecraftStepInfo>,
+    ) -> Result<(), McEnvError> {
         match msg {
             ServerMsg::Observation {
                 tick,
@@ -140,13 +142,14 @@ impl MinecraftEnv {
                         server: format!("obs_dim={}", obs.len()),
                     });
                 }
-                Ok(StepOutput {
-                    obs,
-                    reward,
-                    terminated,
-                    truncated,
-                    info: MinecraftStepInfo { tick, raw: info },
-                })
+                // Reuse the caller's obs buffer.
+                out.obs.clear();
+                out.obs.extend_from_slice(&obs);
+                out.reward = reward;
+                out.terminated = terminated;
+                out.truncated = truncated;
+                out.info = MinecraftStepInfo { tick, raw: info };
+                Ok(())
             }
             ServerMsg::Error { code, message } => {
                 warn!(code, message, "bot reported protocol error");
@@ -166,19 +169,47 @@ impl Env for MinecraftEnv {
     type Error = McEnvError;
 
     #[instrument(skip_all, fields(env = "minecraft", seed))]
-    fn reset(
+    fn reset_into(
         &mut self,
         seed: Option<u64>,
-    ) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error> {
+        out: &mut Vec<f32>,
+    ) -> Result<(), Self::Error> {
         self.ensure_open()?;
         tracing::Span::current().record("seed", seed.unwrap_or(0));
         self.client.send(&ClientMsg::Reset { seed })?;
         let msg = self.client.recv()?;
-        self.map_observation(msg)
+        // For reset we only capture the observation; reward/flags are
+        // not meaningful at episode start.
+        match msg {
+            ServerMsg::Observation { obs, .. } => {
+                let expected = self.obs_spec.num_elements();
+                if obs.len() != expected {
+                    error!(got = obs.len(), expected, "bot returned obs of wrong length on reset");
+                    return Err(McEnvError::HandshakeMismatch {
+                        client: format!("obs_dim={expected}"),
+                        server: format!("obs_dim={}", obs.len()),
+                    });
+                }
+                out.clear();
+                out.extend_from_slice(&obs);
+                Ok(())
+            }
+            ServerMsg::Error { code, message } => {
+                warn!(code, message, "bot reported protocol error on reset");
+                Err(McEnvError::Protocol { code, message })
+            }
+            ServerMsg::Hello { .. } => {
+                Err(McEnvError::Unexpected("duplicate Hello mid-episode".into()))
+            }
+        }
     }
 
     #[instrument(skip_all, fields(env = "minecraft", action_id = action))]
-    fn step(&mut self, action: u32) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error> {
+    fn step_into(
+        &mut self,
+        action: u32,
+        out: &mut StepOutput<Vec<f32>, Self::Info>,
+    ) -> Result<(), Self::Error> {
         self.ensure_open()?;
         let n = self.action_spec.discrete_n().unwrap_or(0);
         if action >= n {
@@ -189,7 +220,7 @@ impl Env for MinecraftEnv {
         }
         self.client.send(&ClientMsg::Step { action_id: action })?;
         let msg = self.client.recv()?;
-        self.map_observation(msg)
+        self.fill_step_output(msg, out)
     }
 
     fn obs_spec(&self) -> &ObsSpec {
@@ -223,5 +254,6 @@ impl FlatObsEnv for MinecraftEnv {
     }
 }
 
-// MinecraftEnv intentionally does NOT implement forge_env::StepInto —
-// see crate docs for the zero-alloc carve-out rationale.
+// MinecraftEnv's `step_into` reuses the caller's obs buffer for the
+// observation bytes; internal network I/O deserialization still allocates,
+// but that is unavoidable and not governed by the zero-alloc CI gate.
