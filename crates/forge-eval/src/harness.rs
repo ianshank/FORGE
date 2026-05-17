@@ -22,6 +22,29 @@ use crate::output::{self, OutputConfig, ScorecardFormat};
 use crate::scenario::{Scenario, ScenarioSuite, DEFAULT_TIER};
 use crate::scorecard::{EpisodeResult, ScenarioResult, Scorecard, SummaryStats, TierScore};
 
+// ─── Defaults (no hardcoded literals in the body) ─────────────────────────
+
+/// Scenario id used by the backward-compatible [`EvalHarness::evaluate`]
+/// entry point when wrapping the base config into a single-scenario suite.
+/// Exposed `pub` so external assertions can reference the same constant
+/// instead of duplicating the string literal.
+pub const DEFAULT_EVALUATE_SCENARIO_ID: &str = "default";
+
+/// Prefix used for synthetic agent names emitted for un-controlled agents
+/// when persisting replay / trajectory metadata. The full name is
+/// `"{UNCONTROLLED_AGENT_NAME_PREFIX}_{idx}"` for each index `>= 1`.
+pub const UNCONTROLLED_AGENT_NAME_PREFIX: &str = "uncontrolled";
+
+/// Discrete action id used as a sentinel response for un-controlled agents
+/// in the trajectory recorder. Mirrors [`Action::Noop`] in the action-space
+/// projection used by the harness.
+pub const NOOP_SENTINEL_ACTION_ID: u32 = 0;
+
+/// Value returned by aggregate accessors (mean reward, mean steps, mean
+/// decision latency) when the input set is empty. Centralised so a future
+/// policy change (e.g. `f64::NAN` instead of `0.0`) is a one-line edit.
+pub const EMPTY_AGGREGATE_VALUE: f64 = 0.0;
+
 /// The evaluation harness.
 ///
 /// Runs any [`AgentInterface`] implementation against FORGE scenarios
@@ -70,7 +93,7 @@ impl EvalHarness {
         F: Fn() -> Box<dyn AgentInterface> + Send + Sync,
     {
         let scenario = Scenario::new(
-            "default",
+            DEFAULT_EVALUATE_SCENARIO_ID,
             DEFAULT_TIER,
             self.config.base_forge_config.clone(),
         );
@@ -118,7 +141,7 @@ impl EvalHarness {
                 .sum::<f64>()
                 / total_episodes as f64
         } else {
-            0.0
+            EMPTY_AGGREGATE_VALUE
         };
 
         let tier_scores = self.aggregate_tiers(&scenario_results.iter().collect::<Vec<_>>());
@@ -153,57 +176,59 @@ impl EvalHarness {
         scorecard
     }
 
+    /// Build the list of Phase B exporters enabled by the current config.
+    ///
+    /// Returns each exporter paired with a short `target` string used only
+    /// for diagnostics. Adding a new exporter is a single `.push(...)` here;
+    /// the dispatch loop in [`dispatch_phase_b_exporters`](Self::dispatch_phase_b_exporters)
+    /// doesn't change.
+    fn build_phase_b_exporters(&self) -> Vec<(Box<dyn Exporter>, String)> {
+        let mut sinks: Vec<(Box<dyn Exporter>, String)> = Vec::new();
+        if let Some(uri) = &self.config.mlflow_tracking_uri {
+            sinks.push((
+                Box::new(MlflowExporter::new(uri.clone())),
+                uri.display().to_string(),
+            ));
+        }
+        if let Some(root) = &self.config.huggingface_export_root {
+            sinks.push((
+                Box::new(HuggingFaceExporter::new(root.clone())),
+                root.display().to_string(),
+            ));
+        }
+        // Future: MLflow HTTP sink (Slice 2) → one push here, nothing else
+        // changes. Same shape applies to any new Phase B sink.
+        sinks
+    }
+
     /// Dispatch each Phase B exporter whose target is configured.
     /// Failures are logged but never propagated — an evaluation that
     /// produced a valid scorecard must not be reported as failed just
     /// because a downstream export hit an I/O error.
     fn dispatch_phase_b_exporters(&self, scorecard: &Scorecard) {
-        let mlflow_enabled = self.config.mlflow_tracking_uri.is_some();
-        let hf_enabled = self.config.huggingface_export_root.is_some();
-        if !mlflow_enabled && !hf_enabled {
+        let sinks = self.build_phase_b_exporters();
+        if sinks.is_empty() {
             return;
         }
 
         // Manifest is captured once and shared by every exporter so they
         // agree on run_id, timestamp, git_sha, and config_hash.
         let manifest = RunManifest::capture(&self.config, &[]);
-        let artifacts_dir = if self.config.output.enabled {
-            self.config.output.dir.clone()
-        } else {
-            // No on-disk artefacts directory configured; pass the output
-            // dir anyway so exporters can do a non-existent-dir no-op
-            // when copying optional subdirs (replays/, trajectories/).
-            self.config.output.dir.clone()
-        };
+        // No-on-disk-artefacts case: pass output.dir anyway so exporters
+        // can no-op subdir copies (replays/, trajectories/) cleanly.
+        let artifacts_dir = self.config.output.dir.clone();
 
-        if let Some(uri) = &self.config.mlflow_tracking_uri {
-            let exporter = MlflowExporter::new(uri.clone());
-            match exporter.export(scorecard, &manifest, &artifacts_dir) {
+        for (sink, target) in &sinks {
+            match sink.export(scorecard, &manifest, &artifacts_dir) {
                 Ok(()) => info!(
-                    exporter = exporter.name(),
-                    tracking_uri = %uri.display(),
+                    exporter = sink.name(),
+                    target = %target,
                     run_id = %manifest.run_id,
                     "Phase B exporter completed"
                 ),
                 Err(e) => warn!(
-                    exporter = exporter.name(),
-                    error = %e,
-                    "Phase B exporter failed (eval result unaffected)"
-                ),
-            }
-        }
-
-        if let Some(root) = &self.config.huggingface_export_root {
-            let exporter = HuggingFaceExporter::new(root.clone());
-            match exporter.export(scorecard, &manifest, &artifacts_dir) {
-                Ok(()) => info!(
-                    exporter = exporter.name(),
-                    export_root = %root.display(),
-                    run_id = %manifest.run_id,
-                    "Phase B exporter completed"
-                ),
-                Err(e) => warn!(
-                    exporter = exporter.name(),
+                    exporter = sink.name(),
+                    target = %target,
                     error = %e,
                     "Phase B exporter failed (eval result unaffected)"
                 ),
@@ -294,7 +319,7 @@ impl EvalHarness {
     {
         let agent_meta = agent_factory().metadata();
         self.run_single_episode_persisted(
-            "default",
+            DEFAULT_EVALUATE_SCENARIO_ID,
             seed,
             self.config.max_steps_per_episode,
             forge_config,
@@ -447,7 +472,9 @@ impl EvalHarness {
                 let mut responses = Vec::with_capacity(num_agents);
                 responses.push(response);
                 for _ in 1..num_agents {
-                    responses.push(forge_types::agent_interface::AgentResponse::from_action(0));
+                    responses.push(forge_types::agent_interface::AgentResponse::from_action(
+                        NOOP_SENTINEL_ACTION_ID,
+                    ));
                 }
                 builder.record_step(
                     step_count.saturating_sub(1),
@@ -465,7 +492,7 @@ impl EvalHarness {
         let mean_decision = if step_count > 0 {
             total_decision_time_ms as f64 / step_count as f64
         } else {
-            0.0
+            EMPTY_AGGREGATE_VALUE
         };
 
         // Determine success: episode terminated naturally (not truncated)
@@ -485,7 +512,7 @@ impl EvalHarness {
             agent_names_vec.push(agent_name.clone());
             agent_metadata_vec.push(agent_meta.clone());
             for idx in 1..num_agents {
-                agent_names_vec.push(format!("uncontrolled_{idx}"));
+                agent_names_vec.push(format!("{UNCONTROLLED_AGENT_NAME_PREFIX}_{idx}"));
                 agent_metadata_vec.push(AgentMetadata::default());
             }
             // Pad final_rewards too, so length matches agent_names.
@@ -579,7 +606,7 @@ impl EvalHarness {
                 let success_rate = if total_episodes > 0 {
                     total_successes as f64 / total_episodes as f64
                 } else {
-                    0.0
+                    EMPTY_AGGREGATE_VALUE
                 };
 
                 let all_episodes: Vec<&EpisodeResult> =
@@ -589,7 +616,7 @@ impl EvalHarness {
                     all_episodes.iter().map(|e| e.total_reward).sum::<f64>()
                         / all_episodes.len() as f64
                 } else {
-                    0.0
+                    EMPTY_AGGREGATE_VALUE
                 };
 
                 let successful_episodes: Vec<&&EpisodeResult> =
@@ -601,7 +628,7 @@ impl EvalHarness {
                         .sum::<f64>()
                         / successful_episodes.len() as f64
                 } else {
-                    0.0
+                    EMPTY_AGGREGATE_VALUE
                 };
 
                 TierScore {
@@ -1107,8 +1134,51 @@ mod tests {
         let harness = EvalHarness::new(config);
         let card = harness.evaluate(&|| Box::new(NoopEvalAgent));
         assert_eq!(card.scenario_results.len(), 1);
-        assert_eq!(card.scenario_results[0].scenario_id, "default");
+        // Use the public constant so a future rename surfaces here, not as
+        // a silent string-drift in the consumer.
+        assert_eq!(
+            card.scenario_results[0].scenario_id,
+            DEFAULT_EVALUATE_SCENARIO_ID
+        );
         assert_eq!(card.tier_scores[0].tier, 1);
+    }
+
+    #[test]
+    fn test_harness_constants_are_stable_contract() {
+        // Pin the public-constant values so renaming them is an explicit,
+        // reviewable change rather than a silent contract break for any
+        // external assertion that references them.
+        assert_eq!(DEFAULT_EVALUATE_SCENARIO_ID, "default");
+        assert_eq!(UNCONTROLLED_AGENT_NAME_PREFIX, "uncontrolled");
+        assert_eq!(NOOP_SENTINEL_ACTION_ID, 0);
+        assert_eq!(EMPTY_AGGREGATE_VALUE, 0.0);
+    }
+
+    #[test]
+    fn test_build_phase_b_exporters_empty_when_unconfigured() {
+        let cfg = make_eval_config();
+        let harness = EvalHarness::new(cfg);
+        let sinks = harness.build_phase_b_exporters();
+        assert!(
+            sinks.is_empty(),
+            "no Phase B targets configured → no exporters built"
+        );
+    }
+
+    #[test]
+    fn test_build_phase_b_exporters_includes_each_configured_target() {
+        let tmp = tempdir().unwrap();
+        let mut cfg = make_eval_config();
+        cfg.mlflow_tracking_uri = Some(tmp.path().join("mlruns"));
+        cfg.huggingface_export_root = Some(tmp.path().join("hf"));
+        let harness = EvalHarness::new(cfg);
+        let sinks = harness.build_phase_b_exporters();
+        // Two configured → two sinks. Order is mlflow-first today; not part
+        // of the public contract, so only assert the count + names.
+        assert_eq!(sinks.len(), 2);
+        let names: Vec<&str> = sinks.iter().map(|(s, _)| s.name()).collect();
+        assert!(names.contains(&"mlflow"));
+        assert!(names.contains(&"huggingface"));
     }
 
     // ──────────────────────────────────────────────────────────────────
