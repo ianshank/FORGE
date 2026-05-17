@@ -1,0 +1,131 @@
+name: E2E Long Run (opt-in)
+
+# Opt-in long-running pipeline validation:
+#   live LM Studio teacher  ->  MangoMAS collector  ->  BCTrainer
+#   ->  forge-eval-longrun  ->  live HTTP MLflow + HuggingFace JSONL.
+#
+# Expected cost: ~15s/episode on Gemma 4B; 1000 episodes ≈ 4-5h worst case.
+# GitHub-hosted runners cap individual jobs at 6h, so `timeout-minutes: 360`
+# gives one full hour of headroom over the budget.
+#
+# This workflow is workflow_dispatch-only. It will not run on push or PR.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_e2e_long:
+        description: "Run the full e2e long-run job (LM Studio + MLflow)"
+        type: boolean
+        default: false
+      episode_count:
+        description: "Override total episodes (default: 1000)"
+        type: string
+        default: "1000"
+
+env:
+  # GitHub Actions does NOT evaluate ${{ env.X }} inside service container
+  # `options:` strings, so the literal port numbers recur on the
+  # health-cmd lines below. Defining them here keeps a single named source
+  # for steps + docs.
+  LMSTUDIO_PORT: "1234"
+  MLFLOW_PORT: "5000"
+
+jobs:
+  e2e-long:
+    name: E2E Long Run (LM Studio + MLflow HTTP)
+    runs-on: ubuntu-latest
+    if: inputs.run_e2e_long
+    timeout-minutes: 360
+    services:
+      lmstudio:
+        image: ${{ vars.LMSTUDIO_SERVICE_IMAGE }}
+        ports:
+          - "1234:1234"
+        options: >-
+          --health-cmd "curl -sf http://localhost:1234/v1/models || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+      mlflow:
+        image: ${{ vars.MLFLOW_SERVICE_IMAGE }}
+        ports:
+          - "5000:5000"
+        # MLflow exposes /health since 1.9 (PR #2725); 200 means the
+        # tracking server is ready to accept REST traffic.
+        options: >-
+          --health-cmd "curl -sf http://localhost:5000/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      FORGE_E2E_LONG: "1"
+      FORGE_LMSTUDIO_LIVE: "1"
+      FORGE_MLFLOW_TRACKING_URI: "http://localhost:5000"
+      FORGE_E2E_EPISODES: ${{ inputs.episode_count }}
+      FORGE_HF_EXPORT_ROOT: "artifacts/e2e-long/hf"
+      FORGE_E2E_OUTPUT_DIR: "artifacts/e2e-long"
+    steps:
+      - name: Preflight — require service-image variables
+        # Fail fast and loud if the operator forgot to set the repo variables;
+        # otherwise the service block would silently fail and the failure
+        # mode would look like an LM Studio / MLflow outage.
+        run: |
+          if [ -z "${{ vars.MLFLOW_SERVICE_IMAGE }}" ]; then
+            echo "::error::Repo variable MLFLOW_SERVICE_IMAGE is not set (e.g. ghcr.io/mlflow/mlflow:v2.16.2)"
+            exit 1
+          fi
+          if [ -z "${{ vars.LMSTUDIO_SERVICE_IMAGE }}" ]; then
+            echo "::error::Repo variable LMSTUDIO_SERVICE_IMAGE is not set"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Create + activate virtualenv
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest numpy gymnasium httpx jsonschema mlflow datasets
+      - name: Build native extension
+        run: maturin develop --release
+      - name: Build forge-eval-longrun (release, http-mlflow feature)
+        run: cargo build -p forge-eval --bin forge-eval-longrun --features http-mlflow --release
+      - name: Run e2e long (tee output to artefact log)
+        # `tee` captures both stdout + stderr so the pytest log survives
+        # even if a later step truncates the live runner buffer. Exit code
+        # comes from PIPESTATUS[0] (pytest) not tee.
+        run: |
+          mkdir -p artifacts/e2e-long
+          pytest tests/python/test_e2e_long_run.py tests/python/test_e2e_mlflow_down.py \
+            -m "e2e_long" --no-cov -v 2>&1 \
+            | tee artifacts/e2e-long/pytest-output.log
+          exit ${PIPESTATUS[0]}
+      - name: Dump service container logs on failure
+        if: failure()
+        run: |
+          for svc in lmstudio mlflow; do
+            echo "::group::$svc container logs"
+            docker logs "$(docker ps -aqf "name=$svc" | head -n1)" 2>&1 || true
+            echo "::endgroup::"
+            echo "::group::$svc container inspect"
+            docker inspect "$(docker ps -aqf "name=$svc" | head -n1)" \
+              --format '{{json .State}}' 2>&1 || true
+            echo "::endgroup::"
+          done
+      - name: Upload e2e artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-long-artefacts
+          path: |
+            artifacts/e2e-long/
+            **/scorecard.json
+            **/manifest.json
