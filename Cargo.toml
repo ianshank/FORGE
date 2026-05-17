@@ -141,6 +141,25 @@ object_store = "0.11"
 tokio = { version = "1", features = ["rt", "macros"] }
 futures = "0.3"
 
+# MLflow HTTP exporter (opt-in via forge-eval's `http-mlflow` feature).
+# default-features=false + rustls-tls avoids OpenSSL on Windows CI; blocking
+# pairs with the sync `mockito` test server below (no tokio dance per test).
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+url = "2"
+# RAII scope guard used by MlflowHttpSink to call `set_terminated(FAILED)` on
+# early-return / panic — guarantees no orphan RUNNING runs after an export fails.
+scopeguard = "1"
+# Long-run CLI bin argument parsing. `derive` for the Cli struct, `env`
+# for `--flag` ↔ `FORGE_E2E_*` env-var binding (so CI workflows can drive
+# the bin without rebuilding it per scenario).
+clap = { version = "4", features = ["derive", "env"] }
+# Test-only HTTP mock server (sync API). Used by MlflowHttpClient unit tests
+# to assert request shape + retry behaviour without a real server.
+mockito = "1"
+# Test-only ephemeral container runner; the testcontainers e2e test
+# (gated #[ignore]) spins up a real `ghcr.io/mlflow/mlflow:vX.Y.Z` server.
+testcontainers = { version = "0.23", features = ["blocking"] }
+
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 

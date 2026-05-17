@@ -8,16 +8,14 @@ and JSON/TOML export logic.
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
+# scripts/ is placed on sys.path by the root conftest.py (_ensure_importable).
+import calibrate_agri as cal
 import pytest
 
-# Make scripts/ importable
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(_SCRIPTS_DIR))
-
-import calibrate_agri as cal  # noqa: E402, I001
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------

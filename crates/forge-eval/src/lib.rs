@@ -14,6 +14,11 @@
 //!   on-disk suites loaded from TOML.
 //! - **Output** ([`output`]): Persistence of replays, trajectories, and scorecards.
 //! - **Config** ([`config`]): Evaluation configuration with sensible defaults.
+//! - **Manifest** ([`manifest`]): Reproducibility metadata (git SHA, rustc
+//!   version, config + scenario file hashes) captured per run.
+//! - **Exporters** ([`exporters`]): Optional Phase B writers that emit the
+//!   scorecard + manifest into MLflow's `mlruns/` filesystem layout and an
+//!   HF-`datasets`-compatible `DatasetDict` directory.
 //!
 //! # Architecture
 //!
@@ -22,10 +27,14 @@
 //! via rayon. All constants flow through [`EvalConfig`](config::EvalConfig).
 
 pub mod config;
+pub mod exporters;
 pub mod harness;
+pub mod manifest;
 pub mod output;
 pub mod scenario;
 pub mod scorecard;
 
+pub use exporters::{ExportError, Exporter};
+pub use manifest::RunManifest;
 pub use output::{OutputConfig, ScorecardFormat};
 pub use scenario::{Scenario, ScenarioError, ScenarioSuite};

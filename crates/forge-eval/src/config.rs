@@ -6,11 +6,48 @@ use tracing::instrument;
 
 use crate::output::OutputConfig;
 
+// MLflow HTTP exporter defaults.
+//
+// When the `http-mlflow` feature is enabled, the canonical home for these
+// constants is `crate::exporters::mlflow_http`; we re-export from there so a
+// single edit changes every consumer. When the feature is OFF the placeholders
+// below stand in (the constants still need to exist so `EvalConfig::Default`
+// compiles; their values mirror the canonical ones one-for-one — pinned by a
+// test in `mlflow_http::tests` when the feature is enabled).
+
+#[cfg(feature = "http-mlflow")]
+pub use crate::exporters::mlflow_http::{
+    DEFAULT_HTTP_BACKOFF_BASE_MS as DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS,
+    DEFAULT_HTTP_MAX_RETRIES as DEFAULT_MLFLOW_HTTP_MAX_RETRIES,
+    DEFAULT_HTTP_TIMEOUT_MS as DEFAULT_MLFLOW_HTTP_TIMEOUT_MS,
+    DEFAULT_LOG_BATCH_SIZE as DEFAULT_MLFLOW_HTTP_BATCH_SIZE,
+};
+
+/// Default HTTP request timeout for the MLflow tracking REST client (ms).
+#[cfg(not(feature = "http-mlflow"))]
+pub const DEFAULT_MLFLOW_HTTP_TIMEOUT_MS: u64 = 30_000;
+/// Default max retries on retryable HTTP statuses (5xx, 408, 429).
+#[cfg(not(feature = "http-mlflow"))]
+pub const DEFAULT_MLFLOW_HTTP_MAX_RETRIES: u32 = 5;
+/// Default exponential-backoff base (ms) between retries.
+#[cfg(not(feature = "http-mlflow"))]
+pub const DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS: u64 = 250;
+/// Default batch size for `runs/log-batch`. MLflow REST caps at 1000.
+#[cfg(not(feature = "http-mlflow"))]
+pub const DEFAULT_MLFLOW_HTTP_BATCH_SIZE: usize = 1_000;
+
 /// Configuration for an evaluation run.
 ///
 /// All parameters are configurable — no hard-coded values.
 /// Use [`EvalConfig::validate`] to check invariants before running.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Debug` is implemented manually (not derived) so the
+/// [`Self::mlflow_http_token`] secret never lands in logs or panic
+/// backtraces. `Serialize`/`Deserialize` skip the same field so a
+/// config dumped to TOML/JSON doesn't write the token to disk; if
+/// callers need the token after a deserialise round-trip they must
+/// re-read it from env or re-set it explicitly.
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EvalConfig {
     /// Number of episodes to run per scenario/seed combination.
@@ -41,6 +78,62 @@ pub struct EvalConfig {
     pub output: OutputConfig,
     /// Base FORGE config to use for scenarios that don't specify their own.
     pub base_forge_config: ForgeConfig,
+    // --- Phase B fields (additive; default None = exporter disabled) ---
+    /// Absolute path of an MLflow `mlruns/` tracking directory. When set,
+    /// the harness invokes the MLflow filesystem-layout exporter after the
+    /// scorecard is built, writing the run + nested per-scenario child
+    /// runs that `mlflow ui --backend-store-uri <dir>` can visualize.
+    /// `None` (the default) leaves Phase 1 behaviour byte-identical.
+    pub mlflow_tracking_uri: Option<std::path::PathBuf>,
+    /// Absolute path of the HuggingFace-export root directory. When set,
+    /// the harness writes a Hugging Face-friendly JSONL export under
+    /// `<huggingface_export_root>/<run_id>/` that
+    /// `datasets.load_dataset("json", data_files=...)` can open and
+    /// `huggingface-cli upload` can push to the Hub. The export is NOT
+    /// a `save_to_disk`-shaped Arrow DatasetDict — the README's
+    /// `configs.data_files` declares per-split JSONL paths instead, so
+    /// consumers don't need `pyarrow` to load.
+    /// `None` (the default) leaves Phase 1 behaviour byte-identical.
+    pub huggingface_export_root: Option<std::path::PathBuf>,
+    /// Stable run identifier shared by every Phase B exporter target.
+    /// `None` triggers a UUIDv4 hex run id at [`crate::RunManifest::capture`]
+    /// time. Set explicitly to make multiple Phase B exporters write under
+    /// the same id, or to re-export an existing scorecard idempotently.
+    pub run_id: Option<String>,
+    /// Experiment grouping mirrored to MLflow's experiment name and to the
+    /// HF dataset card's `pretty_name`. `None` defaults to
+    /// `"forge-eval-default"` in the manifest.
+    pub experiment_name: Option<String>,
+    // --- MLflow HTTP transport fields (added Slice 1.05; consumer wired in Slice 2) ---
+    /// HTTP(S) URI of an MLflow tracking server. When set, takes precedence
+    /// over [`mlflow_tracking_uri`](Self::mlflow_tracking_uri) and routes
+    /// exporter calls through the REST API instead of writing to disk.
+    /// `None` (the default) preserves filesystem-only behaviour.
+    pub mlflow_http_tracking_uri: Option<String>,
+    /// Per-request timeout (ms) for the MLflow HTTP client. Default
+    /// [`DEFAULT_MLFLOW_HTTP_TIMEOUT_MS`].
+    pub mlflow_http_timeout_ms: u64,
+    /// Max retries on retryable HTTP statuses (5xx, 408, 429). Default
+    /// [`DEFAULT_MLFLOW_HTTP_MAX_RETRIES`].
+    pub mlflow_http_max_retries: u32,
+    /// Exponential-backoff base (ms) between retries. Default
+    /// [`DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS`].
+    pub mlflow_http_backoff_base_ms: u64,
+    /// Batch size for `runs/log-batch`. MLflow REST caps at 1000; default
+    /// [`DEFAULT_MLFLOW_HTTP_BATCH_SIZE`].
+    pub mlflow_http_batch_size: usize,
+    /// Optional bearer token for MLflow tracking server auth. When `None`,
+    /// the HTTP client reads `MLFLOW_TRACKING_TOKEN` env at construction time.
+    ///
+    /// `#[serde(skip)]` — the token is NEVER serialised. A config dumped to
+    /// disk (toml::to_string / serde_json::to_writer / EvalConfig::clone +
+    /// log) excludes this field. Deserialising a config sets it to `None`;
+    /// callers wanting auth must re-read it from env or set it explicitly
+    /// after `from_str`. The custom `Debug` impl on `EvalConfig` redacts
+    /// this field too — `format!("{cfg:?}")` shows `Some(<redacted>)` or
+    /// `None`, never the bytes themselves.
+    #[serde(skip)]
+    pub mlflow_http_token: Option<String>,
 }
 
 impl Default for EvalConfig {
@@ -61,9 +154,61 @@ impl Default for EvalConfig {
             record_trajectories: false,
             output: OutputConfig::default(),
             base_forge_config: forge_config,
+            mlflow_tracking_uri: None,
+            huggingface_export_root: None,
+            run_id: None,
+            experiment_name: None,
+            mlflow_http_tracking_uri: None,
+            mlflow_http_timeout_ms: DEFAULT_MLFLOW_HTTP_TIMEOUT_MS,
+            mlflow_http_max_retries: DEFAULT_MLFLOW_HTTP_MAX_RETRIES,
+            mlflow_http_backoff_base_ms: DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS,
+            mlflow_http_batch_size: DEFAULT_MLFLOW_HTTP_BATCH_SIZE,
+            // Read from env at construction time so `Default::default()` picks
+            // up CI-provided tokens without callers having to thread them.
+            mlflow_http_token: std::env::var("MLFLOW_TRACKING_TOKEN").ok(),
         }
     }
 }
+
+/// Manual `Debug` impl that redacts the bearer token. Mirrors every other
+/// field via `f.debug_struct()` so log output is otherwise identical to
+/// the auto-derived `Debug` we replaced.
+impl std::fmt::Debug for EvalConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EvalConfig")
+            .field("episodes_per_scenario", &self.episodes_per_scenario)
+            .field("max_steps_per_episode", &self.max_steps_per_episode)
+            .field("base_seed", &self.base_seed)
+            .field("tiers", &self.tiers)
+            .field("parallelism", &self.parallelism)
+            .field("record_replays", &self.record_replays)
+            .field("record_trajectories", &self.record_trajectories)
+            .field("output", &self.output)
+            .field("base_forge_config", &self.base_forge_config)
+            .field("mlflow_tracking_uri", &self.mlflow_tracking_uri)
+            .field("huggingface_export_root", &self.huggingface_export_root)
+            .field("run_id", &self.run_id)
+            .field("experiment_name", &self.experiment_name)
+            .field("mlflow_http_tracking_uri", &self.mlflow_http_tracking_uri)
+            .field("mlflow_http_timeout_ms", &self.mlflow_http_timeout_ms)
+            .field("mlflow_http_max_retries", &self.mlflow_http_max_retries)
+            .field(
+                "mlflow_http_backoff_base_ms",
+                &self.mlflow_http_backoff_base_ms,
+            )
+            .field("mlflow_http_batch_size", &self.mlflow_http_batch_size)
+            .field(
+                "mlflow_http_token",
+                &self.mlflow_http_token.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+/// MLflow REST cap for `runs/log-batch` metric arrays. Used by
+/// [`EvalConfig::validate`] to reject configs that would generate
+/// server-rejected requests.
+pub const MLFLOW_LOG_BATCH_HARD_CAP: usize = 1_000;
 
 impl EvalConfig {
     /// Validates the configuration, returning a list of issues.
@@ -89,6 +234,16 @@ impl EvalConfig {
         }
         if self.base_forge_config.agents.num_agents == 0 {
             errors.push("num_agents must be > 0".to_string());
+        }
+        if self.mlflow_http_batch_size == 0 {
+            errors.push("mlflow_http_batch_size must be > 0".to_string());
+        }
+        if self.mlflow_http_batch_size > MLFLOW_LOG_BATCH_HARD_CAP {
+            errors.push(format!(
+                "mlflow_http_batch_size {} exceeds MLflow REST cap of {} \
+                 (server will reject runs/log-batch requests)",
+                self.mlflow_http_batch_size, MLFLOW_LOG_BATCH_HARD_CAP
+            ));
         }
         errors.extend(self.output.validate());
 
@@ -120,6 +275,150 @@ mod tests {
     #[test]
     fn test_config_serde_roundtrip() {
         forge_types::assert_config_serde_roundtrip!(EvalConfig);
+    }
+
+    #[test]
+    fn test_mlflow_http_fields_serde_roundtrip() {
+        // Exercises every new HTTP field added in Slice 1.05 so a future
+        // rename/remove surfaces here, not at runtime under the harness.
+        // NOTE: `mlflow_http_token` carries `#[serde(skip)]` and is
+        // intentionally NOT preserved across (de)serialisation — see the
+        // dedicated `test_mlflow_http_token_is_never_serialised` test
+        // below, which pins that contract.
+        let config = EvalConfig {
+            mlflow_http_tracking_uri: Some("https://mlflow.example:5000".to_string()),
+            mlflow_http_timeout_ms: 12_345,
+            mlflow_http_max_retries: 7,
+            mlflow_http_backoff_base_ms: 100,
+            mlflow_http_batch_size: 250,
+            mlflow_http_token: None, // skip-serde means we never round-trip the token
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: EvalConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            deser.mlflow_http_tracking_uri.as_deref(),
+            Some("https://mlflow.example:5000")
+        );
+        assert_eq!(deser.mlflow_http_timeout_ms, 12_345);
+        assert_eq!(deser.mlflow_http_max_retries, 7);
+        assert_eq!(deser.mlflow_http_backoff_base_ms, 100);
+        assert_eq!(deser.mlflow_http_batch_size, 250);
+    }
+
+    /// Pin the security contract: the bearer token MUST NOT appear in the
+    /// serialised representation, and MUST NOT survive a deserialise round
+    /// trip. A regression here would write secrets to any TOML/JSON the
+    /// config is dumped to (audit logs, config snapshots, test fixtures).
+    #[test]
+    fn test_mlflow_http_token_is_never_serialised() {
+        let cfg = EvalConfig {
+            mlflow_http_token: Some("PAT-super-secret-DO-NOT-LEAK".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&cfg).expect("serialise");
+        assert!(
+            !json.contains("PAT-super-secret-DO-NOT-LEAK"),
+            "bearer token must not appear in JSON serialisation: {json}"
+        );
+        assert!(
+            !json.contains("mlflow_http_token"),
+            "token field must be skipped entirely, not emitted with null: {json}"
+        );
+        let toml_str = toml::to_string(&cfg).expect("toml serialise");
+        assert!(
+            !toml_str.contains("PAT-super-secret-DO-NOT-LEAK"),
+            "bearer token must not appear in TOML serialisation: {toml_str}"
+        );
+
+        // Deserialise back: token must be absent (None) regardless of what
+        // was originally set on the source config.
+        let deser: EvalConfig = serde_json::from_str(&json).expect("deserialise");
+        assert!(deser.mlflow_http_token.is_none());
+    }
+
+    /// Pin the second security contract: `Debug` (and therefore every
+    /// `tracing::debug!(?cfg, ...)` site) MUST redact the token.
+    #[test]
+    fn test_mlflow_http_token_is_redacted_in_debug_output() {
+        let cfg = EvalConfig {
+            mlflow_http_token: Some("PAT-super-secret-DO-NOT-LEAK".to_string()),
+            ..Default::default()
+        };
+        let dbg = format!("{cfg:?}");
+        assert!(
+            !dbg.contains("PAT-super-secret-DO-NOT-LEAK"),
+            "bearer token must be redacted in Debug output: {dbg}"
+        );
+        assert!(
+            dbg.contains("<redacted>"),
+            "Debug output must signal the redaction: {dbg}"
+        );
+
+        // None case: Debug should show None (not "<redacted>") so callers
+        // can still distinguish unset-vs-set at log-read time.
+        let unset_cfg = EvalConfig {
+            mlflow_http_token: None,
+            ..Default::default()
+        };
+        let dbg_unset = format!("{unset_cfg:?}");
+        assert!(dbg_unset.contains("mlflow_http_token: None"));
+    }
+
+    /// Pin the batch_size validation contract: configs that would generate
+    /// server-rejected requests (batch_size > MLflow's 1000 metric cap, or
+    /// 0) must surface in `validate()` rather than fail at runtime.
+    #[test]
+    fn test_validate_rejects_oversized_or_zero_batch_size() {
+        let mut cfg = EvalConfig {
+            mlflow_http_batch_size: 0,
+            ..EvalConfig::default()
+        };
+        let errs = cfg.validate();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("mlflow_http_batch_size must be > 0")),
+            "zero batch_size must error: {errs:?}"
+        );
+
+        cfg.mlflow_http_batch_size = MLFLOW_LOG_BATCH_HARD_CAP + 1;
+        let errs = cfg.validate();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("exceeds MLflow REST cap of 1000")),
+            "oversized batch_size must error: {errs:?}"
+        );
+
+        cfg.mlflow_http_batch_size = MLFLOW_LOG_BATCH_HARD_CAP;
+        let errs: Vec<String> = cfg
+            .validate()
+            .into_iter()
+            .filter(|e| e.contains("batch_size"))
+            .collect();
+        assert!(
+            errs.is_empty(),
+            "exactly-1000 batch_size must be allowed: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn test_default_mlflow_http_fields_use_constants() {
+        // Pins the binding between EvalConfig::default and the
+        // DEFAULT_MLFLOW_HTTP_* constants so a future divergence is caught
+        // at compile + test time, not in production.
+        let cfg = EvalConfig::default();
+        assert!(cfg.mlflow_http_tracking_uri.is_none());
+        assert_eq!(cfg.mlflow_http_timeout_ms, DEFAULT_MLFLOW_HTTP_TIMEOUT_MS);
+        assert_eq!(cfg.mlflow_http_max_retries, DEFAULT_MLFLOW_HTTP_MAX_RETRIES);
+        assert_eq!(
+            cfg.mlflow_http_backoff_base_ms,
+            DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS
+        );
+        assert_eq!(cfg.mlflow_http_batch_size, DEFAULT_MLFLOW_HTTP_BATCH_SIZE);
+        assert!(
+            cfg.mlflow_http_batch_size <= 1000,
+            "MLflow REST caps log_batch at 1000"
+        );
     }
 
     #[test]

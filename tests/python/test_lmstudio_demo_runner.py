@@ -7,7 +7,6 @@ goes through scripts/train.py.
 from __future__ import annotations
 
 import logging
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,9 +16,7 @@ from conftest import REPO_ROOT
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 GEMMA_PRESET = REPO_ROOT / "configs" / "cognitive" / "gemma_e4b_teacher.toml"
 
-# Make scripts/ importable as a flat module set.
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+# scripts/ is placed on sys.path by the root conftest.py (_ensure_importable).
 
 
 @pytest.fixture()

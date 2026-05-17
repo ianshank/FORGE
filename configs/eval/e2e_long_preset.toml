@@ -1,0 +1,54 @@
+# FORGE e2e long-run preset.
+#
+# Single source of truth for `scripts/run_e2e_long.py`. Values here are
+# **defaults only** — the orchestrator's env-takes-precedence layer lets CI
+# override any leaf via `FORGE_E2E_*` / `FORGE_MLFLOW_*` without touching this
+# file. In particular `mlflow.tracking_uri` is a placeholder; production paths
+# MUST set `FORGE_MLFLOW_TRACKING_URI` to a real HTTP server.
+#
+# Schema:
+#   [run]
+#     total_episodes      — total episodes to collect across all scenarios
+#     base_seed           — derived per-scenario via forge.utils.seed.derive_seed
+#     bc_epochs           — passed to BCTrainerConfig.num_epochs
+#     experiment_name     — MLflow experiment grouping (== Rust EvalConfig.experiment_name)
+#   [scenarios]
+#     refs                — scenario ids (resolved against configs/scenarios/<id>.toml)
+#   [mlflow]
+#     tracking_uri        — HTTP MLflow server URL (default placeholder)
+#     batch_size          — runs/log-batch chunk size; <= 1000 (MLflow REST cap)
+#   [huggingface]
+#     export_root         — where forge-eval-longrun writes the HF dataset tree
+#   [teacher]
+#     preset              — cognitive preset id (== configs/cognitive/<preset>.toml)
+
+[run]
+total_episodes = 1000
+base_seed = 42
+bc_epochs = 30
+experiment_name = "forge-e2e-long-run"
+
+[scenarios]
+refs = [
+  "adversarial_recon",
+  "area_denial",
+  "crop_scout",
+  "escort",
+  "field_report",
+  "hex_patrol",
+  "irrigation_mapping",
+  "patrol",
+  "search_and_rescue",
+  "soil_relay",
+  "spray_mission",
+]
+
+[mlflow]
+tracking_uri = "http://localhost:5000"
+batch_size = 1000
+
+[huggingface]
+export_root = "artifacts/e2e-long/hf"
+
+[teacher]
+preset = "gemma_e4b_teacher"

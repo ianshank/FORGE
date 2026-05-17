@@ -10,6 +10,34 @@ keywords.workspace = true
 categories.workspace = true
 description = "Agent-agnostic evaluation harness and benchmark suite for FORGE"
 
+[features]
+default = []
+# MLflow HTTP tracking-server transport (Slice 2). Off by default to keep the
+# crate's default build lightweight + free of HTTP/TLS deps. The
+# `forge-eval-longrun` bin and the testcontainers integration test require
+# this feature; the existing filesystem-only MlflowExporter does not.
+#
+# clap + anyhow + tracing-subscriber are pulled in by the same gate so the
+# default `cargo build` doesn't compile the CLI surface unnecessarily; the
+# bin below declares `required-features = ["http-mlflow"]` to enforce this
+# at the cargo-target level.
+http-mlflow = [
+    "dep:reqwest",
+    "dep:url",
+    "dep:scopeguard",
+    "dep:clap",
+    "dep:anyhow",
+    "dep:tracing-subscriber",
+]
+
+# CLI binary — the long-running e2e driver. Only built when the
+# http-mlflow feature is active; running `cargo build -p forge-eval` (no
+# features) is unaffected.
+[[bin]]
+name = "forge-eval-longrun"
+path = "src/bin/forge_eval_longrun.rs"
+required-features = ["http-mlflow"]
+
 [dependencies]
 forge-types = { workspace = true }
 forge-core = { path = "../forge-core" }
@@ -18,12 +46,34 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
-chrono = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 toml = { workspace = true }
 rayon = "1"
+# Phase B exporters: MLflow meta.yaml + HF dataset card frontmatter
+# both require YAML; serde_json won't round-trip the format mlflow ui parses.
+serde_yaml = "0.9"
+# Phase B: SHA-256 over scenario TOML files for RunManifest and
+# deterministic child-run IDs.
+sha2 = "0.10"
+# Phase B: run_id generation when EvalConfig.run_id is None.
+uuid = { version = "1", features = ["v4"] }
+# HTTP-only optional deps (enabled by `http-mlflow` feature).
+reqwest = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+scopeguard = { workspace = true, optional = true }
+# CLI bin deps (also gated on `http-mlflow` since the only bin that
+# consumes them is `forge-eval-longrun`).
+clap = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
 tempfile = "3"
+# Always-present dev dep so test files keep compiling even when
+# `--features http-mlflow` is omitted; the http_unit tests are gated
+# on the feature via `#![cfg(feature = "http-mlflow")]`.
+mockito = { workspace = true }
+testcontainers = { workspace = true }
