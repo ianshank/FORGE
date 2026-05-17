@@ -25,13 +25,13 @@ fn world_env_reset_matches_world_state_reset() {
     let env_out = env.reset(Some(7)).unwrap();
     let raw_out = raw.reset(Some(7));
 
-    assert_eq!(env_out.terminated, raw_out.terminated);
-    assert_eq!(env_out.truncated, raw_out.truncated);
+    assert_eq!(raw_out.terminated, false);
+    assert_eq!(raw_out.truncated, false);
     assert_eq!(
-        env_out.obs.grid_view.len(),
+        env_out.grid_view.len(),
         raw_out.observations[0].grid_view.len()
     );
-    assert_eq!(env_out.obs.position, raw_out.observations[0].position);
+    assert_eq!(env_out.position, raw_out.observations[0].position);
 }
 
 #[test]
@@ -80,14 +80,14 @@ fn flat_forge_env_produces_consistent_obs_dim() {
     let r = env.reset(Some(0)).unwrap();
     // Underlying FlatObsEnv contract
     use forge_env::FlatObsEnv;
-    assert_eq!(r.obs.len(), env.obs_dim());
+    assert_eq!(r.len(), env.obs_dim());
     let s = env.step(0).unwrap();
     assert_eq!(s.obs.len(), env.obs_dim());
 }
 
 #[test]
 fn step_into_keeps_buffer_dim_stable() {
-    use forge_env::{StepInto, StepOutput};
+    use forge_env::StepOutput;
     let cfg = tiny_cfg();
     let mut env = FlatForgeEnv::new(cfg.clone(), FlatObsConfig::default()).unwrap();
     use forge_env::FlatObsEnv;

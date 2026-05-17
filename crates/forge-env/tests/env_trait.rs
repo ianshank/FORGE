@@ -34,19 +34,19 @@ impl Env for DeterministicFlatEnv {
     type Info = ();
     type Error = EnvError;
 
-    fn reset(&mut self, seed: Option<u64>) -> Result<StepOutput<Vec<f32>, ()>, Self::Error> {
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Vec<f32>) -> Result<(), Self::Error> {
         self.seed = seed.unwrap_or(0);
         self.step_count = 0;
-        Ok(StepOutput {
-            obs: vec![0.0; self.obs_spec.num_elements()],
-            reward: 0.0,
-            terminated: false,
-            truncated: false,
-            info: (),
-        })
+        out.clear();
+        out.resize(self.obs_spec.num_elements(), 0.0);
+        Ok(())
     }
 
-    fn step(&mut self, action: u32) -> Result<StepOutput<Vec<f32>, ()>, Self::Error> {
+    fn step_into(
+        &mut self,
+        action: u32,
+        out: &mut StepOutput<Vec<f32>, ()>,
+    ) -> Result<(), Self::Error> {
         let n = self.action_spec.discrete_n().unwrap();
         if action >= n {
             return Err(EnvError::InvalidAction {
@@ -57,14 +57,12 @@ impl Env for DeterministicFlatEnv {
         self.step_count += 1;
         // Deterministic-but-trivial obs: every element = (seed + step) % 1.0
         let value = ((self.seed.wrapping_add(self.step_count)) as f32) * 1e-3;
-        let obs = vec![value; self.obs_spec.num_elements()];
-        Ok(StepOutput {
-            obs,
-            reward: 0.0,
-            terminated: false,
-            truncated: self.step_count >= self.max_steps,
-            info: (),
-        })
+        out.obs.clear();
+        out.obs.resize(self.obs_spec.num_elements(), value);
+        out.reward = 0.0;
+        out.terminated = false;
+        out.truncated = self.step_count >= self.max_steps;
+        Ok(())
     }
 
     fn obs_spec(&self) -> &ObsSpec {
@@ -124,9 +122,9 @@ fn obs_spec_and_action_spec_match_flat_obs_env_dims() {
 fn flat_obs_env_via_dyn_trait_object() {
     fn run_one(env: &mut dyn Env<Obs = Vec<f32>, Action = u32, Info = (), Error = EnvError>) {
         let r = env.reset(Some(7)).unwrap();
-        assert!(!r.obs.is_empty());
+        assert!(!r.is_empty());
         let s = env.step(0).unwrap();
-        assert_eq!(s.obs.len(), r.obs.len());
+        assert_eq!(s.obs.len(), r.len());
     }
     let mut env = DeterministicFlatEnv::new(16, 3, 100);
     run_one(&mut env);

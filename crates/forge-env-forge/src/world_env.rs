@@ -81,7 +81,7 @@ impl WorldEnv {
         self.step(action)
     }
 
-    fn decode_action(&self, action_id: u32) -> Result<Action, ForgeEnvError> {
+    pub(crate) fn decode_action(&self, action_id: u32) -> Result<Action, ForgeEnvError> {
         let hex_enabled = self.config.world.grid_type == GridType::Hex;
         Action::from_discrete_full(
             action_id,
@@ -124,41 +124,33 @@ impl Env for WorldEnv {
     type Error = ForgeEnvError;
 
     #[instrument(skip_all, fields(env = "forge-world"))]
-    fn reset(
+    fn reset_into(
         &mut self,
         seed: Option<u64>,
-    ) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error> {
+        out: &mut Self::Obs,
+    ) -> Result<(), Self::Error> {
         let result = self.state.reset(seed);
-        let obs = result.observations.first().cloned().unwrap_or_else(|| {
+        *out = result.observations.into_iter().next().unwrap_or_else(|| {
             warn!("WorldState reset produced no observations; using default");
             Observation::default()
         });
-        let reward = result.rewards.first().copied().unwrap_or(0.0);
-        Ok(StepOutput {
-            obs,
-            reward,
-            terminated: result.terminated,
-            truncated: result.truncated,
-            info: result.info,
-        })
+        Ok(())
     }
 
     #[instrument(skip_all, fields(env = "forge-world"))]
-    fn step(
+    fn step_into(
         &mut self,
         action: Self::Action,
-    ) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error> {
+        out: &mut StepOutput<Self::Obs, Self::Info>,
+    ) -> Result<(), Self::Error> {
         let actions = [action];
         let result = self.state.step(&actions);
-        let obs = result.observations.first().cloned().unwrap_or_default();
-        let reward = result.rewards.first().copied().unwrap_or(0.0);
-        Ok(StepOutput {
-            obs,
-            reward,
-            terminated: result.terminated,
-            truncated: result.truncated,
-            info: result.info,
-        })
+        out.obs = result.observations.into_iter().next().unwrap_or_default();
+        out.reward = result.rewards.first().copied().unwrap_or(0.0);
+        out.terminated = result.terminated;
+        out.truncated = result.truncated;
+        out.info = result.info;
+        Ok(())
     }
 
     fn obs_spec(&self) -> &ObsSpec {
@@ -198,8 +190,8 @@ mod tests {
     #[test]
     fn reset_and_step_produce_observation() {
         let mut env = WorldEnv::new(tiny_config()).unwrap();
-        let r = env.reset(Some(42)).unwrap();
-        assert!(!r.obs.grid_view.is_empty());
+        let obs = env.reset(Some(42)).unwrap();
+        assert!(!obs.grid_view.is_empty());
         let s = env.step(Action::Noop).unwrap();
         assert!(!s.obs.grid_view.is_empty());
     }
