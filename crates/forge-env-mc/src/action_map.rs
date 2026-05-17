@@ -264,6 +264,40 @@ mod tests {
         assert_eq!(a.len(), 64); // hex sha256
     }
 
+    /// Pinned-fixture cross-language regression gate. This exact byte
+    /// string MUST match the JS-side computation in
+    /// `mc-bot/test/schema_id.test.js` (same fixture, same constant).
+    /// Failing means the canonical form drifted on one side; investigate
+    /// both sides before bumping.
+    #[test]
+    fn xlang_schema_id_pinned_to_known_good() {
+        let m = ActionMap {
+            schema_version: 1,
+            entries: vec![
+                ActionEntry {
+                    id: 0,
+                    kind: ActionKind::Noop { ticks: 1 },
+                },
+                ActionEntry {
+                    id: 1,
+                    kind: ActionKind::Move {
+                        direction: "forward".into(),
+                        ticks: 4,
+                    },
+                },
+                ActionEntry {
+                    id: 2,
+                    kind: ActionKind::Jump,
+                },
+            ],
+        };
+        assert_eq!(
+            m.canonical_sha256(),
+            "587b13077b8c7cd90503f9ee5e1bae1bb92bdf738c8abc51d2ff6deb1908224f",
+            "schema_id drift — JS test in mc-bot/test/schema_id.test.js will also fail"
+        );
+    }
+
     #[test]
     fn canonical_sha256_invariant_under_reorder() {
         let m1 = sample_map();
