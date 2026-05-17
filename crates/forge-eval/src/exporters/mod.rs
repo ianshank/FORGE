@@ -25,6 +25,23 @@ use crate::scorecard::Scorecard;
 pub mod huggingface;
 pub mod mlflow;
 
+// ─── Shared exporter constants ─────────────────────────────────────────────
+// String literals consumed by BOTH the MLflow and HuggingFace exporters.
+// Defined here so renaming requires a single edit and both exporters
+// continue to agree on the on-disk contract. Tests in each exporter module
+// pin these against the observed file names so a divergence is caught at
+// test time.
+
+/// Naming prefix for per-tier splits. The HF exporter emits `tier_1/`,
+/// `tier_2/`, ... directories under `<export_root>/<run_id>/`; the MLflow
+/// exporter uses the same prefix when keying per-tier metric series.
+/// Format: `"{TIER_SPLIT_PREFIX}{tier}"`.
+pub const TIER_SPLIT_PREFIX: &str = "tier_";
+
+/// Filename of the on-disk RunManifest JSON artefact. Both exporters write
+/// this file (MLflow under `artifacts/`, HF directly under the run dir).
+pub const ARTIFACT_MANIFEST_JSON: &str = "manifest.json";
+
 /// Failure modes an [`Exporter`] can surface to the harness.
 ///
 /// Marked `#[non_exhaustive]` so downstream `match` sites stay
@@ -70,4 +87,46 @@ pub trait Exporter {
         manifest: &RunManifest,
         artifacts_dir: &Path,
     ) -> Result<(), ExportError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::exporters::huggingface::{HF_DATA_SHARD_FILENAME, SPLIT_ALL};
+    use crate::exporters::mlflow::{
+        AGENT_PARAM_KEY_PREFIX, ARTIFACT_EPISODES_JSONL, ARTIFACT_SCORECARD_JSON,
+        ARTIFACT_SCORECARD_MD, ARTIFACT_TIER_SUCCESS_RATES_HTML, DEFAULT_EXPERIMENT_ID,
+        MLFLOW_META_FILE, MLFLOW_SUBDIR_ARTIFACTS, MLFLOW_SUBDIR_METRICS, MLFLOW_SUBDIR_PARAMS,
+        MLFLOW_SUBDIR_TAGS,
+    };
+
+    /// Pin every shared + exporter-internal const to its on-disk-contract
+    /// value. Existing test assertions in `mlflow.rs` and `huggingface.rs`
+    /// still use the literal string (intentionally — they pin the *external*
+    /// observable contract). This test pins the *internal* constant to that
+    /// same string, so a rename of either the constant or the literal is
+    /// caught as a deliberate, reviewable change.
+    #[test]
+    fn exporter_string_constants_are_stable_contract() {
+        // Shared (this module).
+        assert_eq!(TIER_SPLIT_PREFIX, "tier_");
+        assert_eq!(ARTIFACT_MANIFEST_JSON, "manifest.json");
+
+        // HuggingFace-internal.
+        assert_eq!(SPLIT_ALL, "all");
+        assert_eq!(HF_DATA_SHARD_FILENAME, "data-00000-of-00001.jsonl");
+
+        // MLflow-internal.
+        assert_eq!(DEFAULT_EXPERIMENT_ID, "0");
+        assert_eq!(MLFLOW_META_FILE, "meta.yaml");
+        assert_eq!(MLFLOW_SUBDIR_PARAMS, "params");
+        assert_eq!(MLFLOW_SUBDIR_METRICS, "metrics");
+        assert_eq!(MLFLOW_SUBDIR_TAGS, "tags");
+        assert_eq!(MLFLOW_SUBDIR_ARTIFACTS, "artifacts");
+        assert_eq!(ARTIFACT_SCORECARD_JSON, "scorecard.json");
+        assert_eq!(ARTIFACT_SCORECARD_MD, "scorecard.md");
+        assert_eq!(ARTIFACT_TIER_SUCCESS_RATES_HTML, "tier_success_rates.html");
+        assert_eq!(ARTIFACT_EPISODES_JSONL, "episodes.jsonl");
+        assert_eq!(AGENT_PARAM_KEY_PREFIX, "agent_param_");
+    }
 }

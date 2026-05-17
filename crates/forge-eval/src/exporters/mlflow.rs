@@ -46,13 +46,49 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracing::{debug, instrument};
 
-use super::{ExportError, Exporter};
+use super::{ExportError, Exporter, ARTIFACT_MANIFEST_JSON, TIER_SPLIT_PREFIX};
 use crate::manifest::{RunManifest, MANIFEST_SOURCE_NAME};
 use crate::scorecard::{EpisodeResult, ScenarioResult, Scorecard, TierScore};
 
 /// MLflow's default experiment id when no explicit experiment is created.
 /// `mlflow ui` will list the run under "Default" with this id.
 pub const DEFAULT_EXPERIMENT_ID: &str = "0";
+
+// ─── MLflow filesystem layout: directory + filename constants ───────────────
+// Centralised so the upcoming `mlflow_payload.rs` extraction (Slice 1.1)
+// inherits a single source of truth. All names are part of the on-disk
+// contract that `mlflow ui --backend-store-uri <dir>` reads, so changing
+// any of them is a breaking change.
+
+/// Subdirectory under each run dir holding `<key>` files (one per param).
+pub(crate) const MLFLOW_SUBDIR_PARAMS: &str = "params";
+/// Subdirectory under each run dir holding `<key>` files (one per metric,
+/// each storing `<ts_ms> <value> <step>` lines per sample).
+pub(crate) const MLFLOW_SUBDIR_METRICS: &str = "metrics";
+/// Subdirectory under each run dir holding `<key>` files (one per tag).
+pub(crate) const MLFLOW_SUBDIR_TAGS: &str = "tags";
+/// Subdirectory under each run dir holding artefact files (scorecard,
+/// manifest, plots, copies of replays/trajectories).
+pub(crate) const MLFLOW_SUBDIR_ARTIFACTS: &str = "artifacts";
+/// Filename of the per-run + per-experiment YAML metadata that `mlflow ui`
+/// reads to enumerate runs.
+pub(crate) const MLFLOW_META_FILE: &str = "meta.yaml";
+
+// ─── Artefact filenames (under MLFLOW_SUBDIR_ARTIFACTS or run dir) ─────────
+
+/// Scorecard JSON artefact (parent run, MLflow only — HF uses the manifest).
+pub(crate) const ARTIFACT_SCORECARD_JSON: &str = "scorecard.json";
+/// Scorecard Markdown artefact (parent run).
+pub(crate) const ARTIFACT_SCORECARD_MD: &str = "scorecard.md";
+/// Plotly per-tier success-rate chart, self-contained HTML.
+pub(crate) const ARTIFACT_TIER_SUCCESS_RATES_HTML: &str = "tier_success_rates.html";
+/// JSONL of per-episode rows written under each child run's artefacts dir.
+pub(crate) const ARTIFACT_EPISODES_JSONL: &str = "episodes.jsonl";
+
+/// Prefix applied to every key derived from `AgentMetadata` before
+/// it is written as an MLflow param. Keeps agent-provided keys from
+/// colliding with intrinsic MLflow params.
+pub(crate) const AGENT_PARAM_KEY_PREFIX: &str = "agent_param_";
 
 /// MLflow source-type tag value for a non-Project (ad-hoc) run.
 const SOURCE_TYPE_LOCAL: &str = "LOCAL";
@@ -166,7 +202,7 @@ fn write_experiment_meta(dir: &Path, exp_id: &str, name: &str) -> Result<(), Exp
         lifecycle_stage: LIFECYCLE_STAGE_ACTIVE.to_string(),
         name: name.to_string(),
     };
-    write_yaml(&dir.join("meta.yaml"), &meta)
+    write_yaml(&dir.join(MLFLOW_META_FILE), &meta)
 }
 
 fn write_parent_run(
@@ -177,7 +213,7 @@ fn write_parent_run(
     start_ms: u64,
 ) -> Result<(), ExportError> {
     fs::create_dir_all(parent_dir)?;
-    let artifacts_subdir = parent_dir.join("artifacts");
+    let artifacts_subdir = parent_dir.join(MLFLOW_SUBDIR_ARTIFACTS);
     fs::create_dir_all(&artifacts_subdir)?;
 
     // Params: snapshot the user-visible knobs from the agent metadata
@@ -186,7 +222,7 @@ fn write_parent_run(
     write_param(parent_dir, "model_name", &scorecard.agent_metadata.model_name)?;
     write_param(parent_dir, "agent_version", &scorecard.agent_metadata.version)?;
     for (k, v) in &scorecard.agent_metadata.parameters {
-        write_param(parent_dir, &format!("agent_param_{}", sanitize(k)), v)?;
+        write_param(parent_dir, &format!("{AGENT_PARAM_KEY_PREFIX}{}", sanitize(k)), v)?;
     }
 
     // Metrics: overall + per-tier + per-scenario named metrics.
@@ -249,11 +285,11 @@ fn write_parent_run(
     let scorecard_json = scorecard
         .to_json()
         .map_err(ExportError::Serialize)?;
-    fs::write(artifacts_subdir.join("scorecard.json"), scorecard_json)?;
-    fs::write(artifacts_subdir.join("scorecard.md"), scorecard.to_markdown())?;
-    manifest.write_json(&artifacts_subdir.join("manifest.json"))?;
+    fs::write(artifacts_subdir.join(ARTIFACT_SCORECARD_JSON), scorecard_json)?;
+    fs::write(artifacts_subdir.join(ARTIFACT_SCORECARD_MD), scorecard.to_markdown())?;
+    manifest.write_json(&artifacts_subdir.join(ARTIFACT_MANIFEST_JSON))?;
     fs::write(
-        artifacts_subdir.join("tier_success_rates.html"),
+        artifacts_subdir.join(ARTIFACT_TIER_SUCCESS_RATES_HTML),
         render_tier_bar_chart_html(&scorecard.tier_scores, &run_name),
     )?;
     copy_subdir_if_exists(&artifacts_dir.join("replays"), &artifacts_subdir.join("replays"))?;
@@ -303,7 +339,7 @@ fn write_child_run(
     start_ms: u64,
 ) -> Result<(), ExportError> {
     fs::create_dir_all(child_dir)?;
-    let artifacts_subdir = child_dir.join("artifacts");
+    let artifacts_subdir = child_dir.join(MLFLOW_SUBDIR_ARTIFACTS);
     fs::create_dir_all(&artifacts_subdir)?;
 
     // Scenario-level params
@@ -370,7 +406,7 @@ fn write_child_run(
         jsonl.push_str(&line);
         jsonl.push('\n');
     }
-    fs::write(artifacts_subdir.join("episodes.jsonl"), jsonl)?;
+    fs::write(artifacts_subdir.join(ARTIFACT_EPISODES_JSONL), jsonl)?;
 
     let end_ms = now_ms();
     write_run_meta(
@@ -394,7 +430,7 @@ fn write_child_run(
 // ---------------------------------------------------------------------------
 
 fn write_param(run_dir: &Path, name: &str, value: &str) -> Result<(), ExportError> {
-    let dir = run_dir.join("params");
+    let dir = run_dir.join(MLFLOW_SUBDIR_PARAMS);
     fs::create_dir_all(&dir)?;
     // MLflow truncates >500-char params; pre-truncate so we don't ship
     // invalid files.
@@ -410,7 +446,7 @@ fn write_metric(
     timestamp_ms: u64,
     step: u64,
 ) -> Result<(), ExportError> {
-    let dir = run_dir.join("metrics");
+    let dir = run_dir.join(MLFLOW_SUBDIR_METRICS);
     fs::create_dir_all(&dir)?;
     let path = dir.join(sanitize(name));
     let mut file = File::options().create(true).append(true).open(&path)?;
@@ -420,7 +456,7 @@ fn write_metric(
 }
 
 fn write_tag(run_dir: &Path, name: &str, value: &str) -> Result<(), ExportError> {
-    let dir = run_dir.join("tags");
+    let dir = run_dir.join(MLFLOW_SUBDIR_TAGS);
     fs::create_dir_all(&dir)?;
     fs::write(dir.join(sanitize(name)), value)?;
     Ok(())
@@ -482,7 +518,7 @@ fn write_run_meta(run_dir: &Path, args: &RunMetaArgs) -> Result<(), ExportError>
         tags: Vec::new(),
         user_id: args.user_id.clone(),
     };
-    write_yaml(&run_dir.join("meta.yaml"), &meta)
+    write_yaml(&run_dir.join(MLFLOW_META_FILE), &meta)
 }
 
 // ---------------------------------------------------------------------------
@@ -541,7 +577,7 @@ Plotly.newPlot('chart', [
 // ---------------------------------------------------------------------------
 
 fn write_tier_metrics(run_dir: &Path, tier: &TierScore, ts: u64) -> Result<(), ExportError> {
-    let prefix = format!("tier_{}", tier.tier);
+    let prefix = format!("{TIER_SPLIT_PREFIX}{}", tier.tier);
     write_metric(
         run_dir,
         &format!("{}_success_rate", prefix),

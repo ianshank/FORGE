@@ -41,13 +41,21 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tracing::instrument;
 
-use super::{ExportError, Exporter};
+use super::{ExportError, Exporter, ARTIFACT_MANIFEST_JSON, TIER_SPLIT_PREFIX};
 use crate::manifest::RunManifest;
 use crate::scorecard::Scorecard;
 
 /// Composite split that mirrors every record from every tier. Always
 /// emitted, even when no tier-specific splits exist.
 pub const SPLIT_ALL: &str = "all";
+
+/// HuggingFace `datasets` single-shard data filename. The
+/// `data-NNNNN-of-MMMMM.jsonl` naming convention is what
+/// `datasets.load_dataset("json", data_files=...)` discovers via the
+/// `configs[].data_files` glob in the dataset card. Single-shard for now;
+/// if the harness later writes multi-shard splits this constant becomes a
+/// formatter and the test below catches the contract change.
+pub(crate) const HF_DATA_SHARD_FILENAME: &str = "data-00000-of-00001.jsonl";
 
 /// HuggingFace `datasets` exporter writing a `DatasetDict` directory
 /// under `<export_root>/<run_id>/`.
@@ -99,14 +107,14 @@ impl Exporter for HuggingFaceExporter {
         // Always emit `all` + one per tier present.
         let mut split_names: Vec<String> = vec![SPLIT_ALL.to_string()];
         for tier in &tiers_present {
-            split_names.push(format!("tier_{}", tier));
+            split_names.push(format!("{TIER_SPLIT_PREFIX}{tier}"));
         }
 
         // Write `all` split.
         write_split(&run_dir, SPLIT_ALL, &records)?;
         // Write per-tier splits.
         for tier in &tiers_present {
-            let split_name = format!("tier_{}", tier);
+            let split_name = format!("{TIER_SPLIT_PREFIX}{tier}");
             let filtered: Vec<EpisodeRecord> = records
                 .iter()
                 .filter(|r| r.tier == *tier)
@@ -116,7 +124,7 @@ impl Exporter for HuggingFaceExporter {
         }
 
         // Manifest for programmatic access (mirrors what's embedded in README).
-        manifest.write_json(&run_dir.join("manifest.json"))?;
+        manifest.write_json(&run_dir.join(ARTIFACT_MANIFEST_JSON))?;
 
         // README dataset card with YAML frontmatter for HF Hub.
         let card = render_dataset_card(scorecard, manifest, &split_names, &records);
@@ -184,8 +192,7 @@ fn write_split(
 
     // JSONL data shard — consumer loads via load_dataset(<run_dir>),
     // which reads JSONL natively (no Arrow IPC dependency).
-    let data_filename = "data-00000-of-00001.jsonl";
-    let data_path = split_dir.join(data_filename);
+    let data_path = split_dir.join(HF_DATA_SHARD_FILENAME);
     let mut file = fs::File::create(&data_path)?;
     for record in records {
         let line = serde_json::to_string(record)
@@ -223,7 +230,7 @@ fn render_dataset_card(
     for split in split_names {
         let count = if split == SPLIT_ALL {
             records.len()
-        } else if let Some(tier_str) = split.strip_prefix("tier_") {
+        } else if let Some(tier_str) = split.strip_prefix(TIER_SPLIT_PREFIX) {
             tier_str
                 .parse::<u8>()
                 .ok()
