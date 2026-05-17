@@ -25,6 +25,8 @@ use crate::scorecard::Scorecard;
 pub mod huggingface;
 pub mod mlflow;
 pub mod mlflow_fs;
+#[cfg(feature = "http-mlflow")]
+pub mod mlflow_http;
 pub mod mlflow_payload;
 
 // ─── Shared exporter constants ─────────────────────────────────────────────
@@ -47,8 +49,7 @@ pub const ARTIFACT_MANIFEST_JSON: &str = "manifest.json";
 /// Failure modes an [`Exporter`] can surface to the harness.
 ///
 /// Marked `#[non_exhaustive]` so downstream `match` sites stay
-/// forwards-compatible when new variants land (e.g. HTTP transport
-/// errors from the planned MLflow HTTP exporter). Downstream code MUST
+/// forwards-compatible when new variants land. Downstream code MUST
 /// include a `_ => ...` arm.
 #[non_exhaustive]
 #[derive(Debug, Error)]
@@ -63,6 +64,17 @@ pub enum ExportError {
     /// non-existent parent dir on platforms that can't auto-create).
     #[error("invalid target: {0}")]
     InvalidTarget(String),
+    /// HTTP transport failure (4xx other than 408/429, malformed URL,
+    /// TLS handshake, server JSON parse, ...) — terminal, not retried.
+    /// Only emitted by the `http-mlflow`-gated `MlflowHttpSink`.
+    #[error("http: {0}")]
+    Http(String),
+    /// Transient HTTP failure (5xx, 408, 429, connect/timeout) — the
+    /// [`super::exporters::mlflow_http`] client retried this internally
+    /// up to its configured budget; surfacing it means every retry
+    /// exhausted. Only emitted by the `http-mlflow`-gated sink.
+    #[error("retryable transport error: {0}")]
+    Retryable(String),
 }
 
 /// Sink that consumes a [`Scorecard`] + [`RunManifest`] and writes them

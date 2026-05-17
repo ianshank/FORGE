@@ -10,6 +10,14 @@ keywords.workspace = true
 categories.workspace = true
 description = "Agent-agnostic evaluation harness and benchmark suite for FORGE"
 
+[features]
+default = []
+# MLflow HTTP tracking-server transport (Slice 2). Off by default to keep the
+# crate's default build lightweight + free of HTTP/TLS deps. The
+# `forge-eval-longrun` bin and the testcontainers integration test require
+# this feature; the existing filesystem-only MlflowExporter does not.
+http-mlflow = ["dep:reqwest", "dep:url", "dep:scopeguard"]
+
 [dependencies]
 forge-types = { workspace = true }
 forge-core = { path = "../forge-core" }
@@ -29,9 +37,18 @@ serde_yaml = "0.9"
 sha2 = "0.10"
 # Phase B: run_id generation when EvalConfig.run_id is None.
 uuid = { version = "1", features = ["v4"] }
+# HTTP-only optional deps (enabled by `http-mlflow` feature).
+reqwest = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+scopeguard = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
 tempfile = "3"
+# Always-present dev dep so test files keep compiling even when
+# `--features http-mlflow` is omitted; the http_unit tests are gated
+# on the feature via `#![cfg(feature = "http-mlflow")]`.
+mockito = { workspace = true }
+testcontainers = { workspace = true }
