@@ -1,3 +1,14 @@
 {
-  "extraPaths": ["python"]
+  "extraPaths": ["python", "scripts", "tests/python", "."],
+  "executionEnvironments": [
+    {
+      "root": ".claude/worktrees/forge-e2e-longrun",
+      "extraPaths": [
+        ".claude/worktrees/forge-e2e-longrun/python",
+        ".claude/worktrees/forge-e2e-longrun/scripts",
+        ".claude/worktrees/forge-e2e-longrun/tests/python",
+        ".claude/worktrees/forge-e2e-longrun"
+      ]
+    }
+  ]
 }
