@@ -143,6 +143,10 @@ url = "2"
 # RAII scope guard used by MlflowHttpSink to call `set_terminated(FAILED)` on
 # early-return / panic — guarantees no orphan RUNNING runs after an export fails.
 scopeguard = "1"
+# Long-run CLI bin argument parsing. `derive` for the Cli struct, `env`
+# for `--flag` ↔ `FORGE_E2E_*` env-var binding (so CI workflows can drive
+# the bin without rebuilding it per scenario).
+clap = { version = "4", features = ["derive", "env"] }
 # Test-only HTTP mock server (sync API). Used by MlflowHttpClient unit tests
 # to assert request shape + retry behaviour without a real server.
 mockito = "1"

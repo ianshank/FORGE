@@ -305,7 +305,7 @@ impl MlflowHttpClient {
     /// new experiment id.
     pub fn create_experiment(&self, name: &str) -> Result<String, ExportError> {
         let url = self.api_url(&["experiments", "create"])?;
-        let body = json!({ FIELD_NAME: name });
+        let body = json!({ (FIELD_NAME): name });
         let resp = self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
         extract_string(&resp_json(resp)?, RESP_PATH_CREATE_EXP_ID)
     }
@@ -322,9 +322,9 @@ impl MlflowHttpClient {
     ) -> Result<String, ExportError> {
         let url = self.api_url(&["runs", "create"])?;
         let body = json!({
-            FIELD_EXPERIMENT_ID: experiment_id,
-            FIELD_START_TIME: start_time_ms,
-            FIELD_TAGS: to_json_array(tags),
+            (FIELD_EXPERIMENT_ID): experiment_id,
+            (FIELD_START_TIME): start_time_ms,
+            (FIELD_TAGS): to_json_array(tags),
         });
         let resp = self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
         extract_string(&resp_json(resp)?, RESP_PATH_RUN_ID)
@@ -360,10 +360,10 @@ impl MlflowHttpClient {
                 (&[][..], &[][..])
             };
             let body = json!({
-                FIELD_RUN_ID: run_id,
-                FIELD_METRICS: to_json_array(chunk),
-                FIELD_PARAMS:  to_json_array(p),
-                FIELD_TAGS:    to_json_array(t),
+                (FIELD_RUN_ID): run_id,
+                (FIELD_METRICS): to_json_array(chunk),
+                (FIELD_PARAMS):  to_json_array(p),
+                (FIELD_TAGS):    to_json_array(t),
             });
             debug!(
                 run_id = run_id,
@@ -381,7 +381,7 @@ impl MlflowHttpClient {
     /// the parent-run-id linkage tag for child runs has a stable code path.
     pub fn set_tag(&self, run_id: &str, key: &str, value: &str) -> Result<(), ExportError> {
         let url = self.api_url(&["runs", "set-tag"])?;
-        let body = json!({ FIELD_RUN_ID: run_id, FIELD_KEY: key, FIELD_VALUE: value });
+        let body = json!({ (FIELD_RUN_ID): run_id, (FIELD_KEY): key, (FIELD_VALUE): value });
         self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
         Ok(())
     }
@@ -398,9 +398,9 @@ impl MlflowHttpClient {
     ) -> Result<(), ExportError> {
         let url = self.api_url(&["runs", "update"])?;
         let body = json!({
-            FIELD_RUN_ID: run_id,
-            FIELD_STATUS: status.as_str(),
-            FIELD_END_TIME: end_time_ms,
+            (FIELD_RUN_ID): run_id,
+            (FIELD_STATUS): status.as_str(),
+            (FIELD_END_TIME): end_time_ms,
         });
         self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
         Ok(())
@@ -565,23 +565,23 @@ trait ToMlflowJson {
 impl ToMlflowJson for MetricSample {
     fn to_mlflow_json(&self) -> Value {
         json!({
-            FIELD_KEY: self.key,
-            FIELD_VALUE: self.value,
-            FIELD_TIMESTAMP: self.timestamp_ms,
-            FIELD_STEP: self.step,
+            (FIELD_KEY): self.key,
+            (FIELD_VALUE): self.value,
+            (FIELD_TIMESTAMP): self.timestamp_ms,
+            (FIELD_STEP): self.step,
         })
     }
 }
 
 impl ToMlflowJson for ParamKv {
     fn to_mlflow_json(&self) -> Value {
-        json!({ FIELD_KEY: self.key, FIELD_VALUE: self.value })
+        json!({ (FIELD_KEY): self.key, (FIELD_VALUE): self.value })
     }
 }
 
 impl ToMlflowJson for TagKv {
     fn to_mlflow_json(&self) -> Value {
-        json!({ FIELD_KEY: self.key, FIELD_VALUE: self.value })
+        json!({ (FIELD_KEY): self.key, (FIELD_VALUE): self.value })
     }
 }
 

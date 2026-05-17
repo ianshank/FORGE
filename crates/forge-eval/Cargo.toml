@@ -16,7 +16,27 @@ default = []
 # crate's default build lightweight + free of HTTP/TLS deps. The
 # `forge-eval-longrun` bin and the testcontainers integration test require
 # this feature; the existing filesystem-only MlflowExporter does not.
-http-mlflow = ["dep:reqwest", "dep:url", "dep:scopeguard"]
+#
+# clap + anyhow + tracing-subscriber are pulled in by the same gate so the
+# default `cargo build` doesn't compile the CLI surface unnecessarily; the
+# bin below declares `required-features = ["http-mlflow"]` to enforce this
+# at the cargo-target level.
+http-mlflow = [
+    "dep:reqwest",
+    "dep:url",
+    "dep:scopeguard",
+    "dep:clap",
+    "dep:anyhow",
+    "dep:tracing-subscriber",
+]
+
+# CLI binary — the long-running e2e driver. Only built when the
+# http-mlflow feature is active; running `cargo build -p forge-eval` (no
+# features) is unaffected.
+[[bin]]
+name = "forge-eval-longrun"
+path = "src/bin/forge_eval_longrun.rs"
+required-features = ["http-mlflow"]
 
 [dependencies]
 forge-types = { workspace = true }
@@ -41,6 +61,11 @@ uuid = { version = "1", features = ["v4"] }
 reqwest = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 scopeguard = { workspace = true, optional = true }
+# CLI bin deps (also gated on `http-mlflow` since the only bin that
+# consumes them is `forge-eval-longrun`).
+clap = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
