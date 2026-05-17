@@ -9,6 +9,151 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — MLflow Integration (2026-05-17)
+
+Full, environment-driven MLflow experiment-tracking integration across the
+Python training surface. All configuration flows through `MlflowSettings`
+(env vars → CLI flags → merge overrides); no MLflow server URL, experiment
+name, or credentials are hard-coded.
+
+#### New modules
+
+- **`python/forge/training/mlflow_config.py`** — `MlflowSettings` dataclass:
+  single source of truth for every MLflow knob. Reads the canonical MLflow
+  env vars (`MLFLOW_TRACKING_URI`, `MLFLOW_REGISTRY_URI`,
+  `MLFLOW_EXPERIMENT_NAME`, `MLFLOW_RUN_NAME`, `MLFLOW_ARTIFACT_LOCATION`,
+  `MLFLOW_HTTP_REQUEST_TIMEOUT`, `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING`,
+  `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD`,
+  `MLFLOW_TRACKING_TOKEN`) plus a FORGE-specific tag bag
+  (`FORGE_MLFLOW_TAGS=KEY=VALUE,…`). Exposes `.from_env()`, `.merge()`,
+  `.apply()`, and `.describe()` for structured configuration and diagnostic
+  logging. All public env-var names are module-level constants so callers
+  never spell magic strings.
+- **`parse_tag_string`** — comma-separated `KEY=VALUE` parser with graceful
+  skip of malformed / empty chunks and structured warning emission.
+
+#### Extended `MLflowLogger` (`python/forge/training/loggers.py`)
+
+- Accepts a `MlflowSettings` instance (or builds one from env) so every
+  MLflow knob is configurable without subclassing.
+- `_resolve_experiment` — idempotently creates or looks up an experiment by
+  name, honouring `artifact_location` only on first creation. Handles the
+  TOCTOU race (concurrent experiment creation) via `MlflowException.error_code`
+  check (`RESOURCE_ALREADY_EXISTS`) with string-match fallback so parallel
+  training runs start cleanly across MLflow versions and locales.
+- `_enable_system_metrics` — activates MLflow's system-metrics daemon when
+  `enable_system_metrics=True`; gracefully degrades if the API is absent on
+  older MLflow releases.
+- `log_artifact` / `log_artifacts` — surface `mlflow.log_artifact` /
+  `mlflow.log_artifacts` through the `ForgeLogger` interface.
+- Context-manager support (`__enter__` / `__exit__`).
+- `run_id` property for downstream checkpoint correlation.
+
+#### Updated `scripts/train.py`
+
+- 7 new `--mlflow-*` CLI flags: `--mlflow-enabled`, `--mlflow-experiment`,
+  `--mlflow-run-name`, `--mlflow-tracking-uri`, `--mlflow-artifact-location`,
+  `--mlflow-tags`, `--mlflow-system-metrics`.
+- `_build_mlflow_settings(args)` — merges env → CLI with a FORGE run-name
+  default of `{agent}-seed{seed}`.
+- `_params_for_run(args)` — flattens CLI namespace to a flat str→str dict
+  (skips `None`, skips `mlflow*` keys, joins lists/tuples to CSV).
+- `_flatten_for_params(val)` — coerces any value to a loggable string.
+- `_maybe_make_mlflow_logger(args, settings)` — constructs an
+  `MLflowLogger`, logs initial params and optionally uploads the config
+  file as an artifact. Swallows `ImportError` / init errors so training
+  proceeds without MLflow if it is not installed.
+- `mlflow_logger` threaded through all training functions (random, MCTS,
+  MAPPO, MangoMAS-collect, MangoMAS) with `try/finally` close in `main()`.
+
+#### New `make_logger("mlflow", ...)` factory key
+
+The `make_logger` factory in `loggers.py` now accepts `"mlflow"` as a
+backend key, forwarding all kwargs to `MLflowLogger`.
+
+#### Tests (94.49% coverage, gate 85%)
+
+- **`tests/python/test_mlflow_config.py`** — 34 tests covering
+  `parse_tag_string` (incl. blank-chunk skip), `MlflowSettings.from_env`,
+  `.merge`, `.apply`, `.describe`.
+- **`tests/python/test_loggers.py`** additions — `TestMLflowLoggerConstructor`
+  (8 tests), `TestMLflowLoggerExtended` (12 tests), `test_mlflow_backend_key`
+  factory test.
+- **`tests/python/test_train_mlflow_helpers.py`** — 19 tests covering all
+  four `scripts/train.py` MLflow helpers:
+  `TestBuildMlflowSettings` (5), `TestFlattenForParams` (5),
+  `TestParamsForRun` (4), `TestMaybeMakeMlflowLogger` (5).
+
+#### Infrastructure
+
+- **`.gitignore`**: `mlruns_*/`, `mlartifacts/`, `mlruns/` patterns (local
+  MLflow tracking stores never committed).
+- **`python/forge/training/__init__.py`**: `MlflowSettings` re-exported from
+  the `forge.training` public surface.
+
+### Changed — Teacher Pipeline Config Hoisting (2026-05-16)
+
+Hoisted five inline numeric/string literals from the LM Studio teacher
+pipeline into module-level `DEFAULT_*` constants + corresponding config
+struct fields, per the project-wide "no hard-coded values" rule. All
+defaults match the prior literals — behaviour is preserved.
+
+- **`BCTrainerConfig.init_scale_numerator`** (default
+  `DEFAULT_BC_INIT_SCALE_NUMERATOR = 6.0`) — Glorot-uniform weight init
+  scale. Swap to `2.0` for He or `1.0` for unit-variance without
+  forking the trainer. Replaces the inline `6.0` at
+  `python/forge/mangomas/bc_trainer.py` `_train_numpy`.
+- **`BCTrainerConfig.numerical_epsilon`** (default
+  `DEFAULT_BC_NUMERICAL_EPSILON = 1e-8`) — shared additive epsilon
+  inside `log()` for both the CE and KL terms. Replaces two duplicated
+  `1e-8` literals.
+- **`OpenAIProvider.retry_backoff_base`** (default
+  `DEFAULT_LMSTUDIO_RETRY_BACKOFF_BASE = 2.0`) — multiplicative base for
+  the exponential backoff (`delay = backoff_secs * base ** attempt`).
+  Threaded through to `LMStudioProvider`. Replaces the inline `2**attempt`
+  in both the sync and async retry loops.
+- **`LLMAgentConfig.legacy_parse_keyword` / `.legacy_parse_strip_chars`**
+  (defaults `DEFAULT_LEGACY_PARSE_KEYWORD = "action"`,
+  `DEFAULT_LEGACY_PARSE_STRIP_CHARS = ":,. "`) — tokens used by the
+  free-text fallback parser when the LLM ignores the structured
+  `response_format`. Promotes the private module constants to public
+  config fields so deployments that train models against alternative
+  phrasings (e.g. `"move:"`) can override without forking.
+- **`teacher_trace.DEFAULT_MAX_FILE_SIZE_MB`** (default `100`) — per-shard
+  byte cap for `TeacherTraceWriter` before rotation. Was an inline default
+  argument; now a module constant that callers can reference or override.
+- **Single source of truth for the LM Studio base URL.**
+  `forge.mangomas.config.DEFAULT_TEACHER_BASE_URL` now aliases
+  `forge.cognitive.providers.DEFAULT_LMSTUDIO_BASE_URL` instead of
+  redefining the same `"http://localhost:1234/v1"` literal. Four test
+  files (`test_providers.py`, `test_teacher_config.py`,
+  `test_gemma_teacher_preset.py`, `test_train_cli_llm_policy.py`) now
+  import the constant and assert against it.
+
+### Added — Regression Tests for Previously-Uncovered Branches (2026-05-16)
+
+Six new tests targeting branches the coverage report flagged as
+uncovered. Coverage moved from **93.62% → 93.77%** on a 7,146-statement
+surface; the 85% gate at `pyproject.toml` `[tool.pytest.ini_options]
+addopts --cov-fail-under=85` is unaffected.
+
+- `test_providers.py::TestTruncate` — four cases covering
+  `_truncate` (passthrough, exact-limit, ellipsis-marker, non-positive
+  limit disables truncation).
+- `test_structured_llm_agent.py::test_clip_value_handles_nan_and_non_float`
+  — NaN must collapse to the configured floor (`0.0`), non-float values
+  (dicts) must return `None`, `None` passthrough.
+- `test_structured_llm_agent.py::test_parse_structured_non_int_action_with_validate_off`
+  — non-integer `action_id` with `validate_action=False` logs a warning
+  and falls back to `0` instead of raising, so a misbehaving LLM doesn't
+  kill a rollout.
+- `test_bc_trainer.py::test_torch_path_uses_value_loss_when_value_hats_supplied`
+  — torch path's value-loss-weight branch (critic head must update when
+  `teacher_value_hats` are present and `value_loss_weight > 0`).
+- `test_bc_trainer.py::test_resolve_num_actions_falls_back_when_topk_has_zero_columns`
+  — degenerate teacher (`teacher_top_k_probs` shape `(N, 0)`) falls back
+  to `teacher_action_ids.max() + 1` instead of returning `0`.
+
 ### Added — Gemma 4 e4b LM Studio Teacher (2026-05-15)
 
 - **`configs/cognitive/gemma_e4b_teacher.toml`**: LM Studio teacher preset for

@@ -144,3 +144,59 @@ def test_torch_path_skipped_when_torch_missing() -> None:
     trainer.train(dataset, actor_critic=net)
     after = net.actor.weight.detach()
     assert not torch.allclose(before, after)
+
+
+def test_torch_path_uses_value_loss_when_value_hats_supplied() -> None:
+    """Covers bc_trainer.py:330-341 — value-loss term only fires when both
+    teacher_value_hats are present AND value_loss_weight > 0."""
+    pytest.importorskip("torch")
+    import torch
+    from torch import nn
+
+    class _ToyActorCritic(nn.Module):
+        def __init__(self, state_dim: int, num_actions: int) -> None:
+            super().__init__()
+            self.actor = nn.Linear(state_dim, num_actions)
+            self.critic = nn.Linear(state_dim, 1)
+
+        def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            return self.actor(x), self.critic(x)
+
+    obs, actions = _synthetic_episodes(4, 8, state_dim=3, num_actions=2)
+    teacher_values: list[list[float]] = [
+        [0.0] * int(arr.shape[0]) for arr in actions
+    ]
+    dataset = BCTrainer.build_dataset(
+        obs, actions, num_actions=2, value_hats=teacher_values
+    )
+    assert dataset.teacher_value_hats is not None
+    net = _ToyActorCritic(3, 2)
+    critic_before = net.critic.weight.detach().clone()
+    trainer = BCTrainer(
+        BCTrainerConfig(
+            num_epochs=3,
+            learning_rate=0.05,
+            value_loss_weight=0.5,
+            seed=11,
+        )
+    )
+    trainer.train(dataset, actor_critic=net)
+    critic_after = net.critic.weight.detach()
+    # value_loss_weight > 0 must produce gradient flow into the critic head.
+    assert not torch.allclose(critic_before, critic_after)
+
+
+def test_resolve_num_actions_falls_back_when_topk_has_zero_columns() -> None:
+    """Covers bc_trainer.py:_resolve_num_actions — topk array exists but has
+    shape (N, 0) (degenerate teacher), so we must fall back to
+    teacher_action_ids.max()+1 rather than returning 0."""
+    obs = [np.zeros((4, 3), dtype=np.float32)]
+    actions = [np.array([0, 1, 2, 1], dtype=np.int64)]
+    # num_actions=3 is what build_dataset bakes into the topk matrix; we
+    # then mutate that matrix to shape (N, 0) below to simulate a degenerate
+    # teacher that produced no top-k probabilities at all.
+    dataset = BCTrainer.build_dataset(obs, actions, num_actions=3)
+    dataset.teacher_top_k_probs = np.zeros((dataset.num_samples, 0), dtype=np.float32)
+    trainer = BCTrainer(BCTrainerConfig(num_actions=0))
+    resolved = trainer._resolve_num_actions(dataset)
+    assert resolved == 3  # max action_id (2) + 1

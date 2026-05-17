@@ -241,3 +241,216 @@ class TestMakeLogger:
         with patch.dict(sys.modules, {"torch.utils.tensorboard": mock_tb_module}):
             result = make_logger("tensorboard", log_dir="/tmp/tb")
         assert isinstance(result, TensorBoardLogger)
+
+    def test_mlflow_backend_key(self) -> None:
+        """'mlflow' key should construct an MLflowLogger via the registry."""
+        mock_mlflow = MagicMock()
+        experiment = MagicMock()
+        experiment.experiment_id = "exp-1"
+        mock_mlflow.get_experiment_by_name.return_value = experiment
+        mock_mlflow.set_experiment.return_value = experiment
+        active = MagicMock()
+        active.info.run_id = "run-1"
+        mock_mlflow.start_run.return_value = active
+
+        with patch.dict(sys.modules, {"mlflow": mock_mlflow}):
+            logger = make_logger("mlflow", experiment_name="from-factory")
+        assert isinstance(logger, MLflowLogger)
+        mock_mlflow.set_experiment.assert_called_once_with(experiment_name="from-factory")
+
+
+# ---------------------------------------------------------------------------
+# Extended MLflowLogger surface
+# ---------------------------------------------------------------------------
+
+
+class TestMLflowLoggerExtended:
+    """Cover the params/artifact/dict/text/tag surface added on top of the
+    backwards-compatible ``log()`` / ``close()`` interface."""
+
+    def _make(self, *, strict: bool = False) -> tuple[MLflowLogger, MagicMock]:
+        from forge.training.mlflow_config import MlflowSettings
+
+        mock_mlflow = MagicMock()
+        logger = MLflowLogger.__new__(MLflowLogger)
+        logger._mlflow = mock_mlflow
+        logger._active_run = MagicMock()
+        logger._settings = MlflowSettings(experiment_name="t")
+        logger._strict = strict
+        return logger, mock_mlflow
+
+    def test_log_params_forwards(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.log_params({"lr": 0.01, "bs": 32})
+        mock_mlflow.log_params.assert_called_once_with({"lr": 0.01, "bs": 32})
+
+    def test_log_params_empty_is_noop(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.log_params({})
+        mock_mlflow.log_params.assert_not_called()
+
+    def test_log_artifact_forwards(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.log_artifact("/tmp/a.txt", artifact_path="logs")
+        mock_mlflow.log_artifact.assert_called_once_with("/tmp/a.txt", artifact_path="logs")
+
+    def test_log_artifacts_forwards(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.log_artifacts("/tmp/dir", artifact_path="ckpt")
+        mock_mlflow.log_artifacts.assert_called_once_with("/tmp/dir", artifact_path="ckpt")
+
+    def test_log_dict_forwards(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.log_dict({"a": 1}, "config.json")
+        mock_mlflow.log_dict.assert_called_once_with({"a": 1}, "config.json")
+
+    def test_log_text_forwards(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.log_text("hi", "notes.txt")
+        mock_mlflow.log_text.assert_called_once_with("hi", "notes.txt")
+
+    def test_set_tags_forwards(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.set_tags({"env": "prod"})
+        mock_mlflow.set_tags.assert_called_once_with({"env": "prod"})
+
+    def test_set_tag_forwards(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.set_tag("k", "v")
+        mock_mlflow.set_tag.assert_called_once_with("k", "v")
+
+    def test_set_tags_empty_is_noop(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.set_tags({})
+        mock_mlflow.set_tags.assert_not_called()
+
+    def test_close_is_idempotent(self) -> None:
+        logger, mock_mlflow = self._make()
+        logger.close()
+        logger.close()
+        mock_mlflow.end_run.assert_called_once()
+
+    def test_run_id_reflects_active_run(self) -> None:
+        logger, _mock = self._make()
+        logger._active_run.info.run_id = "abc123"
+        assert logger.run_id == "abc123"
+        logger.close()
+        assert logger.run_id is None
+
+    def test_settings_property_returns_resolved(self) -> None:
+        logger, _mock = self._make()
+        assert logger.settings.experiment_name == "t"
+
+    def test_context_manager_closes_on_exit(self) -> None:
+        logger, mock_mlflow = self._make()
+        with logger as ctx:
+            assert ctx is logger
+        mock_mlflow.end_run.assert_called_once()
+
+    def test_context_manager_closes_on_exception(self) -> None:
+        logger, mock_mlflow = self._make()
+        with pytest.raises(RuntimeError), logger:
+            raise RuntimeError("boom")
+        mock_mlflow.end_run.assert_called_once()
+
+    def test_best_effort_swallows_exceptions(self) -> None:
+        logger, mock_mlflow = self._make(strict=False)
+        mock_mlflow.log_params.side_effect = RuntimeError("MLflow REST down")
+        # Should not raise:
+        logger.log_params({"a": 1})
+
+    def test_strict_mode_re_raises(self) -> None:
+        logger, mock_mlflow = self._make(strict=True)
+        mock_mlflow.log_params.side_effect = RuntimeError("MLflow REST down")
+        with pytest.raises(RuntimeError, match="REST"):
+            logger.log_params({"a": 1})
+
+
+class TestMLflowLoggerConstructor:
+    """End-to-end constructor behaviour, with mlflow patched into sys.modules."""
+
+    def _patch_mlflow(self) -> MagicMock:
+        mock_mlflow = MagicMock()
+        # set_experiment + get_experiment_by_name both return an experiment-like object
+        experiment = MagicMock()
+        experiment.experiment_id = "exp-1"
+        mock_mlflow.get_experiment_by_name.return_value = experiment
+        mock_mlflow.set_experiment.return_value = experiment
+        active_run = MagicMock()
+        active_run.info.run_id = "run-1"
+        mock_mlflow.start_run.return_value = active_run
+        return mock_mlflow
+
+    def test_constructor_requires_experiment_name(self) -> None:
+        mock_mlflow = self._patch_mlflow()
+        with patch.dict(sys.modules, {"mlflow": mock_mlflow}), pytest.raises(
+            ValueError, match="experiment_name"
+        ):
+            MLflowLogger()
+
+    def test_constructor_accepts_settings_object(self) -> None:
+        from forge.training.mlflow_config import MlflowSettings
+
+        mock_mlflow = self._patch_mlflow()
+        with patch.dict(sys.modules, {"mlflow": mock_mlflow}):
+            logger = MLflowLogger(
+                settings=MlflowSettings(
+                    experiment_name="exp",
+                    tracking_uri="http://x",
+                    tags={"env": "test"},
+                )
+            )
+        mock_mlflow.set_tracking_uri.assert_called_once_with("http://x")
+        mock_mlflow.set_experiment.assert_called_once()
+        mock_mlflow.start_run.assert_called_once()
+        assert logger.settings.experiment_name == "exp"
+
+    def test_constructor_explicit_kwargs_override_settings(self) -> None:
+        from forge.training.mlflow_config import MlflowSettings
+
+        mock_mlflow = self._patch_mlflow()
+        with patch.dict(sys.modules, {"mlflow": mock_mlflow}):
+            logger = MLflowLogger(
+                experiment_name="override",
+                settings=MlflowSettings(experiment_name="base"),
+            )
+        assert logger.settings.experiment_name == "override"
+
+    def test_constructor_logs_params_when_supplied(self) -> None:
+        mock_mlflow = self._patch_mlflow()
+        with patch.dict(sys.modules, {"mlflow": mock_mlflow}):
+            MLflowLogger(experiment_name="exp", params={"lr": 0.01})
+        mock_mlflow.log_params.assert_called_once_with({"lr": 0.01})
+
+    def test_constructor_system_metrics_best_effort(self) -> None:
+        from forge.training.mlflow_config import MlflowSettings
+
+        mock_mlflow = self._patch_mlflow()
+        # Older mlflow without the helper — getattr returns None, no crash:
+        del mock_mlflow.enable_system_metrics_logging
+        with patch.dict(sys.modules, {"mlflow": mock_mlflow}):
+            MLflowLogger(
+                settings=MlflowSettings(experiment_name="exp", log_system_metrics=True)
+            )
+
+    def test_constructor_creates_missing_experiment(self) -> None:
+        mock_mlflow = self._patch_mlflow()
+        # Simulate "not found" on the first lookup, then return on the second.
+        mock_mlflow.get_experiment_by_name.side_effect = [
+            None,
+            mock_mlflow.get_experiment_by_name.return_value,
+        ]
+        mock_mlflow.create_experiment.return_value = "new-exp-id"
+        with patch.dict(sys.modules, {"mlflow": mock_mlflow}):
+            MLflowLogger(experiment_name="brand-new")
+        mock_mlflow.create_experiment.assert_called_once_with(
+            name="brand-new", artifact_location=None
+        )
+        mock_mlflow.set_experiment.assert_called_once_with(experiment_name="brand-new")
+
+    def test_constructor_reuses_existing_experiment(self) -> None:
+        mock_mlflow = self._patch_mlflow()
+        with patch.dict(sys.modules, {"mlflow": mock_mlflow}):
+            MLflowLogger(experiment_name="reused")
+        mock_mlflow.create_experiment.assert_not_called()
+        mock_mlflow.set_experiment.assert_called_once_with(experiment_name="reused")

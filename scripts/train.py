@@ -41,6 +41,7 @@ _DEFAULT_EVAL_EPISODES = 10
 _DEFAULT_EARLY_STOP_PATIENCE = 0
 _DEFAULT_COLLECTION_POLICY = "random"
 _DEFAULT_OPTIONAL_PATH = ""
+_DEFAULT_MLFLOW_EXPERIMENT = "forge-train"
 _AGENT_CHOICES = ("random", "mcts", "mappo", "mangomas", "mangomas-collect")
 _COLLECTION_POLICY_CHOICES = ("random", "mcts", "llm")
 
@@ -200,6 +201,61 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # No CLI flag is needed for that decision today; if a future operator
     # workflow requires forcing BC on/off, add a PipelineExecutionConfig
     # field and surface it explicitly.
+    parser.add_argument(
+        "--mlflow-enabled",
+        action="store_true",
+        default=False,
+        help="Enable MLflow experiment tracking for this run.",
+    )
+    parser.add_argument(
+        "--mlflow-tracking-uri",
+        type=str,
+        default=None,
+        help=(
+            "Override MLflow tracking URI (e.g. http://mlflow:5000 or file:./mlruns). "
+            "Falls back to MLFLOW_TRACKING_URI then the MLflow library default."
+        ),
+    )
+    parser.add_argument(
+        "--mlflow-registry-uri",
+        type=str,
+        default=None,
+        help="Override MLflow model registry URI (defaults to MLFLOW_REGISTRY_URI).",
+    )
+    parser.add_argument(
+        "--mlflow-experiment",
+        type=str,
+        default=None,
+        help=(
+            "MLflow experiment name. Defaults to MLFLOW_EXPERIMENT_NAME env var, "
+            "then 'forge-train'."
+        ),
+    )
+    parser.add_argument(
+        "--mlflow-run-name",
+        type=str,
+        default=None,
+        help="MLflow run name (defaults to MLFLOW_RUN_NAME, then '<agent>-<seed>').",
+    )
+    parser.add_argument(
+        "--mlflow-artifact-location",
+        type=str,
+        default=None,
+        help="Optional MLflow artifact location for new experiments.",
+    )
+    parser.add_argument(
+        "--mlflow-tags",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Add MLflow tags in KEY=VALUE or KEY=VAL,KEY=VAL form. Repeatable.",
+    )
+    parser.add_argument(
+        "--mlflow-system-metrics",
+        action="store_true",
+        default=False,
+        help="Enable MLflow system-metrics autologging (CPU/GPU/RAM).",
+    )
     args = parser.parse_args(argv)
 
     if args.eval_interval < 0:
@@ -344,6 +400,112 @@ def _create_env(config: Any) -> Any:
     return env
 
 
+def _build_mlflow_settings(args: argparse.Namespace) -> Any:
+    """Compose MLflow settings from env vars and CLI overrides.
+
+    Returns:
+        An :class:`MlflowSettings` instance.  Defaults to env-driven
+        values, then layers any CLI flags that were explicitly supplied.
+    """
+    from forge.training.mlflow_config import MlflowSettings, parse_tag_string
+
+    base = MlflowSettings.from_env()
+    cli_tags: dict[str, str] = {}
+    for entry in getattr(args, "mlflow_tags", []) or []:
+        cli_tags.update(parse_tag_string(entry))
+
+    default_run_name = f"{args.agent}-seed{args.seed}"
+    return base.merge(
+        tracking_uri=args.mlflow_tracking_uri,
+        registry_uri=args.mlflow_registry_uri,
+        experiment_name=(
+            args.mlflow_experiment or base.experiment_name or _DEFAULT_MLFLOW_EXPERIMENT
+        ),
+        run_name=(args.mlflow_run_name or base.run_name or default_run_name),
+        artifact_location=args.mlflow_artifact_location,
+        tags=cli_tags,
+        log_system_metrics=True if args.mlflow_system_metrics else None,
+    )
+
+
+def _params_for_run(args: argparse.Namespace, config: Any) -> dict[str, Any]:
+    """Flatten CLI args + config into an MLflow-friendly param dict.
+
+    MLflow rejects ``None`` and only accepts string-coercible values, so
+    we filter aggressively here rather than letting the SDK error out.
+    """
+    flat: dict[str, Any] = {}
+    for key, value in vars(args).items():
+        if value is None:
+            continue
+        if key.startswith("mlflow"):
+            continue
+        coerced: Any = value
+        if isinstance(value, (list, tuple)):
+            if not value:
+                continue
+            coerced = ",".join(str(item) for item in value)
+        flat[f"cli.{key}"] = coerced
+
+    config_dict = getattr(config, "to_dict", None)
+    if callable(config_dict):
+        try:
+            for key, value in _flatten_for_params(config_dict()).items():
+                flat[f"config.{key}"] = value
+        except Exception:
+            logger.debug("ForgeConfig.to_dict() failed; skipping config params", exc_info=True)
+    return flat
+
+
+def _flatten_for_params(obj: Any, prefix: str = "") -> dict[str, Any]:
+    """Recursively flatten a nested dict/list into dotted-key scalars."""
+    flat: dict[str, Any] = {}
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            child_key = f"{prefix}.{key}" if prefix else str(key)
+            flat.update(_flatten_for_params(value, child_key))
+    elif isinstance(obj, (list, tuple)):
+        if not obj:
+            return flat
+        flat[prefix] = ",".join(str(item) for item in obj)
+    elif obj is not None:
+        flat[prefix] = str(obj)
+    return flat
+
+
+def _maybe_make_mlflow_logger(args: argparse.Namespace, config: Any) -> Any:
+    """Build an :class:`MLflowLogger` if ``--mlflow`` was supplied.
+
+    Falls back to ``None`` so existing callers and CI workflows that
+    don't opt in remain untouched.
+    """
+    if not getattr(args, "mlflow_enabled", False):
+        return None
+    try:
+        from forge.training.loggers import MLflowLogger
+    except ImportError:
+        logger.warning("MLflow requested but loggers module unavailable; tracking disabled")
+        return None
+
+    settings = _build_mlflow_settings(args)
+    try:
+        mlflow_logger = MLflowLogger(settings=settings)
+    except ImportError as exc:
+        logger.warning("MLflow not installed (%s); continuing without tracking", exc)
+        return None
+    except Exception:
+        logger.warning("Failed to initialise MLflowLogger; continuing without tracking", exc_info=True)
+        return None
+
+    mlflow_logger.log_params(_params_for_run(args, config))
+
+    config_path = getattr(args, "config", None)
+    if config_path and Path(config_path).exists():
+        mlflow_logger.log_artifact(config_path, artifact_path="config")
+    mlflow_logger.log_dict(settings.describe(), "config/mlflow_settings.json")
+    return mlflow_logger
+
+
 def _make_early_stopping(args: argparse.Namespace) -> Any:
     """Create an EarlyStopping instance if enabled via CLI args.
 
@@ -365,13 +527,20 @@ def _make_early_stopping(args: argparse.Namespace) -> Any:
     return None
 
 
-def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
+def _train_mappo(  # noqa: PLR0915 - orchestration function spans many distinct stages
+    env: Any,
+    config: Any,
+    args: argparse.Namespace,
+    mlflow_logger: Any = None,
+) -> None:
     """Train a MAPPO agent with PPO rollout collection and updates.
 
     Args:
         env: A ForgeGymnasiumEnv instance.
         config: A ForgeConfig instance.
         args: Parsed CLI arguments.
+        mlflow_logger: Optional :class:`MLflowLogger` for tracking per-update
+            metrics and checkpoint artifacts.
     """
     from forge.agents.mappo_agent import MAPPOAgent, MAPPOConfig
     from forge.training.checkpointing import CheckpointManager
@@ -445,7 +614,7 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
     )
 
     # Post each update's metrics to the dashboard
-    for metrics in all_metrics:
+    for update_idx, metrics in enumerate(all_metrics, start=1):
         if dashboard is not None:
             dashboard.post_training_metrics(
                 episode=int(metrics.get("episodes", 0)),
@@ -455,10 +624,20 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
                 loss_value=metrics.get("value_loss", 0.0),
                 entropy=metrics.get("entropy", 0.0),
             )
+        if mlflow_logger is not None:
+            numeric_metrics = {
+                key: float(value)
+                for key, value in metrics.items()
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            }
+            if numeric_metrics:
+                mlflow_logger.log(numeric_metrics, step=update_idx)
 
     if all_metrics:
         checkpoint_mgr.save(agent, episode=trainer.episode_count, metrics=all_metrics[-1])
         logger.info("Final checkpoint saved to %s", args.checkpoint_dir)
+        if mlflow_logger is not None and Path(args.checkpoint_dir).exists():
+            mlflow_logger.log_artifacts(args.checkpoint_dir, artifact_path="checkpoints")
 
     if dashboard is not None:
         dashboard.close()
@@ -483,6 +662,7 @@ def _train_basic(
     env: Any,
     agent: Any,
     args: argparse.Namespace,
+    mlflow_logger: Any = None,
 ) -> None:
     """Run episodes for non-learning agents (random, mcts).
 
@@ -490,6 +670,8 @@ def _train_basic(
         env: A Gymnasium-compatible environment.
         agent: An agent implementing ``act(obs) -> (action, trace)``.
         args: Parsed CLI arguments.
+        mlflow_logger: Optional :class:`MLflowLogger` to receive per-episode
+            metrics.  When ``None`` (default) MLflow tracking is skipped.
     """
     from forge.utils.observation import flatten_obs
 
@@ -521,6 +703,16 @@ def _train_basic(
 
         total_steps += steps
 
+        if mlflow_logger is not None:
+            mlflow_logger.log(
+                {
+                    "episode_reward": float(total_reward),
+                    "episode_steps": float(steps),
+                    "total_steps": float(total_steps),
+                },
+                step=episode,
+            )
+
         if args.eval_interval > 0 and episode % args.eval_interval == 0:
             from forge.evaluation.evaluator import EvalConfig, Evaluator
 
@@ -532,6 +724,14 @@ def _train_basic(
                 result.reward_mean,
                 result.reward_std,
             )
+            if mlflow_logger is not None:
+                mlflow_logger.log(
+                    {
+                        "eval_reward_mean": float(result.reward_mean),
+                        "eval_reward_std": float(result.reward_std),
+                    },
+                    step=episode,
+                )
             if dashboard is not None:
                 dashboard.post_training_metrics(
                     episode=episode,
@@ -567,7 +767,7 @@ def _train_basic(
     logger.info("Training complete: %d episodes", args.episodes)
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> None:  # noqa: PLR0915 - top-level CLI dispatcher
     """Run the FORGE training pipeline.
 
     Args:
@@ -638,9 +838,10 @@ def main(argv: list[str] | None = None) -> None:
             )
         else:
             env = _create_env(config)
+            mlflow_logger = _maybe_make_mlflow_logger(args, config)
             try:
                 if args.agent == "mappo":
-                    _train_mappo(env, config, args)
+                    _train_mappo(env, config, args, mlflow_logger=mlflow_logger)
                 elif args.agent == "random":
                     from forge.agents.base_agent import AgentConfig
                     from forge.agents.random_agent import RandomAgent
@@ -651,7 +852,7 @@ def main(argv: list[str] | None = None) -> None:
                         action_space_size=action_dim,
                         seed=args.seed,
                     )
-                    _train_basic(env, agent, args)
+                    _train_basic(env, agent, args, mlflow_logger=mlflow_logger)
                 elif args.agent == "mcts":
                     from forge.agents.mcts_agent import MCTSAgent, MCTSConfig
 
@@ -661,8 +862,13 @@ def main(argv: list[str] | None = None) -> None:
                         action_space_size=action_dim,
                         seed=args.seed,
                     )
-                    _train_basic(env, mcts_agent, args)
+                    _train_basic(env, mcts_agent, args, mlflow_logger=mlflow_logger)
             finally:
+                if mlflow_logger is not None:
+                    try:
+                        mlflow_logger.close()
+                    except Exception:
+                        logger.warning("MLflow logger close failed", exc_info=True)
                 env.close()
                 logger.info("Environment closed")
     except Exception:

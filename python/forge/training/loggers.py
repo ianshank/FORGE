@@ -27,7 +27,13 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from forge.training.mlflow_config import MlflowSettings
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from types import TracebackType
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +41,7 @@ __all__ = [
     "CompositeLogger",
     "ForgeLogger",
     "MLflowLogger",
+    "MlflowSettings",
     "TensorBoardLogger",
     "WandbLogger",
     "make_logger",
@@ -137,26 +144,66 @@ class WandbLogger(ForgeLogger):
 
 
 class MLflowLogger(ForgeLogger):
-    """MLflow experiment logger.
+    """MLflow experiment logger with the full upstream surface.
+
+    Backwards compatible with the original constructor signature:
+
+    .. code-block:: python
+
+        MLflowLogger(experiment_name="exp", run_name="run-1",
+                     tracking_uri="file:./mlruns", params={"lr": 1e-3})
+
+    For richer configuration, pass a :class:`MlflowSettings` instance via
+    ``settings=``.  Explicit keyword args still win on a per-field basis
+    so callers can mix both styles.
+
+    The logger surfaces every method most training loops actually need:
+
+    * :meth:`log` — scalar metrics (alias for ``mlflow.log_metrics``).
+    * :meth:`log_params` — bulk parameter logging.
+    * :meth:`log_artifact` / :meth:`log_artifacts` — files and directories.
+    * :meth:`log_dict` / :meth:`log_text` — structured JSON / plain text
+      blobs written into the artifact store.
+    * :meth:`set_tags` / :meth:`set_tag` — per-run tags.
+
+    All write paths are wrapped in best-effort error handling: an MLflow
+    REST/IO exception is logged at ``WARNING`` and swallowed so a
+    transient backend failure cannot crash a multi-hour training run.
+    To opt into strict propagation set ``strict_errors=True``.
+
+    The class is also a context manager — ``with MLflowLogger(...) as
+    log:`` automatically calls :meth:`close` on exit, even on exception.
 
     Args:
-        experiment_name: MLflow experiment name (created if it does not
-            already exist).
+        experiment_name: MLflow experiment name (created if missing).
+            Optional when ``settings.experiment_name`` is provided.
         run_name: Optional run name.
-        tracking_uri: Optional MLflow tracking server URI.  If ``None``
-            the default local ``./mlruns`` directory is used.
+        tracking_uri: Optional MLflow tracking server URI.  Falls back to
+            ``settings.tracking_uri``, then to the MLflow library default.
         params: Optional hyperparameter dict logged once at start.
+        tags: Optional tag dict applied at run creation.
+        settings: Optional :class:`MlflowSettings` providing defaults for
+            every other knob (tracking URI, registry URI, system metrics,
+            artifact location).
+        strict_errors: When ``True``, MLflow exceptions raised during
+            ``log_*`` calls re-raise.  Defaults to ``False``.
 
     Raises:
         ImportError: If ``mlflow`` is not installed.
+        ValueError: If neither ``experiment_name`` nor
+            ``settings.experiment_name`` is supplied.
     """
 
     def __init__(
         self,
-        experiment_name: str,
+        experiment_name: str | None = None,
         run_name: str | None = None,
         tracking_uri: str | None = None,
         params: dict[str, Any] | None = None,
+        *,
+        tags: dict[str, str] | None = None,
+        settings: MlflowSettings | None = None,
+        strict_errors: bool = False,
     ) -> None:
         try:
             import mlflow
@@ -167,34 +214,248 @@ class MLflowLogger(ForgeLogger):
                 "mlflow is required for MLflowLogger. Install with: pip install mlflow"
             ) from exc
 
-        if tracking_uri is not None:
-            mlflow.set_tracking_uri(tracking_uri)
+        # Resolve effective settings: explicit kwargs override settings fields.
+        resolved = (settings or MlflowSettings()).merge(
+            tracking_uri=tracking_uri,
+            experiment_name=experiment_name,
+            run_name=run_name,
+            tags=tags,
+        )
+        if not resolved.experiment_name:
+            raise ValueError(
+                "MLflowLogger requires an experiment_name (constructor arg or "
+                "settings.experiment_name)."
+            )
+        self._settings = resolved
+        self._strict = strict_errors
 
-        mlflow.set_experiment(experiment_name)
-        self._active_run = mlflow.start_run(run_name=run_name)
+        resolved.apply_to(mlflow)
 
+        if resolved.log_system_metrics:
+            self._enable_system_metrics()
+
+        experiment = self._resolve_experiment(mlflow, resolved)
+        self._active_run = mlflow.start_run(
+            run_name=resolved.run_name,
+            tags=resolved.tags or None,
+            nested=resolved.nested,
+        )
         if params:
-            mlflow.log_params(params)
+            self.log_params(params)
 
         logger.info(
-            "MLflowLogger: run %s started (experiment=%s)",
-            run_name,
-            experiment_name,
+            "MLflowLogger started: experiment=%s run_name=%s run_id=%s tracking_uri=%s",
+            resolved.experiment_name,
+            resolved.run_name,
+            getattr(getattr(self._active_run, "info", None), "run_id", "<unknown>"),
+            resolved.tracking_uri or "<library-default>",
+        )
+        logger.debug(
+            "MLflowLogger settings: %s, experiment_id=%s",
+            resolved.describe(),
+            getattr(experiment, "experiment_id", "<unknown>"),
         )
 
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+
+    @property
+    def settings(self) -> MlflowSettings:
+        """Resolved settings used by this run (read-only)."""
+        return self._settings
+
+    @property
+    def active_run(self) -> Any:
+        """The underlying ``mlflow.ActiveRun`` handle, useful for tests."""
+        return self._active_run
+
+    @property
+    def run_id(self) -> str | None:
+        """MLflow run id, or ``None`` if the run has already been closed."""
+        run = self._active_run
+        if run is None:
+            return None
+        info = getattr(run, "info", None)
+        return getattr(info, "run_id", None) if info is not None else None
+
+    # ------------------------------------------------------------------
+    # ForgeLogger interface
+    # ------------------------------------------------------------------
+
     def log(self, metrics: dict[str, float], step: int) -> None:
-        """Log metrics to MLflow.
+        """Log scalar metrics at the given step.
 
         Args:
             metrics: Dict of metric names → values.
             step: Global training step.
         """
-        self._mlflow.log_metrics(metrics, step=step)
+        self._safe_call("log_metrics", self._mlflow.log_metrics, metrics, step=step)
 
     def close(self) -> None:
-        """End the active MLflow run."""
-        self._mlflow.end_run()
-        logger.info("MLflowLogger: run ended")
+        """End the active MLflow run (idempotent)."""
+        if self._active_run is None:
+            return
+        try:
+            self._mlflow.end_run()
+        finally:
+            self._active_run = None
+            logger.info("MLflowLogger: run ended")
+
+    # ------------------------------------------------------------------
+    # Extended API
+    # ------------------------------------------------------------------
+
+    def log_params(self, params: dict[str, Any]) -> None:
+        """Log a flat dict of hyperparameters (string-keyed)."""
+        if not params:
+            return
+        self._safe_call("log_params", self._mlflow.log_params, params)
+
+    def log_artifact(
+        self,
+        local_path: str | Path,
+        artifact_path: str | None = None,
+    ) -> None:
+        """Log a single file artifact.
+
+        Args:
+            local_path: Path to the file on disk.
+            artifact_path: Optional sub-directory inside the run's
+                artifact root.
+        """
+        self._safe_call(
+            "log_artifact",
+            self._mlflow.log_artifact,
+            str(local_path),
+            artifact_path=artifact_path,
+        )
+
+    def log_artifacts(
+        self,
+        local_dir: str | Path,
+        artifact_path: str | None = None,
+    ) -> None:
+        """Recursively log every file under ``local_dir``."""
+        self._safe_call(
+            "log_artifacts",
+            self._mlflow.log_artifacts,
+            str(local_dir),
+            artifact_path=artifact_path,
+        )
+
+    def log_dict(self, dictionary: dict[str, Any], artifact_file: str) -> None:
+        """Log a dict as a JSON/YAML artifact (extension-driven)."""
+        self._safe_call(
+            "log_dict",
+            self._mlflow.log_dict,
+            dictionary,
+            artifact_file,
+        )
+
+    def log_text(self, text: str, artifact_file: str) -> None:
+        """Log a plain-text artifact under ``artifact_file``."""
+        self._safe_call("log_text", self._mlflow.log_text, text, artifact_file)
+
+    def set_tags(self, tags: dict[str, str]) -> None:
+        """Set or update multiple run tags atomically."""
+        if not tags:
+            return
+        self._safe_call("set_tags", self._mlflow.set_tags, tags)
+
+    def set_tag(self, key: str, value: str) -> None:
+        """Set a single run tag."""
+        self._safe_call("set_tag", self._mlflow.set_tag, key, value)
+
+    # ------------------------------------------------------------------
+    # Context manager
+    # ------------------------------------------------------------------
+
+    def __enter__(self) -> MLflowLogger:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _enable_system_metrics(self) -> None:
+        """Best-effort system-metrics autologging (CPU/GPU/RAM)."""
+        enable = getattr(self._mlflow, "enable_system_metrics_logging", None)
+        if enable is None:
+            logger.debug(
+                "mlflow.enable_system_metrics_logging unavailable; "
+                "skipping system metrics autologging"
+            )
+            return
+        try:
+            enable()
+            logger.info("MLflow system-metrics logging enabled")
+        except Exception:
+            logger.warning("Failed to enable MLflow system-metrics logging", exc_info=True)
+
+    def _safe_call(self, op: str, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Invoke a logging op, swallowing errors unless ``strict_errors``."""
+        try:
+            return fn(*args, **kwargs)
+        except Exception:
+            if self._strict:
+                raise
+            logger.warning("MLflow %s failed (swallowed)", op, exc_info=True)
+            return None
+
+    @staticmethod
+    def _resolve_experiment(mlflow_module: Any, resolved: MlflowSettings) -> Any:
+        """Idempotently resolve (or create) an experiment by name.
+
+        ``mlflow.set_experiment`` exists across all 2.x and 3.x releases but
+        the accepted kwargs vary (``artifact_location`` is only honoured by
+        the underlying ``create_experiment`` call).  Doing the lookup
+        ourselves keeps the call signature stable across MLflow versions
+        and lets us honour ``artifact_location`` only when the experiment
+        is being created for the first time.
+        """
+        name = resolved.experiment_name
+        if not name:
+            msg = "experiment_name is required to resolve an MLflow experiment"
+            raise ValueError(msg)
+        existing = mlflow_module.get_experiment_by_name(name)
+        if existing is None:
+            try:
+                experiment_id = mlflow_module.create_experiment(
+                    name=name, artifact_location=resolved.artifact_location
+                )
+                logger.info(
+                    "Created MLflow experiment '%s' (id=%s, artifact_location=%s)",
+                    name,
+                    experiment_id,
+                    resolved.artifact_location or "<default>",
+                )
+            except Exception as exc:
+                # TOCTOU: another process created the experiment between our
+                # get_experiment_by_name check and create_experiment call.
+                # Prefer checking MlflowException.error_code (stable across
+                # versions and locales) and fall back to message inspection for
+                # any non-MlflowException raise.
+                mlflow_exc_cls = getattr(mlflow_module, "MlflowException", None)
+                if mlflow_exc_cls and isinstance(exc, mlflow_exc_cls):
+                    if getattr(exc, "error_code", "") != "RESOURCE_ALREADY_EXISTS":
+                        raise
+                elif "already exists" not in str(exc).lower():
+                    raise
+                logger.debug(
+                    "Experiment '%s' created concurrently; proceeding normally",
+                    name,
+                )
+        mlflow_module.set_experiment(experiment_name=name)
+        return mlflow_module.get_experiment_by_name(name)
 
 
 # ---------------------------------------------------------------------------

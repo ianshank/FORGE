@@ -19,6 +19,8 @@ A high-performance simulation platform for training and evaluating AI agents, bu
 - **Task curriculum**: Composable task DSL with 6 difficulty tiers and adaptive difficulty scaling
 - **MCTS planning**: Built-in Monte Carlo Tree Search agent with configurable PUCT exploration
 - **MangoMAS bridge**: Config-driven curriculum, constitutional pre-training, curiosity-weight search, batch episode collection, and MCTS sweep utilities under `python/forge/mangomas/`
+- **LM Studio offline teacher**: Behavioural-cloning data pipeline driven by a locally-served Gemma 4 e4b / Qwen 2.5 14B (or any OpenAI-compatible endpoint). Every URL, timeout, retry-backoff base, init scale, numerical epsilon, and shard size flows through `TeacherConfig` / `BCTrainerConfig` / `OpenAIProvider` kwargs — no hard-coded values. See [`docs/architecture.md` §3.9](docs/architecture.md) for the full pipeline + config surface.
+- **MLflow experiment tracking**: Full, environment-driven MLflow integration. `MlflowSettings` reads the canonical MLflow env vars plus `FORGE_MLFLOW_TAGS`; `scripts/train.py` exposes 8 `--mlflow-*` CLI flags. All server URIs, experiment names, and credentials flow through config — nothing hard-coded. See [MLflow Integration](#mlflow-integration) for usage.
 - **Cross-platform**: Native Python bindings (PyO3/maturin) and WebAssembly bindings (wasm-bindgen)
 - **Zero allocation hot path**: `WorldState::step_into(&mut StepResult)` performs no heap allocations after warmup — verified in CI by `crates/forge-bench/src/bin/allocation_audit.rs` (a `dhat`-gated harness) and `benchmarks/runner/check_zero_alloc.py`. The audit sweeps `1,8,16,32,64,128` agents per action variant (override via `--agents` or `FORGE_BENCH_AGENT_COUNTS`) so the contract holds under fan-out, not just at `num_agents=1`. The convenience `step()` wrapper allocates a fresh `StepResult`; pass a reused buffer via `step_into` to honour the contract
 - **Structured tracing**: `#[instrument]` on public functions throughout with `tracing` crate
@@ -142,6 +144,74 @@ deterministic `episode_index` order — concurrency at the episode level does
 not affect the on-disk byte order for the same `base_seed`. Override any
 `[teacher]` field via the `FORGE_TEACHER_<UPPER_SNAKE>` env variable or the
 CLI flags listed in `--help`.
+
+## MLflow Integration
+
+FORGE's Python training surface ships first-class MLflow experiment tracking.
+All configuration is environment-driven — nothing is hard-coded.
+
+### Quickstart
+
+```bash
+# Local file-based tracking (no server required)
+export MLFLOW_EXPERIMENT_NAME=forge-research
+python scripts/train.py --agent random --episodes 50 --mlflow-enabled
+
+# Remote tracking server
+export MLFLOW_TRACKING_URI=http://mlflow.example.com:5000
+export MLFLOW_EXPERIMENT_NAME=forge-research
+python scripts/train.py --agent mappo --mlflow-enabled \
+    --mlflow-run-name mappo-seed42 \
+    --mlflow-tags "env=prod,owner=team-rl"
+```
+
+### CLI flags
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--mlflow-enabled` | off | Enable MLflow tracking |
+| `--mlflow-experiment NAME` | `forge-train` | Experiment name (overrides `MLFLOW_EXPERIMENT_NAME`) |
+| `--mlflow-run-name NAME` | `{agent}-seed{seed}` | Run name (overrides `MLFLOW_RUN_NAME`) |
+| `--mlflow-tracking-uri URI` | env / server default | Tracking server URI |
+| `--mlflow-artifact-location LOC` | server default | Artifact store root |
+| `--mlflow-tags KEY=VAL,…` | env / none | Comma-separated tag bag (merged with `FORGE_MLFLOW_TAGS`) |
+| `--mlflow-system-metrics` | off | Enable system-metrics daemon |
+
+### Environment variables
+
+All canonical MLflow env vars are honoured (`MLFLOW_TRACKING_URI`,
+`MLFLOW_REGISTRY_URI`, `MLFLOW_EXPERIMENT_NAME`, `MLFLOW_RUN_NAME`,
+`MLFLOW_ARTIFACT_LOCATION`, `MLFLOW_HTTP_REQUEST_TIMEOUT`,
+`MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING`, `MLFLOW_TRACKING_USERNAME`,
+`MLFLOW_TRACKING_PASSWORD`, `MLFLOW_TRACKING_TOKEN`).
+FORGE-specific tag bag: `FORGE_MLFLOW_TAGS=KEY=VALUE,KEY2=VALUE2`.
+
+### Programmatic usage
+
+```python
+from forge.training.loggers import MLflowLogger
+from forge.training.mlflow_config import MlflowSettings
+
+settings = MlflowSettings.from_env().merge(
+    experiment_name="my-experiment",
+    tracking_uri="http://localhost:5000",
+    tags={"owner": "alice"},
+)
+settings.apply()   # writes URI + timeout to env so mlflow picks them up
+
+with MLflowLogger(settings=settings) as logger:
+    for step, metrics in enumerate(training_loop()):
+        logger.log(metrics, step=step)
+    logger.log_artifact("configs/forge.toml", artifact_path="config")
+```
+
+The `MLflowLogger` is also available via the `make_logger` factory:
+
+```python
+from forge.training.loggers import make_logger
+
+logger = make_logger("mlflow", experiment_name="my-experiment")
+```
 
 ## Architecture
 

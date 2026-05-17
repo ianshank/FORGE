@@ -126,6 +126,7 @@ def test_gemma_few_shots_loadable_by_prompt_builder() -> None:
 
 
 from forge.mangomas.config import (  # noqa: E402
+    DEFAULT_TEACHER_BASE_URL,
     DEFAULT_TEACHER_MAX_RETRIES,
     DEFAULT_TEACHER_MAX_TOKENS,
     DEFAULT_TEACHER_PAYLOAD_PREVIEW_CHARS,
@@ -148,7 +149,7 @@ def test_gemma_toml_loads_via_mangomas_bridge() -> None:
     # Identity:
     assert cfg.enabled is True
     assert cfg.provider == "lmstudio"
-    assert cfg.base_url == "http://localhost:1234/v1"
+    assert cfg.base_url == DEFAULT_TEACHER_BASE_URL
     assert cfg.model == "google/gemma-4-e4b"
     # Sampling — every field, against the constants:
     assert cfg.temperature == DEFAULT_TEACHER_TEMPERATURE

@@ -50,8 +50,12 @@ DEFAULT_SYSTEM_PROMPT: str = (
 )
 DEFAULT_PAYLOAD_PREVIEW_CHARS: int = 256
 DEFAULT_VALUE_CLIP: float = 100.0
-_PARSE_KEYWORD: str = "action"
-_PARSE_STRIP_CHARS: str = ":,. "
+# Legacy free-text parser tokens. Used only when the LLM ignores the
+# structured response_format and replies with plain prose. Exposed via
+# StructuredLLMAgentConfig so deployments that train models on alternate
+# phrasings (e.g. "move:") can override without forking.
+DEFAULT_LEGACY_PARSE_KEYWORD: str = "action"
+DEFAULT_LEGACY_PARSE_STRIP_CHARS: str = ":,. "
 
 
 @dataclass
@@ -72,6 +76,10 @@ class LLMAgentConfig(AgentConfig):
     # on disk via TeacherTraceWriter).
     keep_reasoning_history: bool = True
     reasoning_history_max: int = 0  # 0 = unbounded
+    # Legacy free-text parser tokens. Override only if the deployed model
+    # uses alternate phrasing (e.g. "move: 3").
+    legacy_parse_keyword: str = DEFAULT_LEGACY_PARSE_KEYWORD
+    legacy_parse_strip_chars: str = DEFAULT_LEGACY_PARSE_STRIP_CHARS
 
 
 @dataclass
@@ -341,14 +349,16 @@ class LLMAgent(BaseAgent):
 
     def _parse_action(self, text: str) -> int:
         """Parse an action ID from the provider's response (legacy path)."""
+        keyword = self.llm_config.legacy_parse_keyword
+        strip_chars = self.llm_config.legacy_parse_strip_chars
         lower = text.lower()
-        if _PARSE_KEYWORD in lower:
-            for word in lower.split(_PARSE_KEYWORD)[-1].split():
-                cleaned = word.strip(_PARSE_STRIP_CHARS)
+        if keyword in lower:
+            for word in lower.split(keyword)[-1].split():
+                cleaned = word.strip(strip_chars)
                 if cleaned.lstrip("-").isdigit():
                     return int(cleaned)
         for word in reversed(text.split()):
-            stripped = word.strip(_PARSE_STRIP_CHARS)
+            stripped = word.strip(strip_chars)
             if stripped.lstrip("-").isdigit():
                 return int(stripped)
         return 0
