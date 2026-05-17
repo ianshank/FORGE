@@ -1,3 +1,9 @@
+// WIP-preserved test patterns (commit a91b3fa) trigger
+// `field_reassign_with_default` and `single_element_loop` here. Allow at
+// module scope to preserve the WIP author's intent; revisit in a dedicated
+// cleanup commit.
+#![allow(clippy::field_reassign_with_default)]
+
 //! Reproducibility manifest captured alongside every [`Scorecard`].
 //!
 //! A [`RunManifest`] is the minimal record needed to re-execute an
@@ -235,7 +241,7 @@ mod tests {
         let expected = hex(&Sha256::digest(b"id = \"test\"\n"));
 
         let cfg = EvalConfig::default();
-        let manifest = RunManifest::capture(&cfg, &[scenario_path.clone()]);
+        let manifest = RunManifest::capture(&cfg, std::slice::from_ref(&scenario_path));
 
         assert_eq!(manifest.scenario_file_hashes.len(), 1);
         assert_eq!(manifest.scenario_file_hashes[0].0, scenario_path);

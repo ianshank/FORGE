@@ -1,3 +1,7 @@
+// WIP-preserved test file (commit a91b3fa). See exporters_smoke.rs header for
+// rationale on the module-level clippy allow.
+#![allow(clippy::field_reassign_with_default)]
+
 //! Phase B E2E test: drives the full harness with both exporters and
 //! then shells out to **Python `mlflow` + `datasets`** to validate that
 //! the on-disk trees actually load via the consumer tools — not just

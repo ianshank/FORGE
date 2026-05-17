@@ -6,6 +6,21 @@ use tracing::instrument;
 
 use crate::output::OutputConfig;
 
+// Placeholder constants for the planned MLflow HTTP exporter. These will move
+// into `crate::exporters::mlflow_http` once that module lands (Slice 2.2),
+// at which point this module will re-export them from there. Defined here
+// today so `EvalConfig` can reference them as `Default` field values without
+// a forward dependency on the unmerged module.
+
+/// Default HTTP request timeout for the MLflow tracking REST client (ms).
+pub const DEFAULT_MLFLOW_HTTP_TIMEOUT_MS: u64 = 30_000;
+/// Default max retries on retryable HTTP statuses (5xx, 408, 429).
+pub const DEFAULT_MLFLOW_HTTP_MAX_RETRIES: u32 = 5;
+/// Default exponential-backoff base (ms) between retries.
+pub const DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS: u64 = 250;
+/// Default batch size for `runs/log-batch`. MLflow REST caps at 1000.
+pub const DEFAULT_MLFLOW_HTTP_BATCH_SIZE: usize = 1_000;
+
 /// Configuration for an evaluation run.
 ///
 /// All parameters are configurable — no hard-coded values.
@@ -63,6 +78,28 @@ pub struct EvalConfig {
     /// HF dataset card's `pretty_name`. `None` defaults to
     /// `"forge-eval-default"` in the manifest.
     pub experiment_name: Option<String>,
+    // --- MLflow HTTP transport fields (added Slice 1.05; consumer wired in Slice 2) ---
+    /// HTTP(S) URI of an MLflow tracking server. When set, takes precedence
+    /// over [`mlflow_tracking_uri`](Self::mlflow_tracking_uri) and routes
+    /// exporter calls through the REST API instead of writing to disk.
+    /// `None` (the default) preserves filesystem-only behaviour.
+    pub mlflow_http_tracking_uri: Option<String>,
+    /// Per-request timeout (ms) for the MLflow HTTP client. Default
+    /// [`DEFAULT_MLFLOW_HTTP_TIMEOUT_MS`].
+    pub mlflow_http_timeout_ms: u64,
+    /// Max retries on retryable HTTP statuses (5xx, 408, 429). Default
+    /// [`DEFAULT_MLFLOW_HTTP_MAX_RETRIES`].
+    pub mlflow_http_max_retries: u32,
+    /// Exponential-backoff base (ms) between retries. Default
+    /// [`DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS`].
+    pub mlflow_http_backoff_base_ms: u64,
+    /// Batch size for `runs/log-batch`. MLflow REST caps at 1000; default
+    /// [`DEFAULT_MLFLOW_HTTP_BATCH_SIZE`].
+    pub mlflow_http_batch_size: usize,
+    /// Optional bearer token for MLflow tracking server auth. When `None`,
+    /// the HTTP client reads `MLFLOW_TRACKING_TOKEN` env at construction time.
+    /// Never logged.
+    pub mlflow_http_token: Option<String>,
 }
 
 impl Default for EvalConfig {
@@ -87,6 +124,14 @@ impl Default for EvalConfig {
             huggingface_export_root: None,
             run_id: None,
             experiment_name: None,
+            mlflow_http_tracking_uri: None,
+            mlflow_http_timeout_ms: DEFAULT_MLFLOW_HTTP_TIMEOUT_MS,
+            mlflow_http_max_retries: DEFAULT_MLFLOW_HTTP_MAX_RETRIES,
+            mlflow_http_backoff_base_ms: DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS,
+            mlflow_http_batch_size: DEFAULT_MLFLOW_HTTP_BATCH_SIZE,
+            // Read from env at construction time so `Default::default()` picks
+            // up CI-provided tokens without callers having to thread them.
+            mlflow_http_token: std::env::var("MLFLOW_TRACKING_TOKEN").ok(),
         }
     }
 }
@@ -146,6 +191,43 @@ mod tests {
     #[test]
     fn test_config_serde_roundtrip() {
         forge_types::assert_config_serde_roundtrip!(EvalConfig);
+    }
+
+    #[test]
+    fn test_mlflow_http_fields_serde_roundtrip() {
+        // Exercises every new HTTP field added in Slice 1.05 so a future
+        // rename/remove surfaces here, not at runtime under the harness.
+        let config = EvalConfig {
+            mlflow_http_tracking_uri: Some("https://mlflow.example:5000".to_string()),
+            mlflow_http_timeout_ms: 12_345,
+            mlflow_http_max_retries: 7,
+            mlflow_http_backoff_base_ms: 100,
+            mlflow_http_batch_size: 250,
+            mlflow_http_token: Some("REDACTED".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: EvalConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.mlflow_http_tracking_uri.as_deref(), Some("https://mlflow.example:5000"));
+        assert_eq!(deser.mlflow_http_timeout_ms, 12_345);
+        assert_eq!(deser.mlflow_http_max_retries, 7);
+        assert_eq!(deser.mlflow_http_backoff_base_ms, 100);
+        assert_eq!(deser.mlflow_http_batch_size, 250);
+        assert_eq!(deser.mlflow_http_token.as_deref(), Some("REDACTED"));
+    }
+
+    #[test]
+    fn test_default_mlflow_http_fields_use_constants() {
+        // Pins the binding between EvalConfig::default and the
+        // DEFAULT_MLFLOW_HTTP_* constants so a future divergence is caught
+        // at compile + test time, not in production.
+        let cfg = EvalConfig::default();
+        assert!(cfg.mlflow_http_tracking_uri.is_none());
+        assert_eq!(cfg.mlflow_http_timeout_ms, DEFAULT_MLFLOW_HTTP_TIMEOUT_MS);
+        assert_eq!(cfg.mlflow_http_max_retries, DEFAULT_MLFLOW_HTTP_MAX_RETRIES);
+        assert_eq!(cfg.mlflow_http_backoff_base_ms, DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS);
+        assert_eq!(cfg.mlflow_http_batch_size, DEFAULT_MLFLOW_HTTP_BATCH_SIZE);
+        assert!(cfg.mlflow_http_batch_size <= 1000, "MLflow REST caps log_batch at 1000");
     }
 
     #[test]

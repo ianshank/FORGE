@@ -1,3 +1,7 @@
+// WIP-preserved (commit a91b3fa) — see exporters/huggingface.rs header for
+// rationale on the module-level clippy allow.
+#![allow(clippy::field_reassign_with_default)]
+
 //! MLflow filesystem-layout exporter.
 //!
 //! Writes the exact `mlruns/<experiment_id>/<run_id>/` tree that

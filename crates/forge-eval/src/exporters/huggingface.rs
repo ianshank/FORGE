@@ -1,3 +1,7 @@
+// WIP-preserved (commit a91b3fa) — see exporters/mlflow.rs / tests headers for
+// rationale on the module-level clippy allow.
+#![allow(clippy::field_reassign_with_default)]
+
 //! HuggingFace `datasets`-compatible exporter.
 //!
 //! Writes a `DatasetDict` directory under `<export_root>/<run_id>/` that

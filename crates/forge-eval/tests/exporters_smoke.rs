@@ -1,3 +1,10 @@
+// WIP-preserved test file (commit a91b3fa). The pre-existing init style uses
+// `let mut cfg = EvalConfig::default(); cfg.field = ...;` which clippy flags
+// as `field_reassign_with_default`. Allow at module scope so the WIP author's
+// original pattern is preserved; can be revisited as part of a dedicated
+// cleanup commit later without distorting the rebase or e2e work.
+#![allow(clippy::field_reassign_with_default)]
+
 //! Phase B SMOKE test: drive `EvalHarness::evaluate_suite` end-to-end
 //! with **both** exporters configured, then assert the on-disk trees
 //! exist with the structurally important files.
