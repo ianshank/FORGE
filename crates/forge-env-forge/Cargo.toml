@@ -1,0 +1,22 @@
+[package]
+name = "forge-env-forge"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Backwards-compat shim implementing forge-env::Env over FORGE's WorldState"
+
+[dependencies]
+forge-env = { workspace = true }
+forge-types = { workspace = true }
+forge-core = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

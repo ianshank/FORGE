@@ -994,6 +994,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-env-forge"
+version = "0.1.0"
+dependencies = [
+ "forge-core",
+ "forge-env",
+ "forge-types",
+ "proptest",
+ "serde",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "forge-eval"
 version = "0.1.0"
 dependencies = [
