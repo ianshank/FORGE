@@ -292,13 +292,60 @@ def test_env_var_registry_covers_every_env_lookup() -> None:
 
     Catches drift: adding a new ``os.environ.get("FORGE_E2E_NEW_KNOB")``
     without registering it would silently break CI env hygiene.
+
+    Implemented as an AST walk (not a regex) so all three access shapes are
+    covered uniformly:
+      * ``os.environ.get("KEY", ...)``
+      * ``os.environ["KEY"]``
+      * ``"KEY" in os.environ``
     """
-    text = Path(run_e2e_long.__file__).read_text(encoding="utf-8")
-    # Scan for any os.environ.{get,__getitem__} on FORGE_*/MLFLOW_* keys.
+    import ast
+    import inspect
     import re
 
-    found = set(re.findall(r'os\.environ(?:\.get|\[)\("(FORGE_[A-Z_]+|MLFLOW_[A-Z_]+)"', text))
-    # monkeypatch.setenv / delenv inside tests aren't a source of truth;
-    # we only need to assert the registry is a superset of orchestrator reads.
+    # inspect.getsourcefile handles edge cases where __file__ may be None
+    # (e.g. namespace packages, frozen modules) better than __file__ directly.
+    source_path = inspect.getsourcefile(run_e2e_long)
+    assert source_path, "could not locate source file for run_e2e_long"
+    tree = ast.parse(Path(source_path).read_text(encoding="utf-8"))
+
+    key_pattern = re.compile(r"^(FORGE_[A-Z0-9_]+|MLFLOW_[A-Z0-9_]+)$")
+    found: set[str] = set()
+
+    def _is_os_environ(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "environ"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "os"
+        )
+
+    def _record_if_key(node: ast.AST) -> None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and key_pattern.match(node.value):
+            found.add(node.value)
+
+    for node in ast.walk(tree):
+        # os.environ.get("KEY", ...) / os.environ.get(key=..., ...)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and _is_os_environ(node.func.value)
+            and node.args
+        ):
+            _record_if_key(node.args[0])
+        # os.environ["KEY"]
+        elif isinstance(node, ast.Subscript) and _is_os_environ(node.value):
+            _record_if_key(node.slice)
+        # "KEY" in os.environ
+        elif (
+            isinstance(node, ast.Compare)
+            and len(node.ops) == 1
+            and isinstance(node.ops[0], ast.In)
+            and node.comparators
+            and _is_os_environ(node.comparators[0])
+        ):
+            _record_if_key(node.left)
+
     missing = found - set(run_e2e_long.FORGE_E2E_ENV_VARS)
     assert not missing, f"orchestrator reads env vars not in FORGE_E2E_ENV_VARS: {missing}"
