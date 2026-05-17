@@ -151,6 +151,15 @@ The current PR surface adds two control layers around the deterministic core:
 - `forge-civ` centralizes all topology-specific behavior so square and hex grids share one simulation pipeline without duplicating movement, visibility, or pathfinding logic.
 - `python/forge/mangomas/` expands the Python control plane with scenario collection, curriculum progression, constitutional safety shaping, curiosity-weight search, stage-based artifact export, and repeatable MCTS sweep orchestration.
 
+The Minecraft RL integration branch
+(`claude/minecraft-rl-agent-integration-xnJjt`, PR #53) adds a third:
+
+- **Env-trait abstraction (`forge-env`)** generalises reset/step away
+  from `WorldState` so any backend (FORGE, Minecraft, future) plugs in
+  through the same interface. The shim `forge-env-forge` keeps
+  `WorldState` flows working; the new `forge-env-mc` + `mc-bot/`
+  containers extend FORGE into a live Minecraft server.
+
 ### 2.2 Topology Subsystem
 
 ```
@@ -890,6 +899,89 @@ forge.mangomas.bc_trainer
 **Backwards compatibility.** Every new field defaults to the value of
 the literal it replaced, so the surface change is purely additive: callers
 that don't pass the new kwargs see identical behaviour.
+
+### 3.10 Env-Trait Abstraction — Minecraft RL Bridge (2026-05-17)
+
+The Minecraft integration branch introduces a generic `Env` trait so
+any backend can drive `latent_mcts` and (eventually) the Python MuZero
+trainer through one interface. Four new components compose into a
+vertical slice; v1 `Trajectory`, classical `mcts`, and every existing
+FORGE flow are **untouched**.
+
+```
+                  ┌────────────────────────────────────────────┐
+                  │           forge-env (new crate)            │
+                  │   Env / FlatObsEnv / StepInto traits       │
+                  │   ObsSpec / ActionSpec / DType / EnvError  │
+                  └─────────────────────┬──────────────────────┘
+                                        │ trait
+            ┌───────────────────────────┴────────────────────────────┐
+            │                                                        │
+┌───────────▼──────────────┐                          ┌──────────────▼─────────────┐
+│ forge-env-forge (new)    │                          │ forge-env-mc (new)         │
+│ WorldEnv : Env<Action>   │                          │ MinecraftEnv : FlatObsEnv  │
+│ FlatForgeEnv : FlatObs+  │                          │ + StepInto NOT impl        │
+│   StepInto (zero-alloc)  │                          │   (wire-bound carve-out)   │
+│                          │                          │ sync tungstenite client    │
+│ Single-agent shim around │                          │ Hello-handshake validates  │
+│ forge_core::WorldState   │                          │   schema_version,          │
+│                          │                          │   action_count, obs_dim,   │
+│ 200-step lockstep parity │                          │   schema_id                │
+│ test gates BC contract.  │                          │                            │
+└──────────────────────────┘                          └──────────────┬─────────────┘
+                                                                     │ WebSocket
+                                                                     │ JSON protocol v1
+                                                     ┌───────────────▼─────────────┐
+                                                     │ mc-bot/ (Node 22, ESM)      │
+                                                     │ - protocol.js (parser)      │
+                                                     │ - action_map.js + sha256    │
+                                                     │ - reward_config.js + sha256 │
+                                                     │ - reward/ registry +        │
+                                                     │     5 built-ins (survival,  │
+                                                     │     inventory_acquired,     │
+                                                     │     distance_to_goal,       │
+                                                     │     health_delta, composite)│
+                                                     │ - reset.js (teleport-based) │
+                                                     └─────────────────────────────┘
+```
+
+**Cross-language schema_id contract.** `configs/minecraft/action_map.toml`
+and `configs/minecraft/rewards.toml` are loaded by both Rust and JS.
+Each side computes a canonical sha256 over its parsed data; the JS side
+deeply sorts object keys and the Rust side relies on `toml::Table`'s
+`BTreeMap` backing for the same alphabetic order. Whole TOML floats
+are coerced to integers (`100.0 → 100`) so V8 `JSON.stringify` and
+serde produce byte-identical canonical strings. Both sides ship a
+pinned-fixture xlang regression test:
+
+- action map: pinned `587b13077b8c7cd90503f9ee5e1bae1bb92bdf738c8abc51d2ff6deb1908224f`
+- rewards:    pinned `451b10f995371924a374633e5c42deab35c137fbbc65bc8f551bf2bd7844b478`
+
+Drift on either side trips both tests simultaneously.
+
+**Zero-allocation carve-out.** The audit at
+`crates/forge-bench/src/bin/allocation_audit.rs` covers in-process
+Rust hot paths. `forge-env-mc::MinecraftEnv::step` is wire-bound and
+necessarily allocates per step (JSON parse → fresh `Vec<f32>`); it is
+explicitly excluded by module path. Envs that *can* honour the
+contract — `FlatForgeEnv`, future in-process envs — implement
+`StepInto` and the test
+`step_into_keeps_buffer_dim_stable` gates buffer-capacity reuse.
+
+**Replay format.** `forge-replay::v2` adds `TrajectoryV2` with
+`format_version = 2` pinned; readers fail fast on mismatch.
+`StepV2` carries flat-tensor obs plus `policy_target` (MCTS visit
+distribution) and `value_target` (bootstrapped n-step return) — the
+two signals a future MuZero trainer consumes. v1 `Trajectory` is
+untouched; a `FromV1Options` + `from_v1()` converter is provided for
+migration.
+
+**What's not landed here.** The runner binary (`forge-mc-runner`),
+ONNX hot-reload on `OnnxMuZeroModel`, the Python `muzero_mc/`
+trainer, the bootstrap-ONNX exporter, the docker-compose orchestration,
+and prismarine-viewer wire-up are documented in
+`docs/plans/minecraft_rl_integration_plan_v2.md` Phases 4–6 and
+remain follow-up work.
 
 ---
 

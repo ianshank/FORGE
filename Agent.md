@@ -57,6 +57,10 @@ StepResult (forge-types)  -->  Observations + Rewards
 | `forge-python::ForgeEnv` | `forge-core::WorldState` | Gymnasium wrapper around simulation engine |
 | `forge-wasm::ForgeWasmEnv` | `forge-core::WorldState` | WASM/JSON wrapper around simulation engine |
 | `forge-bench` | `forge-core::WorldState` | Performance measurement of step throughput |
+| `forge-env::Env` trait | `forge-env-forge::WorldEnv`, `forge-env-mc::MinecraftEnv` | Generic env abstraction — same trait used by FORGE's WorldState shim and the Minecraft WebSocket client |
+| `forge-env-forge::FlatForgeEnv` | `forge-env::FlatObsEnv` | Drives `latent_mcts` over FORGE worlds via the env-agnostic surface |
+| `forge-env-mc::MinecraftEnv` | mc-bot (Node + mineflayer) | JSON WebSocket protocol; `schema_id` cross-checked at handshake against `configs/minecraft/{action_map,rewards}.toml` |
+| `forge-replay::v2::TrajectoryV2` | future trainer + replay buffer | Env-agnostic flat-tensor trajectory format with `format_version=2` pin |
 
 ## Key Workspace Invariants
 
@@ -79,6 +83,36 @@ StepResult (forge-types)  -->  Observations + Rewards
 | `forge-python` | `crates/forge-python/Agent.md` | Python Bridge — Gymnasium-compatible PyO3 bindings |
 | `forge-bench` | `crates/forge-bench/Agent.md` | Performance Guardian — Criterion benchmarks |
 | `forge-wasm` | `crates/forge-wasm/Agent.md` | Web Presenter — wasm-bindgen browser bindings |
+| `forge-env` | (this file §Env-trait crates) | Env Abstractor — generic `Env` / `FlatObsEnv` / `StepInto` traits, zero FORGE deps |
+| `forge-env-forge` | (this file §Env-trait crates) | FORGE Shim — single-agent `Env` impl over `WorldState` for backwards-compat |
+| `forge-env-mc` | (this file §Env-trait crates) | Minecraft Bridge — sync WebSocket client to mc-bot, JSON protocol v1 |
+| `mc-bot/` | `mc-bot/README.md` | Node Bridge — mineflayer + prismarine-viewer + reward registry |
+
+### Env-Trait Crates (Minecraft RL integration)
+
+Added on the `claude/minecraft-rl-agent-integration-xnJjt` branch.
+
+- **`forge-env`** — generic trait crate. Defines `Env`, `FlatObsEnv`,
+  `StepInto`, `ObsSpec`, `ActionSpec`. No dependency on `forge-types`
+  or `forge-core` — consumable by any backend.
+- **`forge-env-forge`** — wraps `WorldState` in `WorldEnv` + flat
+  `FlatForgeEnv`. Implements `StepInto` for zero-alloc buffer reuse.
+  Backwards-compat: `forge-python::ForgeEnv`, classical
+  `forge-agent::mcts`, v1 `Trajectory` all untouched. CI gates parity
+  via 200-step lockstep test.
+- **`forge-env-mc`** — sync `tungstenite` WebSocket client to a Node
+  mc-bot. Loads `configs/minecraft/{action_map,rewards}.toml` and
+  cross-checks `schema_id` (sha256) against the bot's `Hello` reply.
+  Intentionally NOT `StepInto` — wire-bound, exempt from zero-alloc
+  contract (documented carve-out).
+- **`forge-replay::v2`** — additive module inside `forge-replay`.
+  `TrajectoryV2` carries `Vec<f32>` obs + MCTS policy/value targets;
+  `format_version=2` pinned. v1 `Trajectory` untouched.
+- **`mc-bot/`** — Node 22+ package, ESM. Mirrors the protocol +
+  action map + reward registry layout. Pure JS canonicalisers produce
+  byte-identical `schema_id` to the Rust side (cross-language
+  regression gates pinned at `587b1307…` for actions and
+  `451b10f9…` for rewards).
 
 ## Build & Test
 
