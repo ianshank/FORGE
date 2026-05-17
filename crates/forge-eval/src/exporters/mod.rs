@@ -26,6 +26,12 @@ pub mod huggingface;
 pub mod mlflow;
 
 /// Failure modes an [`Exporter`] can surface to the harness.
+///
+/// Marked `#[non_exhaustive]` so downstream `match` sites stay
+/// forwards-compatible when new variants land (e.g. HTTP transport
+/// errors from the planned MLflow HTTP exporter). Downstream code MUST
+/// include a `_ => ...` arm.
+#[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum ExportError {
     /// Filesystem error during write / copy / mkdir.
