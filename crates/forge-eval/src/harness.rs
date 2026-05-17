@@ -16,6 +16,8 @@ use rayon::prelude::*;
 use tracing::{debug, info, instrument, warn};
 
 use crate::config::EvalConfig;
+use crate::exporters::{huggingface::HuggingFaceExporter, mlflow::MlflowExporter, Exporter};
+use crate::manifest::RunManifest;
 use crate::output::{self, OutputConfig, ScorecardFormat};
 use crate::scenario::{Scenario, ScenarioSuite, DEFAULT_TIER};
 use crate::scorecard::{EpisodeResult, ScenarioResult, Scorecard, SummaryStats, TierScore};
@@ -143,7 +145,70 @@ impl EvalHarness {
             }
         }
 
+        // Phase B: optional MLflow + HuggingFace exporters. Both are
+        // best-effort: a failed export logs warn! and does not affect the
+        // returned scorecard. Disabled by default (Option<>::None).
+        self.dispatch_phase_b_exporters(&scorecard);
+
         scorecard
+    }
+
+    /// Dispatch each Phase B exporter whose target is configured.
+    /// Failures are logged but never propagated — an evaluation that
+    /// produced a valid scorecard must not be reported as failed just
+    /// because a downstream export hit an I/O error.
+    fn dispatch_phase_b_exporters(&self, scorecard: &Scorecard) {
+        let mlflow_enabled = self.config.mlflow_tracking_uri.is_some();
+        let hf_enabled = self.config.huggingface_export_root.is_some();
+        if !mlflow_enabled && !hf_enabled {
+            return;
+        }
+
+        // Manifest is captured once and shared by every exporter so they
+        // agree on run_id, timestamp, git_sha, and config_hash.
+        let manifest = RunManifest::capture(&self.config, &[]);
+        let artifacts_dir = if self.config.output.enabled {
+            self.config.output.dir.clone()
+        } else {
+            // No on-disk artefacts directory configured; pass the output
+            // dir anyway so exporters can do a non-existent-dir no-op
+            // when copying optional subdirs (replays/, trajectories/).
+            self.config.output.dir.clone()
+        };
+
+        if let Some(uri) = &self.config.mlflow_tracking_uri {
+            let exporter = MlflowExporter::new(uri.clone());
+            match exporter.export(scorecard, &manifest, &artifacts_dir) {
+                Ok(()) => info!(
+                    exporter = exporter.name(),
+                    tracking_uri = %uri.display(),
+                    run_id = %manifest.run_id,
+                    "Phase B exporter completed"
+                ),
+                Err(e) => warn!(
+                    exporter = exporter.name(),
+                    error = %e,
+                    "Phase B exporter failed (eval result unaffected)"
+                ),
+            }
+        }
+
+        if let Some(root) = &self.config.huggingface_export_root {
+            let exporter = HuggingFaceExporter::new(root.clone());
+            match exporter.export(scorecard, &manifest, &artifacts_dir) {
+                Ok(()) => info!(
+                    exporter = exporter.name(),
+                    export_root = %root.display(),
+                    run_id = %manifest.run_id,
+                    "Phase B exporter completed"
+                ),
+                Err(e) => warn!(
+                    exporter = exporter.name(),
+                    error = %e,
+                    "Phase B exporter failed (eval result unaffected)"
+                ),
+            }
+        }
     }
 
     /// Runs evaluation for a single scenario (set of episodes with the same config).

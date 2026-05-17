@@ -22,8 +22,8 @@
 //!         tier_success_rates.html     # Plotly figure
 //!         replays/                    # copied from <artifacts_dir>/replays/ if present
 //!         trajectories/               # copied from <artifacts_dir>/trajectories/ if present
-//!       inputs/
-//!         inputs.yaml                 # dataset lineage entry
+//!       tags/forge.eval.scenarios_digest   # combined sha256 of scenario file hashes
+//!       tags/forge.eval.scenario_count     # how many scenario files contributed
 //!     <child_run_id>/                 # one per scenario, mlflow.parentRunId set
 //!       meta.yaml
 //!       params/                       # scenario_id, tier
@@ -56,7 +56,12 @@ const SOURCE_TYPE_LOCAL: &str = "LOCAL";
 /// Per-run lifecycle status — set to `FINISHED` when the exporter
 /// completes successfully. `mlflow ui` shows runs with other statuses
 /// (`RUNNING`, `FAILED`, `KILLED`) differently in the table.
-const RUN_STATUS_FINISHED: &str = "FINISHED";
+///
+/// MLflow encodes status as an int enum on disk:
+/// 1=RUNNING, 2=SCHEDULED, 3=FINISHED, 4=FAILED, 5=KILLED.
+/// Writing the string "FINISHED" makes MLflow's reader raise
+/// `Could not get string corresponding to run status FINISHED`.
+const RUN_STATUS_FINISHED: i32 = 3;
 
 /// Lifecycle stage written to every `meta.yaml`. `deleted` would hide
 /// runs from the default UI view.
@@ -253,10 +258,17 @@ fn write_parent_run(
         &artifacts_subdir.join("trajectories"),
     )?;
 
-    // Dataset lineage.
-    let inputs_dir = parent_dir.join("inputs");
-    fs::create_dir_all(&inputs_dir)?;
-    write_yaml(&inputs_dir.join("inputs.yaml"), &inputs_for_manifest(manifest))?;
+    // Dataset lineage as a tag (MLflow's inputs/ on-disk format is a
+    // directory tree of per-input metadata, which differs across MLflow
+    // versions and isn't worth wiring this phase; the digest itself is
+    // surfaced as a forge.eval.scenarios_digest tag visible in the UI).
+    let scenarios_digest = combined_scenario_digest(manifest);
+    write_tag(parent_dir, "forge.eval.scenarios_digest", &scenarios_digest)?;
+    write_tag(
+        parent_dir,
+        "forge.eval.scenario_count",
+        &manifest.scenario_file_hashes.len().to_string(),
+    )?;
 
     // meta.yaml LAST — this is what mlflow ui keys off; writing it last
     // means a partially-written run is visibly incomplete (no meta.yaml)
@@ -272,7 +284,7 @@ fn write_parent_run(
             user_id: manifest.user.clone(),
             start_time: start_ms,
             end_time: end_ms,
-            status: RUN_STATUS_FINISHED.to_string(),
+            status: RUN_STATUS_FINISHED,
         },
     )?;
 
@@ -367,7 +379,7 @@ fn write_child_run(
             user_id: manifest.user.clone(),
             start_time: start_ms,
             end_time: end_ms,
-            status: RUN_STATUS_FINISHED.to_string(),
+            status: RUN_STATUS_FINISHED,
         },
     )?;
     Ok(())
@@ -432,7 +444,7 @@ struct RunMeta {
     source_type: String,
     source_version: String,
     start_time: u64,
-    status: String,
+    status: i32,
     tags: Vec<String>,
     user_id: String,
 }
@@ -445,7 +457,7 @@ struct RunMetaArgs {
     user_id: String,
     start_time: u64,
     end_time: u64,
-    status: String,
+    status: i32,
 }
 
 fn write_run_meta(run_dir: &Path, args: &RunMetaArgs) -> Result<(), ExportError> {
@@ -462,7 +474,7 @@ fn write_run_meta(run_dir: &Path, args: &RunMetaArgs) -> Result<(), ExportError>
         source_type: SOURCE_TYPE_LOCAL.to_string(),
         source_version: env!("CARGO_PKG_VERSION").to_string(),
         start_time: args.start_time,
-        status: args.status.clone(),
+        status: args.status,
         tags: Vec::new(),
         user_id: args.user_id.clone(),
     };
@@ -470,66 +482,18 @@ fn write_run_meta(run_dir: &Path, args: &RunMetaArgs) -> Result<(), ExportError>
 }
 
 // ---------------------------------------------------------------------------
-// Inputs / lineage
+// Scenario digest (tag-based lineage)
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize)]
-struct InputsRoot {
-    inputs: Vec<InputEntry>,
-}
-
-#[derive(Serialize)]
-struct InputEntry {
-    dataset: DatasetEntry,
-    tags: std::collections::BTreeMap<String, String>,
-}
-
-#[derive(Serialize)]
-struct DatasetEntry {
-    name: String,
-    digest: String,
-    source_type: String,
-    source: String,
-    schema: String,
-    profile: String,
-}
-
-fn inputs_for_manifest(manifest: &RunManifest) -> InputsRoot {
-    // Single dataset entry covering every scenario file the run consumed.
-    // Digest = sha256 of the concatenated per-file digests so it changes
-    // when any scenario file changes.
+/// Combined sha256 over every scenario-file digest in the manifest.
+/// Surfaced as the `forge.eval.scenarios_digest` tag in lieu of MLflow's
+/// inputs/ directory tree (which is version-fragile).
+fn combined_scenario_digest(manifest: &RunManifest) -> String {
     let mut hasher = Sha256::new();
     for (_, hash) in &manifest.scenario_file_hashes {
         hasher.update(hash.as_bytes());
     }
-    let combined_digest = hex_short(&hasher.finalize(), 16);
-
-    let source = manifest
-        .scenario_file_hashes
-        .first()
-        .and_then(|(p, _)| p.parent())
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-
-    let mut tags = std::collections::BTreeMap::new();
-    tags.insert(
-        "forge.eval.scenario_count".to_string(),
-        manifest.scenario_file_hashes.len().to_string(),
-    );
-
-    InputsRoot {
-        inputs: vec![InputEntry {
-            dataset: DatasetEntry {
-                name: "forge-eval-scenarios".to_string(),
-                digest: combined_digest,
-                source_type: "local".to_string(),
-                source,
-                schema: String::new(),
-                profile: String::new(),
-            },
-            tags,
-        }],
-    }
+    hex_short(&hasher.finalize(), 16)
 }
 
 // ---------------------------------------------------------------------------
@@ -884,7 +848,10 @@ mod tests {
         assert!(parent_dir.join("artifacts/scorecard.md").exists());
         assert!(parent_dir.join("artifacts/manifest.json").exists());
         assert!(parent_dir.join("artifacts/tier_success_rates.html").exists());
-        assert!(parent_dir.join("inputs/inputs.yaml").exists());
+        // Scenario digest is surfaced as a tag (MLflow's inputs/ dir
+        // tree is version-fragile and not worth wiring this phase).
+        assert!(parent_dir.join("tags/forge.eval.scenarios_digest").exists());
+        assert!(parent_dir.join("tags/forge.eval.scenario_count").exists());
 
         // System tags must populate
         assert!(parent_dir.join("tags/mlflow.source.git.commit").exists());
@@ -896,7 +863,7 @@ mod tests {
 
         // meta.yaml must encode FINISHED + start/end times
         let meta = std::fs::read_to_string(parent_dir.join("meta.yaml")).unwrap();
-        assert!(meta.contains("status: FINISHED"));
+        assert!(meta.contains("status: 3"), "meta.yaml: {}", meta);
         assert!(meta.contains("start_time:"));
         assert!(meta.contains("end_time:"));
         assert!(meta.contains("run_id: test-run-001"));
@@ -1027,7 +994,7 @@ mod tests {
     }
 
     #[test]
-    fn inputs_yaml_records_scenario_digest() {
+    fn scenarios_digest_tag_records_combined_sha256() {
         let tmp = TempDir::new().unwrap();
         let scenario_path = tmp.path().join("scn.toml");
         std::fs::write(&scenario_path, b"id = \"x\"\n").unwrap();
@@ -1038,18 +1005,12 @@ mod tests {
             .export(&fixture_scorecard(), &manifest, &tmp.path().join("artifacts"))
             .unwrap();
 
-        let inputs = std::fs::read_to_string(
-            tmp.path()
-                .join("mlruns")
-                .join(DEFAULT_EXPERIMENT_ID)
-                .join(&manifest.run_id)
-                .join("inputs/inputs.yaml"),
-        )
-        .unwrap();
-        assert!(inputs.contains("forge-eval-scenarios"));
-        assert!(inputs.contains("digest:"));
-        assert!(inputs.contains("source_type: local"));
-        assert!(inputs.contains("forge.eval.scenario_count"));
+        let run_dir = tmp.path().join("mlruns").join(DEFAULT_EXPERIMENT_ID).join(&manifest.run_id);
+        let digest_tag = std::fs::read_to_string(run_dir.join("tags/forge.eval.scenarios_digest")).unwrap();
+        assert_eq!(digest_tag.len(), 32, "32-hex-char short digest");
+        assert!(digest_tag.chars().all(|c| c.is_ascii_hexdigit()));
+        let count_tag = std::fs::read_to_string(run_dir.join("tags/forge.eval.scenario_count")).unwrap();
+        assert_eq!(count_tag.trim(), "1");
     }
 
     #[test]

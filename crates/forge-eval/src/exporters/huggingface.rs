@@ -8,23 +8,33 @@
 //!
 //! ```text
 //! <export_root>/<run_id>/
-//!   dataset_dict.json                # {"splits": ["all", "tier_1", ...]}
 //!   manifest.json                    # RunManifest, programmatic access
-//!   README.md                        # Hub-ready dataset card (YAML frontmatter)
+//!   README.md                        # Hub-ready dataset card with YAML
+//!                                    # frontmatter (license, configs.data_files
+//!                                    # pointing to each split's JSONL)
 //!   all/
-//!     dataset_info.json              # explicit HF features schema
-//!     state.json                     # data file linkage
 //!     data-00000-of-00001.jsonl      # one record per episode
 //!   tier_1/ ... tier_N/              # one subdir per tier present
 //! ```
+//!
+//! ## Loading
+//!
+//! ```python
+//! from datasets import load_dataset
+//! ds = load_dataset(<run_dir>)  # discovers splits via README's configs YAML
+//! ```
+//!
+//! We do NOT emit `dataset_info.json` / `state.json` / `dataset_dict.json`
+//! (those signal `Dataset.save_to_disk` Arrow IPC format and force
+//! consumers to ship `pyarrow`). The `load_dataset` workflow reads our
+//! JSONL natively and the dataset card's `configs.data_files` declares
+//! the per-split paths — same Hub-uploadability, no Arrow dependency.
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use tracing::instrument;
 
 use super::{ExportError, Exporter};
@@ -101,12 +111,6 @@ impl Exporter for HuggingFaceExporter {
             write_split(&run_dir, &split_name, &filtered)?;
         }
 
-        // Root-level dataset_dict.json marker.
-        let dict_marker = DatasetDictMarker {
-            splits: split_names.clone(),
-        };
-        write_json(&run_dir.join("dataset_dict.json"), &dict_marker)?;
-
         // Manifest for programmatic access (mirrors what's embedded in README).
         manifest.write_json(&run_dir.join("manifest.json"))?;
 
@@ -174,7 +178,8 @@ fn write_split(
     let split_dir = run_dir.join(split_name);
     fs::create_dir_all(&split_dir)?;
 
-    // JSONL data shard.
+    // JSONL data shard — consumer loads via load_dataset(<run_dir>),
+    // which reads JSONL natively (no Arrow IPC dependency).
     let data_filename = "data-00000-of-00001.jsonl";
     let data_path = split_dir.join(data_filename);
     let mut file = fs::File::create(&data_path)?;
@@ -184,144 +189,7 @@ fn write_split(
         file.write_all(line.as_bytes())?;
         file.write_all(b"\n")?;
     }
-
-    // Per-split fingerprint = sha256(jsonl bytes).
-    let jsonl_bytes = fs::read(&data_path)?;
-    let fingerprint = hex(&Sha256::digest(&jsonl_bytes));
-
-    // state.json — HF datasets' Dataset.save_to_disk-compatible state.
-    let state = DatasetState {
-        data_files: vec![DataFile {
-            filename: data_filename.to_string(),
-        }],
-        fingerprint,
-        format_columns: None,
-        format_kwargs: BTreeMap::new(),
-        format_type: None,
-        output_all_columns: false,
-        split: split_name.to_string(),
-    };
-    write_json(&split_dir.join("state.json"), &state)?;
-
-    // dataset_info.json — explicit HF Features schema, NOT auto-inferred.
-    let info = DatasetInfo {
-        description: "FORGE evaluation results — one record per episode.".to_string(),
-        citation: String::new(),
-        homepage: "https://github.com/ianshank/FORGE".to_string(),
-        license: "apache-2.0".to_string(),
-        features: episode_features_schema(),
-        splits: BTreeMap::from([(
-            split_name.to_string(),
-            SplitInfo {
-                name: split_name.to_string(),
-                num_examples: records.len() as u64,
-            },
-        )]),
-        version: DatasetVersion {
-            version_str: "phase-b".to_string(),
-            description: String::new(),
-            major: 0,
-            minor: 1,
-            patch: 0,
-        },
-    };
-    write_json(&split_dir.join("dataset_info.json"), &info)?;
-
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Explicit HF features schema (must NOT rely on auto-inference)
-// ---------------------------------------------------------------------------
-
-fn episode_features_schema() -> BTreeMap<String, FeatureSpec> {
-    let mut m = BTreeMap::new();
-    m.insert("run_id".to_string(), value("string"));
-    m.insert("scenario_id".to_string(), value("string"));
-    m.insert("tier".to_string(), value("int32"));
-    m.insert("episode_index".to_string(), value("int32"));
-    m.insert("seed".to_string(), value("uint64"));
-    m.insert("total_reward".to_string(), value("float64"));
-    m.insert("success".to_string(), value("bool"));
-    m.insert("steps".to_string(), value("int64"));
-    m.insert("terminated".to_string(), value("bool"));
-    m.insert("truncated".to_string(), value("bool"));
-    m.insert("mean_decision_time_ms".to_string(), value("float64"));
-    m.insert("git_sha".to_string(), value("string"));
-    m.insert("timestamp".to_string(), value("string"));
-    m
-}
-
-fn value(dtype: &str) -> FeatureSpec {
-    FeatureSpec {
-        dtype: dtype.to_string(),
-        ty: "Value".to_string(),
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct FeatureSpec {
-    dtype: String,
-    #[serde(rename = "_type")]
-    ty: String,
-}
-
-// ---------------------------------------------------------------------------
-// dataset_dict.json / dataset_info.json / state.json envelopes
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize)]
-struct DatasetDictMarker {
-    splits: Vec<String>,
-}
-
-#[derive(Serialize)]
-struct DatasetInfo {
-    description: String,
-    citation: String,
-    homepage: String,
-    license: String,
-    features: BTreeMap<String, FeatureSpec>,
-    splits: BTreeMap<String, SplitInfo>,
-    version: DatasetVersion,
-}
-
-#[derive(Serialize)]
-struct SplitInfo {
-    name: String,
-    num_examples: u64,
-}
-
-#[derive(Serialize)]
-struct DatasetVersion {
-    version_str: String,
-    description: String,
-    major: u32,
-    minor: u32,
-    patch: u32,
-}
-
-#[derive(Serialize)]
-struct DatasetState {
-    #[serde(rename = "_data_files")]
-    data_files: Vec<DataFile>,
-    #[serde(rename = "_fingerprint")]
-    fingerprint: String,
-    #[serde(rename = "_format_columns")]
-    format_columns: Option<Vec<String>>,
-    #[serde(rename = "_format_kwargs")]
-    format_kwargs: BTreeMap<String, String>,
-    #[serde(rename = "_format_type")]
-    format_type: Option<String>,
-    #[serde(rename = "_output_all_columns")]
-    output_all_columns: bool,
-    #[serde(rename = "_split")]
-    split: String,
-}
-
-#[derive(Serialize)]
-struct DataFile {
-    filename: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -405,9 +273,12 @@ Generated by `forge-eval` Phase B exporter on {timestamp}.
 {splits_table}
 ## Schema
 
-See `all/dataset_info.json` for the full HF Features schema. The schema is
-explicit (not auto-inferred), so loading via `datasets.load_from_disk` is
-type-stable across runs.
+Each JSONL row has these fields with stable types: `run_id` (string),
+`scenario_id` (string), `tier` (int), `episode_index` (int), `seed` (int),
+`total_reward` (float), `success` (bool), `steps` (int), `terminated`
+(bool), `truncated` (bool), `mean_decision_time_ms` (float),
+`git_sha` (string), `timestamp` (ISO-8601 string). Load via
+`load_dataset("<dir>")` and `datasets` infers these from the JSONL.
 
 ## Reproduce
 
@@ -453,23 +324,6 @@ fn size_category_for(n: usize) -> &'static str {
 // Generic helpers
 // ---------------------------------------------------------------------------
 
-fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), ExportError> {
-    let bytes = serde_json::to_vec_pretty(value).map_err(|e| ExportError::Serialize(e.to_string()))?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, bytes)?;
-    Ok(())
-}
-
-fn hex(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        use std::fmt::Write;
-        write!(&mut out, "{:02x}", b).expect("write to string");
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {
@@ -569,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn exporter_writes_datasetdict_with_all_and_per_tier_splits() {
+    fn exporter_writes_per_tier_jsonl_splits_plus_card_and_manifest() {
         let tmp = TempDir::new().unwrap();
         let scorecard = fixture_scorecard();
         let mut cfg = EvalConfig::default();
@@ -581,19 +435,13 @@ mod tests {
             .unwrap();
 
         let run_dir = tmp.path().join("hf-test-001");
-        assert!(run_dir.join("dataset_dict.json").exists());
         assert!(run_dir.join("manifest.json").exists());
         assert!(run_dir.join("README.md").exists());
-
-        // `all` split always present.
-        let all_dir = run_dir.join("all");
-        assert!(all_dir.join("dataset_info.json").exists());
-        assert!(all_dir.join("state.json").exists());
-        assert!(all_dir.join("data-00000-of-00001.jsonl").exists());
+        assert!(run_dir.join("all/data-00000-of-00001.jsonl").exists());
 
         // Per-tier splits: only tiers with episodes (1 and 3 in fixture).
-        assert!(run_dir.join("tier_1/dataset_info.json").exists());
-        assert!(run_dir.join("tier_3/dataset_info.json").exists());
+        assert!(run_dir.join("tier_1/data-00000-of-00001.jsonl").exists());
+        assert!(run_dir.join("tier_3/data-00000-of-00001.jsonl").exists());
         assert!(!run_dir.join("tier_2").exists(), "no episodes at tier 2");
     }
 
@@ -629,7 +477,10 @@ mod tests {
     }
 
     #[test]
-    fn dataset_info_features_match_jsonl_keys() {
+    fn jsonl_record_keys_are_the_documented_schema() {
+        // The HF consumer relies on JSONL key stability — load_dataset
+        // infers Features from these. If a contributor renames a field,
+        // every downstream Hub dataset breaks. Lock the surface here.
         let tmp = TempDir::new().unwrap();
         let mut cfg = EvalConfig::default();
         cfg.run_id = Some("schema".to_string());
@@ -639,56 +490,33 @@ mod tests {
             .export(&fixture_scorecard(), &manifest, &tmp.path().join("art"))
             .unwrap();
 
-        let run_dir = tmp.path().join("schema");
-        let info: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(run_dir.join("all/dataset_info.json")).unwrap(),
+        let first_line = std::fs::read_to_string(
+            tmp.path().join("schema/all/data-00000-of-00001.jsonl"),
         )
-        .unwrap();
-        let feature_keys: Vec<&str> = info["features"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(|s| s.as_str())
-            .collect();
-
-        let first_line = std::fs::read_to_string(run_dir.join("all/data-00000-of-00001.jsonl"))
-            .unwrap()
-            .lines()
-            .next()
-            .unwrap()
-            .to_string();
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
         let row: serde_json::Value = serde_json::from_str(&first_line).unwrap();
-        let row_keys: Vec<&str> = row.as_object().unwrap().keys().map(|s| s.as_str()).collect();
-
-        let mut fk: Vec<&str> = feature_keys.clone();
-        let mut rk: Vec<&str> = row_keys.clone();
-        fk.sort();
-        rk.sort();
-        assert_eq!(fk, rk, "features schema must match JSONL keys");
-    }
-
-    #[test]
-    fn dataset_info_uses_explicit_value_types_not_inferred() {
-        let tmp = TempDir::new().unwrap();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("typed".to_string());
-        let manifest = RunManifest::capture(&cfg, &[]);
-
-        HuggingFaceExporter::new(tmp.path().to_path_buf())
-            .export(&fixture_scorecard(), &manifest, &tmp.path().join("art"))
-            .unwrap();
-
-        let info: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(tmp.path().join("typed/all/dataset_info.json")).unwrap(),
-        )
-        .unwrap();
-
-        // Spot-check a few critical types.
-        assert_eq!(info["features"]["tier"]["dtype"], "int32");
-        assert_eq!(info["features"]["tier"]["_type"], "Value");
-        assert_eq!(info["features"]["success"]["dtype"], "bool");
-        assert_eq!(info["features"]["total_reward"]["dtype"], "float64");
-        assert_eq!(info["features"]["seed"]["dtype"], "uint64");
+        let mut row_keys: Vec<&str> = row.as_object().unwrap().keys().map(|s| s.as_str()).collect();
+        row_keys.sort();
+        let expected = vec![
+            "episode_index",
+            "git_sha",
+            "mean_decision_time_ms",
+            "run_id",
+            "scenario_id",
+            "seed",
+            "steps",
+            "success",
+            "terminated",
+            "tier",
+            "timestamp",
+            "total_reward",
+            "truncated",
+        ];
+        assert_eq!(row_keys, expected, "JSONL schema drift");
     }
 
     #[test]
@@ -741,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn dataset_dict_json_lists_every_emitted_split() {
+    fn card_configs_block_lists_every_split() {
         let tmp = TempDir::new().unwrap();
         let mut cfg = EvalConfig::default();
         cfg.run_id = Some("marker".to_string());
@@ -751,15 +579,16 @@ mod tests {
             .export(&fixture_scorecard(), &manifest, &tmp.path().join("art"))
             .unwrap();
 
-        let marker: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(tmp.path().join("marker/dataset_dict.json")).unwrap(),
-        )
-        .unwrap();
-        let splits: Vec<&str> = marker["splits"]
-            .as_array()
+        let readme =
+            std::fs::read_to_string(tmp.path().join("marker/README.md")).unwrap();
+        let end = readme[4..].find("\n---").unwrap();
+        let frontmatter = &readme[4..4 + end];
+        let parsed: serde_yaml::Value = serde_yaml::from_str(frontmatter).unwrap();
+        let splits: Vec<String> = parsed["configs"][0]["data_files"]
+            .as_sequence()
             .unwrap()
             .iter()
-            .map(|v| v.as_str().unwrap())
+            .map(|e| e["split"].as_str().unwrap().to_string())
             .collect();
         assert_eq!(splits, vec!["all", "tier_1", "tier_3"]);
     }
@@ -789,12 +618,14 @@ mod tests {
         let content =
             std::fs::read_to_string(run_dir.join("all/data-00000-of-00001.jsonl")).unwrap();
         assert!(content.is_empty(), "no records => empty JSONL");
-        // dataset_dict.json should list only "all".
-        let marker: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(run_dir.join("dataset_dict.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(marker["splits"].as_array().unwrap().len(), 1);
+        // Card configs block should list only "all".
+        let readme = std::fs::read_to_string(run_dir.join("README.md")).unwrap();
+        let end = readme[4..].find("\n---").unwrap();
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&readme[4..4 + end]).unwrap();
+        let splits = parsed["configs"][0]["data_files"].as_sequence().unwrap();
+        assert_eq!(splits.len(), 1);
+        assert_eq!(splits[0]["split"], serde_yaml::Value::String("all".into()));
     }
 
     #[test]
