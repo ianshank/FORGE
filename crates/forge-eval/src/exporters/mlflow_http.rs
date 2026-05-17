@@ -12,10 +12,13 @@
 
 use std::time::Duration;
 
-use reqwest::blocking::Client;
+use reqwest::blocking::{Client, RequestBuilder, Response};
 use reqwest::StatusCode;
+use serde_json::{json, Value};
+use tracing::{debug, error, warn};
 use url::Url;
 
+use super::mlflow_payload::{MetricSample, ParamKv, TagKv};
 use super::ExportError;
 
 // ─── Defaults (kept here as the canonical home; EvalConfig::Default reads them) ──
@@ -207,6 +210,324 @@ impl MlflowHttpClient {
     pub fn has_auth(&self) -> bool {
         self.auth.is_some()
     }
+
+    // ─── REST methods ──────────────────────────────────────────────────────
+    //
+    // Each method funnels through `execute_with_retry`, which applies the
+    // retry policy uniformly. Bodies are constructed via `serde_json::json!`
+    // to avoid the DTO-struct boilerplate; responses are parsed as
+    // `serde_json::Value` and walked for the fields the MLflow REST contract
+    // documents. Unknown response fields are ignored (server can add new
+    // fields without breaking us).
+
+    /// MLflow `GET /api/2.0/mlflow/experiments/get-by-name?experiment_name=<name>`,
+    /// falling back to `POST /api/2.0/mlflow/experiments/create` on 404.
+    /// Returns the experiment id (string-typed per MLflow's convention).
+    pub fn get_or_create_experiment(&self, name: &str) -> Result<String, ExportError> {
+        let url = self.api_url(&["experiments", "get-by-name"])?;
+        let url_with_query = {
+            let mut u = url.clone();
+            u.query_pairs_mut().append_pair("experiment_name", name);
+            u
+        };
+        let lookup = self.execute_with_retry(|| self.with_auth(self.http.get(url_with_query.clone())));
+        match lookup {
+            Ok(resp) => extract_string(&resp_json(resp)?, &["experiment", "experiment_id"]),
+            Err(ExportError::Http(msg)) if msg.starts_with("status 404") => {
+                self.create_experiment(name)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// MLflow `POST /api/2.0/mlflow/experiments/create`. Used by
+    /// [`Self::get_or_create_experiment`] on lookup-404. Returns the
+    /// new experiment id.
+    pub fn create_experiment(&self, name: &str) -> Result<String, ExportError> {
+        let url = self.api_url(&["experiments", "create"])?;
+        let body = json!({ "name": name });
+        let resp = self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
+        extract_string(&resp_json(resp)?, &["experiment_id"])
+    }
+
+    /// MLflow `POST /api/2.0/mlflow/runs/create`. Returns the new run id.
+    /// `tags` are sent in the create request so the run shows up in the UI
+    /// with the right `mlflow.runName` / `mlflow.parentRunId` from the
+    /// first paint — avoids a separate set-tag round-trip per run.
+    pub fn create_run(
+        &self,
+        experiment_id: &str,
+        start_time_ms: u64,
+        tags: &[TagKv],
+    ) -> Result<String, ExportError> {
+        let url = self.api_url(&["runs", "create"])?;
+        let body = json!({
+            "experiment_id": experiment_id,
+            "start_time": start_time_ms,
+            "tags": tags_to_json(tags),
+        });
+        let resp = self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
+        extract_string(&resp_json(resp)?, &["run", "info", "run_id"])
+    }
+
+    /// MLflow `POST /api/2.0/mlflow/runs/log-batch`. Chunks `metrics` at
+    /// `self.batch_size` (REST cap is 1000); `params` + `tags` go with the
+    /// first chunk only so subsequent chunks don't trigger duplicate-key
+    /// errors. Empty input is a no-op.
+    pub fn log_batch(
+        &self,
+        run_id: &str,
+        metrics: &[MetricSample],
+        params: &[ParamKv],
+        tags: &[TagKv],
+    ) -> Result<(), ExportError> {
+        if metrics.is_empty() && params.is_empty() && tags.is_empty() {
+            return Ok(());
+        }
+        let cap = self.batch_size.max(1);
+        // At least one call (with empty metrics) so a params-only / tags-only
+        // payload still ships.
+        let chunks: Vec<&[MetricSample]> = if metrics.is_empty() {
+            vec![&[][..]]
+        } else {
+            metrics.chunks(cap).collect()
+        };
+        let url = self.api_url(&["runs", "log-batch"])?;
+        for (i, chunk) in chunks.iter().enumerate() {
+            let (p, t) = if i == 0 {
+                (params, tags)
+            } else {
+                (&[][..], &[][..])
+            };
+            let body = json!({
+                "run_id": run_id,
+                "metrics": metrics_to_json(chunk),
+                "params":  params_to_json(p),
+                "tags":    tags_to_json(t),
+            });
+            debug!(
+                run_id = run_id,
+                chunk = i,
+                metrics_in_chunk = chunk.len(),
+                "log_batch chunk submitting"
+            );
+            self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
+        }
+        Ok(())
+    }
+
+    /// MLflow `POST /api/2.0/mlflow/runs/set-tag`. Equivalent to a
+    /// `log_batch` with only one tag, but kept as a separate method so
+    /// the parent-run-id linkage tag for child runs has a stable code path.
+    pub fn set_tag(&self, run_id: &str, key: &str, value: &str) -> Result<(), ExportError> {
+        let url = self.api_url(&["runs", "set-tag"])?;
+        let body = json!({ "run_id": run_id, "key": key, "value": value });
+        self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
+        Ok(())
+    }
+
+    /// MLflow `POST /api/2.0/mlflow/runs/update`. Sets `status` (per the
+    /// MLflow lifecycle enum: RUNNING / FINISHED / FAILED / KILLED / SCHEDULED)
+    /// and `end_time`. Slice 2c calls this via a scopeguard so an aborted
+    /// run is visible as FAILED in the UI rather than wedged in RUNNING.
+    pub fn set_terminated(
+        &self,
+        run_id: &str,
+        status: RunStatus,
+        end_time_ms: u64,
+    ) -> Result<(), ExportError> {
+        let url = self.api_url(&["runs", "update"])?;
+        let body = json!({
+            "run_id": run_id,
+            "status": status.as_str(),
+            "end_time": end_time_ms,
+        });
+        self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
+        Ok(())
+    }
+
+    /// MLflow artifact upload via the proxy endpoint
+    /// `PUT /api/2.0/mlflow-artifacts/artifacts/<artifact_uri>?run_id=<id>`.
+    /// `rel_path` is appended to the run's artifact root; sinks supply the
+    /// same path they would have written to disk in the FsSink.
+    pub fn log_artifact(
+        &self,
+        run_id: &str,
+        rel_path: &str,
+        bytes: &[u8],
+    ) -> Result<(), ExportError> {
+        // mlflow-artifacts lives under /api/2.0/ directly, NOT /api/2.0/mlflow/.
+        // Build the base manually rather than going through api_url().
+        let mut url = self.base.clone();
+        {
+            let mut path = url
+                .path_segments_mut()
+                .map_err(|_| ExportError::InvalidTarget("base url cannot have a path".to_string()))?;
+            path.pop_if_empty();
+            for s in ["api", "2.0", "mlflow-artifacts", "artifacts"] {
+                path.push(s);
+            }
+            // Path segments are appended literally; embedded `/` in rel_path
+            // becomes a real path delimiter, not an URL-encoded `%2F`.
+            for seg in rel_path.split('/').filter(|s| !s.is_empty()) {
+                path.push(seg);
+            }
+        }
+        url.query_pairs_mut().append_pair("run_id", run_id);
+        let body = bytes.to_vec();
+        self.execute_with_retry(|| self.with_auth(self.http.put(url.clone()).body(body.clone())))?;
+        Ok(())
+    }
+
+    // ─── Internals ─────────────────────────────────────────────────────────
+
+    /// Build `<base>/api/2.0/mlflow/<segments...>`. Returns
+    /// [`ExportError::InvalidTarget`] if the base URL is opaque (e.g. a
+    /// `data:` URI) — `path_segments_mut()` fails for those.
+    fn api_url(&self, segments: &[&str]) -> Result<Url, ExportError> {
+        let mut url = self.base.clone();
+        {
+            let mut path = url
+                .path_segments_mut()
+                .map_err(|_| ExportError::InvalidTarget("base url cannot have a path".to_string()))?;
+            // Avoid an empty trailing segment if `base.path()` is `/`.
+            path.pop_if_empty();
+            for s in ["api", "2.0", "mlflow"].iter().chain(segments.iter()) {
+                path.push(s);
+            }
+        }
+        Ok(url)
+    }
+
+    /// Apply the configured bearer token (if any) to a request builder.
+    fn with_auth(&self, mut rb: RequestBuilder) -> RequestBuilder {
+        if let Some(token) = &self.auth {
+            rb = rb.bearer_auth(token);
+        }
+        rb
+    }
+
+    /// Execute the request returned by `build_request` with retries on
+    /// retryable HTTP / transport errors. Sleeps between attempts using
+    /// the configured exponential backoff (capped at
+    /// [`DEFAULT_HTTP_BACKOFF_CAP_MS`]).
+    fn execute_with_retry<F>(&self, build_request: F) -> Result<Response, ExportError>
+    where
+        F: Fn() -> RequestBuilder,
+    {
+        let mut attempt: u32 = 0;
+        loop {
+            let send_result = build_request().send();
+            let err = match send_result {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if status.is_success() {
+                        return Ok(resp);
+                    }
+                    // Consume the body to give classify_status some context.
+                    // Body bytes are dropped on retry — that's intentional;
+                    // we don't want to grow heap on a transient blip.
+                    let body = resp.text().unwrap_or_default();
+                    match classify_status(status, &body) {
+                        Ok(()) => unreachable!("classify_status returns Err for non-2xx"),
+                        Err(e) => e,
+                    }
+                }
+                Err(transport_err) => map_reqwest_err(transport_err),
+            };
+            let retryable = matches!(err, ExportError::Retryable(_));
+            if retryable && attempt < self.retry.max_retries {
+                attempt += 1;
+                let wait_ms = self.retry.wait_ms(attempt);
+                warn!(attempt, wait_ms, error = %err, "retrying mlflow http request");
+                std::thread::sleep(Duration::from_millis(wait_ms));
+                continue;
+            }
+            if retryable {
+                error!(attempt, error = %err, "mlflow http retry budget exhausted");
+            }
+            return Err(err);
+        }
+    }
+}
+
+/// MLflow lifecycle status enum — string-typed on the wire. Sent in
+/// [`MlflowHttpClient::set_terminated`] to mark a run FINISHED (happy
+/// path) or FAILED (scopeguard path).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStatus {
+    /// Run is in flight; not used by this sink (handled implicitly by
+    /// `runs/create` which defaults to RUNNING).
+    Running,
+    /// Run completed successfully — the happy-path terminal state.
+    Finished,
+    /// Run aborted mid-export — set by the scopeguard in `MlflowHttpSink`
+    /// when `?` propagates out of `export()`.
+    Failed,
+    /// Run was killed externally; included for completeness.
+    Killed,
+    /// Run is scheduled to start later; not emitted by this sink.
+    Scheduled,
+}
+
+impl RunStatus {
+    /// Wire form per the MLflow REST `runs/update` `status` enum.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "RUNNING",
+            Self::Finished => "FINISHED",
+            Self::Failed => "FAILED",
+            Self::Killed => "KILLED",
+            Self::Scheduled => "SCHEDULED",
+        }
+    }
+}
+
+// ─── JSON helpers (request body builders + response field extractors) ──────
+
+fn metrics_to_json(metrics: &[MetricSample]) -> Vec<Value> {
+    metrics
+        .iter()
+        .map(|m| {
+            json!({
+                "key": m.key,
+                "value": m.value,
+                "timestamp": m.timestamp_ms,
+                "step": m.step,
+            })
+        })
+        .collect()
+}
+
+fn params_to_json(params: &[ParamKv]) -> Vec<Value> {
+    params
+        .iter()
+        .map(|p| json!({ "key": p.key, "value": p.value }))
+        .collect()
+}
+
+fn tags_to_json(tags: &[TagKv]) -> Vec<Value> {
+    tags.iter()
+        .map(|t| json!({ "key": t.key, "value": t.value }))
+        .collect()
+}
+
+fn resp_json(resp: Response) -> Result<Value, ExportError> {
+    resp.json::<Value>().map_err(map_reqwest_err)
+}
+
+/// Walk `path` keys into `value` and return the string leaf, mapping any
+/// missing intermediate or non-string leaf to [`ExportError::Http`].
+fn extract_string(value: &Value, path: &[&str]) -> Result<String, ExportError> {
+    let mut cur = value;
+    for key in path {
+        cur = cur
+            .get(*key)
+            .ok_or_else(|| ExportError::Http(format!("response missing field `{key}`")))?;
+    }
+    cur.as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| ExportError::Http(format!("response field `{}` not a string", path.join("."))))
 }
 
 // ─── Status helpers ────────────────────────────────────────────────────────
@@ -337,5 +658,256 @@ mod tests {
 
         let terminal = classify_status(StatusCode::BAD_REQUEST, "bad");
         assert!(matches!(terminal, Err(ExportError::Http(_))));
+    }
+
+    // ─── REST method tests (mockito) ───────────────────────────────────────
+    //
+    // Each test uses a fast retry config (1ms base, 0 retries) so even a
+    // failing test exits in milliseconds rather than sitting on the
+    // default 250ms × 2^n backoff schedule.
+
+    use mockito::{Matcher, Server};
+    use serde_json::json;
+
+    fn fast_client(server: &Server) -> MlflowHttpClient {
+        let cfg = HttpClientConfig {
+            timeout_ms: 5_000,
+            max_retries: 0,
+            backoff_base_ms: 1,
+            batch_size: DEFAULT_LOG_BATCH_SIZE,
+            bearer_token: None,
+            user_agent: DEFAULT_USER_AGENT.to_string(),
+        };
+        MlflowHttpClient::new(Url::parse(&server.url()).unwrap(), cfg).unwrap()
+    }
+
+    #[test]
+    fn get_or_create_experiment_returns_existing_id_on_hit() {
+        let mut server = Server::new();
+        let mock = server
+            .mock("GET", "/api/2.0/mlflow/experiments/get-by-name")
+            .match_query(Matcher::UrlEncoded("experiment_name".into(), "exp-1".into()))
+            .with_status(200)
+            .with_body(json!({"experiment": {"experiment_id": "42"}}).to_string())
+            .create();
+        let client = fast_client(&server);
+        let id = client.get_or_create_experiment("exp-1").unwrap();
+        assert_eq!(id, "42");
+        mock.assert();
+    }
+
+    #[test]
+    fn get_or_create_experiment_falls_back_to_create_on_404() {
+        let mut server = Server::new();
+        let lookup = server
+            .mock("GET", "/api/2.0/mlflow/experiments/get-by-name")
+            // mockito requires an explicit query matcher; default mocks don't
+            // match requests that carry a query string.
+            .match_query(Matcher::UrlEncoded("experiment_name".into(), "missing-exp".into()))
+            .with_status(404)
+            .with_body(json!({"error_code": "RESOURCE_DOES_NOT_EXIST"}).to_string())
+            .create();
+        let create = server
+            .mock("POST", "/api/2.0/mlflow/experiments/create")
+            .match_body(Matcher::PartialJson(json!({"name": "missing-exp"})))
+            .with_status(200)
+            .with_body(json!({"experiment_id": "99"}).to_string())
+            .create();
+        let client = fast_client(&server);
+        let id = client.get_or_create_experiment("missing-exp").unwrap();
+        assert_eq!(id, "99");
+        lookup.assert();
+        create.assert();
+    }
+
+    #[test]
+    fn create_run_posts_experiment_id_and_parses_run_id() {
+        let mut server = Server::new();
+        let mock = server
+            .mock("POST", "/api/2.0/mlflow/runs/create")
+            .with_status(200)
+            .with_body(json!({"run": {"info": {"run_id": "abc123"}}}).to_string())
+            .create();
+        let client = fast_client(&server);
+        let tags = vec![TagKv {
+            key: "mlflow.runName".to_string(),
+            value: "test".to_string(),
+        }];
+        let run_id = client.create_run("0", 1_000, &tags).unwrap();
+        assert_eq!(run_id, "abc123");
+        mock.assert();
+    }
+
+    #[test]
+    fn log_batch_chunks_metrics_at_batch_size_and_sends_params_only_once() {
+        let mut server = Server::new();
+        // 5 metrics, batch_size=2 → 3 chunks. Params + tags should only appear
+        // in the first chunk's body.
+        let mock = server
+            .mock("POST", "/api/2.0/mlflow/runs/log-batch")
+            .with_status(200)
+            .expect(3)
+            .with_body("{}")
+            .create();
+        let cfg = HttpClientConfig {
+            batch_size: 2,
+            max_retries: 0,
+            backoff_base_ms: 1,
+            ..HttpClientConfig::default()
+        };
+        let client = MlflowHttpClient::new(Url::parse(&server.url()).unwrap(), cfg).unwrap();
+        let metrics: Vec<MetricSample> = (0..5)
+            .map(|i| MetricSample {
+                key: format!("m{i}"),
+                value: i as f64,
+                timestamp_ms: 1,
+                step: i,
+            })
+            .collect();
+        let params = vec![ParamKv {
+            key: "p".to_string(),
+            value: "v".to_string(),
+        }];
+        let tags = vec![TagKv {
+            key: "t".to_string(),
+            value: "v".to_string(),
+        }];
+        client.log_batch("run-1", &metrics, &params, &tags).unwrap();
+        mock.assert();
+    }
+
+    #[test]
+    fn log_batch_no_op_on_empty_input() {
+        let server = Server::new(); // No mock — must not be hit.
+        let client = fast_client(&server);
+        client.log_batch("run-1", &[], &[], &[]).unwrap();
+    }
+
+    #[test]
+    fn set_tag_posts_run_id_and_kv() {
+        let mut server = Server::new();
+        let mock = server
+            .mock("POST", "/api/2.0/mlflow/runs/set-tag")
+            .with_status(200)
+            .with_body("{}")
+            .match_body(Matcher::PartialJson(
+                json!({"run_id": "r", "key": "k", "value": "v"}),
+            ))
+            .create();
+        let client = fast_client(&server);
+        client.set_tag("r", "k", "v").unwrap();
+        mock.assert();
+    }
+
+    #[test]
+    fn set_terminated_emits_status_string_for_finished_and_failed() {
+        for (status, wire) in [(RunStatus::Finished, "FINISHED"), (RunStatus::Failed, "FAILED")] {
+            let mut server = Server::new();
+            let mock = server
+                .mock("POST", "/api/2.0/mlflow/runs/update")
+                .with_status(200)
+                .with_body("{}")
+                .match_body(Matcher::PartialJson(
+                    json!({"run_id": "r", "status": wire, "end_time": 999u64}),
+                ))
+                .create();
+            let client = fast_client(&server);
+            client.set_terminated("r", status, 999).unwrap();
+            mock.assert();
+        }
+    }
+
+    #[test]
+    fn log_artifact_puts_bytes_under_rel_path_with_run_id_query() {
+        let mut server = Server::new();
+        let mock = server
+            .mock(
+                "PUT",
+                "/api/2.0/mlflow-artifacts/artifacts/scorecard.json",
+            )
+            .match_query(Matcher::UrlEncoded("run_id".into(), "abc".into()))
+            .with_status(200)
+            .with_body("{}")
+            .match_body(Matcher::Exact(r#"{"score":0.5}"#.to_string()))
+            .create();
+        let client = fast_client(&server);
+        client
+            .log_artifact("abc", "scorecard.json", br#"{"score":0.5}"#)
+            .unwrap();
+        mock.assert();
+    }
+
+    #[test]
+    fn log_artifact_handles_nested_rel_path_segments() {
+        let mut server = Server::new();
+        let mock = server
+            .mock(
+                "PUT",
+                "/api/2.0/mlflow-artifacts/artifacts/replays/ep0/data.bin",
+            )
+            .match_query(Matcher::UrlEncoded("run_id".into(), "run-x".into()))
+            .with_status(200)
+            .with_body("{}")
+            .create();
+        let client = fast_client(&server);
+        client
+            .log_artifact("run-x", "replays/ep0/data.bin", b"binary")
+            .unwrap();
+        mock.assert();
+    }
+
+    #[test]
+    fn execute_with_retry_surfaces_retryable_after_budget_exhausted() {
+        // Server returns 503 every call. With max_retries=2 we expect 3
+        // attempts (1 initial + 2 retries) before giving up with Retryable.
+        let mut server = Server::new();
+        let mock = server
+            .mock("POST", "/api/2.0/mlflow/runs/set-tag")
+            .with_status(503)
+            .with_body("server down")
+            .expect(3)
+            .create();
+        let cfg = HttpClientConfig {
+            max_retries: 2,
+            backoff_base_ms: 1,
+            ..HttpClientConfig::default()
+        };
+        let client = MlflowHttpClient::new(Url::parse(&server.url()).unwrap(), cfg).unwrap();
+        let err = client.set_tag("r", "k", "v").unwrap_err();
+        assert!(matches!(err, ExportError::Retryable(_)), "got {err:?}");
+        mock.assert();
+    }
+
+    #[test]
+    fn execute_with_retry_surfaces_http_immediately_on_terminal_4xx() {
+        // 400 is non-retryable. Even with max_retries=5 we should see
+        // exactly one attempt, ending in ExportError::Http.
+        let mut server = Server::new();
+        let mock = server
+            .mock("POST", "/api/2.0/mlflow/runs/create")
+            .with_status(400)
+            .with_body("malformed")
+            .expect(1)
+            .create();
+        let cfg = HttpClientConfig {
+            max_retries: 5,
+            backoff_base_ms: 1,
+            ..HttpClientConfig::default()
+        };
+        let client = MlflowHttpClient::new(Url::parse(&server.url()).unwrap(), cfg).unwrap();
+        let err = client.create_run("0", 0, &[]).unwrap_err();
+        assert!(matches!(err, ExportError::Http(_)), "got {err:?}");
+        mock.assert();
+    }
+
+    #[test]
+    fn run_status_wire_strings_pin_mlflow_enum() {
+        // MLflow's REST contract for runs/update.status is a tiny enum;
+        // pin the wire strings so a typo never silently breaks the UI.
+        assert_eq!(RunStatus::Running.as_str(), "RUNNING");
+        assert_eq!(RunStatus::Finished.as_str(), "FINISHED");
+        assert_eq!(RunStatus::Failed.as_str(), "FAILED");
+        assert_eq!(RunStatus::Killed.as_str(), "KILLED");
+        assert_eq!(RunStatus::Scheduled.as_str(), "SCHEDULED");
     }
 }
