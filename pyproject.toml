@@ -133,6 +133,11 @@ module = [
     # inserting `scripts/` into sys.path at runtime. Mypy doesn't follow
     # that mutation, so suppress the missing-stub error there.
     "run_lmstudio_demo",
+    # Same dynamic-sys.path-insert pattern: `scripts/run_e2e_long.py` and
+    # `scripts/_e2e_progress.py` are imported by the e2e long-run test +
+    # progress unit test after a runtime sys.path mutation.
+    "run_e2e_long",
+    "_e2e_progress",
     "stable_baselines3",
     "stable_baselines3.*",
     "torch",
@@ -186,7 +191,8 @@ testpaths = ["tests/python"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short -m 'not lmstudio' --cov=python --cov-report=term-missing --cov-fail-under=85"
+addopts = "-v --tb=short -m 'not lmstudio and not e2e_long' --cov=python --cov-report=term-missing --cov-fail-under=85"
 markers = [
   "lmstudio: opt-in tests requiring a running LM Studio (or OpenAI-compatible) endpoint.",
+  "e2e_long: long-running (1000+ episodes) end-to-end pipeline test; opt-in via FORGE_E2E_LONG=1.",
 ]
