@@ -31,9 +31,7 @@ use forge_eval::exporters::mlflow_http::{
 };
 use forge_eval::exporters::Exporter;
 use forge_eval::manifest::{RunManifest, MANIFEST_SOURCE_NAME, UNKNOWN};
-use forge_eval::scorecard::{
-    EpisodeResult, ScenarioResult, Scorecard, SummaryStats, TierScore,
-};
+use forge_eval::scorecard::{EpisodeResult, ScenarioResult, Scorecard, SummaryStats, TierScore};
 use forge_types::agent_interface::AgentMetadata;
 use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::SyncRunner;

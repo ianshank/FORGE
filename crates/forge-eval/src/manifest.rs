@@ -57,8 +57,11 @@ pub struct RunManifest {
     pub git_branch: String,
     /// First line of `rustc --version`, or [`UNKNOWN`].
     pub rustc_version: String,
-    /// User who launched the run (`$USER`/`$USERNAME`/`whoami`), or
-    /// [`UNKNOWN`].
+    /// User who launched the run, sourced from `$USER` or `$USERNAME`
+    /// (in that order). Falls back to [`UNKNOWN`] if neither variable
+    /// is set — there is no `whoami(1)` fallback today; callers in
+    /// container environments must set one of the env vars to surface
+    /// a non-`unknown` value here.
     pub user: String,
     /// SHA-256 over `serde_json::to_vec(&config)` — config-content
     /// fingerprint for cross-run equivalence checks.
@@ -140,7 +143,9 @@ fn detect_git_field(args: &[&str]) -> String {
         .ok()
         .and_then(|o| {
             if o.status.success() {
-                String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string())
+                String::from_utf8(o.stdout)
+                    .ok()
+                    .map(|s| s.trim().to_string())
             } else {
                 None
             }
@@ -156,7 +161,9 @@ fn detect_rustc_version() -> String {
         .ok()
         .and_then(|o| {
             if o.status.success() {
-                String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string())
+                String::from_utf8(o.stdout)
+                    .ok()
+                    .map(|s| s.trim().to_string())
             } else {
                 None
             }
@@ -251,10 +258,8 @@ mod tests {
     #[test]
     fn capture_handles_missing_scenario_file_gracefully() {
         let cfg = EvalConfig::default();
-        let manifest = RunManifest::capture(
-            &cfg,
-            &[PathBuf::from("/definitely/does/not/exist.toml")],
-        );
+        let manifest =
+            RunManifest::capture(&cfg, &[PathBuf::from("/definitely/does/not/exist.toml")]);
 
         // A missing file produces an empty-hash entry, not a panic.
         assert_eq!(manifest.scenario_file_hashes.len(), 1);

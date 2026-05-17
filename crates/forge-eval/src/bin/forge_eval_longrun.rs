@@ -180,9 +180,8 @@ pub fn run(cli: &Cli) -> Result<i32> {
         "eval complete"
     );
 
-    std::fs::create_dir_all(&cli.output_dir).with_context(|| {
-        format!("creating output dir {}", cli.output_dir.display())
-    })?;
+    std::fs::create_dir_all(&cli.output_dir)
+        .with_context(|| format!("creating output dir {}", cli.output_dir.display()))?;
     let scorecard_path = cli.output_dir.join("scorecard.json");
     let file = std::fs::File::create(&scorecard_path)
         .with_context(|| format!("creating {}", scorecard_path.display()))?;
@@ -253,9 +252,12 @@ mod tests {
     fn cli_required_args_only_uses_canonical_defaults() {
         let cli = parse(&[
             "forge-eval-longrun",
-            "--suite", "configs/scenarios",
-            "--tracking-uri", "http://localhost:5000",
-            "--output-dir", "artifacts/e2e",
+            "--suite",
+            "configs/scenarios",
+            "--tracking-uri",
+            "http://localhost:5000",
+            "--output-dir",
+            "artifacts/e2e",
         ]);
         assert_eq!(cli.suite, PathBuf::from("configs/scenarios"));
         assert_eq!(cli.tracking_uri, "http://localhost:5000");
@@ -275,16 +277,26 @@ mod tests {
     fn cli_explicit_flags_override_every_default() {
         let cli = parse(&[
             "forge-eval-longrun",
-            "--suite", "s",
-            "--tracking-uri", "http://mlflow.example:5000",
-            "--output-dir", "out",
-            "--experiment-name", "custom-exp",
-            "--episodes-per-scenario", "42",
-            "--run-id", "fixed-run-id",
-            "--http-timeout-ms", "11000",
-            "--http-max-retries", "9",
-            "--http-backoff-base-ms", "333",
-            "--http-batch-size", "250",
+            "--suite",
+            "s",
+            "--tracking-uri",
+            "http://mlflow.example:5000",
+            "--output-dir",
+            "out",
+            "--experiment-name",
+            "custom-exp",
+            "--episodes-per-scenario",
+            "42",
+            "--run-id",
+            "fixed-run-id",
+            "--http-timeout-ms",
+            "11000",
+            "--http-max-retries",
+            "9",
+            "--http-backoff-base-ms",
+            "333",
+            "--http-batch-size",
+            "250",
         ]);
         assert_eq!(cli.experiment_name, "custom-exp");
         assert_eq!(cli.episodes_per_scenario, 42);
@@ -315,9 +327,8 @@ mod tests {
                 )
                 .copied()
                 .collect();
-            let err = Cli::try_parse_from(&argv).expect_err(
-                "must error when a required arg is absent",
-            );
+            let err =
+                Cli::try_parse_from(&argv).expect_err("must error when a required arg is absent");
             // clap returns a structured error with a `MissingRequiredArgument` kind.
             assert_eq!(
                 err.kind(),
@@ -335,16 +346,26 @@ mod tests {
     fn cli_to_eval_config_threads_every_http_field_through() {
         let cli = parse(&[
             "forge-eval-longrun",
-            "--suite", "s",
-            "--tracking-uri", "http://h",
-            "--output-dir", "o",
-            "--episodes-per-scenario", "5",
-            "--http-timeout-ms", "1234",
-            "--http-max-retries", "2",
-            "--http-backoff-base-ms", "50",
-            "--http-batch-size", "7",
-            "--experiment-name", "exp",
-            "--run-id", "r",
+            "--suite",
+            "s",
+            "--tracking-uri",
+            "http://h",
+            "--output-dir",
+            "o",
+            "--episodes-per-scenario",
+            "5",
+            "--http-timeout-ms",
+            "1234",
+            "--http-max-retries",
+            "2",
+            "--http-backoff-base-ms",
+            "50",
+            "--http-batch-size",
+            "7",
+            "--experiment-name",
+            "exp",
+            "--run-id",
+            "r",
         ]);
         let cfg = cli.to_eval_config();
         assert_eq!(cfg.episodes_per_scenario, 5);

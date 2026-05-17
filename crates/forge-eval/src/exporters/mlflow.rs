@@ -158,9 +158,7 @@ impl Exporter for MlflowExporter {
 mod tests {
     use super::*;
     use crate::config::EvalConfig;
-    use crate::scorecard::{
-        EpisodeResult, ScenarioResult, Scorecard, SummaryStats, TierScore,
-    };
+    use crate::scorecard::{EpisodeResult, ScenarioResult, Scorecard, SummaryStats, TierScore};
     use forge_types::agent_interface::AgentMetadata;
     use tempfile::TempDir;
 
@@ -272,7 +270,9 @@ mod tests {
         assert!(parent_dir.join("artifacts/scorecard.json").exists());
         assert!(parent_dir.join("artifacts/scorecard.md").exists());
         assert!(parent_dir.join("artifacts/manifest.json").exists());
-        assert!(parent_dir.join("artifacts/tier_success_rates.html").exists());
+        assert!(parent_dir
+            .join("artifacts/tier_success_rates.html")
+            .exists());
         // Scenario digest is surfaced as a tag (MLflow's inputs/ dir
         // tree is version-fragile and not worth wiring this phase).
         assert!(parent_dir.join("tags/forge.eval.scenarios_digest").exists());
@@ -363,8 +363,12 @@ mod tests {
             .join(DEFAULT_EXPERIMENT_ID)
             .join("named-test")
             .join("metrics");
-        assert!(parent_metrics.join("scenario_patrol_basic_success_rate").exists());
-        assert!(parent_metrics.join("scenario_harvest_advanced_success_rate").exists());
+        assert!(parent_metrics
+            .join("scenario_patrol_basic_success_rate")
+            .exists());
+        assert!(parent_metrics
+            .join("scenario_harvest_advanced_success_rate")
+            .exists());
         assert!(parent_metrics.join("tier_1_success_rate").exists());
         assert!(parent_metrics.join("tier_2_success_rate").exists());
         assert!(parent_metrics.join("overall_score").exists());
@@ -427,14 +431,24 @@ mod tests {
         let manifest = RunManifest::capture(&cfg, &[scenario_path]);
 
         MlflowExporter::new(tmp.path().join("mlruns"))
-            .export(&fixture_scorecard(), &manifest, &tmp.path().join("artifacts"))
+            .export(
+                &fixture_scorecard(),
+                &manifest,
+                &tmp.path().join("artifacts"),
+            )
             .unwrap();
 
-        let run_dir = tmp.path().join("mlruns").join(DEFAULT_EXPERIMENT_ID).join(&manifest.run_id);
-        let digest_tag = std::fs::read_to_string(run_dir.join("tags/forge.eval.scenarios_digest")).unwrap();
+        let run_dir = tmp
+            .path()
+            .join("mlruns")
+            .join(DEFAULT_EXPERIMENT_ID)
+            .join(&manifest.run_id);
+        let digest_tag =
+            std::fs::read_to_string(run_dir.join("tags/forge.eval.scenarios_digest")).unwrap();
         assert_eq!(digest_tag.len(), 32, "32-hex-char short digest");
         assert!(digest_tag.chars().all(|c| c.is_ascii_hexdigit()));
-        let count_tag = std::fs::read_to_string(run_dir.join("tags/forge.eval.scenario_count")).unwrap();
+        let count_tag =
+            std::fs::read_to_string(run_dir.join("tags/forge.eval.scenario_count")).unwrap();
         assert_eq!(count_tag.trim(), "1");
     }
 
@@ -461,13 +475,12 @@ mod tests {
         exporter
             .export(&scorecard, &manifest, &tmp.path().join("art"))
             .unwrap();
-        // First run wrote 2 metric lines for episode_reward (step 0, 1);
-        // re-export should also produce 2 lines (one per episode) â€” note
-        // metrics use append mode, so a naive re-export would double them.
-        // Idempotency contract: we expect the directory structure to
-        // remain valid, but metric files DO accumulate appended lines
-        // across exports. Document this behaviour in tests so future
-        // changes don't silently break.
+        // First run wrote 2 metric lines for episode_reward (step 0, 1).
+        // Idempotency contract (post-refactor): re-exporting the same
+        // scorecard must produce the SAME 2 lines, not double them. The
+        // truncate-before-write fix in `write_run_from_payload` (Slice 2
+        // Copilot-review followup) deletes the metrics dir at the start
+        // of each export so this contract is enforced.
         exporter
             .export(&scorecard, &manifest, &tmp.path().join("art"))
             .unwrap();
@@ -479,10 +492,17 @@ mod tests {
             .lines()
             .map(|s| s.to_string())
             .collect();
-        // After two exports, metric file has 4 lines (2 episodes Ã— 2 exports).
-        // Test documents this so a future "truly idempotent" refactor (e.g.,
-        // truncate-before-write) will fail this assertion intentionally.
-        assert_eq!(lines.len(), 4);
+        // Post-fix: exactly 2 lines (one per episode) regardless of how
+        // many times export() is invoked with the same scorecard. The
+        // previous test assertion of 4 documented the broken behaviour
+        // the Copilot review flagged; this updated assertion pins the
+        // corrected contract.
+        assert_eq!(
+            lines.len(),
+            2,
+            "re-export must NOT duplicate metric lines (got {} lines)",
+            lines.len()
+        );
     }
 
     #[test]

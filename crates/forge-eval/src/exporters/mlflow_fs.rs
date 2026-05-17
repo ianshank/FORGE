@@ -25,7 +25,7 @@ use super::mlflow::{
     MLFLOW_SUBDIR_PARAMS, MLFLOW_SUBDIR_TAGS,
 };
 use super::mlflow_payload::{
-    build_run_payload, sanitize, ArtifactRef, ArtifactSource, RunPayload,
+    build_run_payload, sanitize, validate_run_id, ArtifactRef, ArtifactSource, RunPayload,
 };
 use super::{ExportError, Exporter};
 use crate::manifest::{RunManifest, MANIFEST_SOURCE_NAME};
@@ -107,8 +107,22 @@ impl Exporter for MlflowFsSink {
         let start_ms = now_ms();
         let payload = build_run_payload(scorecard, manifest, artifacts_dir, start_ms)?;
 
+        // Reject path-traversal-bearing run_ids before joining into the tracking
+        // URI. Both parent + every child id is caller-influenced (derived from
+        // manifest.run_id + child_run_id) so check each one.
+        validate_run_id(&payload.run_id)?;
+        for child in &payload.children {
+            validate_run_id(&child.run_id)?;
+        }
+
         let parent_dir = exp_dir.join(&payload.run_id);
-        write_run_from_payload(&parent_dir, &payload, manifest, start_ms, &self.experiment_id)?;
+        write_run_from_payload(
+            &parent_dir,
+            &payload,
+            manifest,
+            start_ms,
+            &self.experiment_id,
+        )?;
 
         for child in &payload.children {
             let child_dir = exp_dir.join(&child.run_id);
@@ -131,6 +145,18 @@ fn write_run_from_payload(
     fs::create_dir_all(run_dir)?;
     let artifacts_subdir = run_dir.join(MLFLOW_SUBDIR_ARTIFACTS);
     fs::create_dir_all(&artifacts_subdir)?;
+
+    // Idempotency: `write_metric` opens metric files in append mode (the
+    // shape MLflow expects for log_metric semantics), so re-exporting the
+    // SAME payload would double-count every line. Reset the metrics dir
+    // before this export's writes start. Per-export this is a no-op (dir
+    // is freshly created); on re-export it discards the prior write's
+    // contents so the new write produces byte-identical output for the
+    // same input. The trait's idempotency contract is satisfied.
+    let metrics_dir = run_dir.join(MLFLOW_SUBDIR_METRICS);
+    if metrics_dir.exists() {
+        fs::remove_dir_all(&metrics_dir)?;
+    }
 
     for param in &payload.params {
         write_param(run_dir, &param.key, &param.value)?;
@@ -267,13 +293,29 @@ fn write_run_meta(run_dir: &Path, args: &RunMetaArgs) -> Result<(), ExportError>
 fn write_param(run_dir: &Path, name: &str, value: &str) -> Result<(), ExportError> {
     let dir = run_dir.join(MLFLOW_SUBDIR_PARAMS);
     fs::create_dir_all(&dir)?;
-    let v = if value.len() > PARAM_MAX_LEN {
-        &value[..PARAM_MAX_LEN]
-    } else {
-        value
-    };
+    let v = truncate_at_char_boundary(value, PARAM_MAX_LEN);
     fs::write(dir.join(sanitize(name)), v)?;
     Ok(())
+}
+
+/// UTF-8-safe truncation. Returns the prefix of `s` whose byte length is
+/// `<= max_bytes` and that ends on a `char` boundary. Naive byte slicing
+/// (`&s[..max_bytes]`) panics when `max_bytes` lands in the middle of a
+/// multibyte char (common for agent metadata values that include
+/// non-ASCII text). Walks `char_indices` instead so the slice always lies
+/// on a valid boundary.
+fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut last_ok = 0;
+    for (i, _) in s.char_indices() {
+        if i > max_bytes {
+            break;
+        }
+        last_ok = i;
+    }
+    &s[..last_ok]
 }
 
 fn write_metric(
@@ -288,7 +330,13 @@ fn write_metric(
     let path = dir.join(sanitize(name));
     let mut file = File::options().create(true).append(true).open(&path)?;
     // MLflow's metric format: "<timestamp_ms> <value> <step>\n"
-    writeln!(file, "{} {} {}", timestamp_ms, format_metric_value(value), step)?;
+    writeln!(
+        file,
+        "{} {} {}",
+        timestamp_ms,
+        format_metric_value(value),
+        step
+    )?;
     Ok(())
 }
 
@@ -427,5 +475,104 @@ mod tests {
 
         assert_eq!(fs::read(tmp.path().join("tree/a.txt")).unwrap(), b"A");
         assert_eq!(fs::read(tmp.path().join("tree/sub/b.txt")).unwrap(), b"B");
+    }
+
+    #[test]
+    fn truncate_at_char_boundary_does_not_panic_on_multibyte() {
+        // A 3-byte UTF-8 char ('π') spans byte indices 0..2 (in bytes).
+        // Naive `&s[..1]` here would panic; the helper must hand back
+        // either the empty prefix or the full char, never a half-char.
+        let s = "πππ"; // 6 bytes, 3 chars
+        assert_eq!(truncate_at_char_boundary(s, 0), "");
+        assert_eq!(truncate_at_char_boundary(s, 1), "");
+        assert_eq!(truncate_at_char_boundary(s, 2), "π");
+        assert_eq!(truncate_at_char_boundary(s, 3), "π");
+        assert_eq!(truncate_at_char_boundary(s, 4), "ππ");
+        assert_eq!(truncate_at_char_boundary(s, 6), "πππ");
+        assert_eq!(truncate_at_char_boundary(s, 999), "πππ");
+        // ASCII falls through unchanged.
+        assert_eq!(truncate_at_char_boundary("hello", 3), "hel");
+    }
+
+    #[test]
+    fn write_param_does_not_panic_on_long_multibyte_value() {
+        // 4-byte chars × 200 = 800 bytes, well past PARAM_MAX_LEN (500).
+        // The naive `&value[..500]` slice would land inside a 4-byte
+        // sequence and panic. The truncation helper must keep us on a
+        // valid char boundary.
+        let value: String = "🦀".repeat(200);
+        let tmp = tempfile::tempdir().unwrap();
+        write_param(tmp.path(), "k", &value).expect("write_param must not panic");
+        let written = fs::read_to_string(tmp.path().join(MLFLOW_SUBDIR_PARAMS).join("k")).unwrap();
+        // Result is at most PARAM_MAX_LEN bytes AND a valid UTF-8 string
+        // ending on a char boundary. 🦀 is 4 bytes so 500 / 4 = 125
+        // chars (500 bytes); 501 wouldn't fit so we stop at 124 chars
+        // (496 bytes) — either is acceptable, both are < PARAM_MAX_LEN+1.
+        assert!(written.len() <= PARAM_MAX_LEN);
+        // Round-trip through `chars().count()` to confirm UTF-8 validity.
+        let _char_count = written.chars().count();
+    }
+
+    #[test]
+    fn write_metric_then_re_export_does_not_duplicate_lines() {
+        // Pin the idempotency contract on the metrics dir: re-exporting
+        // the same payload to the same run dir must produce one line
+        // per sample, not two. The fix lives in
+        // `write_run_from_payload`, which deletes the metrics dir at
+        // the start of each export; this test exercises both passes.
+        use super::super::mlflow_payload::{ArtifactRef, ArtifactSource, MetricSample, RunPayload};
+        use crate::manifest::{RunManifest, MANIFEST_SOURCE_NAME, UNKNOWN};
+        use chrono::Utc;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = RunPayload {
+            run_id: "idem-run".to_string(),
+            experiment_name: "exp".to_string(),
+            run_name: "name".to_string(),
+            params: vec![],
+            tags: vec![],
+            metrics: vec![MetricSample {
+                key: "loss".to_string(),
+                value: 0.5,
+                timestamp_ms: 1,
+                step: 0,
+            }],
+            children: vec![],
+            artifact_refs: vec![] as Vec<ArtifactRef>,
+        };
+        let manifest = RunManifest {
+            run_id: "idem-run".to_string(),
+            experiment_name: "exp".to_string(),
+            timestamp: Utc::now(),
+            git_sha: UNKNOWN.to_string(),
+            git_branch: UNKNOWN.to_string(),
+            rustc_version: UNKNOWN.to_string(),
+            user: UNKNOWN.to_string(),
+            config_hash: "h".to_string(),
+            scenario_file_hashes: vec![],
+            source_name: MANIFEST_SOURCE_NAME.to_string(),
+        };
+        let run_dir = tmp.path().join("run");
+        // Suppress unused-binding warning on the discarded ArtifactSource
+        // case in the dead-code-eliminated path.
+        let _ = ArtifactSource::Inline(vec![]);
+
+        write_run_from_payload(&run_dir, &payload, &manifest, 0, "0").unwrap();
+        let first = fs::read_to_string(run_dir.join(MLFLOW_SUBDIR_METRICS).join("loss")).unwrap();
+        // Same payload, re-exported: must NOT accumulate.
+        write_run_from_payload(&run_dir, &payload, &manifest, 0, "0").unwrap();
+        let second = fs::read_to_string(run_dir.join(MLFLOW_SUBDIR_METRICS).join("loss")).unwrap();
+        assert_eq!(
+            first.lines().count(),
+            1,
+            "first export must produce exactly 1 metric line"
+        );
+        assert_eq!(
+            second.lines().count(),
+            1,
+            "re-export must NOT duplicate the metric line (got {} lines)",
+            second.lines().count()
+        );
+        assert_eq!(first, second, "byte-identical output across re-exports");
     }
 }

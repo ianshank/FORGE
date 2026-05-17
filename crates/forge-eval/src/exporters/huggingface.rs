@@ -4,9 +4,13 @@
 
 //! HuggingFace `datasets`-compatible exporter.
 //!
-//! Writes a `DatasetDict` directory under `<export_root>/<run_id>/` that
-//! `datasets.load_from_disk(...)` opens natively and `huggingface-cli
-//! upload` can push to the Hub.
+//! Writes a Hugging-Face-friendly JSONL export under
+//! `<export_root>/<run_id>/` that
+//! `datasets.load_dataset("json", data_files=...)` opens natively and
+//! `huggingface-cli upload` can push to the Hub. This is intentionally
+//! NOT a `Dataset.save_to_disk()` Arrow DatasetDict — no
+//! `dataset_info.json` / `state.json` / `dataset_dict.json` is emitted
+//! (those would force consumers to ship `pyarrow`).
 //!
 //! ## Layout produced
 //!
@@ -41,6 +45,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tracing::instrument;
 
+use super::mlflow_payload::validate_run_id;
 use super::{ExportError, Exporter, ARTIFACT_MANIFEST_JSON, TIER_SPLIT_PREFIX};
 use crate::manifest::RunManifest;
 use crate::scorecard::Scorecard;
@@ -90,6 +95,11 @@ impl Exporter for HuggingFaceExporter {
             ));
         }
 
+        // Reject path-traversal-bearing run_ids before joining into the
+        // export root. `manifest.run_id` is caller-influenced (config or
+        // UUID); a value like `"../escape"` would otherwise write outside
+        // the configured export tree.
+        validate_run_id(&manifest.run_id)?;
         let run_dir = self.export_root.join(&manifest.run_id);
         fs::create_dir_all(&run_dir)?;
 
@@ -195,8 +205,8 @@ fn write_split(
     let data_path = split_dir.join(HF_DATA_SHARD_FILENAME);
     let mut file = fs::File::create(&data_path)?;
     for record in records {
-        let line = serde_json::to_string(record)
-            .map_err(|e| ExportError::Serialize(e.to_string()))?;
+        let line =
+            serde_json::to_string(record).map_err(|e| ExportError::Serialize(e.to_string()))?;
         file.write_all(line.as_bytes())?;
         file.write_all(b"\n")?;
     }
@@ -335,14 +345,11 @@ fn size_category_for(n: usize) -> &'static str {
 // Generic helpers
 // ---------------------------------------------------------------------------
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::EvalConfig;
-    use crate::scorecard::{
-        EpisodeResult, ScenarioResult, Scorecard, SummaryStats, TierScore,
-    };
+    use crate::scorecard::{EpisodeResult, ScenarioResult, Scorecard, SummaryStats, TierScore};
     use forge_types::agent_interface::AgentMetadata;
     use tempfile::TempDir;
 
@@ -469,14 +476,13 @@ mod tests {
             .unwrap();
 
         let run_dir = tmp.path().join("counts");
-        let count_lines =
-            |split: &str| -> usize {
-                std::fs::read_to_string(run_dir.join(split).join("data-00000-of-00001.jsonl"))
-                    .unwrap()
-                    .lines()
-                    .filter(|l| !l.is_empty())
-                    .count()
-            };
+        let count_lines = |split: &str| -> usize {
+            std::fs::read_to_string(run_dir.join(split).join("data-00000-of-00001.jsonl"))
+                .unwrap()
+                .lines()
+                .filter(|l| !l.is_empty())
+                .count()
+        };
 
         let all = count_lines("all");
         let t1 = count_lines("tier_1");
@@ -501,16 +507,20 @@ mod tests {
             .export(&fixture_scorecard(), &manifest, &tmp.path().join("art"))
             .unwrap();
 
-        let first_line = std::fs::read_to_string(
-            tmp.path().join("schema/all/data-00000-of-00001.jsonl"),
-        )
-        .unwrap()
-        .lines()
-        .next()
-        .unwrap()
-        .to_string();
+        let first_line =
+            std::fs::read_to_string(tmp.path().join("schema/all/data-00000-of-00001.jsonl"))
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap()
+                .to_string();
         let row: serde_json::Value = serde_json::from_str(&first_line).unwrap();
-        let mut row_keys: Vec<&str> = row.as_object().unwrap().keys().map(|s| s.as_str()).collect();
+        let mut row_keys: Vec<&str> = row
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|s| s.as_str())
+            .collect();
         row_keys.sort();
         let expected = vec![
             "episode_index",
@@ -565,7 +575,10 @@ mod tests {
         let end = after_first.find("\n---").expect("frontmatter must close");
         let frontmatter = &after_first[..end];
         let parsed: serde_yaml::Value = serde_yaml::from_str(frontmatter).expect("valid yaml");
-        assert_eq!(parsed["license"], serde_yaml::Value::String("apache-2.0".into()));
+        assert_eq!(
+            parsed["license"],
+            serde_yaml::Value::String("apache-2.0".into())
+        );
     }
 
     #[test]
@@ -590,8 +603,7 @@ mod tests {
             .export(&fixture_scorecard(), &manifest, &tmp.path().join("art"))
             .unwrap();
 
-        let readme =
-            std::fs::read_to_string(tmp.path().join("marker/README.md")).unwrap();
+        let readme = std::fs::read_to_string(tmp.path().join("marker/README.md")).unwrap();
         let end = readme[4..].find("\n---").unwrap();
         let frontmatter = &readme[4..4 + end];
         let parsed: serde_yaml::Value = serde_yaml::from_str(frontmatter).unwrap();
@@ -632,8 +644,7 @@ mod tests {
         // Card configs block should list only "all".
         let readme = std::fs::read_to_string(run_dir.join("README.md")).unwrap();
         let end = readme[4..].find("\n---").unwrap();
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&readme[4..4 + end]).unwrap();
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&readme[4..4 + end]).unwrap();
         let splits = parsed["configs"][0]["data_files"].as_sequence().unwrap();
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0]["split"], serde_yaml::Value::String("all".into()));

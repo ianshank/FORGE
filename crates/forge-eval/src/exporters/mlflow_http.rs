@@ -21,7 +21,8 @@ use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 
 use super::mlflow_payload::{
-    build_run_payload, ArtifactRef, ArtifactSource, MetricSample, ParamKv, RunPayload, TagKv,
+    build_run_payload, sanitize, ArtifactRef, ArtifactSource, MetricSample, ParamKv, RunPayload,
+    TagKv,
 };
 use super::{ExportError, Exporter};
 use crate::config::EvalConfig;
@@ -290,7 +291,8 @@ impl MlflowHttpClient {
             u.query_pairs_mut().append_pair(FIELD_EXPERIMENT_NAME, name);
             u
         };
-        let lookup = self.execute_with_retry(|| self.with_auth(self.http.get(url_with_query.clone())));
+        let lookup =
+            self.execute_with_retry(|| self.with_auth(self.http.get(url_with_query.clone())));
         match lookup {
             Ok(resp) => extract_string(&resp_json(resp)?, RESP_PATH_EXPERIMENT_ID),
             Err(ExportError::Http(msg)) if msg.starts_with("status 404") => {
@@ -306,7 +308,8 @@ impl MlflowHttpClient {
     pub fn create_experiment(&self, name: &str) -> Result<String, ExportError> {
         let url = self.api_url(&["experiments", "create"])?;
         let body = json!({ (FIELD_NAME): name });
-        let resp = self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
+        let resp =
+            self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
         extract_string(&resp_json(resp)?, RESP_PATH_CREATE_EXP_ID)
     }
 
@@ -326,7 +329,8 @@ impl MlflowHttpClient {
             (FIELD_START_TIME): start_time_ms,
             (FIELD_TAGS): to_json_array(tags),
         });
-        let resp = self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
+        let resp =
+            self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
         extract_string(&resp_json(resp)?, RESP_PATH_RUN_ID)
     }
 
@@ -381,7 +385,13 @@ impl MlflowHttpClient {
     /// the parent-run-id linkage tag for child runs has a stable code path.
     pub fn set_tag(&self, run_id: &str, key: &str, value: &str) -> Result<(), ExportError> {
         let url = self.api_url(&["runs", "set-tag"])?;
-        let body = json!({ (FIELD_RUN_ID): run_id, (FIELD_KEY): key, (FIELD_VALUE): value });
+        // `sanitize(key)` matches the FsSink's write-time normalisation —
+        // both transports therefore accept the same key universe.
+        let body = json!({
+            (FIELD_RUN_ID): run_id,
+            (FIELD_KEY): sanitize(key),
+            (FIELD_VALUE): value,
+        });
         self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
         Ok(())
     }
@@ -423,9 +433,9 @@ impl MlflowHttpClient {
         // delimiter, not URL-encoded as `%2F`.
         let mut url = self.url_with_namespace(NAMESPACE_ARTIFACTS, &[ARTIFACTS_PATH])?;
         {
-            let mut path = url
-                .path_segments_mut()
-                .map_err(|_| ExportError::InvalidTarget("base url cannot have a path".to_string()))?;
+            let mut path = url.path_segments_mut().map_err(|_| {
+                ExportError::InvalidTarget("base url cannot have a path".to_string())
+            })?;
             for seg in rel_path.split('/').filter(|s| !s.is_empty()) {
                 path.push(seg);
             }
@@ -452,9 +462,9 @@ impl MlflowHttpClient {
     fn url_with_namespace(&self, namespace: &str, segments: &[&str]) -> Result<Url, ExportError> {
         let mut url = self.base.clone();
         {
-            let mut path = url
-                .path_segments_mut()
-                .map_err(|_| ExportError::InvalidTarget("base url cannot have a path".to_string()))?;
+            let mut path = url.path_segments_mut().map_err(|_| {
+                ExportError::InvalidTarget("base url cannot have a path".to_string())
+            })?;
             // Avoid an empty trailing segment if `base.path()` is `/`.
             path.pop_if_empty();
             path.push(API_ROOT);
@@ -562,10 +572,15 @@ trait ToMlflowJson {
     fn to_mlflow_json(&self) -> Value;
 }
 
+// All three impls call `sanitize(key)` so user-supplied agent metadata
+// keys with characters MLflow's REST schema rejects (`:`, `?`, `&`, ...)
+// don't trip a 400 from the server mid-export. Mirrors the FsSink's
+// write-time sanitisation so both transports stay symmetric.
+
 impl ToMlflowJson for MetricSample {
     fn to_mlflow_json(&self) -> Value {
         json!({
-            (FIELD_KEY): self.key,
+            (FIELD_KEY): sanitize(&self.key),
             (FIELD_VALUE): self.value,
             (FIELD_TIMESTAMP): self.timestamp_ms,
             (FIELD_STEP): self.step,
@@ -575,13 +590,13 @@ impl ToMlflowJson for MetricSample {
 
 impl ToMlflowJson for ParamKv {
     fn to_mlflow_json(&self) -> Value {
-        json!({ (FIELD_KEY): self.key, (FIELD_VALUE): self.value })
+        json!({ (FIELD_KEY): sanitize(&self.key), (FIELD_VALUE): self.value })
     }
 }
 
 impl ToMlflowJson for TagKv {
     fn to_mlflow_json(&self) -> Value {
-        json!({ (FIELD_KEY): self.key, (FIELD_VALUE): self.value })
+        json!({ (FIELD_KEY): sanitize(&self.key), (FIELD_VALUE): self.value })
     }
 }
 
@@ -605,9 +620,39 @@ fn extract_string(value: &Value, path: &[&str]) -> Result<String, ExportError> {
             .get(*key)
             .ok_or_else(|| ExportError::Http(format!("response missing field `{key}`")))?;
     }
-    cur.as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| ExportError::Http(format!("response field `{}` not a string", path.join("."))))
+    cur.as_str().map(|s| s.to_string()).ok_or_else(|| {
+        ExportError::Http(format!("response field `{}` not a string", path.join(".")))
+    })
+}
+
+/// MLflow tag key used to link a child run to its parent. Centralised
+/// so the rewrite helper + sink stay in lock-step.
+const MLFLOW_PARENT_RUN_ID_TAG: &str = "mlflow.parentRunId";
+
+/// Rewrite `mlflow.parentRunId` in `tags` to point at the parent run's
+/// SERVER-assigned id. Parents call this with `parent_server_run_id =
+/// None` so their tags pass through unchanged; children supply the
+/// parent's server id so the link points at the right MLflow record
+/// (the payload-side id is meaningless to the server — MLflow's REST
+/// API always allocates fresh run ids). Non-parent tags pass through
+/// untouched in both branches.
+fn rewrite_parent_run_id_tag(tags: &[TagKv], parent_server_run_id: Option<&str>) -> Vec<TagKv> {
+    match parent_server_run_id {
+        None => tags.to_vec(),
+        Some(parent_id) => tags
+            .iter()
+            .map(|t| {
+                if t.key == MLFLOW_PARENT_RUN_ID_TAG {
+                    TagKv {
+                        key: t.key.clone(),
+                        value: parent_id.to_string(),
+                    }
+                } else {
+                    t.clone()
+                }
+            })
+            .collect(),
+    }
 }
 
 /// Wall-clock milliseconds since Unix epoch. Mirrors the
@@ -673,7 +718,10 @@ impl MlflowHttpSink {
             .experiment_name
             .clone()
             .unwrap_or_else(|| DEFAULT_EXPERIMENT_NAME.to_string());
-        Ok(Self { client, experiment_name })
+        Ok(Self {
+            client,
+            experiment_name,
+        })
     }
 
     /// Borrow the underlying HTTP client. Exposed for tests + advanced
@@ -703,18 +751,37 @@ impl Exporter for MlflowHttpSink {
     ) -> Result<(), ExportError> {
         let start_ms = now_ms();
         let payload = build_run_payload(scorecard, manifest, artifacts_dir, start_ms)?;
-        let exp_id = self.client.get_or_create_experiment(&self.experiment_name)?;
+        let exp_id = self
+            .client
+            .get_or_create_experiment(&self.experiment_name)?;
         info!(
-            run_id = %payload.run_id,
+            payload_run_id = %payload.run_id,
             experiment_id = %exp_id,
             children = payload.children.len(),
             "mlflow-http: exporting suite"
         );
-        self.write_run(&exp_id, &payload, artifacts_dir, start_ms)?;
+        // Capture the parent's SERVER-assigned id so child runs can link
+        // to it via `mlflow.parentRunId`. The payload-side run_id is
+        // ignored by MLflow's REST API (the server always allocates a
+        // fresh id); without this rewrite, children's parentRunId tag
+        // would point at a non-existent run and MLflow UI nesting +
+        // parent/child queries would break silently.
+        let parent_server_id = self.write_run(&exp_id, &payload, artifacts_dir, start_ms, None)?;
+        info!(
+            payload_run_id = %payload.run_id,
+            server_run_id = %parent_server_id,
+            "mlflow-http: parent run created on server"
+        );
         for child in &payload.children {
-            self.write_run(&exp_id, child, artifacts_dir, start_ms)?;
+            self.write_run(
+                &exp_id,
+                child,
+                artifacts_dir,
+                start_ms,
+                Some(&parent_server_id),
+            )?;
         }
-        info!(run_id = %payload.run_id, "mlflow-http: export complete");
+        info!(payload_run_id = %payload.run_id, "mlflow-http: export complete");
         Ok(())
     }
 }
@@ -729,17 +796,22 @@ impl MlflowHttpSink {
     /// `#[instrument]` adds `run_id` (payload-side) to every nested
     /// `tracing::warn!` / `error!` so a CI log dump can correlate a
     /// retry-exhaustion message back to the specific run that failed.
-    #[instrument(skip_all, fields(payload_run_id = %payload.run_id, experiment_id = %experiment_id))]
+    #[instrument(
+        skip_all,
+        fields(payload_run_id = %payload.run_id, experiment_id = %experiment_id)
+    )]
     fn write_run(
         &self,
         experiment_id: &str,
         payload: &RunPayload,
         artifacts_dir: &Path,
         start_ms: u64,
-    ) -> Result<(), ExportError> {
+        parent_server_run_id: Option<&str>,
+    ) -> Result<String, ExportError> {
+        let create_tags = rewrite_parent_run_id_tag(&payload.tags, parent_server_run_id);
         let server_run_id = self
             .client
-            .create_run(experiment_id, start_ms, &payload.tags)?;
+            .create_run(experiment_id, start_ms, &create_tags)?;
 
         // `success` flips to true on the happy-path terminator. The
         // scopeguard runs on Drop regardless of how we exit and only fires
@@ -796,7 +868,7 @@ impl MlflowHttpSink {
             artefacts = payload.artifact_refs.len(),
             "mlflow-http: run written"
         );
-        Ok(())
+        Ok(server_run_id)
     }
 
     /// Stream one artefact ref into the server. Inline bytes ship verbatim;
@@ -955,7 +1027,10 @@ mod tests {
         assert_eq!(cfg.batch_size, DEFAULT_LOG_BATCH_SIZE);
         assert_eq!(cfg.user_agent, DEFAULT_USER_AGENT);
         assert!(cfg.bearer_token.is_none());
-        assert!(cfg.batch_size <= 1_000, "MLflow REST caps log_batch at 1000");
+        assert!(
+            cfg.batch_size <= 1_000,
+            "MLflow REST caps log_batch at 1000"
+        );
     }
 
     #[test]
@@ -1021,7 +1096,10 @@ mod tests {
         let mut server = Server::new();
         let mock = server
             .mock("GET", "/api/2.0/mlflow/experiments/get-by-name")
-            .match_query(Matcher::UrlEncoded("experiment_name".into(), "exp-1".into()))
+            .match_query(Matcher::UrlEncoded(
+                "experiment_name".into(),
+                "exp-1".into(),
+            ))
             .with_status(200)
             .with_body(json!({"experiment": {"experiment_id": "42"}}).to_string())
             .create();
@@ -1038,7 +1116,10 @@ mod tests {
             .mock("GET", "/api/2.0/mlflow/experiments/get-by-name")
             // mockito requires an explicit query matcher; default mocks don't
             // match requests that carry a query string.
-            .match_query(Matcher::UrlEncoded("experiment_name".into(), "missing-exp".into()))
+            .match_query(Matcher::UrlEncoded(
+                "experiment_name".into(),
+                "missing-exp".into(),
+            ))
             .with_status(404)
             .with_body(json!({"error_code": "RESOURCE_DOES_NOT_EXIST"}).to_string())
             .create();
@@ -1136,7 +1217,10 @@ mod tests {
 
     #[test]
     fn set_terminated_emits_status_string_for_finished_and_failed() {
-        for (status, wire) in [(RunStatus::Finished, "FINISHED"), (RunStatus::Failed, "FAILED")] {
+        for (status, wire) in [
+            (RunStatus::Finished, "FINISHED"),
+            (RunStatus::Failed, "FAILED"),
+        ] {
             let mut server = Server::new();
             let mock = server
                 .mock("POST", "/api/2.0/mlflow/runs/update")
@@ -1156,10 +1240,7 @@ mod tests {
     fn log_artifact_puts_bytes_under_rel_path_with_run_id_query() {
         let mut server = Server::new();
         let mock = server
-            .mock(
-                "PUT",
-                "/api/2.0/mlflow-artifacts/artifacts/scorecard.json",
-            )
+            .mock("PUT", "/api/2.0/mlflow-artifacts/artifacts/scorecard.json")
             .match_query(Matcher::UrlEncoded("run_id".into(), "abc".into()))
             .with_status(200)
             .with_body("{}")
@@ -1317,7 +1398,10 @@ mod tests {
         let mut server = Server::new();
         let _get_exp = server
             .mock("GET", "/api/2.0/mlflow/experiments/get-by-name")
-            .match_query(Matcher::UrlEncoded("experiment_name".into(), "test-exp".into()))
+            .match_query(Matcher::UrlEncoded(
+                "experiment_name".into(),
+                "test-exp".into(),
+            ))
             .with_status(200)
             .with_body(json!({"experiment": {"experiment_id": "0"}}).to_string())
             .create();
@@ -1336,9 +1420,10 @@ mod tests {
         // 4 inline artefacts on the parent: scorecard.json, scorecard.md,
         // manifest.json, tier_success_rates.html.
         let _log_artifact = server
-            .mock("PUT", Matcher::Regex(
-                r"^/api/2\.0/mlflow-artifacts/artifacts/.+$".to_string(),
-            ))
+            .mock(
+                "PUT",
+                Matcher::Regex(r"^/api/2\.0/mlflow-artifacts/artifacts/.+$".to_string()),
+            )
             .match_query(Matcher::UrlEncoded("run_id".into(), "server-parent".into()))
             .with_status(200)
             .expect(4)
@@ -1429,7 +1514,9 @@ mod tests {
             .with_status(200)
             .with_body(json!({"experiment": {"experiment_id": "0"}}).to_string())
             .create();
-        sink.client.get_or_create_experiment(sink.experiment_name()).unwrap();
+        sink.client
+            .get_or_create_experiment(sink.experiment_name())
+            .unwrap();
     }
 
     /// `upload_dir_recursively` exercise: nested tree → one log_artifact
@@ -1449,7 +1536,10 @@ mod tests {
             .expect(1)
             .create();
         let mock_b = server
-            .mock("PUT", "/api/2.0/mlflow-artifacts/artifacts/replays/sub/b.txt")
+            .mock(
+                "PUT",
+                "/api/2.0/mlflow-artifacts/artifacts/replays/sub/b.txt",
+            )
             .match_query(Matcher::UrlEncoded("run_id".into(), "r1".into()))
             .with_status(200)
             .expect(1)
@@ -1537,7 +1627,10 @@ mod tests {
         let mut server = Server::new();
         let _get_exp = server
             .mock("GET", "/api/2.0/mlflow/experiments/get-by-name")
-            .match_query(Matcher::UrlEncoded("experiment_name".into(), "test-exp".into()))
+            .match_query(Matcher::UrlEncoded(
+                "experiment_name".into(),
+                "test-exp".into(),
+            ))
             .with_status(200)
             .with_body(json!({"experiment": {"experiment_id": "0"}}).to_string())
             .create();
@@ -1571,8 +1664,66 @@ mod tests {
             &fixture_manifest(),
             Path::new(""),
         );
-        assert!(matches!(result, Err(ExportError::Retryable(_))), "got {result:?}");
+        assert!(
+            matches!(result, Err(ExportError::Retryable(_))),
+            "got {result:?}"
+        );
         // The critical contract: FAILED was sent — run isn't wedged in RUNNING.
         set_terminated_failed.assert();
+    }
+
+    /// Pin the child-run linkage contract: when given a parent's
+    /// SERVER-assigned id, the helper rewrites `mlflow.parentRunId` in
+    /// every child's tag set to that id and leaves all other tags
+    /// untouched. Pure-function unit test — no mockito, no server, no
+    /// parallelism contention. The sink's child-create flow consumes
+    /// this helper directly, so the linkage contract is enforced
+    /// transitively in `write_run`.
+    #[test]
+    fn rewrite_parent_run_id_tag_replaces_only_target_tag_for_children() {
+        let original = vec![
+            TagKv {
+                key: "mlflow.parentRunId".to_string(),
+                value: "PAYLOAD-PARENT".to_string(),
+            },
+            TagKv {
+                key: "mlflow.runName".to_string(),
+                value: "scenario_a".to_string(),
+            },
+            TagKv {
+                key: "forge.eval.tier".to_string(),
+                value: "1".to_string(),
+            },
+        ];
+
+        // Child case: target tag is rewritten, others pass through.
+        let rewritten = rewrite_parent_run_id_tag(&original, Some("SERVER-PARENT"));
+        assert_eq!(rewritten.len(), 3);
+        assert_eq!(rewritten[0].key, "mlflow.parentRunId");
+        assert_eq!(
+            rewritten[0].value, "SERVER-PARENT",
+            "child must carry the parent's SERVER-assigned id, not the payload id"
+        );
+        assert_eq!(rewritten[1].value, "scenario_a", "other tags untouched");
+        assert_eq!(rewritten[2].value, "1", "other tags untouched");
+
+        // Parent case: passthrough (no rewrite).
+        let unchanged = rewrite_parent_run_id_tag(&original, None);
+        assert_eq!(unchanged.len(), 3);
+        assert_eq!(unchanged[0].value, "PAYLOAD-PARENT");
+
+        // Multiple parentRunId tags (shouldn't happen but mustn't panic).
+        let pathological = vec![
+            TagKv {
+                key: "mlflow.parentRunId".to_string(),
+                value: "A".to_string(),
+            },
+            TagKv {
+                key: "mlflow.parentRunId".to_string(),
+                value: "B".to_string(),
+            },
+        ];
+        let both = rewrite_parent_run_id_tag(&pathological, Some("REWRITE"));
+        assert!(both.iter().all(|t| t.value == "REWRITE"));
     }
 }

@@ -186,7 +186,13 @@ pub fn build_run_payload(
     let mut metrics = Vec::with_capacity(
         4 + scorecard.tier_scores.len() * 4 + scorecard.scenario_results.len() * 3,
     );
-    push_metric(&mut metrics, "overall_score", scorecard.overall_score, timestamp_ms, 0);
+    push_metric(
+        &mut metrics,
+        "overall_score",
+        scorecard.overall_score,
+        timestamp_ms,
+        0,
+    );
     push_metric(
         &mut metrics,
         "total_episodes",
@@ -271,16 +277,46 @@ pub fn build_run_payload(
     let mlflow_source_name = format!("{}@{}", MANIFEST_SOURCE_NAME, env!("CARGO_PKG_VERSION"));
     let scenarios_digest = combined_scenario_digest(manifest);
     let tags = vec![
-        TagKv { key: "mlflow.source.git.commit".to_string(), value: manifest.git_sha.clone() },
-        TagKv { key: "mlflow.source.git.branch".to_string(), value: manifest.git_branch.clone() },
-        TagKv { key: "mlflow.source.name".to_string(),       value: mlflow_source_name },
-        TagKv { key: "mlflow.source.type".to_string(),       value: SOURCE_TYPE_LOCAL.to_string() },
-        TagKv { key: "mlflow.runName".to_string(),           value: run_name.clone() },
-        TagKv { key: "mlflow.user".to_string(),              value: manifest.user.clone() },
-        TagKv { key: "mlflow.note.content".to_string(),      value: scorecard.to_markdown() },
-        TagKv { key: "forge.eval.rustc_version".to_string(), value: manifest.rustc_version.clone() },
-        TagKv { key: "forge.eval.config_hash".to_string(),   value: manifest.config_hash.clone() },
-        TagKv { key: "forge.eval.scenarios_digest".to_string(), value: scenarios_digest },
+        TagKv {
+            key: "mlflow.source.git.commit".to_string(),
+            value: manifest.git_sha.clone(),
+        },
+        TagKv {
+            key: "mlflow.source.git.branch".to_string(),
+            value: manifest.git_branch.clone(),
+        },
+        TagKv {
+            key: "mlflow.source.name".to_string(),
+            value: mlflow_source_name,
+        },
+        TagKv {
+            key: "mlflow.source.type".to_string(),
+            value: SOURCE_TYPE_LOCAL.to_string(),
+        },
+        TagKv {
+            key: "mlflow.runName".to_string(),
+            value: run_name.clone(),
+        },
+        TagKv {
+            key: "mlflow.user".to_string(),
+            value: manifest.user.clone(),
+        },
+        TagKv {
+            key: "mlflow.note.content".to_string(),
+            value: scorecard.to_markdown(),
+        },
+        TagKv {
+            key: "forge.eval.rustc_version".to_string(),
+            value: manifest.rustc_version.clone(),
+        },
+        TagKv {
+            key: "forge.eval.config_hash".to_string(),
+            value: manifest.config_hash.clone(),
+        },
+        TagKv {
+            key: "forge.eval.scenarios_digest".to_string(),
+            value: scenarios_digest,
+        },
         TagKv {
             key: "forge.eval.scenario_count".to_string(),
             value: manifest.scenario_file_hashes.len().to_string(),
@@ -346,8 +382,14 @@ fn build_child_payload(
     let child_id = child_run_id(&manifest.run_id, &scenario.scenario_id);
 
     let params = vec![
-        ParamKv { key: "scenario_id".to_string(), value: scenario.scenario_id.clone() },
-        ParamKv { key: "tier".to_string(),        value: scenario.tier.to_string() },
+        ParamKv {
+            key: "scenario_id".to_string(),
+            value: scenario.scenario_id.clone(),
+        },
+        ParamKv {
+            key: "tier".to_string(),
+            value: scenario.tier.to_string(),
+        },
         ParamKv {
             key: "episode_count".to_string(),
             value: scenario.episodes.len().to_string(),
@@ -358,8 +400,20 @@ fn build_child_payload(
     // 3 aggregates + 6 per-episode samples × N episodes; keeps allocations
     // down on long runs.
     let mut metrics = Vec::with_capacity(3 + scenario.episodes.len() * 6);
-    push_metric(&mut metrics, "scenario_success_rate", scenario.success_rate, timestamp_ms, 0);
-    push_metric(&mut metrics, "scenario_mean_reward", scenario.mean_reward, timestamp_ms, 0);
+    push_metric(
+        &mut metrics,
+        "scenario_success_rate",
+        scenario.success_rate,
+        timestamp_ms,
+        0,
+    );
+    push_metric(
+        &mut metrics,
+        "scenario_mean_reward",
+        scenario.mean_reward,
+        timestamp_ms,
+        0,
+    );
     push_metric(
         &mut metrics,
         "scenario_mean_decision_time_ms",
@@ -369,8 +423,20 @@ fn build_child_payload(
     );
     for (idx, ep) in scenario.episodes.iter().enumerate() {
         let step = idx as u64;
-        push_metric(&mut metrics, "episode_reward", ep.total_reward, timestamp_ms, step);
-        push_metric(&mut metrics, "episode_steps", ep.steps as f64, timestamp_ms, step);
+        push_metric(
+            &mut metrics,
+            "episode_reward",
+            ep.total_reward,
+            timestamp_ms,
+            step,
+        );
+        push_metric(
+            &mut metrics,
+            "episode_steps",
+            ep.steps as f64,
+            timestamp_ms,
+            step,
+        );
         push_metric(
             &mut metrics,
             "episode_decision_time_ms",
@@ -378,7 +444,13 @@ fn build_child_payload(
             timestamp_ms,
             step,
         );
-        push_metric(&mut metrics, "episode_success", bool_metric(ep.success), timestamp_ms, step);
+        push_metric(
+            &mut metrics,
+            "episode_success",
+            bool_metric(ep.success),
+            timestamp_ms,
+            step,
+        );
         push_metric(
             &mut metrics,
             "episode_terminated",
@@ -396,13 +468,34 @@ fn build_child_payload(
     }
 
     let tags = vec![
-        TagKv { key: "mlflow.parentRunId".to_string(),       value: manifest.run_id.clone() },
-        TagKv { key: "mlflow.runName".to_string(),           value: scenario.scenario_id.clone() },
-        TagKv { key: "mlflow.source.git.commit".to_string(), value: manifest.git_sha.clone() },
-        TagKv { key: "mlflow.source.git.branch".to_string(), value: manifest.git_branch.clone() },
-        TagKv { key: "mlflow.source.type".to_string(),       value: SOURCE_TYPE_LOCAL.to_string() },
-        TagKv { key: "mlflow.user".to_string(),              value: manifest.user.clone() },
-        TagKv { key: "forge.eval.tier".to_string(),          value: scenario.tier.to_string() },
+        TagKv {
+            key: "mlflow.parentRunId".to_string(),
+            value: manifest.run_id.clone(),
+        },
+        TagKv {
+            key: "mlflow.runName".to_string(),
+            value: scenario.scenario_id.clone(),
+        },
+        TagKv {
+            key: "mlflow.source.git.commit".to_string(),
+            value: manifest.git_sha.clone(),
+        },
+        TagKv {
+            key: "mlflow.source.git.branch".to_string(),
+            value: manifest.git_branch.clone(),
+        },
+        TagKv {
+            key: "mlflow.source.type".to_string(),
+            value: SOURCE_TYPE_LOCAL.to_string(),
+        },
+        TagKv {
+            key: "mlflow.user".to_string(),
+            value: manifest.user.clone(),
+        },
+        TagKv {
+            key: "forge.eval.tier".to_string(),
+            value: scenario.tier.to_string(),
+        },
     ];
 
     // Episodes JSONL artefact, inline (typically small — one row per episode).
@@ -436,7 +529,11 @@ const SOURCE_TYPE_LOCAL: &str = "LOCAL";
 
 fn parent_run_name(manifest: &RunManifest) -> String {
     if manifest.experiment_name.is_empty() {
-        format!("eval-{}-{}", manifest.short_git_sha(), manifest.timestamp.timestamp())
+        format!(
+            "eval-{}-{}",
+            manifest.short_git_sha(),
+            manifest.timestamp.timestamp()
+        )
     } else {
         manifest.experiment_name.clone()
     }
@@ -444,14 +541,15 @@ fn parent_run_name(manifest: &RunManifest) -> String {
 
 #[inline]
 fn push_metric(out: &mut Vec<MetricSample>, key: &str, value: f64, ts: u64, step: u64) {
-    out.push(MetricSample { key: key.to_string(), value, timestamp_ms: ts, step });
+    out.push(MetricSample {
+        key: key.to_string(),
+        value,
+        timestamp_ms: ts,
+        step,
+    });
 }
 
-fn push_optional_dir(
-    out: &mut Vec<ArtifactRef>,
-    artifacts_dir: &Path,
-    name: &str,
-) {
+fn push_optional_dir(out: &mut Vec<ArtifactRef>, artifacts_dir: &Path, name: &str) {
     let dir = artifacts_dir.join(name);
     if dir.exists() {
         out.push(ArtifactRef {
@@ -519,22 +617,67 @@ pub fn combined_scenario_digest(manifest: &RunManifest) -> String {
     hex_short(&hasher.finalize(), 16)
 }
 
+/// HTML-context escape: `<`, `>`, `&`, `"`, `'` rendered as entities.
+/// Use for text that will be placed in HTML body / attributes (the
+/// `<title>` element and the chart-title `format!` interpolation).
+fn escape_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// JavaScript single-quoted string-literal escape. Escapes the chars
+/// that would terminate the literal (`'`, `\`), the newline that would
+/// produce a syntax error (`\n`, `\r`), and the `<` that could start
+/// `</script>` and break out of the surrounding `<script>` block when
+/// the page is parsed as HTML.
+fn escape_js_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '<' => out.push_str("\\u003c"), // prevent `</script>` breakout
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Self-contained Plotly HTML for the per-tier success-rate + mean-reward
 /// chart. Emitted as the `tier_success_rates.html` artefact under each
 /// parent run's `artifacts/` directory.
 ///
 /// `run_name` is interpolated into the chart title so a side-by-side view
-/// of multiple runs in the MLflow UI is distinguishable at a glance.
+/// of multiple runs in the MLflow UI is distinguishable at a glance. The
+/// value comes from user-controlled `experiment_name`; we escape it for
+/// both the surrounding HTML and the embedded JavaScript string contexts
+/// so a name containing quotes / `</script>` cannot break the artefact
+/// out of its container or execute arbitrary script when the file is
+/// opened in MLflow's artefact viewer.
 pub fn render_tier_bar_chart_html(tier_scores: &[TierScore], run_name: &str) -> String {
     let tiers: Vec<u8> = tier_scores.iter().map(|t| t.tier).collect();
     let success: Vec<f64> = tier_scores.iter().map(|t| t.success_rate).collect();
     let reward: Vec<f64> = tier_scores.iter().map(|t| t.mean_reward).collect();
+    let html_safe = escape_html(run_name);
+    let js_safe = escape_js_string(run_name);
     format!(
         r#"<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>FORGE eval tier success rates — {run_name}</title>
+<title>FORGE eval tier success rates — {html_safe}</title>
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
@@ -544,7 +687,7 @@ Plotly.newPlot('chart', [
   {{x: {tiers:?}, y: {success:?}, type: 'bar', name: 'Success rate'}},
   {{x: {tiers:?}, y: {reward:?}, type: 'bar', name: 'Mean reward', yaxis: 'y2'}}
 ], {{
-  title: 'Per-tier success rate + mean reward — {run_name}',
+  title: 'Per-tier success rate + mean reward — {js_safe}',
   xaxis: {{title: 'Difficulty tier'}},
   yaxis: {{title: 'Success rate', range: [0, 1]}},
   yaxis2: {{title: 'Mean reward', overlaying: 'y', side: 'right'}},
@@ -570,6 +713,55 @@ pub fn sanitize(name: &str) -> String {
             }
         })
         .collect()
+}
+
+/// Reject `run_id` values that are unsafe to use as a path component.
+/// Both Phase B exporters (filesystem MLflow + HuggingFace) join the
+/// manifest's `run_id` directly into an output path; without this check
+/// a caller-controlled value like `"../escape"` or `"a/b"` could traverse
+/// out of the exporter root and write where it shouldn't.
+///
+/// Rules:
+/// - Non-empty after trim.
+/// - No path separators (`/` or `\`).
+/// - No `..` or `.` segments.
+/// - No null bytes.
+/// - No leading dot (prevents hidden files / `.git` collisions).
+///
+/// Returns the validated `&str` on success so call sites can chain it.
+pub fn validate_run_id(run_id: &str) -> Result<&str, ExportError> {
+    let trimmed = run_id.trim();
+    if trimmed.is_empty() {
+        return Err(ExportError::InvalidTarget(
+            "run_id must not be empty or whitespace".to_string(),
+        ));
+    }
+    if trimmed != run_id {
+        return Err(ExportError::InvalidTarget(format!(
+            "run_id must not have leading/trailing whitespace: {run_id:?}"
+        )));
+    }
+    if run_id.contains('/') || run_id.contains('\\') {
+        return Err(ExportError::InvalidTarget(format!(
+            "run_id must not contain path separators: {run_id:?}"
+        )));
+    }
+    if run_id == "." || run_id == ".." {
+        return Err(ExportError::InvalidTarget(format!(
+            "run_id must not be a `.` or `..` path segment: {run_id:?}"
+        )));
+    }
+    if run_id.contains('\0') {
+        return Err(ExportError::InvalidTarget(format!(
+            "run_id must not contain null bytes: {run_id:?}"
+        )));
+    }
+    if run_id.starts_with('.') {
+        return Err(ExportError::InvalidTarget(format!(
+            "run_id must not start with `.`: {run_id:?}"
+        )));
+    }
+    Ok(run_id)
 }
 
 /// Lower-case hex encoding of the first `len` bytes of `bytes`. Centralised
@@ -619,7 +811,9 @@ mod tests {
         let b = child_run_id("parent-abc", "scenario-1");
         assert_eq!(a, b, "same inputs → same id");
         assert_eq!(a.len(), 32);
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
 
         let c = child_run_id("parent-abc", "scenario-2");
         assert_ne!(a, c, "different scenario → different id");
@@ -840,12 +1034,24 @@ mod tests {
         assert_eq!(child.children.len(), 0, "children have no grandchildren");
 
         // Child params
-        assert!(child.params.iter().any(|p| p.key == "scenario_id" && p.value == "scenario_a"));
-        assert!(child.params.iter().any(|p| p.key == "tier" && p.value == "1"));
-        assert!(child.params.iter().any(|p| p.key == "episode_count" && p.value == "2"));
+        assert!(child
+            .params
+            .iter()
+            .any(|p| p.key == "scenario_id" && p.value == "scenario_a"));
+        assert!(child
+            .params
+            .iter()
+            .any(|p| p.key == "tier" && p.value == "1"));
+        assert!(child
+            .params
+            .iter()
+            .any(|p| p.key == "episode_count" && p.value == "2"));
 
         // Parent linkage tag
-        assert!(child.tags.iter().any(|t| t.key == "mlflow.parentRunId" && t.value == "test-run"));
+        assert!(child
+            .tags
+            .iter()
+            .any(|t| t.key == "mlflow.parentRunId" && t.value == "test-run"));
 
         // Per-episode step-indexed metrics: 6 keys × 2 episodes
         let episode_metric_count = child
@@ -858,7 +1064,10 @@ mod tests {
         // Episodes JSONL artefact is inline
         assert_eq!(child.artifact_refs.len(), 1);
         let ep_artifact = &child.artifact_refs[0];
-        assert_eq!(ep_artifact.rel_path, super::super::mlflow::ARTIFACT_EPISODES_JSONL);
+        assert_eq!(
+            ep_artifact.rel_path,
+            super::super::mlflow::ARTIFACT_EPISODES_JSONL
+        );
         match &ep_artifact.source {
             ArtifactSource::Inline(bytes) => {
                 let text = std::str::from_utf8(bytes).unwrap();
@@ -890,9 +1099,14 @@ mod tests {
         // Create replays/ → it shows up; trajectories/ stays absent.
         std::fs::create_dir(tmp.path().join("replays")).unwrap();
         let payload = build_run_payload(&scorecard, &manifest, tmp.path(), 0).unwrap();
-        assert!(payload.artifact_refs.iter().any(|a| a.rel_path == "replays"
-            && matches!(a.source, ArtifactSource::Directory(_))));
-        assert!(!payload.artifact_refs.iter().any(|a| a.rel_path == "trajectories"));
+        assert!(payload
+            .artifact_refs
+            .iter()
+            .any(|a| a.rel_path == "replays" && matches!(a.source, ArtifactSource::Directory(_))));
+        assert!(!payload
+            .artifact_refs
+            .iter()
+            .any(|a| a.rel_path == "trajectories"));
     }
 
     #[test]
@@ -935,7 +1149,9 @@ mod tests {
             .get(super::super::mlflow::ARTIFACT_TIER_SUCCESS_RATES_HTML)
             .expect("tier chart present");
         if let ArtifactSource::Inline(bytes) = chart_html {
-            assert!(std::str::from_utf8(bytes).unwrap().contains("plotly-latest.min.js"));
+            assert!(std::str::from_utf8(bytes)
+                .unwrap()
+                .contains("plotly-latest.min.js"));
         }
     }
 
@@ -943,5 +1159,115 @@ mod tests {
     fn bool_metric_maps_true_to_one_and_false_to_zero() {
         assert_eq!(bool_metric(true), 1.0);
         assert_eq!(bool_metric(false), 0.0);
+    }
+
+    // ─── Security regression tests (path traversal + escaping) ────────────
+
+    #[test]
+    fn validate_run_id_accepts_safe_values() {
+        // The values build_run_payload typically produces — UUIDv4 hex
+        // (32 chars), user-supplied identifiers without separators, and
+        // child_run_id outputs.
+        for id in [
+            "a",
+            "run-001",
+            "abc123def456",
+            "phase-b-smoke-001",
+            "deadbeef".repeat(4).as_str(), // simulated child_run_id length
+        ] {
+            assert!(validate_run_id(id).is_ok(), "must accept safe id: {id:?}");
+        }
+    }
+
+    #[test]
+    fn validate_run_id_rejects_path_traversal_and_unsafe_chars() {
+        // Each of these would let a caller escape the configured tracking
+        // root or create unexpected files. Reject every shape.
+        for bad in [
+            "",
+            "   ",
+            "..",
+            ".",
+            "../escape",
+            "..\\escape",
+            "a/b",
+            "a\\b",
+            "/abs",
+            "with\0null",
+            ".hidden",
+            " leading-space",
+            "trailing-space ",
+        ] {
+            let err = validate_run_id(bad).unwrap_err();
+            assert!(
+                matches!(err, ExportError::InvalidTarget(_)),
+                "must reject unsafe id {bad:?}, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn escape_html_neutralises_html_specials() {
+        assert_eq!(
+            escape_html("<script>alert('x')</script>"),
+            "&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;"
+        );
+        assert_eq!(escape_html("a & b"), "a &amp; b");
+        assert_eq!(escape_html("\"quoted\""), "&quot;quoted&quot;");
+        // Unicode + plain text passes through unchanged.
+        assert_eq!(escape_html("hello π"), "hello π");
+        assert_eq!(escape_html(""), "");
+    }
+
+    #[test]
+    fn escape_js_string_prevents_quote_break_and_script_breakout() {
+        // `'` would terminate the surrounding string literal.
+        assert_eq!(escape_js_string("it's"), "it\\'s");
+        // `\` must be escaped first to avoid double-substitution surprises.
+        assert_eq!(escape_js_string("a\\b"), "a\\\\b");
+        // Newlines turn into `\n` so the literal stays single-line.
+        assert_eq!(escape_js_string("line1\nline2"), "line1\\nline2");
+        assert_eq!(escape_js_string("a\rb"), "a\\rb");
+        // `<` is escaped as `<` so `</script>` cannot terminate the
+        // surrounding <script> block when the HTML is parsed. `>` is left
+        // alone (only the opening `<` of `</script>` is dangerous).
+        assert_eq!(
+            escape_js_string("</script><img src=x onerror=alert(1)>"),
+            "\\u003c/script>\\u003cimg src=x onerror=alert(1)>"
+        );
+    }
+
+    #[test]
+    fn render_tier_bar_chart_html_escapes_malicious_run_name() {
+        // Construct a run_name that would break out of both the HTML
+        // <title> and the JS string literal if not escaped.
+        let payload_name = "evil\"</script><img src=x onerror=alert('XSS')>";
+        let html = render_tier_bar_chart_html(&[], payload_name);
+        // Raw payload must NOT appear in the output.
+        assert!(
+            !html.contains("</script><img"),
+            "malicious payload leaked verbatim: {html}"
+        );
+        // The template emits exactly TWO legitimate `</script>` tags:
+        // one for the Plotly CDN `<script src="..."></script>`, one for
+        // the inline chart `<script>...</script>`. If a third appears,
+        // that's the breakout the test is guarding against.
+        let script_blocks = html.matches("</script>").count();
+        assert_eq!(
+            script_blocks, 2,
+            "expected exactly two legitimate </script> tags from the template, got {script_blocks}: {html}"
+        );
+        // The escaped HTML <title> must contain &quot; instead of `"`.
+        assert!(
+            html.contains("&quot;"),
+            "expected HTML-escaped quotes in <title>, got {html}"
+        );
+        // The escaped JS literal must contain `<` for the user-supplied
+        // `<` inside the chart-title JS string (replaces what would have
+        // been a `</script>` breakout).
+        assert!(
+            html.contains(r"</script"),
+            "expected JS-escaped \\u003c for `<` in chart title JS literal, got {html}"
+        );
     }
 }

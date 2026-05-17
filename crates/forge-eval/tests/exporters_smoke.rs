@@ -104,7 +104,9 @@ fn smoke_both_exporters_produce_expected_files_via_harness() {
     assert!(parent_run.join("artifacts/scorecard.md").exists());
     assert!(parent_run.join("artifacts/manifest.json").exists());
     assert!(
-        parent_run.join("artifacts/tier_success_rates.html").exists(),
+        parent_run
+            .join("artifacts/tier_success_rates.html")
+            .exists(),
         "Plotly artifact must exist"
     );
     assert!(parent_run.join("tags/forge.eval.scenarios_digest").exists());
@@ -143,8 +145,11 @@ fn smoke_both_exporters_produce_expected_files_via_harness() {
         assert_eq!(parent_tag.trim(), "phase-b-smoke-001");
         // Per-episode metric file should have N lines (one per episode).
         let reward_metric = child_dir.join("metrics/episode_reward");
-        let lines: Vec<String> =
-            std::fs::read_to_string(&reward_metric).unwrap().lines().map(|s| s.to_string()).collect();
+        let lines: Vec<String> = std::fs::read_to_string(&reward_metric)
+            .unwrap()
+            .lines()
+            .map(|s| s.to_string())
+            .collect();
         assert_eq!(lines.len(), scenario.episodes.len());
     }
 
@@ -158,7 +163,11 @@ fn smoke_both_exporters_produce_expected_files_via_harness() {
 
     // Per-tier counts sum to all.
     let count = |path: PathBuf| -> usize {
-        std::fs::read_to_string(path).unwrap().lines().filter(|l| !l.is_empty()).count()
+        std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .filter(|l| !l.is_empty())
+            .count()
     };
     let all_count = count(hf_run.join("all/data-00000-of-00001.jsonl"));
     let t1_count = count(hf_run.join("tier_1/data-00000-of-00001.jsonl"));
