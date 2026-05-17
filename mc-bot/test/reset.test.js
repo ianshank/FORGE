@@ -61,4 +61,29 @@ describe('reset — applyReset', () => {
   it('throws if bot.chat is missing', async () => {
     await assert.rejects(applyReset({}, { strategy: 'teleport' }), /bot must expose chat/);
   });
+
+  it('honours a custom selector (username) over @s default', async () => {
+    const bot = stubBot();
+    await applyReset(bot, {
+      strategy: 'teleport',
+      teleport: {
+        spawn: { x: 5, y: 10, z: 15 },
+        selector: 'ForgeBot',
+        clear_inventory: true,
+      },
+    });
+    assert.equal(bot._calls[0], '/tp ForgeBot 5 10 15 0 0');
+    assert.equal(bot._calls[1], '/clear ForgeBot');
+  });
+
+  it('falls back to @s on empty or non-string selector', async () => {
+    for (const bad of ['', null, undefined, 42]) {
+      const bot = stubBot();
+      await applyReset(bot, {
+        strategy: 'teleport',
+        teleport: { spawn: { x: 0, y: 0, z: 0 }, selector: bad },
+      });
+      assert.match(bot._calls[0], /^\/tp @s /);
+    }
+  });
 });

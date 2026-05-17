@@ -90,3 +90,26 @@ fn message_kind(m: &ClientMsg) -> &'static str {
 // Avoid unused-import warning when `tungstenite::stream` not otherwise used.
 #[allow(dead_code)]
 fn _force_unused_read_stays_available<R: Read>(_: &mut R) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_kind_covers_all_variants() {
+        assert_eq!(message_kind(&ClientMsg::Reset { seed: None }), "reset");
+        assert_eq!(message_kind(&ClientMsg::Step { action_id: 0 }), "step");
+        assert_eq!(message_kind(&ClientMsg::Close), "close");
+    }
+
+    #[test]
+    fn connect_returns_websocket_error_on_unreachable_url() {
+        // Port 1 is privileged; nothing listens. Any quick failure works.
+        let res = ProtocolClient::connect("ws://127.0.0.1:1", 100);
+        match res {
+            Err(McEnvError::WebSocket(_)) => {}
+            Err(other) => panic!("expected WebSocket error, got {other:?}"),
+            Ok(_) => panic!("connect should have failed"),
+        }
+    }
+}

@@ -174,13 +174,32 @@ impl TrajectoryV2 {
         }
         for (i, s) in self.steps.iter().enumerate() {
             if s.obs.len() != self.obs_dim {
-                return Err(TrajectoryError::ObsDimMismatch {
-                    expected: self.obs_dim,
-                    got: s.obs.len(),
-                })
-                .map_err(|_e| TrajectoryError::InvalidStep {
+                return Err(TrajectoryError::InvalidStep {
                     index: i,
-                    reason: "obs.len() != header.obs_dim".into(),
+                    reason: format!(
+                        "obs.len() = {}, header.obs_dim = {}",
+                        s.obs.len(),
+                        self.obs_dim
+                    ),
+                });
+            }
+            if s.policy_target.len() as u32 != self.action_count {
+                return Err(TrajectoryError::InvalidStep {
+                    index: i,
+                    reason: format!(
+                        "policy_target.len() = {}, action_count = {}",
+                        s.policy_target.len(),
+                        self.action_count
+                    ),
+                });
+            }
+            if s.action_id >= self.action_count {
+                return Err(TrajectoryError::InvalidStep {
+                    index: i,
+                    reason: format!(
+                        "action_id = {}, action_count = {}",
+                        s.action_id, self.action_count
+                    ),
                 });
             }
         }
@@ -458,6 +477,93 @@ mod tests {
         std::fs::write(&path, serde_json::to_vec(&t).unwrap()).unwrap();
         let err = TrajectoryV2::load_json(&path).unwrap_err();
         assert!(matches!(err, TrajectoryError::VersionMismatch { .. }));
+    }
+
+    #[test]
+    fn empty_predicate_returns_true_when_no_steps() {
+        let t = empty_traj(4, 2);
+        assert!(t.is_empty());
+        assert_eq!(t.len(), 0);
+    }
+
+    #[test]
+    fn validate_rejects_zero_obs_dim() {
+        let t = TrajectoryV2 {
+            obs_dim: 0,
+            ..empty_traj(1, 1)
+        };
+        assert!(matches!(
+            t.validate(),
+            Err(TrajectoryError::InvalidHeader(_))
+        ));
+    }
+
+    #[test]
+    fn validate_walks_each_step_and_reports_index() {
+        let mut t = empty_traj(4, 2);
+        t.push(make_step(4, 2, 0, 0.0)).unwrap();
+        t.push(make_step(4, 2, 1, 0.0)).unwrap();
+        // Mutate a step's obs to violate the invariant.
+        t.steps[1].obs = vec![0.0; 99];
+        let err = t.validate().unwrap_err();
+        match err {
+            TrajectoryError::InvalidStep { index, reason } => {
+                assert_eq!(index, 1);
+                assert!(reason.contains("obs.len()"));
+            }
+            other => panic!("expected InvalidStep, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_catches_policy_dim_drift_per_step() {
+        let mut t = empty_traj(4, 2);
+        t.push(make_step(4, 2, 0, 0.0)).unwrap();
+        t.steps[0].policy_target = vec![0.5; 99];
+        let err = t.validate().unwrap_err();
+        assert!(matches!(err, TrajectoryError::InvalidStep { .. }));
+    }
+
+    #[test]
+    fn validate_catches_action_id_drift_per_step() {
+        let mut t = empty_traj(4, 2);
+        t.push(make_step(4, 2, 0, 0.0)).unwrap();
+        t.steps[0].action_id = 99;
+        let err = t.validate().unwrap_err();
+        assert!(matches!(err, TrajectoryError::InvalidStep { .. }));
+    }
+
+    #[test]
+    fn save_json_fails_validate_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.json");
+        let mut t = empty_traj(4, 2);
+        t.push(make_step(4, 2, 0, 0.0)).unwrap();
+        t.action_count = 0;
+        let err = t.save_json(&path).unwrap_err();
+        assert!(matches!(err, TrajectoryError::InvalidHeader(_)));
+    }
+
+    #[test]
+    fn from_v1_preserves_seed() {
+        use crate::trajectory::Trajectory;
+        let mut v1 = Trajectory::new();
+        v1.metadata.seed = 12345;
+        let v2 = from_v1(
+            &v1,
+            FromV1Options {
+                env_id: "forge".into(),
+                schema_id: "s".into(),
+                episode_id: "e".into(),
+                obs_dim: 1,
+                action_count: 1,
+                started_at: "a".into(),
+                ended_at: "b".into(),
+                flatten_step: &|_| vec![0.0; 1],
+            },
+        )
+        .unwrap();
+        assert_eq!(v2.seed, Some(12345));
     }
 
     #[test]

@@ -28,6 +28,7 @@ pub mod config;
 pub mod error;
 pub mod mc_env;
 pub mod protocol;
+pub mod reward_config;
 
 pub use action_map::{ActionEntry, ActionKind, ActionMap};
 pub use client::ProtocolClient;
@@ -35,3 +36,4 @@ pub use config::MinecraftEnvConfig;
 pub use error::McEnvError;
 pub use mc_env::{MinecraftEnv, MinecraftStepInfo};
 pub use protocol::{ClientMsg, ServerMsg, SCHEMA_VERSION};
+pub use reward_config::{combined_schema_id, RewardConfig};

@@ -1,0 +1,39 @@
+# Minecraft reward function configuration.
+#
+# Shared source of truth between the Rust client (`forge-env-mc`) and
+# the Node bot (`mc-bot`). The canonical form's SHA256 is folded into
+# the global `schema_id` so reward drift mid-experiment is detected at
+# the next bot handshake and at every trainer-side replay load.
+#
+# Schema (each `[[reward]]` entry):
+#   kind = "survival"           value = f32           (default 0.01)
+#   kind = "inventory_acquired" items = [string]      value = f32  (default 1.0)
+#   kind = "distance_to_goal"   target = {x,y,z}      clip = f32   (default 1.0)
+#   kind = "health_delta"       value = f32           (default 1.0)
+#   kind = "composite"          weights = { name = f32, ... }
+#                               [reward.<name>]       per-child params
+#
+# Multiple top-level [[reward]] entries are SUMMED. Use a single
+# `composite` entry for weighted mixes.
+#
+# Changing any field bumps `schema_id` and invalidates prior replays.
+
+schema_version = 1
+
+[[reward]]
+kind = "composite"
+
+[reward.weights]
+distance_to_goal = 1.0
+survival = 0.01
+
+[reward.distance_to_goal]
+clip = 100.0
+
+[reward.distance_to_goal.target]
+x = 0
+y = 64
+z = 0
+
+[reward.survival]
+value = 0.01

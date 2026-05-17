@@ -106,6 +106,20 @@ fn step_into_keeps_buffer_dim_stable() {
     }
 }
 
+/// Invariant gated test: `FlatForgeEnv`'s `action_spec` MUST be a
+/// `Discrete` variant. `num_actions()` falls back to 0 if this is
+/// ever violated; we never want that fallback to fire in practice.
+#[test]
+fn flat_forge_env_action_spec_is_discrete() {
+    let cfg = tiny_cfg();
+    let env = FlatForgeEnv::new(cfg, FlatObsConfig::default()).unwrap();
+    use forge_env::FlatObsEnv;
+    assert!(
+        env.num_actions() > 0,
+        "action_spec must be Discrete with n > 0"
+    );
+}
+
 #[test]
 fn flattener_layout_is_stable_across_runs() {
     let cfg = tiny_cfg();

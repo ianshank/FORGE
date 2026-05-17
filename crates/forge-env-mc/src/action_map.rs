@@ -168,7 +168,12 @@ impl ActionMap {
     pub fn canonical_sha256(&self) -> String {
         let mut sorted = self.entries.clone();
         sorted.sort_by_key(|e| e.id);
-        let canonical = serde_json::to_string(&sorted).expect("entries serialise");
+        // serde_json::to_string on Vec<ActionEntry> is infallible: every
+        // field is a primitive or `String` (no NaN/Infinity in the
+        // schema), so the only possible failure is OOM — which would
+        // panic anywhere else too.
+        let canonical = serde_json::to_string(&sorted)
+            .expect("ActionEntry serialises (no NaN/Infinity in the schema)");
         let mut hasher = Sha256::new();
         hasher.update(canonical.as_bytes());
         let digest = hasher.finalize();
@@ -329,6 +334,31 @@ kind = "jump"
     fn get_returns_none_for_unknown_id() {
         let m = sample_map();
         assert!(m.get(99).is_none());
+    }
+
+    #[test]
+    fn load_reads_action_map_from_disk() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.toml");
+        let mut f = std::fs::File::create(&path).unwrap();
+        let toml = r#"
+schema_version = 1
+[[action]]
+id = 0
+kind = "noop"
+ticks = 1
+"#;
+        f.write_all(toml.as_bytes()).unwrap();
+        drop(f);
+        let m = ActionMap::load(&path).expect("load");
+        assert_eq!(m.action_count(), 1);
+    }
+
+    #[test]
+    fn load_missing_file_returns_config_error() {
+        let err = ActionMap::load("/no/such/path.toml").unwrap_err();
+        assert!(matches!(err, McEnvError::Config(_)));
     }
 
     /// The shipped default action map (`configs/minecraft/action_map.toml`)

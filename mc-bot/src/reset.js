@@ -9,10 +9,16 @@
  * @property {{x:number,y:number,z:number}} teleport.spawn
  * @property {number} [teleport.yaw]
  * @property {number} [teleport.pitch]
+ * @property {string} [teleport.selector] - Minecraft target selector
+ *           or username (default "@s"). Use the bot's username (e.g.
+ *           "ForgeBot") on servers that disable entity selectors.
  * @property {boolean} teleport.clear_inventory
  * @property {boolean} teleport.restore_health
  * @property {boolean} teleport.restore_food
  */
+
+const DEFAULT_SELECTOR = '@s';
+const DEFAULT_SPAWN = Object.freeze({ x: 0, y: 64, z: 0 });
 
 /**
  * Reset the bot per the supplied config. Pure side-effects on the bot;
@@ -24,7 +30,9 @@
  * with a stub.
  *
  * @param {object} bot   mineflayer bot or stub exposing `chat(string)`
- *                       and `entity.position`
+ *                       and (optionally) `username`. If the config
+ *                       does not specify a selector, falls back to
+ *                       "@s" — which requires the bot to be op'd.
  * @param {ResetConfig} cfg
  */
 export async function applyReset(bot, cfg) {
@@ -43,21 +51,23 @@ export async function applyReset(bot, cfg) {
   }
 
   const t = cfg.teleport ?? {};
-  const spawn = t.spawn ?? { x: 0, y: 64, z: 0 };
+  const spawn = t.spawn ?? DEFAULT_SPAWN;
   const yaw = Number.isFinite(t.yaw) ? t.yaw : 0;
   const pitch = Number.isFinite(t.pitch) ? t.pitch : 0;
+  const selector = (typeof t.selector === 'string' && t.selector.length > 0)
+    ? t.selector
+    : DEFAULT_SELECTOR;
 
-  // Mineflayer uses chat commands for ops actions; the bot must be op
-  // on the server. Each command is awaited only synchronously in this
-  // stub — production wiring should listen for ack events.
-  bot.chat(`/tp @s ${spawn.x} ${spawn.y} ${spawn.z} ${yaw} ${pitch}`);
+  // Mineflayer uses chat commands for ops actions; the bot (or whoever
+  // `selector` resolves to) must be op'd on the server.
+  bot.chat(`/tp ${selector} ${spawn.x} ${spawn.y} ${spawn.z} ${yaw} ${pitch}`);
   if (t.clear_inventory !== false) {
-    bot.chat('/clear @s');
+    bot.chat(`/clear ${selector}`);
   }
   if (t.restore_health !== false) {
-    bot.chat('/effect give @s minecraft:instant_health 1 10');
+    bot.chat(`/effect give ${selector} minecraft:instant_health 1 10`);
   }
   if (t.restore_food !== false) {
-    bot.chat('/effect give @s minecraft:saturation 1 10');
+    bot.chat(`/effect give ${selector} minecraft:saturation 1 10`);
   }
 }

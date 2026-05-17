@@ -52,3 +52,26 @@ impl From<tungstenite::Error> for McEnvError {
         Self::WebSocket(value.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_tungstenite_error_maps_to_websocket_variant() {
+        let inner = tungstenite::Error::ConnectionClosed;
+        let mapped: McEnvError = inner.into();
+        assert!(matches!(mapped, McEnvError::WebSocket(_)));
+    }
+
+    #[test]
+    fn closed_error_display() {
+        assert_eq!(McEnvError::Closed.to_string(), "env is closed");
+    }
+
+    #[test]
+    fn unexpected_error_display() {
+        let e = McEnvError::Unexpected("bad".into());
+        assert!(e.to_string().contains("bad"));
+    }
+}

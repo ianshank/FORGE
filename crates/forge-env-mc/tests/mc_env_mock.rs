@@ -232,6 +232,202 @@ fn step_with_action_out_of_range_returns_invalid_action() {
 }
 
 #[test]
+fn accessors_expose_schema_id_action_map_config_and_specs() {
+    let port = pick_port();
+    let url = format!("ws://127.0.0.1:{port}");
+    let addr = format!("127.0.0.1:{port}");
+    let map = sample_map();
+    let known_id = "deadbeef";
+    let hello = ServerMsg::Hello {
+        schema_version: SCHEMA_VERSION,
+        action_count: map.action_count(),
+        obs_dim: OBS_DIM,
+        schema_id: known_id.into(),
+    };
+    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let cfg = cfg_with_url(url);
+    let env = MinecraftEnv::connect(cfg, map.clone()).unwrap();
+    assert_eq!(env.schema_id(), known_id);
+    assert_eq!(env.action_map().action_count(), map.action_count());
+    assert!(env.config().ws_url.contains("127.0.0.1"));
+    use forge_env::Env;
+    assert_eq!(env.obs_spec().num_elements(), OBS_DIM);
+    assert!(env.action_spec().discrete_n().is_some());
+    let name = env.name();
+    assert!(name.contains("minecraft-"));
+    drop(env);
+    let _ = server.join();
+}
+
+#[test]
+fn close_then_step_returns_closed_error() {
+    let port = pick_port();
+    let url = format!("ws://127.0.0.1:{port}");
+    let addr = format!("127.0.0.1:{port}");
+    let map = sample_map();
+    let hello = ServerMsg::Hello {
+        schema_version: SCHEMA_VERSION,
+        action_count: map.action_count(),
+        obs_dim: OBS_DIM,
+        schema_id: map.canonical_sha256(),
+    };
+    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let cfg = cfg_with_url(url);
+    let mut env = MinecraftEnv::connect(cfg, map).unwrap();
+    use forge_env::Env;
+    env.close().unwrap();
+    // Second close is a no-op
+    env.close().unwrap();
+    let err = env.step(0).unwrap_err();
+    assert!(matches!(err, McEnvError::Closed));
+    let err2 = env.reset(None).unwrap_err();
+    assert!(matches!(err2, McEnvError::Closed));
+    let _ = server.join();
+}
+
+#[test]
+fn duplicate_hello_mid_episode_is_unexpected() {
+    let port = pick_port();
+    let url = format!("ws://127.0.0.1:{port}");
+    let addr = format!("127.0.0.1:{port}");
+    let map = sample_map();
+    let hello = ServerMsg::Hello {
+        schema_version: SCHEMA_VERSION,
+        action_count: map.action_count(),
+        obs_dim: OBS_DIM,
+        schema_id: map.canonical_sha256(),
+    };
+    let mid_hello = ServerMsg::Hello {
+        schema_version: SCHEMA_VERSION,
+        action_count: map.action_count(),
+        obs_dim: OBS_DIM,
+        schema_id: "x".into(),
+    };
+    let server = Mock::spawn(&addr, hello, vec![mid_hello]).run();
+    let cfg = cfg_with_url(url);
+    let mut env = MinecraftEnv::connect(cfg, map).unwrap();
+    use forge_env::Env;
+    let err = env.reset(None).unwrap_err();
+    assert!(matches!(err, McEnvError::Unexpected(_)));
+    let _ = server.join();
+}
+
+#[test]
+fn obs_dim_mismatch_in_observation_returns_handshake_error() {
+    let port = pick_port();
+    let url = format!("ws://127.0.0.1:{port}");
+    let addr = format!("127.0.0.1:{port}");
+    let map = sample_map();
+    let hello = ServerMsg::Hello {
+        schema_version: SCHEMA_VERSION,
+        action_count: map.action_count(),
+        obs_dim: OBS_DIM,
+        schema_id: map.canonical_sha256(),
+    };
+    let bad_obs = ServerMsg::Observation {
+        tick: 0,
+        obs: vec![0.0; OBS_DIM + 5], // wrong length
+        reward: 0.0,
+        terminated: false,
+        truncated: false,
+        info: serde_json::json!({}),
+    };
+    let server = Mock::spawn(&addr, hello, vec![bad_obs]).run();
+    let cfg = cfg_with_url(url);
+    let mut env = MinecraftEnv::connect(cfg, map).unwrap();
+    use forge_env::Env;
+    let err = env.reset(None).unwrap_err();
+    assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
+    let _ = server.join();
+}
+
+#[test]
+fn handshake_rejects_obs_dim_mismatch_when_expected_set() {
+    let port = pick_port();
+    let url = format!("ws://127.0.0.1:{port}");
+    let addr = format!("127.0.0.1:{port}");
+    let map = sample_map();
+    let hello = ServerMsg::Hello {
+        schema_version: SCHEMA_VERSION,
+        action_count: map.action_count(),
+        obs_dim: OBS_DIM,
+        schema_id: map.canonical_sha256(),
+    };
+    let server = Mock::spawn(&addr, hello, vec![]).run();
+    // Expected_dim != OBS_DIM the bot reports.
+    let cfg = cfg_with_url_and_expected(url, OBS_DIM + 7);
+    let err = MinecraftEnv::connect(cfg, map).err().expect("expected err");
+    assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
+    let _ = server.join();
+}
+
+#[test]
+fn binary_frame_after_handshake_returns_unexpected() {
+    // Mock that emits a raw Binary frame instead of an Observation.
+    let port = pick_port();
+    let url = format!("ws://127.0.0.1:{port}");
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+    let map = sample_map();
+    let hello = ServerMsg::Hello {
+        schema_version: SCHEMA_VERSION,
+        action_count: map.action_count(),
+        obs_dim: OBS_DIM,
+        schema_id: map.canonical_sha256(),
+    };
+    let server = thread::spawn(move || {
+        let (stream, _peer) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut ws = tungstenite::accept(stream).unwrap();
+        let hello_json = serde_json::to_string(&hello).unwrap();
+        ws.send(Message::Text(hello_json)).unwrap();
+        // Wait for client's Reset/Step then reply with a Binary frame.
+        let _ = ws.read();
+        ws.send(Message::Binary(vec![1, 2, 3, 4])).unwrap();
+        let _ = ws.close(None);
+    });
+    let cfg = cfg_with_url(url);
+    let mut env = MinecraftEnv::connect(cfg, map).unwrap();
+    use forge_env::Env;
+    let err = env.reset(None).unwrap_err();
+    assert!(matches!(err, McEnvError::Unexpected(_)));
+    let _ = server.join();
+}
+
+#[test]
+fn close_frame_from_server_returns_websocket_error() {
+    let port = pick_port();
+    let url = format!("ws://127.0.0.1:{port}");
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+    let map = sample_map();
+    let hello = ServerMsg::Hello {
+        schema_version: SCHEMA_VERSION,
+        action_count: map.action_count(),
+        obs_dim: OBS_DIM,
+        schema_id: map.canonical_sha256(),
+    };
+    let server = thread::spawn(move || {
+        let (stream, _peer) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut ws = tungstenite::accept(stream).unwrap();
+        let hello_json = serde_json::to_string(&hello).unwrap();
+        ws.send(Message::Text(hello_json)).unwrap();
+        // Wait for client's Reset, then close without sending observation.
+        let _ = ws.read();
+        let _ = ws.close(None);
+    });
+    let cfg = cfg_with_url(url);
+    let mut env = MinecraftEnv::connect(cfg, map).unwrap();
+    use forge_env::Env;
+    let err = env.reset(None).unwrap_err();
+    assert!(matches!(err, McEnvError::WebSocket(_)));
+    let _ = server.join();
+}
+
+#[test]
 fn server_error_message_propagates() {
     let port = pick_port();
     let url = format!("ws://127.0.0.1:{port}");

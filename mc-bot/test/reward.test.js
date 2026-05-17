@@ -134,4 +134,29 @@ describe('reward — composite + buildReward', () => {
   it('rejects unknown reward kind', () => {
     assert.throws(() => buildOne({ kind: 'magic' }), /unknown reward kind/);
   });
+
+  it('composite reports the offending child kind in the error', () => {
+    assert.throws(
+      () => buildOne({ kind: 'composite', weights: { magic: 1.0 } }),
+      /composite sub-reward "magic"/,
+    );
+  });
+
+  it('composite rejects non-object weights', () => {
+    assert.throws(() => buildOne({ kind: 'composite', weights: 'oops' }));
+  });
+
+  it('composite rejects nested composite to prevent infinite recursion', () => {
+    assert.throws(
+      () => buildOne({ kind: 'composite', weights: { composite: 1.0 } }),
+      /composite cannot contain another composite/,
+    );
+  });
+
+  it('composite rejects non-finite weight', () => {
+    assert.throws(
+      () => buildOne({ kind: 'composite', weights: { survival: NaN } }),
+      /must be finite/,
+    );
+  });
 });

@@ -224,10 +224,14 @@ impl FlatObsEnv for FlatForgeEnv {
         self.flattener.flat_dim()
     }
 
+    /// FlatForgeEnv constructs its `action_spec` as `Discrete` in
+    /// [`FlatForgeEnv::new`]; the invariant cannot be violated by
+    /// public API. We document the assumption and fall back to 0 if
+    /// the invariant ever breaks (e.g. via future code changes) so a
+    /// caller's argmax doesn't panic. The `flat_forge_env_action_spec_is_discrete`
+    /// test in `tests/forge_env_parity.rs` gates this invariant in CI.
     fn num_actions(&self) -> u32 {
-        self.action_spec
-            .discrete_n()
-            .expect("FlatForgeEnv action_spec is always Discrete")
+        self.action_spec.discrete_n().unwrap_or(0)
     }
 }
 
@@ -289,6 +293,39 @@ mod tests {
         let dim_with = ObsFlattener::new(with, cfg.clone()).flat_dim();
         let dim_without = ObsFlattener::new(without, cfg.clone()).flat_dim();
         assert!(dim_with >= dim_without);
+    }
+
+    #[test]
+    fn flat_forge_env_accessors_match_construction() {
+        let cfg = small_config();
+        let env = FlatForgeEnv::new(cfg, FlatObsConfig::default()).unwrap();
+        use forge_env::Env;
+        assert!(!env.obs_spec().shape.is_empty());
+        assert!(env.action_spec().discrete_n().is_some());
+        assert_eq!(env.name().as_ref(), "forge-flat");
+    }
+
+    #[test]
+    fn flatten_with_non_normalize_emits_raw_scalars() {
+        let cfg = small_config();
+        let flat_cfg = FlatObsConfig {
+            normalize: false,
+            include_grid: false,
+            include_inventory: false,
+            include_vitals: false,
+            include_position: true,
+            include_day_phase: true,
+            include_task_progress: false,
+        };
+        let f = ObsFlattener::new(flat_cfg, cfg);
+        let obs = Observation {
+            position: (5, 7),
+            day_phase: 2,
+            ..Observation::default()
+        };
+        let v = f.flatten(&obs);
+        // [x, y, day_phase] = [5.0, 7.0, 2.0]
+        assert_eq!(v, vec![5.0, 7.0, 2.0]);
     }
 
     #[test]

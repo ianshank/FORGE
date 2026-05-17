@@ -232,4 +232,19 @@ mod tests {
         let n = env.name();
         assert!(n.contains("forge-world"));
     }
+
+    #[test]
+    fn config_accessor_returns_underlying_config() {
+        let env = WorldEnv::new(tiny_config()).unwrap();
+        assert_eq!(env.config().world.width, 16);
+    }
+
+    #[test]
+    fn obs_spec_and_action_spec_accessors_match_construction() {
+        let env = WorldEnv::new(tiny_config()).unwrap();
+        // obs_spec().shape was set in build_obs_spec
+        assert!(!env.obs_spec().shape.is_empty());
+        // action_spec is always Discrete
+        assert!(env.action_spec().discrete_n().is_some());
+    }
 }

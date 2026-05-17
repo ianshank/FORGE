@@ -335,6 +335,62 @@ mod tests {
     }
 
     #[test]
+    fn step_output_default_constructs_from_defaultable_types() {
+        let out: StepOutput<Vec<f32>, MockInfo> = StepOutput::default();
+        assert!(out.obs.is_empty());
+        assert_eq!(out.reward, 0.0);
+        assert!(!out.terminated);
+        assert!(!out.truncated);
+        assert_eq!(out.info.tick, 0);
+    }
+
+    /// Minimal env that doesn't override `name()` or `close()` — exercises
+    /// the trait-default impls (otherwise uncovered by Mock which overrides).
+    struct BareEnv;
+    impl Env for BareEnv {
+        type Obs = ();
+        type Action = u32;
+        type Info = ();
+        type Error = EnvError;
+        fn reset(&mut self, _seed: Option<u64>) -> Result<StepOutput<(), ()>, EnvError> {
+            Ok(StepOutput {
+                obs: (),
+                reward: 0.0,
+                terminated: false,
+                truncated: false,
+                info: (),
+            })
+        }
+        fn step(&mut self, _action: u32) -> Result<StepOutput<(), ()>, EnvError> {
+            Ok(StepOutput {
+                obs: (),
+                reward: 0.0,
+                terminated: false,
+                truncated: false,
+                info: (),
+            })
+        }
+        fn obs_spec(&self) -> &ObsSpec {
+            unreachable!()
+        }
+        fn action_spec(&self) -> &ActionSpec {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn env_default_name_is_borrowed_env() {
+        let env = BareEnv;
+        assert_eq!(env.name().as_ref(), "env");
+    }
+
+    #[test]
+    fn env_default_close_returns_ok() {
+        let mut env = BareEnv;
+        assert!(env.close().is_ok());
+    }
+
+    #[test]
     fn flat_obs_env_is_object_safe() {
         // Compile-time check: we can hold one as a trait object.
         let env = MockFlatEnv::new(8, 2);

@@ -125,3 +125,36 @@ pub(crate) fn task_predicate_count(forge_cfg: &ForgeConfig) -> usize {
 pub fn task_predicate_count_from_obs(obs: &Observation) -> usize {
     obs.task_progress.len()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use forge_types::observation::Observation;
+
+    #[test]
+    fn task_predicate_count_from_obs_returns_progress_len() {
+        let obs = Observation {
+            task_progress: vec![0.1, 0.2, 0.3],
+            ..Observation::default()
+        };
+        assert_eq!(task_predicate_count_from_obs(&obs), 3);
+    }
+
+    #[test]
+    fn flat_dim_responds_to_toggles() {
+        let cfg = ForgeConfig::default();
+        let all_on = FlatObsConfig::default().flat_dim(&cfg);
+        let all_off = FlatObsConfig {
+            include_grid: false,
+            include_inventory: false,
+            include_vitals: false,
+            include_position: false,
+            include_day_phase: false,
+            include_task_progress: false,
+            normalize: true,
+        }
+        .flat_dim(&cfg);
+        assert!(all_on > all_off);
+        assert_eq!(all_off, 0);
+    }
+}
