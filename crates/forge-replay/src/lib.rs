@@ -26,6 +26,7 @@ pub mod compact;
 pub mod config;
 pub mod export;
 pub mod trajectory;
+pub mod v2;
 
 /// HuggingFace Datasets (Parquet) export. Available only with the `hf`
 /// cargo feature enabled; pulls in `arrow` + `parquet`.
