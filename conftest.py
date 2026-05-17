@@ -16,6 +16,7 @@ from pathlib import Path
 
 _FORGE_ROOT = Path(__file__).resolve().parent
 _PYTHON_DIR = _FORGE_ROOT / "python"
+_SCRIPTS_DIR = _FORGE_ROOT / "scripts"
 
 
 def _ensure_importable(directory: Path) -> None:
@@ -28,3 +29,7 @@ def _ensure_importable(directory: Path) -> None:
 # Make ``forge`` (pure Python) and ``demo_ui`` importable from source.
 _ensure_importable(_FORGE_ROOT)
 _ensure_importable(_PYTHON_DIR)
+# Make the orchestrator scripts (``run_e2e_long``, ``_e2e_progress``, ``train``,
+# ``calibrate_agri`` …) importable from tests without each one needing its own
+# ``sys.path.insert`` + ``# noqa: E402`` dance.
+_ensure_importable(_SCRIPTS_DIR)

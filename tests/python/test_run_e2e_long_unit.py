@@ -9,20 +9,19 @@ at the module boundary.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-import run_e2e_long  # noqa: E402
-from _e2e_progress import ProgressState  # noqa: E402
-from _e2e_progress import load as load_progress  # noqa: E402
-from _e2e_progress import save as save_progress  # noqa: E402
+# ``run_e2e_long`` and ``_e2e_progress`` live in ``scripts/`` rather than an
+# installed package; the root ``conftest.py`` puts that directory on ``sys.path``
+# so these imports stay at the top of the module (no E402 noqa needed).
+import run_e2e_long
+from _e2e_progress import ProgressState
+from _e2e_progress import load as load_progress
+from _e2e_progress import save as save_progress
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 PRESET_PATH: Path = REPO_ROOT / "configs" / "eval" / "e2e_long_preset.toml"
