@@ -44,7 +44,7 @@ credentials are hard-coded:
 | Source | Mechanism |
 |--------|-----------|
 | Env vars | `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_NAME`, `MLFLOW_RUN_NAME`, `MLFLOW_TRACKING_USERNAME/PASSWORD/TOKEN`, `FORGE_MLFLOW_TAGS`, etc. |
-| CLI flags | `--mlflow-enabled`, `--mlflow-experiment`, `--mlflow-run-name`, `--mlflow-tracking-uri`, `--mlflow-artifact-location`, `--mlflow-tags`, `--mlflow-system-metrics`, `--mlflow-config` |
+| CLI flags | `--mlflow-enabled`, `--mlflow-experiment`, `--mlflow-run-name`, `--mlflow-tracking-uri`, `--mlflow-artifact-location`, `--mlflow-tags`, `--mlflow-system-metrics` |
 | Programmatic | `MlflowSettings.from_env().merge(...)` |
 
 Key invariants:

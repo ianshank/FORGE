@@ -38,8 +38,9 @@ name, or credentials are hard-coded.
   MLflow knob is configurable without subclassing.
 - `_resolve_experiment` — idempotently creates or looks up an experiment by
   name, honouring `artifact_location` only on first creation. Handles the
-  TOCTOU race (concurrent experiment creation) via targeted
-  `"already exists"` exception catch so parallel training runs start cleanly.
+  TOCTOU race (concurrent experiment creation) via `MlflowException.error_code`
+  check (`RESOURCE_ALREADY_EXISTS`) with string-match fallback so parallel
+  training runs start cleanly across MLflow versions and locales.
 - `_enable_system_metrics` — activates MLflow's system-metrics daemon when
   `enable_system_metrics=True`; gracefully degrades if the API is absent on
   older MLflow releases.
@@ -50,9 +51,9 @@ name, or credentials are hard-coded.
 
 #### Updated `scripts/train.py`
 
-- 8 new `--mlflow-*` CLI flags: `--mlflow-enabled`, `--mlflow-experiment`,
+- 7 new `--mlflow-*` CLI flags: `--mlflow-enabled`, `--mlflow-experiment`,
   `--mlflow-run-name`, `--mlflow-tracking-uri`, `--mlflow-artifact-location`,
-  `--mlflow-tags`, `--mlflow-system-metrics`, `--mlflow-config`.
+  `--mlflow-tags`, `--mlflow-system-metrics`.
 - `_build_mlflow_settings(args)` — merges env → CLI with a FORGE run-name
   default of `{agent}-seed{seed}`.
 - `_params_for_run(args)` — flattens CLI namespace to a flat str→str dict
