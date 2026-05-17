@@ -6,19 +6,34 @@ use tracing::instrument;
 
 use crate::output::OutputConfig;
 
-// Placeholder constants for the planned MLflow HTTP exporter. These will move
-// into `crate::exporters::mlflow_http` once that module lands (Slice 2.2),
-// at which point this module will re-export them from there. Defined here
-// today so `EvalConfig` can reference them as `Default` field values without
-// a forward dependency on the unmerged module.
+// MLflow HTTP exporter defaults.
+//
+// When the `http-mlflow` feature is enabled, the canonical home for these
+// constants is `crate::exporters::mlflow_http`; we re-export from there so a
+// single edit changes every consumer. When the feature is OFF the placeholders
+// below stand in (the constants still need to exist so `EvalConfig::Default`
+// compiles; their values mirror the canonical ones one-for-one — pinned by a
+// test in `mlflow_http::tests` when the feature is enabled).
+
+#[cfg(feature = "http-mlflow")]
+pub use crate::exporters::mlflow_http::{
+    DEFAULT_HTTP_BACKOFF_BASE_MS as DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS,
+    DEFAULT_HTTP_MAX_RETRIES as DEFAULT_MLFLOW_HTTP_MAX_RETRIES,
+    DEFAULT_HTTP_TIMEOUT_MS as DEFAULT_MLFLOW_HTTP_TIMEOUT_MS,
+    DEFAULT_LOG_BATCH_SIZE as DEFAULT_MLFLOW_HTTP_BATCH_SIZE,
+};
 
 /// Default HTTP request timeout for the MLflow tracking REST client (ms).
+#[cfg(not(feature = "http-mlflow"))]
 pub const DEFAULT_MLFLOW_HTTP_TIMEOUT_MS: u64 = 30_000;
 /// Default max retries on retryable HTTP statuses (5xx, 408, 429).
+#[cfg(not(feature = "http-mlflow"))]
 pub const DEFAULT_MLFLOW_HTTP_MAX_RETRIES: u32 = 5;
 /// Default exponential-backoff base (ms) between retries.
+#[cfg(not(feature = "http-mlflow"))]
 pub const DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS: u64 = 250;
 /// Default batch size for `runs/log-batch`. MLflow REST caps at 1000.
+#[cfg(not(feature = "http-mlflow"))]
 pub const DEFAULT_MLFLOW_HTTP_BATCH_SIZE: usize = 1_000;
 
 /// Configuration for an evaluation run.

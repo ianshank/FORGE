@@ -60,6 +60,59 @@ pub const DEFAULT_LOG_BATCH_SIZE: usize = 1_000;
 /// `<crate>/<version>` so the MLflow server log identifies the source.
 pub const DEFAULT_USER_AGENT: &str = concat!("forge-eval/", env!("CARGO_PKG_VERSION"));
 
+/// Default experiment name used when [`crate::config::EvalConfig::experiment_name`]
+/// is `None`. Mirrors what [`crate::manifest::RunManifest`] defaults to so the
+/// HTTP sink, filesystem sink and manifest all agree on one fallback value.
+pub const DEFAULT_EXPERIMENT_NAME: &str = "forge-eval-default";
+
+// ─── REST path segments + body field names ─────────────────────────────────
+// Centralised so adding a new MLflow API version (or a typo audit) is a
+// single-file edit. All names match the MLflow REST contract verbatim; the
+// pin tests below catch any accidental rename.
+
+/// First URL path segment of every MLflow REST call.
+const API_ROOT: &str = "api";
+/// MLflow REST API version segment. Server contract still on `2.0`.
+const API_VERSION: &str = "2.0";
+/// Namespace under `/api/<API_VERSION>/` for everything except artefacts.
+const NAMESPACE_MLFLOW: &str = "mlflow";
+/// Namespace under `/api/<API_VERSION>/` for artefact upload. NOT under
+/// `/mlflow/` (that's MLflow's deliberate REST quirk).
+const NAMESPACE_ARTIFACTS: &str = "mlflow-artifacts";
+/// Sub-segment after `mlflow-artifacts` in the artefact upload URL.
+const ARTIFACTS_PATH: &str = "artifacts";
+
+// REST body / query field names — every literal `"experiment_id"` etc. in
+// this module must come from one of these constants. Tests pin the values.
+
+const FIELD_EXPERIMENT_NAME: &str = "experiment_name";
+const FIELD_EXPERIMENT_ID: &str = "experiment_id";
+const FIELD_NAME: &str = "name";
+const FIELD_RUN_ID: &str = "run_id";
+const FIELD_RUN: &str = "run";
+const FIELD_INFO: &str = "info";
+const FIELD_START_TIME: &str = "start_time";
+const FIELD_END_TIME: &str = "end_time";
+const FIELD_STATUS: &str = "status";
+const FIELD_KEY: &str = "key";
+const FIELD_VALUE: &str = "value";
+const FIELD_TAGS: &str = "tags";
+const FIELD_METRICS: &str = "metrics";
+const FIELD_PARAMS: &str = "params";
+const FIELD_TIMESTAMP: &str = "timestamp";
+const FIELD_STEP: &str = "step";
+const QUERY_RUN_ID: &str = "run_id";
+
+/// Compile-time path slice into the `get_or_create_experiment` response
+/// JSON: `{"experiment": {"experiment_id": "<id>"}}`.
+const RESP_PATH_EXPERIMENT_ID: &[&str] = &["experiment", FIELD_EXPERIMENT_ID];
+/// Compile-time path slice into the `create_experiment` response JSON:
+/// `{"experiment_id": "<id>"}`.
+const RESP_PATH_CREATE_EXP_ID: &[&str] = &[FIELD_EXPERIMENT_ID];
+/// Compile-time path slice into the `create_run` response JSON:
+/// `{"run": {"info": {"run_id": "<id>"}}}`.
+const RESP_PATH_RUN_ID: &[&str] = &[FIELD_RUN, FIELD_INFO, FIELD_RUN_ID];
+
 // ─── Retry policy ──────────────────────────────────────────────────────────
 
 /// Decision policy for HTTP retries. Pure function over the response
@@ -234,12 +287,12 @@ impl MlflowHttpClient {
         let url = self.api_url(&["experiments", "get-by-name"])?;
         let url_with_query = {
             let mut u = url.clone();
-            u.query_pairs_mut().append_pair("experiment_name", name);
+            u.query_pairs_mut().append_pair(FIELD_EXPERIMENT_NAME, name);
             u
         };
         let lookup = self.execute_with_retry(|| self.with_auth(self.http.get(url_with_query.clone())));
         match lookup {
-            Ok(resp) => extract_string(&resp_json(resp)?, &["experiment", "experiment_id"]),
+            Ok(resp) => extract_string(&resp_json(resp)?, RESP_PATH_EXPERIMENT_ID),
             Err(ExportError::Http(msg)) if msg.starts_with("status 404") => {
                 self.create_experiment(name)
             }
@@ -252,9 +305,9 @@ impl MlflowHttpClient {
     /// new experiment id.
     pub fn create_experiment(&self, name: &str) -> Result<String, ExportError> {
         let url = self.api_url(&["experiments", "create"])?;
-        let body = json!({ "name": name });
+        let body = json!({ FIELD_NAME: name });
         let resp = self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
-        extract_string(&resp_json(resp)?, &["experiment_id"])
+        extract_string(&resp_json(resp)?, RESP_PATH_CREATE_EXP_ID)
     }
 
     /// MLflow `POST /api/2.0/mlflow/runs/create`. Returns the new run id.
@@ -269,12 +322,12 @@ impl MlflowHttpClient {
     ) -> Result<String, ExportError> {
         let url = self.api_url(&["runs", "create"])?;
         let body = json!({
-            "experiment_id": experiment_id,
-            "start_time": start_time_ms,
-            "tags": tags_to_json(tags),
+            FIELD_EXPERIMENT_ID: experiment_id,
+            FIELD_START_TIME: start_time_ms,
+            FIELD_TAGS: to_json_array(tags),
         });
         let resp = self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
-        extract_string(&resp_json(resp)?, &["run", "info", "run_id"])
+        extract_string(&resp_json(resp)?, RESP_PATH_RUN_ID)
     }
 
     /// MLflow `POST /api/2.0/mlflow/runs/log-batch`. Chunks `metrics` at
@@ -307,10 +360,10 @@ impl MlflowHttpClient {
                 (&[][..], &[][..])
             };
             let body = json!({
-                "run_id": run_id,
-                "metrics": metrics_to_json(chunk),
-                "params":  params_to_json(p),
-                "tags":    tags_to_json(t),
+                FIELD_RUN_ID: run_id,
+                FIELD_METRICS: to_json_array(chunk),
+                FIELD_PARAMS:  to_json_array(p),
+                FIELD_TAGS:    to_json_array(t),
             });
             debug!(
                 run_id = run_id,
@@ -328,7 +381,7 @@ impl MlflowHttpClient {
     /// the parent-run-id linkage tag for child runs has a stable code path.
     pub fn set_tag(&self, run_id: &str, key: &str, value: &str) -> Result<(), ExportError> {
         let url = self.api_url(&["runs", "set-tag"])?;
-        let body = json!({ "run_id": run_id, "key": key, "value": value });
+        let body = json!({ FIELD_RUN_ID: run_id, FIELD_KEY: key, FIELD_VALUE: value });
         self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
         Ok(())
     }
@@ -345,9 +398,9 @@ impl MlflowHttpClient {
     ) -> Result<(), ExportError> {
         let url = self.api_url(&["runs", "update"])?;
         let body = json!({
-            "run_id": run_id,
-            "status": status.as_str(),
-            "end_time": end_time_ms,
+            FIELD_RUN_ID: run_id,
+            FIELD_STATUS: status.as_str(),
+            FIELD_END_TIME: end_time_ms,
         });
         self.execute_with_retry(|| self.with_auth(self.http.post(url.clone()).json(&body)))?;
         Ok(())
@@ -364,23 +417,20 @@ impl MlflowHttpClient {
         bytes: &[u8],
     ) -> Result<(), ExportError> {
         // mlflow-artifacts lives under /api/2.0/ directly, NOT /api/2.0/mlflow/.
-        // Build the base manually rather than going through api_url().
-        let mut url = self.base.clone();
+        // Use the shared namespace helper so the `api` / API_VERSION prefix
+        // exists in exactly one place each. Append the per-file path segments
+        // after the namespace pair so embedded `/` in rel_path becomes a real
+        // delimiter, not URL-encoded as `%2F`.
+        let mut url = self.url_with_namespace(NAMESPACE_ARTIFACTS, &[ARTIFACTS_PATH])?;
         {
             let mut path = url
                 .path_segments_mut()
                 .map_err(|_| ExportError::InvalidTarget("base url cannot have a path".to_string()))?;
-            path.pop_if_empty();
-            for s in ["api", "2.0", "mlflow-artifacts", "artifacts"] {
-                path.push(s);
-            }
-            // Path segments are appended literally; embedded `/` in rel_path
-            // becomes a real path delimiter, not an URL-encoded `%2F`.
             for seg in rel_path.split('/').filter(|s| !s.is_empty()) {
                 path.push(seg);
             }
         }
-        url.query_pairs_mut().append_pair("run_id", run_id);
+        url.query_pairs_mut().append_pair(QUERY_RUN_ID, run_id);
         let body = bytes.to_vec();
         self.execute_with_retry(|| self.with_auth(self.http.put(url.clone()).body(body.clone())))?;
         Ok(())
@@ -388,10 +438,18 @@ impl MlflowHttpClient {
 
     // ─── Internals ─────────────────────────────────────────────────────────
 
-    /// Build `<base>/api/2.0/mlflow/<segments...>`. Returns
-    /// [`ExportError::InvalidTarget`] if the base URL is opaque (e.g. a
-    /// `data:` URI) — `path_segments_mut()` fails for those.
+    /// Build `<base>/api/<API_VERSION>/<NAMESPACE_MLFLOW>/<segments...>`.
+    /// Returns [`ExportError::InvalidTarget`] if the base URL is opaque
+    /// (e.g. a `data:` URI) — `path_segments_mut()` fails for those.
     fn api_url(&self, segments: &[&str]) -> Result<Url, ExportError> {
+        self.url_with_namespace(NAMESPACE_MLFLOW, segments)
+    }
+
+    /// Build `<base>/api/<API_VERSION>/<namespace>/<segments...>`.
+    /// Used by [`Self::api_url`] (namespace = `mlflow`) and the artefact
+    /// endpoint (namespace = `mlflow-artifacts`). Centralises the prefix
+    /// so `api` / `2.0` literals exist in one place each.
+    fn url_with_namespace(&self, namespace: &str, segments: &[&str]) -> Result<Url, ExportError> {
         let mut url = self.base.clone();
         {
             let mut path = url
@@ -399,7 +457,10 @@ impl MlflowHttpClient {
                 .map_err(|_| ExportError::InvalidTarget("base url cannot have a path".to_string()))?;
             // Avoid an empty trailing segment if `base.path()` is `/`.
             path.pop_if_empty();
-            for s in ["api", "2.0", "mlflow"].iter().chain(segments.iter()) {
+            path.push(API_ROOT);
+            path.push(API_VERSION);
+            path.push(namespace);
+            for s in segments {
                 path.push(s);
             }
         }
@@ -492,31 +553,43 @@ impl RunStatus {
 
 // ─── JSON helpers (request body builders + response field extractors) ──────
 
-fn metrics_to_json(metrics: &[MetricSample]) -> Vec<Value> {
-    metrics
-        .iter()
-        .map(|m| {
-            json!({
-                "key": m.key,
-                "value": m.value,
-                "timestamp": m.timestamp_ms,
-                "step": m.step,
-            })
+/// Trait for payload items renderable as MLflow REST JSON. Each item type
+/// (metric / param / tag) implements one tiny method; the generic
+/// [`to_json_array`] helper does the iteration. Eliminates the three
+/// near-duplicate `*_to_json` helpers the audit flagged and gives one
+/// extension point for future fields (e.g. metric `model_id`).
+trait ToMlflowJson {
+    fn to_mlflow_json(&self) -> Value;
+}
+
+impl ToMlflowJson for MetricSample {
+    fn to_mlflow_json(&self) -> Value {
+        json!({
+            FIELD_KEY: self.key,
+            FIELD_VALUE: self.value,
+            FIELD_TIMESTAMP: self.timestamp_ms,
+            FIELD_STEP: self.step,
         })
-        .collect()
+    }
 }
 
-fn params_to_json(params: &[ParamKv]) -> Vec<Value> {
-    params
-        .iter()
-        .map(|p| json!({ "key": p.key, "value": p.value }))
-        .collect()
+impl ToMlflowJson for ParamKv {
+    fn to_mlflow_json(&self) -> Value {
+        json!({ FIELD_KEY: self.key, FIELD_VALUE: self.value })
+    }
 }
 
-fn tags_to_json(tags: &[TagKv]) -> Vec<Value> {
-    tags.iter()
-        .map(|t| json!({ "key": t.key, "value": t.value }))
-        .collect()
+impl ToMlflowJson for TagKv {
+    fn to_mlflow_json(&self) -> Value {
+        json!({ FIELD_KEY: self.key, FIELD_VALUE: self.value })
+    }
+}
+
+/// Render a slice of MLflow JSON-renderable items as a `Vec<Value>` ready
+/// to embed in a request body. One implementation for every kind of item
+/// the REST surface accepts.
+fn to_json_array<T: ToMlflowJson>(items: &[T]) -> Vec<Value> {
+    items.iter().map(ToMlflowJson::to_mlflow_json).collect()
 }
 
 fn resp_json(resp: Response) -> Result<Value, ExportError> {
@@ -599,7 +672,7 @@ impl MlflowHttpSink {
         let experiment_name = cfg
             .experiment_name
             .clone()
-            .unwrap_or_else(|| "forge-eval-default".to_string());
+            .unwrap_or_else(|| DEFAULT_EXPERIMENT_NAME.to_string());
         Ok(Self { client, experiment_name })
     }
 
@@ -652,6 +725,11 @@ impl MlflowHttpSink {
     /// log_artifact, and mark FINISHED. A scopeguard ensures the run lands
     /// as FAILED rather than wedged in RUNNING if any of the intermediate
     /// calls returns Err.
+    ///
+    /// `#[instrument]` adds `run_id` (payload-side) to every nested
+    /// `tracing::warn!` / `error!` so a CI log dump can correlate a
+    /// retry-exhaustion message back to the specific run that failed.
+    #[instrument(skip_all, fields(payload_run_id = %payload.run_id, experiment_id = %experiment_id))]
     fn write_run(
         &self,
         experiment_id: &str,
@@ -681,11 +759,16 @@ impl MlflowHttpSink {
                 ) {
                     error!(
                         run_id = %server_id_for_guard,
+                        status = RunStatus::Failed.as_str(),
                         error = %e,
-                        "failed to mark mlflow run as FAILED on abort"
+                        "mlflow-http: failed to mark run as FAILED on abort"
                     );
                 } else {
-                    warn!(run_id = %server_id_for_guard, "mlflow run marked FAILED on abort");
+                    warn!(
+                        run_id = %server_id_for_guard,
+                        status = RunStatus::Failed.as_str(),
+                        "mlflow-http: run marked FAILED on abort"
+                    );
                 }
             }
         });
@@ -1278,6 +1361,171 @@ mod tests {
         )
         .unwrap();
         set_terminated_finished.assert();
+    }
+
+    /// Direct happy-path test for `create_experiment` (without the 404
+    /// fallback dance). Ensures the body field name + response-parse path
+    /// don't depend on `get_or_create_experiment` to remain wired.
+    #[test]
+    fn create_experiment_posts_name_and_parses_id() {
+        let mut server = Server::new();
+        let mock = server
+            .mock("POST", "/api/2.0/mlflow/experiments/create")
+            .match_body(Matcher::PartialJson(json!({"name": "fresh-exp"})))
+            .with_status(200)
+            .with_body(json!({"experiment_id": "777"}).to_string())
+            .create();
+        let client = fast_client(&server);
+        let id = client.create_experiment("fresh-exp").unwrap();
+        assert_eq!(id, "777");
+        mock.assert();
+    }
+
+    /// `from_config` must reject a missing tracking URI with InvalidTarget
+    /// rather than panicking or returning a misleading transport error.
+    #[test]
+    fn mlflow_http_sink_from_config_errors_on_missing_uri() {
+        let cfg = EvalConfig {
+            mlflow_http_tracking_uri: None,
+            ..EvalConfig::default()
+        };
+        let err = MlflowHttpSink::from_config(&cfg).unwrap_err();
+        assert!(matches!(err, ExportError::InvalidTarget(_)), "got {err:?}");
+    }
+
+    /// `from_config` must reject a malformed URI with InvalidTarget.
+    #[test]
+    fn mlflow_http_sink_from_config_errors_on_malformed_uri() {
+        let cfg = EvalConfig {
+            mlflow_http_tracking_uri: Some("not a url".to_string()),
+            ..EvalConfig::default()
+        };
+        let err = MlflowHttpSink::from_config(&cfg).unwrap_err();
+        assert!(matches!(err, ExportError::InvalidTarget(_)), "got {err:?}");
+    }
+
+    /// `from_config` with no `experiment_name` falls back to the
+    /// canonical [`DEFAULT_EXPERIMENT_NAME`] constant.
+    #[test]
+    fn mlflow_http_sink_from_config_defaults_experiment_name() {
+        let mut server = Server::new();
+        let cfg = EvalConfig {
+            mlflow_http_tracking_uri: Some(server.url()),
+            mlflow_http_max_retries: 0,
+            mlflow_http_backoff_base_ms: 1,
+            experiment_name: None,
+            ..EvalConfig::default()
+        };
+        let sink = MlflowHttpSink::from_config(&cfg).unwrap();
+        assert_eq!(sink.experiment_name(), DEFAULT_EXPERIMENT_NAME);
+        // Make sure we hit a mock so the test doesn't accidentally pass on
+        // server.url() being unreachable.
+        let _ = server
+            .mock("GET", "/api/2.0/mlflow/experiments/get-by-name")
+            .match_query(Matcher::UrlEncoded(
+                "experiment_name".into(),
+                DEFAULT_EXPERIMENT_NAME.into(),
+            ))
+            .with_status(200)
+            .with_body(json!({"experiment": {"experiment_id": "0"}}).to_string())
+            .create();
+        sink.client.get_or_create_experiment(sink.experiment_name()).unwrap();
+    }
+
+    /// `upload_dir_recursively` exercise: nested tree → one log_artifact
+    /// PUT per file with paths anchored under `rel_root`.
+    #[test]
+    fn upload_dir_recursively_walks_nested_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("sub")).unwrap();
+        std::fs::write(tmp.path().join("a.txt"), b"A").unwrap();
+        std::fs::write(tmp.path().join("sub/b.txt"), b"B").unwrap();
+
+        let mut server = Server::new();
+        let mock_a = server
+            .mock("PUT", "/api/2.0/mlflow-artifacts/artifacts/replays/a.txt")
+            .match_query(Matcher::UrlEncoded("run_id".into(), "r1".into()))
+            .with_status(200)
+            .expect(1)
+            .create();
+        let mock_b = server
+            .mock("PUT", "/api/2.0/mlflow-artifacts/artifacts/replays/sub/b.txt")
+            .match_query(Matcher::UrlEncoded("run_id".into(), "r1".into()))
+            .with_status(200)
+            .expect(1)
+            .create();
+        let client = fast_client(&server);
+        upload_dir_recursively(&client, "r1", "replays", tmp.path()).unwrap();
+        mock_a.assert();
+        mock_b.assert();
+    }
+
+    /// `upload_dir_recursively` must no-op on a missing dir (parity with
+    /// FsSink's `copy_subdir_if_exists`).
+    #[test]
+    fn upload_dir_recursively_no_op_on_missing_dir() {
+        let server = Server::new(); // No mocks — must not be hit.
+        let client = fast_client(&server);
+        upload_dir_recursively(&client, "r1", "absent", Path::new("/no/such/dir")).unwrap();
+    }
+
+    /// Pin every const-block value to its on-disk-contract string so a
+    /// rename surfaces here, not at runtime when MLflow rejects the request.
+    /// Mirrors `exporters::tests::exporter_string_constants_are_stable_contract`
+    /// for the HTTP transport's own constants.
+    #[test]
+    fn mlflow_http_constants_are_stable_contract() {
+        assert_eq!(API_ROOT, "api");
+        assert_eq!(API_VERSION, "2.0");
+        assert_eq!(NAMESPACE_MLFLOW, "mlflow");
+        assert_eq!(NAMESPACE_ARTIFACTS, "mlflow-artifacts");
+        assert_eq!(ARTIFACTS_PATH, "artifacts");
+        assert_eq!(DEFAULT_EXPERIMENT_NAME, "forge-eval-default");
+        // REST body / query fields.
+        assert_eq!(FIELD_EXPERIMENT_NAME, "experiment_name");
+        assert_eq!(FIELD_EXPERIMENT_ID, "experiment_id");
+        assert_eq!(FIELD_RUN_ID, "run_id");
+        assert_eq!(FIELD_RUN, "run");
+        assert_eq!(FIELD_INFO, "info");
+        assert_eq!(FIELD_START_TIME, "start_time");
+        assert_eq!(FIELD_END_TIME, "end_time");
+        assert_eq!(FIELD_STATUS, "status");
+        assert_eq!(FIELD_KEY, "key");
+        assert_eq!(FIELD_VALUE, "value");
+        assert_eq!(FIELD_NAME, "name");
+        assert_eq!(FIELD_TAGS, "tags");
+        assert_eq!(FIELD_METRICS, "metrics");
+        assert_eq!(FIELD_PARAMS, "params");
+        assert_eq!(FIELD_TIMESTAMP, "timestamp");
+        assert_eq!(FIELD_STEP, "step");
+        assert_eq!(QUERY_RUN_ID, "run_id");
+        // Response paths.
+        assert_eq!(RESP_PATH_EXPERIMENT_ID, &["experiment", "experiment_id"]);
+        assert_eq!(RESP_PATH_CREATE_EXP_ID, &["experiment_id"]);
+        assert_eq!(RESP_PATH_RUN_ID, &["run", "info", "run_id"]);
+    }
+
+    /// Pin the binding between `config.rs`'s `DEFAULT_MLFLOW_HTTP_*` re-exports
+    /// (when feature is enabled) and `mlflow_http.rs`'s canonical constants.
+    /// Catches future drift between the two.
+    #[test]
+    fn config_re_exports_match_canonical_http_defaults() {
+        assert_eq!(
+            crate::config::DEFAULT_MLFLOW_HTTP_TIMEOUT_MS,
+            DEFAULT_HTTP_TIMEOUT_MS
+        );
+        assert_eq!(
+            crate::config::DEFAULT_MLFLOW_HTTP_MAX_RETRIES,
+            DEFAULT_HTTP_MAX_RETRIES
+        );
+        assert_eq!(
+            crate::config::DEFAULT_MLFLOW_HTTP_BACKOFF_BASE_MS,
+            DEFAULT_HTTP_BACKOFF_BASE_MS
+        );
+        assert_eq!(
+            crate::config::DEFAULT_MLFLOW_HTTP_BATCH_SIZE,
+            DEFAULT_LOG_BATCH_SIZE
+        );
     }
 
     /// Scopeguard contract: when a mid-export call (log_batch here) returns
