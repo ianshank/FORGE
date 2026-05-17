@@ -1,4 +1,4 @@
-// WIP-preserved (commit a91b3fa) — see exporters/huggingface.rs header for
+// WIP-preserved (commit a91b3fa) â€” see exporters/huggingface.rs header for
 // rationale on the module-level clippy allow.
 #![allow(clippy::field_reassign_with_default)]
 
@@ -37,19 +37,13 @@
 //!         mlflow.runName
 //! ```
 
-use std::fs::{self, File};
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
-// `sha2` digests now live in `mlflow_payload`; this module no longer
-// imports them directly.
-use tracing::{debug, instrument};
+use tracing::instrument;
 
-use super::{ExportError, Exporter, ARTIFACT_MANIFEST_JSON, TIER_SPLIT_PREFIX};
-use crate::manifest::{RunManifest, MANIFEST_SOURCE_NAME};
-use crate::scorecard::{EpisodeResult, ScenarioResult, Scorecard, TierScore};
+use super::{ExportError, Exporter};
+use crate::manifest::RunManifest;
+use crate::scorecard::Scorecard;
 
 // Re-export the shared helpers at their original `crate::exporters::mlflow::`
 // paths so existing external consumers + in-module tests keep their imports
@@ -63,11 +57,10 @@ pub use super::mlflow_payload::{
 /// `mlflow ui` will list the run under "Default" with this id.
 pub const DEFAULT_EXPERIMENT_ID: &str = "0";
 
-// ─── MLflow filesystem layout: directory + filename constants ───────────────
-// Centralised so the upcoming `mlflow_payload.rs` extraction (Slice 1.1)
-// inherits a single source of truth. All names are part of the on-disk
-// contract that `mlflow ui --backend-store-uri <dir>` reads, so changing
-// any of them is a breaking change.
+// â”€â”€â”€ MLflow filesystem layout: directory + filename constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Names are part of the on-disk contract that `mlflow ui --backend-store-uri
+// <dir>` reads. `pub(crate)` so both `mlflow_fs` (writer) and
+// `mlflow_payload` (builder) consume the same source of truth.
 
 /// Subdirectory under each run dir holding `<key>` files (one per param).
 pub(crate) const MLFLOW_SUBDIR_PARAMS: &str = "params";
@@ -83,9 +76,9 @@ pub(crate) const MLFLOW_SUBDIR_ARTIFACTS: &str = "artifacts";
 /// reads to enumerate runs.
 pub(crate) const MLFLOW_META_FILE: &str = "meta.yaml";
 
-// ─── Artefact filenames (under MLFLOW_SUBDIR_ARTIFACTS or run dir) ─────────
+// â”€â”€â”€ Artefact filenames (under MLFLOW_SUBDIR_ARTIFACTS or run dir) â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// Scorecard JSON artefact (parent run, MLflow only — HF uses the manifest).
+/// Scorecard JSON artefact (parent run, MLflow only â€” HF uses the manifest).
 pub(crate) const ARTIFACT_SCORECARD_JSON: &str = "scorecard.json";
 /// Scorecard Markdown artefact (parent run).
 pub(crate) const ARTIFACT_SCORECARD_MD: &str = "scorecard.md";
@@ -98,23 +91,6 @@ pub(crate) const ARTIFACT_EPISODES_JSONL: &str = "episodes.jsonl";
 /// it is written as an MLflow param. Keeps agent-provided keys from
 /// colliding with intrinsic MLflow params.
 pub(crate) const AGENT_PARAM_KEY_PREFIX: &str = "agent_param_";
-
-/// MLflow source-type tag value for a non-Project (ad-hoc) run.
-const SOURCE_TYPE_LOCAL: &str = "LOCAL";
-
-/// Per-run lifecycle status — set to `FINISHED` when the exporter
-/// completes successfully. `mlflow ui` shows runs with other statuses
-/// (`RUNNING`, `FAILED`, `KILLED`) differently in the table.
-///
-/// MLflow encodes status as an int enum on disk:
-/// 1=RUNNING, 2=SCHEDULED, 3=FINISHED, 4=FAILED, 5=KILLED.
-/// Writing the string "FINISHED" makes MLflow's reader raise
-/// `Could not get string corresponding to run status FINISHED`.
-const RUN_STATUS_FINISHED: i32 = 3;
-
-/// Lifecycle stage written to every `meta.yaml`. `deleted` would hide
-/// runs from the default UI view.
-const LIFECYCLE_STAGE_ACTIVE: &str = "active";
 
 /// MLflow tracking exporter writing the filesystem layout that
 /// `mlflow ui --backend-store-uri <tracking_uri>` consumes.
@@ -150,6 +126,12 @@ impl Exporter for MlflowExporter {
         "mlflow"
     }
 
+    /// Backwards-compatible entry point. Delegates to
+    /// [`super::mlflow_fs::MlflowFsSink`], which consumes a
+    /// [`super::mlflow_payload::RunPayload`] shared with the upcoming HTTP
+    /// sink. The on-disk layout produced is byte-identical to the prior
+    /// implementation; every existing assertion in this module's tests
+    /// continues to hold.
     #[instrument(skip_all, fields(tracking_uri = %self.tracking_uri.display(), exp_id = %self.experiment_id))]
     fn export(
         &self,
@@ -157,547 +139,21 @@ impl Exporter for MlflowExporter {
         manifest: &RunManifest,
         artifacts_dir: &Path,
     ) -> Result<(), ExportError> {
-        if self.tracking_uri.as_os_str().is_empty() {
-            return Err(ExportError::InvalidTarget(
-                "tracking_uri must not be empty".to_string(),
-            ));
-        }
-
-        let exp_dir = self.tracking_uri.join(&self.experiment_id);
-        fs::create_dir_all(&exp_dir)?;
-        write_experiment_meta(&exp_dir, &self.experiment_id, &manifest.experiment_name)?;
-
-        // Parent run captures the whole suite's aggregates + artifacts.
-        let parent_dir = exp_dir.join(&manifest.run_id);
-        let start_ms = now_ms();
-        write_parent_run(&parent_dir, scorecard, manifest, artifacts_dir, start_ms)?;
-
-        // One child run per scenario, with per-episode step-indexed metrics.
-        for scenario in &scorecard.scenario_results {
-            let child_id = child_run_id(&manifest.run_id, &scenario.scenario_id);
-            let child_dir = exp_dir.join(&child_id);
-            write_child_run(&child_dir, scenario, manifest, &child_id, start_ms)?;
-        }
-
-        Ok(())
+        super::mlflow_fs::MlflowFsSink::with_experiment_id(
+            self.tracking_uri.clone(),
+            &self.experiment_id,
+        )
+        .export(scorecard, manifest, artifacts_dir)
     }
 }
 
-// `child_run_id` lives in `mlflow_payload`; re-exported above.
-
-// ---------------------------------------------------------------------------
-// Top-level writers
-// ---------------------------------------------------------------------------
-
-fn write_experiment_meta(dir: &Path, exp_id: &str, name: &str) -> Result<(), ExportError> {
-    let meta = ExperimentMeta {
-        artifact_location: dir.to_string_lossy().into_owned(),
-        experiment_id: exp_id.to_string(),
-        lifecycle_stage: LIFECYCLE_STAGE_ACTIVE.to_string(),
-        name: name.to_string(),
-    };
-    write_yaml(&dir.join(MLFLOW_META_FILE), &meta)
-}
-
-fn write_parent_run(
-    parent_dir: &Path,
-    scorecard: &Scorecard,
-    manifest: &RunManifest,
-    artifacts_dir: &Path,
-    start_ms: u64,
-) -> Result<(), ExportError> {
-    fs::create_dir_all(parent_dir)?;
-    let artifacts_subdir = parent_dir.join(MLFLOW_SUBDIR_ARTIFACTS);
-    fs::create_dir_all(&artifacts_subdir)?;
-
-    // Params: snapshot the user-visible knobs from the agent metadata
-    // (so MLflow's Params column shows what shaped the run).
-    write_param(parent_dir, "agent_type", &scorecard.agent_metadata.agent_type)?;
-    write_param(parent_dir, "model_name", &scorecard.agent_metadata.model_name)?;
-    write_param(parent_dir, "agent_version", &scorecard.agent_metadata.version)?;
-    for (k, v) in &scorecard.agent_metadata.parameters {
-        write_param(parent_dir, &format!("{AGENT_PARAM_KEY_PREFIX}{}", sanitize(k)), v)?;
-    }
-
-    // Metrics: overall + per-tier + per-scenario named metrics.
-    let ts = start_ms;
-    write_metric(parent_dir, "overall_score", scorecard.overall_score, ts, 0)?;
-    write_metric(
-        parent_dir,
-        "total_episodes",
-        scorecard.summary.total_episodes as f64,
-        ts,
-        0,
-    )?;
-    write_metric(
-        parent_dir,
-        "wall_clock_seconds",
-        scorecard.summary.wall_clock_seconds,
-        ts,
-        0,
-    )?;
-    write_metric(
-        parent_dir,
-        "mean_decision_latency_ms",
-        scorecard.summary.mean_decision_latency_ms,
-        ts,
-        0,
-    )?;
-    for tier in &scorecard.tier_scores {
-        write_tier_metrics(parent_dir, tier, ts)?;
-    }
-    for scenario in &scorecard.scenario_results {
-        write_scenario_metrics(parent_dir, scenario, ts)?;
-    }
-
-    // System tags — these get the MLflow UI's special treatment.
-    write_tag(parent_dir, "mlflow.source.git.commit", &manifest.git_sha)?;
-    write_tag(parent_dir, "mlflow.source.git.branch", &manifest.git_branch)?;
-    write_tag(
-        parent_dir,
-        "mlflow.source.name",
-        &format!("{}@{}", MANIFEST_SOURCE_NAME, env!("CARGO_PKG_VERSION")),
-    )?;
-    write_tag(parent_dir, "mlflow.source.type", SOURCE_TYPE_LOCAL)?;
-    let run_name = if manifest.experiment_name.is_empty() {
-        format!("eval-{}-{}", manifest.short_git_sha(), manifest.timestamp.timestamp())
-    } else {
-        manifest.experiment_name.clone()
-    };
-    write_tag(parent_dir, "mlflow.runName", &run_name)?;
-    write_tag(parent_dir, "mlflow.user", &manifest.user)?;
-    write_tag(
-        parent_dir,
-        "mlflow.note.content",
-        &scorecard.to_markdown(),
-    )?;
-    // Forge-namespaced custom tags
-    write_tag(parent_dir, "forge.eval.rustc_version", &manifest.rustc_version)?;
-    write_tag(parent_dir, "forge.eval.config_hash", &manifest.config_hash)?;
-
-    // Artifacts: scorecard + manifest + plot + (optional) replays/trajectories.
-    let scorecard_json = scorecard
-        .to_json()
-        .map_err(ExportError::Serialize)?;
-    fs::write(artifacts_subdir.join(ARTIFACT_SCORECARD_JSON), scorecard_json)?;
-    fs::write(artifacts_subdir.join(ARTIFACT_SCORECARD_MD), scorecard.to_markdown())?;
-    manifest.write_json(&artifacts_subdir.join(ARTIFACT_MANIFEST_JSON))?;
-    fs::write(
-        artifacts_subdir.join(ARTIFACT_TIER_SUCCESS_RATES_HTML),
-        render_tier_bar_chart_html(&scorecard.tier_scores, &run_name),
-    )?;
-    copy_subdir_if_exists(&artifacts_dir.join("replays"), &artifacts_subdir.join("replays"))?;
-    copy_subdir_if_exists(
-        &artifacts_dir.join("trajectories"),
-        &artifacts_subdir.join("trajectories"),
-    )?;
-
-    // Dataset lineage as a tag (MLflow's inputs/ on-disk format is a
-    // directory tree of per-input metadata, which differs across MLflow
-    // versions and isn't worth wiring this phase; the digest itself is
-    // surfaced as a forge.eval.scenarios_digest tag visible in the UI).
-    let scenarios_digest = combined_scenario_digest(manifest);
-    write_tag(parent_dir, "forge.eval.scenarios_digest", &scenarios_digest)?;
-    write_tag(
-        parent_dir,
-        "forge.eval.scenario_count",
-        &manifest.scenario_file_hashes.len().to_string(),
-    )?;
-
-    // meta.yaml LAST — this is what mlflow ui keys off; writing it last
-    // means a partially-written run is visibly incomplete (no meta.yaml)
-    // rather than silently corrupt.
-    let end_ms = now_ms();
-    write_run_meta(
-        parent_dir,
-        &RunMetaArgs {
-            run_id: manifest.run_id.clone(),
-            run_name,
-            experiment_id: manifest_experiment_id(&artifacts_subdir),
-            artifact_uri: artifacts_subdir.to_string_lossy().into_owned(),
-            user_id: manifest.user.clone(),
-            start_time: start_ms,
-            end_time: end_ms,
-            status: RUN_STATUS_FINISHED,
-        },
-    )?;
-
-    Ok(())
-}
-
-fn write_child_run(
-    child_dir: &Path,
-    scenario: &ScenarioResult,
-    manifest: &RunManifest,
-    child_id: &str,
-    start_ms: u64,
-) -> Result<(), ExportError> {
-    fs::create_dir_all(child_dir)?;
-    let artifacts_subdir = child_dir.join(MLFLOW_SUBDIR_ARTIFACTS);
-    fs::create_dir_all(&artifacts_subdir)?;
-
-    // Scenario-level params
-    write_param(child_dir, "scenario_id", &scenario.scenario_id)?;
-    write_param(child_dir, "tier", &scenario.tier.to_string())?;
-    write_param(child_dir, "episode_count", &scenario.episodes.len().to_string())?;
-
-    // Aggregate metrics
-    let ts = start_ms;
-    write_metric(child_dir, "scenario_success_rate", scenario.success_rate, ts, 0)?;
-    write_metric(child_dir, "scenario_mean_reward", scenario.mean_reward, ts, 0)?;
-    write_metric(
-        child_dir,
-        "scenario_mean_decision_time_ms",
-        scenario.mean_decision_time_ms,
-        ts,
-        0,
-    )?;
-
-    // Per-episode step-indexed metrics — these render as learning-curve
-    // plots in the MLflow UI when the user opens the run.
-    for (idx, ep) in scenario.episodes.iter().enumerate() {
-        let step = idx as u64;
-        write_metric(child_dir, "episode_reward", ep.total_reward, ts, step)?;
-        write_metric(child_dir, "episode_steps", ep.steps as f64, ts, step)?;
-        write_metric(
-            child_dir,
-            "episode_decision_time_ms",
-            ep.mean_decision_time_ms,
-            ts,
-            step,
-        )?;
-        write_metric(child_dir, "episode_success", bool_metric(ep.success), ts, step)?;
-        write_metric(
-            child_dir,
-            "episode_terminated",
-            bool_metric(ep.terminated),
-            ts,
-            step,
-        )?;
-        write_metric(
-            child_dir,
-            "episode_truncated",
-            bool_metric(ep.truncated),
-            ts,
-            step,
-        )?;
-    }
-
-    // Tags: parent linkage + system run name
-    write_tag(child_dir, "mlflow.parentRunId", &manifest.run_id)?;
-    write_tag(child_dir, "mlflow.runName", &scenario.scenario_id)?;
-    write_tag(child_dir, "mlflow.source.git.commit", &manifest.git_sha)?;
-    write_tag(child_dir, "mlflow.source.git.branch", &manifest.git_branch)?;
-    write_tag(child_dir, "mlflow.source.type", SOURCE_TYPE_LOCAL)?;
-    write_tag(child_dir, "mlflow.user", &manifest.user)?;
-    write_tag(child_dir, "forge.eval.tier", &scenario.tier.to_string())?;
-
-    // Per-scenario raw episode dump as a JSONL artifact.
-    let mut jsonl = String::new();
-    for (idx, ep) in scenario.episodes.iter().enumerate() {
-        let line = serde_json::to_string(&EpisodeLine::from(ep, idx as u32))
-            .map_err(|e| ExportError::Serialize(e.to_string()))?;
-        jsonl.push_str(&line);
-        jsonl.push('\n');
-    }
-    fs::write(artifacts_subdir.join(ARTIFACT_EPISODES_JSONL), jsonl)?;
-
-    let end_ms = now_ms();
-    write_run_meta(
-        child_dir,
-        &RunMetaArgs {
-            run_id: child_id.to_string(),
-            run_name: scenario.scenario_id.clone(),
-            experiment_id: manifest_experiment_id(&artifacts_subdir),
-            artifact_uri: artifacts_subdir.to_string_lossy().into_owned(),
-            user_id: manifest.user.clone(),
-            start_time: start_ms,
-            end_time: end_ms,
-            status: RUN_STATUS_FINISHED,
-        },
-    )?;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// MLflow file primitives
-// ---------------------------------------------------------------------------
-
-fn write_param(run_dir: &Path, name: &str, value: &str) -> Result<(), ExportError> {
-    let dir = run_dir.join(MLFLOW_SUBDIR_PARAMS);
-    fs::create_dir_all(&dir)?;
-    // MLflow truncates >500-char params; pre-truncate so we don't ship
-    // invalid files.
-    let v = if value.len() > 500 { &value[..500] } else { value };
-    fs::write(dir.join(sanitize(name)), v)?;
-    Ok(())
-}
-
-fn write_metric(
-    run_dir: &Path,
-    name: &str,
-    value: f64,
-    timestamp_ms: u64,
-    step: u64,
-) -> Result<(), ExportError> {
-    let dir = run_dir.join(MLFLOW_SUBDIR_METRICS);
-    fs::create_dir_all(&dir)?;
-    let path = dir.join(sanitize(name));
-    let mut file = File::options().create(true).append(true).open(&path)?;
-    // MLflow's metric format: "<timestamp_ms> <value> <step>\n"
-    writeln!(file, "{} {} {}", timestamp_ms, format_metric_value(value), step)?;
-    Ok(())
-}
-
-fn write_tag(run_dir: &Path, name: &str, value: &str) -> Result<(), ExportError> {
-    let dir = run_dir.join(MLFLOW_SUBDIR_TAGS);
-    fs::create_dir_all(&dir)?;
-    fs::write(dir.join(sanitize(name)), value)?;
-    Ok(())
-}
-
-#[derive(Serialize)]
-struct ExperimentMeta {
-    artifact_location: String,
-    experiment_id: String,
-    lifecycle_stage: String,
-    name: String,
-}
-
-#[derive(Serialize)]
-struct RunMeta {
-    artifact_uri: String,
-    end_time: u64,
-    entry_point_name: String,
-    experiment_id: String,
-    lifecycle_stage: String,
-    run_id: String,
-    run_uuid: String,
-    run_name: String,
-    source_name: String,
-    source_type: String,
-    source_version: String,
-    start_time: u64,
-    status: i32,
-    tags: Vec<String>,
-    user_id: String,
-}
-
-struct RunMetaArgs {
-    run_id: String,
-    run_name: String,
-    experiment_id: String,
-    artifact_uri: String,
-    user_id: String,
-    start_time: u64,
-    end_time: u64,
-    status: i32,
-}
-
-fn write_run_meta(run_dir: &Path, args: &RunMetaArgs) -> Result<(), ExportError> {
-    let meta = RunMeta {
-        artifact_uri: args.artifact_uri.clone(),
-        end_time: args.end_time,
-        entry_point_name: String::new(),
-        experiment_id: args.experiment_id.clone(),
-        lifecycle_stage: LIFECYCLE_STAGE_ACTIVE.to_string(),
-        run_id: args.run_id.clone(),
-        run_uuid: args.run_id.clone(),
-        run_name: args.run_name.clone(),
-        source_name: MANIFEST_SOURCE_NAME.to_string(),
-        source_type: SOURCE_TYPE_LOCAL.to_string(),
-        source_version: env!("CARGO_PKG_VERSION").to_string(),
-        start_time: args.start_time,
-        status: args.status,
-        tags: Vec::new(),
-        user_id: args.user_id.clone(),
-    };
-    write_yaml(&run_dir.join(MLFLOW_META_FILE), &meta)
-}
-
-// ---------------------------------------------------------------------------
-// Scenario digest (tag-based lineage)
-// ---------------------------------------------------------------------------
-
-// `combined_scenario_digest` + `render_tier_bar_chart_html` live in
-// `mlflow_payload`; re-exported above.
-
-// ---------------------------------------------------------------------------
-// Per-tier / per-scenario metric helpers
-// ---------------------------------------------------------------------------
-
-fn write_tier_metrics(run_dir: &Path, tier: &TierScore, ts: u64) -> Result<(), ExportError> {
-    let prefix = format!("{TIER_SPLIT_PREFIX}{}", tier.tier);
-    write_metric(
-        run_dir,
-        &format!("{}_success_rate", prefix),
-        tier.success_rate,
-        ts,
-        0,
-    )?;
-    write_metric(
-        run_dir,
-        &format!("{}_mean_reward", prefix),
-        tier.mean_reward,
-        ts,
-        0,
-    )?;
-    write_metric(
-        run_dir,
-        &format!("{}_mean_steps_to_completion", prefix),
-        tier.mean_steps_to_completion,
-        ts,
-        0,
-    )?;
-    write_metric(
-        run_dir,
-        &format!("{}_episodes_evaluated", prefix),
-        tier.episodes_evaluated as f64,
-        ts,
-        0,
-    )?;
-    Ok(())
-}
-
-fn write_scenario_metrics(
-    run_dir: &Path,
-    scenario: &ScenarioResult,
-    ts: u64,
-) -> Result<(), ExportError> {
-    let safe_id = sanitize(&scenario.scenario_id);
-    write_metric(
-        run_dir,
-        &format!("scenario_{}_success_rate", safe_id),
-        scenario.success_rate,
-        ts,
-        0,
-    )?;
-    write_metric(
-        run_dir,
-        &format!("scenario_{}_mean_reward", safe_id),
-        scenario.mean_reward,
-        ts,
-        0,
-    )?;
-    write_metric(
-        run_dir,
-        &format!("scenario_{}_mean_decision_time_ms", safe_id),
-        scenario.mean_decision_time_ms,
-        ts,
-        0,
-    )?;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// JSONL row used in child-run episodes.jsonl
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize)]
-struct EpisodeLine {
-    episode_index: u32,
-    seed: u64,
-    total_reward: f64,
-    success: bool,
-    steps: u64,
-    terminated: bool,
-    truncated: bool,
-    mean_decision_time_ms: f64,
-}
-
-impl EpisodeLine {
-    fn from(ep: &EpisodeResult, idx: u32) -> Self {
-        Self {
-            episode_index: idx,
-            seed: ep.seed,
-            total_reward: ep.total_reward,
-            success: ep.success,
-            steps: ep.steps,
-            terminated: ep.terminated,
-            truncated: ep.truncated,
-            mean_decision_time_ms: ep.mean_decision_time_ms,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Generic helpers
-// ---------------------------------------------------------------------------
-
-fn write_yaml<T: Serialize>(path: &Path, value: &T) -> Result<(), ExportError> {
-    let yaml = serde_yaml::to_string(value).map_err(|e| ExportError::Serialize(e.to_string()))?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, yaml)?;
-    Ok(())
-}
-
-fn copy_subdir_if_exists(src: &Path, dst: &Path) -> Result<(), ExportError> {
-    if !src.exists() || !src.is_dir() {
-        return Ok(());
-    }
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        let ty = entry.file_type()?;
-        if ty.is_dir() {
-            copy_subdir_if_exists(&src_path, &dst_path)?;
-        } else if ty.is_file() {
-            fs::copy(&src_path, &dst_path)?;
-        } else {
-            debug!(
-                src = %src_path.display(),
-                "mlflow exporter: skipping non-file/non-dir entry"
-            );
-        }
-    }
-    Ok(())
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
-
-fn format_metric_value(v: f64) -> String {
-    if v.is_finite() {
-        format!("{:.6}", v)
-    } else if v.is_nan() {
-        "NaN".to_string()
-    } else if v.is_sign_positive() {
-        "Infinity".to_string()
-    } else {
-        "-Infinity".to_string()
-    }
-}
-
-fn bool_metric(b: bool) -> f64 {
-    if b {
-        1.0
-    } else {
-        0.0
-    }
-}
-
-// `sanitize` + `hex_short` live in `mlflow_payload`; re-exported above.
-
-fn manifest_experiment_id(artifacts_subdir: &Path) -> String {
-    // The experiment id is encoded by the parent directory's parent —
-    // `<tracking_uri>/<exp_id>/<run_id>/artifacts/`. We walk back two
-    // levels to recover it without threading it through every helper.
-    artifacts_subdir
-        .parent()
-        .and_then(|p| p.parent())
-        .and_then(|p| p.file_name())
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| DEFAULT_EXPERIMENT_ID.to_string())
-}
-
+// All write-time helpers and YAML serde structs (write_experiment_meta,
+// write_parent_run, write_child_run, write_param/metric/tag/run_meta,
+// format_metric_value, copy_subdir_if_exists, now_ms, ExperimentMeta,
+// RunMeta, RunMetaArgs, EpisodeLine, manifest_experiment_id, etc.) moved
+// into `mlflow_fs` as part of the Slice 1.2 split. MlflowExporter::export
+// above now delegates to MlflowFsSink; this module retains only the
+// public API surface (constants + re-exports + the legacy exporter shim).
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1006,7 +462,7 @@ mod tests {
             .export(&scorecard, &manifest, &tmp.path().join("art"))
             .unwrap();
         // First run wrote 2 metric lines for episode_reward (step 0, 1);
-        // re-export should also produce 2 lines (one per episode) — note
+        // re-export should also produce 2 lines (one per episode) â€” note
         // metrics use append mode, so a naive re-export would double them.
         // Idempotency contract: we expect the directory structure to
         // remain valid, but metric files DO accumulate appended lines
@@ -1023,7 +479,7 @@ mod tests {
             .lines()
             .map(|s| s.to_string())
             .collect();
-        // After two exports, metric file has 4 lines (2 episodes × 2 exports).
+        // After two exports, metric file has 4 lines (2 episodes Ã— 2 exports).
         // Test documents this so a future "truly idempotent" refactor (e.g.,
         // truncate-before-write) will fail this assertion intentionally.
         assert_eq!(lines.len(), 4);
@@ -1036,11 +492,6 @@ mod tests {
         assert_eq!(sanitize("bad:chars?go!"), "bad_chars_go_");
     }
 
-    #[test]
-    fn format_metric_value_handles_special_floats() {
-        assert_eq!(format_metric_value(0.5), "0.500000");
-        assert_eq!(format_metric_value(f64::NAN), "NaN");
-        assert_eq!(format_metric_value(f64::INFINITY), "Infinity");
-        assert_eq!(format_metric_value(f64::NEG_INFINITY), "-Infinity");
-    }
+    // `format_metric_value_handles_special_floats` moved to
+    // `mlflow_fs::tests` alongside the function it tests (Slice 1.2b).
 }

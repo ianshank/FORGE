@@ -24,6 +24,7 @@ use crate::scorecard::Scorecard;
 
 pub mod huggingface;
 pub mod mlflow;
+pub mod mlflow_fs;
 pub mod mlflow_payload;
 
 // ─── Shared exporter constants ─────────────────────────────────────────────
