@@ -31,3 +31,28 @@
 - Error types use `thiserror` derive macros
 - Config structs derive `Clone, Debug, Serialize, Deserialize` and impl `Default`
 - Use `tracing::{info, debug, warn, error, trace}` for logging, not `println!`
+
+## MLflow Tracking
+
+The Python training layer ships first-class MLflow experiment tracking via
+`python/forge/training/mlflow_config.py` (`MlflowSettings`) and the
+`MLflowLogger` in `python/forge/training/loggers.py`.
+
+All configuration is environment-driven — no URIs, experiment names, or
+credentials are hard-coded:
+
+| Source | Mechanism |
+|--------|-----------|
+| Env vars | `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_NAME`, `MLFLOW_RUN_NAME`, `MLFLOW_TRACKING_USERNAME/PASSWORD/TOKEN`, `FORGE_MLFLOW_TAGS`, etc. |
+| CLI flags | `--mlflow-enabled`, `--mlflow-experiment`, `--mlflow-run-name`, `--mlflow-tracking-uri`, `--mlflow-artifact-location`, `--mlflow-tags`, `--mlflow-system-metrics`, `--mlflow-config` |
+| Programmatic | `MlflowSettings.from_env().merge(...)` |
+
+Key invariants:
+- `MLflowLogger` accepts a `MlflowSettings` instance or builds one from env.
+- `_resolve_experiment` is TOCTOU-safe: concurrent parallel runs that race on
+  experiment creation are handled gracefully.
+- `mlflow` is an optional dependency; if not installed, `MLflowLogger`
+  construction raises `ImportError`; `_maybe_make_mlflow_logger` in
+  `scripts/train.py` swallows this and continues without tracking.
+- All env-var name strings are module-level constants in `mlflow_config.py`
+  — callers never spell magic strings.

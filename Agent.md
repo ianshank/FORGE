@@ -80,6 +80,24 @@ StepResult (forge-types)  -->  Observations + Rewards
 | `forge-bench` | `crates/forge-bench/Agent.md` | Performance Guardian — Criterion benchmarks |
 | `forge-wasm` | `crates/forge-wasm/Agent.md` | Web Presenter — wasm-bindgen browser bindings |
 
+## Python Training Layer (`python/forge/training/`)
+
+| Module | Role |
+|--------|------|
+| `loggers.py` | `ForgeLogger` ABC + `MLflowLogger`, `WandbLogger`, `TensorBoardLogger`, `CompositeLogger`, `make_logger` factory |
+| `mlflow_config.py` | `MlflowSettings` — env-driven config for MLflow (tracking URI, experiment, run name, tags, credentials, system metrics). All public env-var names exported as module constants. |
+
+`MLflowLogger` is the primary integration point:
+- Reads all configuration from `MlflowSettings` (env vars → CLI overrides)
+- Idempotent experiment creation with TOCTOU-safe concurrent-start handling
+- `log`, `log_artifact`, `log_artifacts`, context-manager support, `run_id` property
+- Gracefully degrades to no-op / warning when MLflow is not installed
+
+`scripts/train.py` exposes 8 `--mlflow-*` CLI flags and four helpers
+(`_build_mlflow_settings`, `_params_for_run`, `_flatten_for_params`,
+`_maybe_make_mlflow_logger`) that thread an optional `MLflowLogger`
+through all training entry points.
+
 ## Build & Test
 
 | Command | Purpose |

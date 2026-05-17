@@ -69,6 +69,27 @@ BDI, Constitutional, future RSSM).
 See `docs/architecture.md` §3.9, `configs/cognitive/gemma_e4b_teacher.toml`
 (default), and `configs/cognitive/qwen14b_teacher.toml` (alternative).
 
+### 5c. ✅ MLflow Experiment Tracking Integration — COMPLETED
+
+Full, environment-driven MLflow experiment-tracking integration across the
+Python training surface. Zero hard-coded values.
+
+- **`python/forge/training/mlflow_config.py`** — `MlflowSettings` dataclass
+  with `from_env()`, `merge()`, `apply()`, `describe()`.  All canonical
+  MLflow env vars plus `FORGE_MLFLOW_TAGS` are mapped to typed fields.
+  All env-var name strings are module-level constants.
+- **`MLflowLogger`** extended with `MlflowSettings` support, idempotent
+  TOCTOU-safe experiment creation, system-metrics daemon, `log_artifact`/
+  `log_artifacts`, context-manager interface, `run_id` property.
+- **`scripts/train.py`** — 8 new `--mlflow-*` CLI flags, four helper
+  functions (`_build_mlflow_settings`, `_params_for_run`,
+  `_flatten_for_params`, `_maybe_make_mlflow_logger`), `mlflow_logger`
+  threaded through all training entry points with `try/finally` close.
+- **`make_logger("mlflow", …)`** factory key added.
+- **Tests**: 34 + 21 + 19 = 74 new tests; full suite 1 403 passed,
+  coverage 94.49% (gate 85%).
+- **`.gitignore`**: `mlruns_*/`, `mlartifacts/` patterns added.
+
 ### 5. ✅ Docker Container for Demo UI — COMPLETED
 
 The full three-service Docker Compose stack is now deployed:

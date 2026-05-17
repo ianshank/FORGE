@@ -39,6 +39,7 @@ Shows FORGE and its external actors.
 | Demo User | HTTP (localhost:8765) | Interacts with the live demo via the web UI |
 | Web Browser | WASM (JSON) | Runs visualization or interactive demos |
 | Rust Application | Cargo crate | Embeds simulation as a library dependency |
+| MLflow Server | HTTP REST | Receives experiment metadata, params, metrics, and artifacts from training runs (optional — falls back to local file store) |
 
 ---
 
@@ -1273,4 +1274,109 @@ The `docker` job runs only on the default branch or semantic version tags (`v*`)
     LTO = true
     codegen-units = 1
     opt-level = 3
+```
+
+
+---
+
+## §3.10 MLflow Experiment Tracking — C4 Component View
+
+### Context
+
+`scripts/train.py` is the training entry point.  When `--mlflow-enabled`
+is passed (or `MLFLOW_TRACKING_URI` is set), it constructs an `MLflowLogger`
+backed by a `MlflowSettings` instance that is built by merging environment
+variables and CLI flags.  The logger fans every training metric, run
+parameter, and artifact to the configured MLflow tracking store.
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        FORGE Training Pipeline                           │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐     │
+│  │ scripts/train.py                                                │     │
+│  │                                                                 │     │
+│  │  parse_args()  ──► _build_mlflow_settings(args)                │     │
+│  │                           │                                    │     │
+│  │                           ▼                                    │     │
+│  │              MlflowSettings.from_env().merge(cli_overrides)   │     │
+│  │                           │                                    │     │
+│  │                           ▼                                    │     │
+│  │              _maybe_make_mlflow_logger(args, settings)        │     │
+│  │                           │                                    │     │
+│  │                     MLflowLogger                              │     │
+│  │                    /     |     \                               │     │
+│  │            log()  log_   log_   close()                       │     │
+│  │                  artifact artifacts                            │     │
+│  └──────────────────────┬──────────────────────────────────────── ┘     │
+│                         │                                                │
+└─────────────────────────┼────────────────────────────────────────────────┘
+                          │  HTTP REST  (or local file-store)
+                          ▼
+             ┌────────────────────────────┐
+             │   MLflow Tracking Server   │
+             │   (self-hosted or local)   │
+             │                            │
+             │  /api/2.0/mlflow/runs      │
+             │  /api/2.0/mlflow/metrics   │
+             │  /api/2.0/mlflow/artifacts │
+             └────────────────────────────┘
+```
+
+### Component breakdown
+
+```
+forge.training
+├── mlflow_config.py
+│   ├── MlflowSettings (dataclass)
+│   │   ├── from_env()          ← reads MLFLOW_* + FORGE_MLFLOW_TAGS
+│   │   ├── merge(**overrides)  ← immutable merge, returns new instance
+│   │   ├── apply()             ← writes tracking_uri + timeout to os.environ
+│   │   └── describe()          ← redacted diagnostic string (no credentials)
+│   ├── parse_tag_string(s)     ← "KEY=VAL,K2=V2" → dict[str, str]
+│   └── ENV_* constants         ← single source of truth for env-var names
+│
+└── loggers.py
+    └── MLflowLogger(ForgeLogger)
+        ├── __init__(settings, strict_errors)
+        ├── _resolve_experiment(mlflow, settings)  ← TOCTOU-safe creation
+        ├── _enable_system_metrics(mlflow)
+        ├── log(metrics, step)
+        ├── log_artifact(local_path, artifact_path)
+        ├── log_artifacts(local_dir, artifact_path)
+        ├── close()
+        ├── run_id property
+        └── __enter__ / __exit__
+
+scripts/train.py
+├── _build_mlflow_settings(args) → MlflowSettings
+├── _params_for_run(args)        → dict[str, str]  (for mlflow.log_params)
+├── _flatten_for_params(val)     → str
+└── _maybe_make_mlflow_logger(args, settings) → MLflowLogger | None
+```
+
+### Configuration precedence
+
+```
+Hard-coded defaults (None / empty)
+        ↓
+MLFLOW_* environment variables   (MlflowSettings.from_env())
+        ↓
+FORGE_MLFLOW_TAGS env var        (merged into .tags)
+        ↓
+--mlflow-* CLI flags             (.merge(cli_overrides))
+```
+
+### Graceful degradation
+
+```
+mlflow not installed?
+  └─► _maybe_make_mlflow_logger returns None; training continues unlogged.
+
+MLflowLogger init fails?
+  └─► _maybe_make_mlflow_logger logs a WARNING and returns None.
+
+mlflow.log_metrics fails mid-run?
+  └─► _safe_call swallows the error (strict_errors=False default).
+      Set MLflowLogger(strict_errors=True) to surface errors instead.
 ```

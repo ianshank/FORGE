@@ -9,6 +9,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — MLflow Integration (2026-05-17)
+
+Full, environment-driven MLflow experiment-tracking integration across the
+Python training surface. All configuration flows through `MlflowSettings`
+(env vars → CLI flags → merge overrides); no MLflow server URL, experiment
+name, or credentials are hard-coded.
+
+#### New modules
+
+- **`python/forge/training/mlflow_config.py`** — `MlflowSettings` dataclass:
+  single source of truth for every MLflow knob. Reads the canonical MLflow
+  env vars (`MLFLOW_TRACKING_URI`, `MLFLOW_REGISTRY_URI`,
+  `MLFLOW_EXPERIMENT_NAME`, `MLFLOW_RUN_NAME`, `MLFLOW_ARTIFACT_LOCATION`,
+  `MLFLOW_HTTP_REQUEST_TIMEOUT`, `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING`,
+  `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD`,
+  `MLFLOW_TRACKING_TOKEN`) plus a FORGE-specific tag bag
+  (`FORGE_MLFLOW_TAGS=KEY=VALUE,…`). Exposes `.from_env()`, `.merge()`,
+  `.apply()`, and `.describe()` for structured configuration and diagnostic
+  logging. All public env-var names are module-level constants so callers
+  never spell magic strings.
+- **`parse_tag_string`** — comma-separated `KEY=VALUE` parser with graceful
+  skip of malformed / empty chunks and structured warning emission.
+
+#### Extended `MLflowLogger` (`python/forge/training/loggers.py`)
+
+- Accepts a `MlflowSettings` instance (or builds one from env) so every
+  MLflow knob is configurable without subclassing.
+- `_resolve_experiment` — idempotently creates or looks up an experiment by
+  name, honouring `artifact_location` only on first creation. Handles the
+  TOCTOU race (concurrent experiment creation) via targeted
+  `"already exists"` exception catch so parallel training runs start cleanly.
+- `_enable_system_metrics` — activates MLflow's system-metrics daemon when
+  `enable_system_metrics=True`; gracefully degrades if the API is absent on
+  older MLflow releases.
+- `log_artifact` / `log_artifacts` — surface `mlflow.log_artifact` /
+  `mlflow.log_artifacts` through the `ForgeLogger` interface.
+- Context-manager support (`__enter__` / `__exit__`).
+- `run_id` property for downstream checkpoint correlation.
+
+#### Updated `scripts/train.py`
+
+- 8 new `--mlflow-*` CLI flags: `--mlflow-enabled`, `--mlflow-experiment`,
+  `--mlflow-run-name`, `--mlflow-tracking-uri`, `--mlflow-artifact-location`,
+  `--mlflow-tags`, `--mlflow-system-metrics`, `--mlflow-config`.
+- `_build_mlflow_settings(args)` — merges env → CLI with a FORGE run-name
+  default of `{agent}-seed{seed}`.
+- `_params_for_run(args)` — flattens CLI namespace to a flat str→str dict
+  (skips `None`, skips `mlflow*` keys, joins lists/tuples to CSV).
+- `_flatten_for_params(val)` — coerces any value to a loggable string.
+- `_maybe_make_mlflow_logger(args, settings)` — constructs an
+  `MLflowLogger`, logs initial params and optionally uploads the config
+  file as an artifact. Swallows `ImportError` / init errors so training
+  proceeds without MLflow if it is not installed.
+- `mlflow_logger` threaded through all training functions (random, MCTS,
+  MAPPO, MangoMAS-collect, MangoMAS) with `try/finally` close in `main()`.
+
+#### New `make_logger("mlflow", ...)` factory key
+
+The `make_logger` factory in `loggers.py` now accepts `"mlflow"` as a
+backend key, forwarding all kwargs to `MLflowLogger`.
+
+#### Tests (94.49% coverage, gate 85%)
+
+- **`tests/python/test_mlflow_config.py`** — 34 tests covering
+  `parse_tag_string` (incl. blank-chunk skip), `MlflowSettings.from_env`,
+  `.merge`, `.apply`, `.describe`.
+- **`tests/python/test_loggers.py`** additions — `TestMLflowLoggerConstructor`
+  (8 tests), `TestMLflowLoggerExtended` (12 tests), `test_mlflow_backend_key`
+  factory test.
+- **`tests/python/test_train_mlflow_helpers.py`** — 19 tests covering all
+  four `scripts/train.py` MLflow helpers:
+  `TestBuildMlflowSettings` (5), `TestFlattenForParams` (5),
+  `TestParamsForRun` (4), `TestMaybeMakeMlflowLogger` (5).
+
+#### Infrastructure
+
+- **`.gitignore`**: `mlruns_*/`, `mlartifacts/`, `mlruns/` patterns (local
+  MLflow tracking stores never committed).
+- **`python/forge/training/__init__.py`**: `MlflowSettings` re-exported from
+  the `forge.training` public surface.
+
 ### Changed — Teacher Pipeline Config Hoisting (2026-05-16)
 
 Hoisted five inline numeric/string literals from the LM Studio teacher
