@@ -18,6 +18,10 @@ _FORGE_ROOT = Path(__file__).resolve().parent
 _PYTHON_DIR = _FORGE_ROOT / "python"
 _SCRIPTS_DIR = _FORGE_ROOT / "scripts"
 
+# Public alias for tests that need to anchor paths relative to the repo root
+# without re-deriving it from ``__file__`` (single source of truth).
+REPO_ROOT = _FORGE_ROOT
+
 
 def _ensure_importable(directory: Path) -> None:
     """Add *directory* to ``sys.path`` only when it is not already present."""

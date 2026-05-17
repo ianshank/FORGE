@@ -9,7 +9,7 @@ prayer.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -22,13 +22,18 @@ if TYPE_CHECKING:
 
 
 def _state(**overrides: object) -> ProgressState:
-    base = {"run_id": "r-001", "episodes_completed": 5, "scenario_cursor": 2, "last_seed": 42}
+    base: dict[str, object] = {
+        "run_id": "r-001",
+        "episodes_completed": 5,
+        "scenario_cursor": 2,
+        "last_seed": 42,
+    }
     base.update(overrides)
     return ProgressState(
         run_id=str(base["run_id"]),
-        episodes_completed=int(base["episodes_completed"]),
-        scenario_cursor=int(base["scenario_cursor"]),
-        last_seed=int(base["last_seed"]),
+        episodes_completed=int(cast("int", base["episodes_completed"])),
+        scenario_cursor=int(cast("int", base["scenario_cursor"])),
+        last_seed=int(cast("int", base["last_seed"])),
     )
 
 

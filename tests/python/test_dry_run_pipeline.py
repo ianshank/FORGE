@@ -5,6 +5,7 @@ These tests use REAL environments (or RealisticFakeEnv) — no MagicMock.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import numpy as np
 
@@ -21,7 +22,7 @@ class TestDryRunPipeline:
     """Full pipeline tests using dry-run configuration with real data."""
 
     @staticmethod
-    def _make_env(max_steps: int = 10, seed: int = 42) -> object:
+    def _make_env(max_steps: int = 10, seed: int = 42) -> Any:
         """Create a real or realistic-fake env — never MagicMock.
 
         ``force_fake=True`` ensures we always get a ``RealisticFakeEnv`` in

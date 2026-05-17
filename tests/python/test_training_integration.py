@@ -275,7 +275,7 @@ class TestParseArgs:
 
 
 @pytest.fixture()
-def env():
+def env() -> Any:
     """Create a ForgeGymnasiumEnv for testing.
 
     Skips if the native Rust extension is not built.

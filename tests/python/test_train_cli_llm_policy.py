@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 # scripts/ is placed on sys.path by the root conftest.py (_ensure_importable).
-import train  # type: ignore[import]
+import train
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
