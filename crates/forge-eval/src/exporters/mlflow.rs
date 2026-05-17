@@ -43,12 +43,21 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
+// `sha2` digests now live in `mlflow_payload`; this module no longer
+// imports them directly.
 use tracing::{debug, instrument};
 
 use super::{ExportError, Exporter, ARTIFACT_MANIFEST_JSON, TIER_SPLIT_PREFIX};
 use crate::manifest::{RunManifest, MANIFEST_SOURCE_NAME};
 use crate::scorecard::{EpisodeResult, ScenarioResult, Scorecard, TierScore};
+
+// Re-export the shared helpers at their original `crate::exporters::mlflow::`
+// paths so existing external consumers + in-module tests keep their imports
+// stable. The canonical implementation now lives in `mlflow_payload`; the
+// upcoming MlflowFsSink + MlflowHttpSink both consume it directly.
+pub use super::mlflow_payload::{
+    child_run_id, combined_scenario_digest, hex_short, render_tier_bar_chart_html, sanitize,
+};
 
 /// MLflow's default experiment id when no explicit experiment is created.
 /// `mlflow ui` will list the run under "Default" with this id.
@@ -174,22 +183,7 @@ impl Exporter for MlflowExporter {
     }
 }
 
-/// Deterministic per-scenario child run id. Re-running export with the
-/// same parent + scenario id overwrites the same child run rather than
-/// creating a new one.
-pub fn child_run_id(parent_run_id: &str, scenario_id: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(parent_run_id.as_bytes());
-    hasher.update(b"::");
-    hasher.update(scenario_id.as_bytes());
-    let digest = hasher.finalize();
-    let mut s = String::with_capacity(32);
-    for b in digest.iter().take(16) {
-        use std::fmt::Write;
-        write!(&mut s, "{:02x}", b).expect("write to string");
-    }
-    s
-}
+// `child_run_id` lives in `mlflow_payload`; re-exported above.
 
 // ---------------------------------------------------------------------------
 // Top-level writers
@@ -525,52 +519,8 @@ fn write_run_meta(run_dir: &Path, args: &RunMetaArgs) -> Result<(), ExportError>
 // Scenario digest (tag-based lineage)
 // ---------------------------------------------------------------------------
 
-/// Combined sha256 over every scenario-file digest in the manifest.
-/// Surfaced as the `forge.eval.scenarios_digest` tag in lieu of MLflow's
-/// inputs/ directory tree (which is version-fragile).
-fn combined_scenario_digest(manifest: &RunManifest) -> String {
-    let mut hasher = Sha256::new();
-    for (_, hash) in &manifest.scenario_file_hashes {
-        hasher.update(hash.as_bytes());
-    }
-    hex_short(&hasher.finalize(), 16)
-}
-
-// ---------------------------------------------------------------------------
-// Plotly artifact
-// ---------------------------------------------------------------------------
-
-fn render_tier_bar_chart_html(tier_scores: &[TierScore], run_name: &str) -> String {
-    let tiers: Vec<u8> = tier_scores.iter().map(|t| t.tier).collect();
-    let success: Vec<f64> = tier_scores.iter().map(|t| t.success_rate).collect();
-    let reward: Vec<f64> = tier_scores.iter().map(|t| t.mean_reward).collect();
-    format!(
-        r#"<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>FORGE eval tier success rates — {run_name}</title>
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-</head>
-<body>
-<div id="chart" style="width:100%;height:480px;"></div>
-<script>
-Plotly.newPlot('chart', [
-  {{x: {tiers:?}, y: {success:?}, type: 'bar', name: 'Success rate'}},
-  {{x: {tiers:?}, y: {reward:?}, type: 'bar', name: 'Mean reward', yaxis: 'y2'}}
-], {{
-  title: 'Per-tier success rate + mean reward — {run_name}',
-  xaxis: {{title: 'Difficulty tier'}},
-  yaxis: {{title: 'Success rate', range: [0, 1]}},
-  yaxis2: {{title: 'Mean reward', overlaying: 'y', side: 'right'}},
-  barmode: 'group'
-}});
-</script>
-</body>
-</html>
-"#
-    )
-}
+// `combined_scenario_digest` + `render_tier_bar_chart_html` live in
+// `mlflow_payload`; re-exported above.
 
 // ---------------------------------------------------------------------------
 // Per-tier / per-scenario metric helpers
@@ -734,28 +684,7 @@ fn bool_metric(b: bool) -> f64 {
     }
 }
 
-fn sanitize(name: &str) -> String {
-    // MLflow allows alphanumerics + _, -, ., /, space. Replace anything
-    // else with underscore so filesystem write never fails.
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ' ') {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-fn hex_short(bytes: &[u8], len: usize) -> String {
-    let mut out = String::with_capacity(len * 2);
-    for b in bytes.iter().take(len) {
-        use std::fmt::Write;
-        write!(&mut out, "{:02x}", b).expect("write to string");
-    }
-    out
-}
+// `sanitize` + `hex_short` live in `mlflow_payload`; re-exported above.
 
 fn manifest_experiment_id(artifacts_subdir: &Path) -> String {
     // The experiment id is encoded by the parent directory's parent —
