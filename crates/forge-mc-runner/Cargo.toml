@@ -1,0 +1,22 @@
+[package]
+name = "forge-mc-runner"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Episode runner foundation: model_manifest, hot-reload watcher, and TrajectoryV2 writer. The full Runner<E,M> loop ships in a follow-up."
+
+[dependencies]
+forge-replay = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+toml = { workspace = true }

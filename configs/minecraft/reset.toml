@@ -1,0 +1,17 @@
+# Episode reset strategy for protocol v1. Teleport reset is deliberate:
+# it avoids world regeneration while giving repeatable episode starts.
+
+strategy = "teleport"
+
+[teleport.spawn]
+x = 0
+y = 64
+z = 0
+
+[teleport]
+yaw = 0
+pitch = 0
+selector = "@s"
+clear_inventory = true
+restore_health = true
+restore_food = true

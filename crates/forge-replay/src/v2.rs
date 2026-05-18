@@ -85,8 +85,11 @@ pub struct TrajectoryV2 {
     pub final_reward: f32,
     /// RFC3339 start timestamp (caller-supplied).
     pub started_at: String,
-    /// RFC3339 end timestamp (caller-supplied).
-    pub ended_at: String,
+    /// RFC3339 end timestamp. `None` until [`TrajectoryV2::finalize`] is
+    /// called. `#[serde(default)]` keeps older v2 JSONL (which encoded
+    /// this as an empty string) loadable — see migration test below.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<String>,
 }
 
 impl TrajectoryV2 {
@@ -111,7 +114,7 @@ impl TrajectoryV2 {
             steps: Vec::new(),
             final_reward: 0.0,
             started_at: started_at.into(),
-            ended_at: String::new(),
+            ended_at: None,
         }
     }
 
@@ -153,7 +156,7 @@ impl TrajectoryV2 {
 
     /// Mark the trajectory complete with the supplied end timestamp.
     pub fn finalize(&mut self, ended_at: impl Into<String>) {
-        self.ended_at = ended_at.into();
+        self.ended_at = Some(ended_at.into());
     }
 
     /// Validate the header's invariants. Cheap; call before save.
@@ -464,6 +467,67 @@ mod tests {
         t.save_json(&path).unwrap();
         let back = TrajectoryV2::load_json(&path).unwrap();
         assert_eq!(t, back);
+    }
+
+    #[test]
+    fn ended_at_is_none_until_finalize() {
+        let t = empty_traj(4, 2);
+        assert!(t.ended_at.is_none());
+    }
+
+    #[test]
+    fn ended_at_optional_roundtrip_with_and_without_finalize() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Unfinalised: ended_at omitted from JSON (skip_serializing_if).
+        let path_no_end = tmp.path().join("no-end.json");
+        let mut t_no = empty_traj(4, 2);
+        t_no.push(make_step(4, 2, 0, 0.0)).unwrap();
+        t_no.save_json(&path_no_end).unwrap();
+        let raw = std::fs::read_to_string(&path_no_end).unwrap();
+        assert!(
+            !raw.contains("ended_at"),
+            "skip_serializing_if should omit the field when None: {raw}"
+        );
+        let back = TrajectoryV2::load_json(&path_no_end).unwrap();
+        assert_eq!(back.ended_at, None);
+
+        // Finalised: ended_at present and round-trips as Some(_).
+        let path_end = tmp.path().join("end.json");
+        let mut t_end = empty_traj(4, 2);
+        t_end.push(make_step(4, 2, 0, 0.0)).unwrap();
+        t_end.finalize("2026-01-01T00:00:05Z");
+        t_end.save_json(&path_end).unwrap();
+        let back = TrajectoryV2::load_json(&path_end).unwrap();
+        assert_eq!(back.ended_at.as_deref(), Some("2026-01-01T00:00:05Z"));
+    }
+
+    #[test]
+    fn legacy_ended_at_string_payload_is_loadable() {
+        // Older writers emitted `"ended_at": ""` or a literal RFC3339 string.
+        // `#[serde(default)]` plus `Option<String>` must accept both shapes.
+        let tmp = tempfile::tempdir().unwrap();
+        let path_empty = tmp.path().join("legacy-empty.json");
+        let path_str = tmp.path().join("legacy-string.json");
+        let mut t = empty_traj(4, 2);
+        t.push(make_step(4, 2, 0, 0.0)).unwrap();
+        let mut value = serde_json::to_value(&t).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("ended_at".into(), serde_json::Value::String(String::new()));
+        std::fs::write(&path_empty, serde_json::to_vec(&value).unwrap()).unwrap();
+        let back = TrajectoryV2::load_json(&path_empty).unwrap();
+        // Empty string is preserved verbatim — callers can treat empty as
+        // "unfinalised" if they care; the schema is liberal in what it accepts.
+        assert_eq!(back.ended_at.as_deref(), Some(""));
+
+        value.as_object_mut().unwrap().insert(
+            "ended_at".into(),
+            serde_json::Value::String("2025-12-31T23:59:59Z".into()),
+        );
+        std::fs::write(&path_str, serde_json::to_vec(&value).unwrap()).unwrap();
+        let back = TrajectoryV2::load_json(&path_str).unwrap();
+        assert_eq!(back.ended_at.as_deref(), Some("2025-12-31T23:59:59Z"));
     }
 
     #[test]

@@ -19,6 +19,10 @@ pub struct MinecraftEnvConfig {
     /// produces no observation within this window.
     #[serde(default = "default_heartbeat_ms")]
     pub heartbeat_ms: u64,
+    /// Expected bot-reported schema id. When set, the handshake refuses
+    /// action-map/reward-config drift before any episode starts.
+    #[serde(default)]
+    pub expected_schema_id: Option<String>,
     /// Episode safety knobs.
     #[serde(default)]
     pub episode: EpisodeConfig,
@@ -33,6 +37,7 @@ impl Default for MinecraftEnvConfig {
             action_map_path: default_action_map_path(),
             ws_url: default_ws_url(),
             heartbeat_ms: default_heartbeat_ms(),
+            expected_schema_id: None,
             episode: EpisodeConfig::default(),
             observation: ObservationConfig::default(),
         }
@@ -115,6 +120,7 @@ mod tests {
         let back: MinecraftEnvConfig = toml::from_str(&s).unwrap();
         assert_eq!(c.ws_url, back.ws_url);
         assert_eq!(c.heartbeat_ms, back.heartbeat_ms);
+        assert_eq!(c.expected_schema_id, back.expected_schema_id);
         assert_eq!(c.episode.max_ticks, back.episode.max_ticks);
     }
 
@@ -125,6 +131,7 @@ mod tests {
         assert_eq!(c.ws_url, "ws://other:1234");
         // Defaults kick in for everything else.
         assert_eq!(c.heartbeat_ms, default_heartbeat_ms());
+        assert_eq!(c.expected_schema_id, None);
         assert_eq!(c.episode.max_ticks, default_max_ticks());
     }
 }

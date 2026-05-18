@@ -5,11 +5,11 @@
   "description": "Node bot bridging mineflayer to forge-env-mc over WebSocket. JSON-only protocol v1.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "test:no-deps": "node --test test/protocol.test.js test/action_map.test.js test/reward.test.js test/schema_id.test.js",
+    "test:no-deps": "node --test test/protocol.test.js test/action_map.test.js test/reward.test.js test/schema_id.test.js test/config.test.js test/actions.test.js test/observation.test.js test/index.test.js",
     "start": "node src/index.js"
   },
   "dependencies": {

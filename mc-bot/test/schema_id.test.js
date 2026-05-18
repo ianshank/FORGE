@@ -55,4 +55,41 @@ describe('schema_id — canonicalSha256', () => {
       'schema_id drift — Rust xlang_schema_id_pinned_to_known_good will also fail',
     );
   });
+
+  it('is invariant under per-entry field reorder for move/look/place/select_slot', () => {
+    // Caller may pass fields in any order; the canonical form pins
+    // them per the Rust enum declaration. This protects against
+    // accidental drift if upstream serialisers (TOML, YAML, JSON
+    // editors) reorder keys.
+    const reordered = [
+      { ticks: 1, id: 0, kind: 'noop' },
+      { ticks: 4, direction: 'forward', kind: 'move', id: 1 },
+      { kind: 'jump', id: 2 },
+    ];
+    const declared = [
+      { id: 0, kind: 'noop', ticks: 1 },
+      { id: 1, kind: 'move', direction: 'forward', ticks: 4 },
+      { id: 2, kind: 'jump' },
+    ];
+    assert.equal(canonicalSha256(reordered), canonicalSha256(declared));
+  });
+
+  it('covers all documented kinds (regression: kinds added in Rust but not here)', () => {
+    const entries = [
+      { id: 0, kind: 'noop', ticks: 1 },
+      { id: 1, kind: 'move', direction: 'left', ticks: 2 },
+      { id: 2, kind: 'jump' },
+      { id: 3, kind: 'attack' },
+      { id: 4, kind: 'use' },
+      { id: 5, kind: 'place', hotbar_slot: 3 },
+      { id: 6, kind: 'select_slot', hotbar_slot: 7 },
+      { id: 7, kind: 'look', yaw_deg: 12.5, pitch_deg: -3.25 },
+    ];
+    // Just assert hash is stable & shaped — drift on the Rust side
+    // is caught by the xlang pinned-fixture test above (which uses
+    // a smaller subset). This one guards completeness on the JS side.
+    const h = canonicalSha256(entries);
+    assert.equal(h.length, 64);
+    assert.equal(canonicalSha256(entries), h);
+  });
 });

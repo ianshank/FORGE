@@ -911,7 +911,8 @@ FORGE flow are **untouched**.
 ```
                   ┌────────────────────────────────────────────┐
                   │           forge-env (new crate)            │
-                  │   Env / FlatObsEnv / StepInto traits       │
+                  │   Env / FlatObsEnv traits                  │
+                  │   reset_into / step_into buffer contract   │
                   │   ObsSpec / ActionSpec / DType / EnvError  │
                   └─────────────────────┬──────────────────────┘
                                         │ trait
@@ -920,8 +921,8 @@ FORGE flow are **untouched**.
 ┌───────────▼──────────────┐                          ┌──────────────▼─────────────┐
 │ forge-env-forge (new)    │                          │ forge-env-mc (new)         │
 │ WorldEnv : Env<Action>   │                          │ MinecraftEnv : FlatObsEnv  │
-│ FlatForgeEnv : FlatObs+  │                          │ + StepInto NOT impl        │
-│   StepInto (zero-alloc)  │                          │   (wire-bound carve-out)   │
+│ FlatForgeEnv : FlatObsEnv│                          │ Env::step_into buffer reuse│
+│   zero-alloc buffer path │                          │   + wire-bound carve-out   │
 │                          │                          │ sync tungstenite client    │
 │ Single-agent shim around │                          │ Hello-handshake validates  │
 │ forge_core::WorldState   │                          │   schema_version,          │
@@ -961,11 +962,11 @@ Drift on either side trips both tests simultaneously.
 
 **Zero-allocation carve-out.** The audit at
 `crates/forge-bench/src/bin/allocation_audit.rs` covers in-process
-Rust hot paths. `forge-env-mc::MinecraftEnv::step` is wire-bound and
-necessarily allocates per step (JSON parse → fresh `Vec<f32>`); it is
-explicitly excluded by module path. Envs that *can* honour the
-contract — `FlatForgeEnv`, future in-process envs — implement
-`StepInto` and the test
+Rust hot paths. `forge-env-mc::MinecraftEnv::step_into` is wire-bound:
+it reuses the caller's observation buffer, but WebSocket I/O and JSON
+parsing still allocate internally, so the crate is explicitly excluded
+by module path. In-process envs that can honour the full contract —
+`FlatForgeEnv`, future local envs — use `Env::step_into`, and the test
 `step_into_keeps_buffer_dim_stable` gates buffer-capacity reuse.
 
 **Replay format.** `forge-replay::v2` adds `TrajectoryV2` with
@@ -976,12 +977,106 @@ two signals a future MuZero trainer consumes. v1 `Trajectory` is
 untouched; a `FromV1Options` + `from_v1()` converter is provided for
 migration.
 
-**What's not landed here.** The runner binary (`forge-mc-runner`),
-ONNX hot-reload on `OnnxMuZeroModel`, the Python `muzero_mc/`
-trainer, the bootstrap-ONNX exporter, the docker-compose orchestration,
-and prismarine-viewer wire-up are documented in
-`docs/plans/minecraft_rl_integration_plan_v2.md` Phases 4–6 and
-remain follow-up work.
+**What's not landed here.** ONNX hot-reload on `OnnxMuZeroModel`,
+the Python `muzero_mc/` trainer, the bootstrap-ONNX exporter, the
+docker-compose orchestration, and prismarine-viewer wire-up are
+documented in `docs/plans/minecraft_rl_integration_plan_v2.md`
+Phases 4–6 and remain follow-up work. The runner crate's
+**foundation** is now landed — see §3.10.1 below.
+
+### 3.10.1 forge-mc-runner — Phase 4 Foundation (2026-05-17)
+
+The Phase 4 episode-runner crate is landed in skeleton form: every
+module the eventual `Runner<E: FlatObsEnv, M: LatentForwardModel>`
+will compose is independently testable, with end-to-end integration
+proving they wire together correctly. The full `Runner` loop +
+`LatentPlanner` + `OnnxMuZeroModel::reload()` ship in a follow-up.
+
+```
+                  ┌────────────────────────────────────────────┐
+                  │       forge-mc-runner (NEW crate)          │
+                  │                                            │
+                  │  ┌────────────────┐  ┌──────────────────┐  │
+                  │  │ RunnerConfig   │  │ ModelManifest    │  │
+                  │  │ (TOML, serde,  │  │ (schema_version, │  │
+                  │  │  validate)     │  │  monotonic ver., │  │
+                  │  │                │  │  sha256/role,    │  │
+                  │  │ episodes,      │  │  atomic save)    │  │
+                  │  │ max_steps,     │  └────────┬─────────┘  │
+                  │  │ schema_id,     │           │            │
+                  │  │ planning_sims, │  ┌────────▼─────────┐  │
+                  │  │ action_repeat, │  │ HotReloadWatcher │  │
+                  │  │ manifest_path, │  │ poll only        │  │
+                  │  │ trajectory_dir,│  │ between episodes │  │
+                  │  │ metrics_port   │  │ strictly-mono.   │  │
+                  │  └────────┬───────┘  │ version bumps    │  │
+                  │           │          └──────────────────┘  │
+                  │  ┌────────▼─────────┐  ┌─────────────┐    │
+                  │  │ TrajectoryWriter │──│ TrajectoryV2│    │
+                  │  │ start_episode →  │  │ (forge-     │    │
+                  │  │ record_step* →   │  │  replay)    │    │
+                  │  │ finalize_and_save│  └─────────────┘    │
+                  │  │   (atomic JSON)  │                     │
+                  │  └──────────────────┘                     │
+                  │                                            │
+                  │  RunnerError = thiserror enum spanning     │
+                  │  config / manifest / writer / IO / JSON    │
+                  └────────────────────────────────────────────┘
+                              │
+              ┌───────────────┴──────────────┐
+              │                              │
+   trainer writes new                 runner consumes
+   model_manifest.json                manifest + TrajectoryV2
+   (python/forge/training/            (Runner loop, follow-up PR)
+    muzero_mc/exporter.py,
+    follow-up PR)
+```
+
+**Module contracts:**
+
+- `RunnerConfig` — `#[serde(default)]` on every field. `Default`
+  produces a smoke-run config; `validate()` rejects empty
+  `env_id`/`schema_id`/paths and `action_repeat == 0` (would divide
+  by zero downstream). `episodes == 0` means "run forever";
+  `metrics_port == 0` disables the Prometheus endpoint.
+- `ModelManifest` — `MANIFEST_SCHEMA_VERSION = 1`. Atomic save via
+  dotted `.tmp` sibling + same-dir rename (matches Python
+  exporter's discipline). `validate()` is cheap and runs **before**
+  any disk write, so an invalid manifest never lands on disk.
+  Per-role `ModelFileEntry { path, sha256 }` so the runner can
+  detect corrupted bundles before `OnnxMuZeroModel::load`.
+- `HotReloadWatcher` — observes the manifest file path. Returns
+  `Ok(None)` when the file is missing (first-run bootstrap case).
+  `prime_with(version)` suppresses the initial event after first
+  start-up against an already-bootstrapped manifest. Lower
+  versions are silently ignored (no downgrade). **Doc-contract:
+  callers poll only between episodes** — this matches the plan
+  §3.4 lock-ordering story so a model swap cannot race an in-flight
+  inference call.
+- `TrajectoryWriter` — lifecycle `start_episode → record_step* →
+  finalize_and_save`. Buffer-validated `TrajectoryV2::push`
+  forwards obs-dim, policy-dim, action-range errors. Directory
+  created on first save; wrong-order calls return
+  `RunnerError::WriterState`. The same writer instance is reused
+  across episodes (no per-episode reallocation).
+
+**Test surface.** 42 unit + 2 integration tests (44 total) proving:
+
+- TOML config loads → validate → writer + watcher construct lazily
+- Trainer v1 manifest → watcher emits with `previous=None`
+- Episode 1 records → finalize → file round-trips through
+  `TrajectoryV2::load_json`
+- Between-episode same-version poll → no event
+- v2 manifest → watcher emits with `previous=Some(1)`
+- No `.tmp` siblings remain after atomic save
+- `RunnerConfig.schema_id` vs `ModelManifest.schema_id` drift is
+  detectable via simple `&str` comparison (no custom glue needed)
+
+**Bench.** `crates/forge-bench/benches/latent_mcts_inference.rs`
+ships a Criterion bench at sim budgets `1 / 8 / 25 / 50 / 100 /
+200` using `StubLatentModel` (no ONNX dep). Env-tunable via
+`FORGE_BENCH_MCTS_{SIMS,OBS_DIM,ACTIONS,LATENT_DIM}`. Closes the
+audit-flagged bench gap from `docs/next_steps.md` Phase 4.
 
 ---
 

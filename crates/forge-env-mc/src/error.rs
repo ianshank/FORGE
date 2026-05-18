@@ -28,6 +28,15 @@ pub enum McEnvError {
         /// Human description of the server's reply.
         server: String,
     },
+    /// Bot returned an observation vector whose length changed after
+    /// handshake.
+    #[error("observation dimension mismatch: expected {expected}, got {got}")]
+    ObsDimMismatch {
+        /// Dimension declared by the bot during handshake.
+        expected: usize,
+        /// Dimension returned by a reset/step observation.
+        got: usize,
+    },
     /// Action id outside the declared action space.
     #[error("invalid action id: {action_id} (action_space.n = {space_n})")]
     InvalidAction {
@@ -73,5 +82,15 @@ mod tests {
     fn unexpected_error_display() {
         let e = McEnvError::Unexpected("bad".into());
         assert!(e.to_string().contains("bad"));
+    }
+
+    #[test]
+    fn obs_dim_mismatch_display() {
+        let e = McEnvError::ObsDimMismatch {
+            expected: 4,
+            got: 7,
+        };
+        assert!(e.to_string().contains("expected 4"));
+        assert!(e.to_string().contains("got 7"));
     }
 }

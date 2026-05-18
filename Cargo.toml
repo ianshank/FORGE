@@ -26,6 +26,7 @@ members = [
     "crates/forge-env",
     "crates/forge-env-forge",
     "crates/forge-env-mc",
+    "crates/forge-mc-runner",
 ]
 resolver = "2"
 
@@ -105,6 +106,7 @@ forge-civ = { path = "crates/forge-civ" }
 forge-env = { path = "crates/forge-env" }
 forge-env-forge = { path = "crates/forge-env-forge" }
 forge-env-mc = { path = "crates/forge-env-mc" }
+forge-mc-runner = { path = "crates/forge-mc-runner" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
