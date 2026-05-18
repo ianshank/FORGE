@@ -148,7 +148,11 @@ export function snapshotObservation(bot, config = {}) {
   }
 
   const snapshot = {
-    tick: finiteNumber(bot.time?.age ?? bot.time?.time ?? bot.tick, 0),
+    // NOTE: only `bot.time.age` is a monotonic tick counter. `bot.time.time`
+    // is time-of-day in [0, 24000) and wraps every Minecraft day, so using it
+    // as a fallback makes trainer-side sequence ordering jump backwards on
+    // long episodes. `bot.tick` is the explicit escape hatch for stubs/tests.
+    tick: finiteNumber(bot.time?.age ?? bot.tick, 0),
     position: {
       x: finiteNumber(position.x),
       y: finiteNumber(position.y),

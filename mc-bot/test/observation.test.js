@@ -170,14 +170,20 @@ describe('observation', () => {
     assert.ok(Math.abs(snap.obs[10] - 15 / 20) < 1e-9);
   });
 
-  it('snapshotObservation reads bot.time.time when bot.time.age is missing', () => {
+  it('snapshotObservation does not use bot.time.time as a tick fallback', () => {
+    // `bot.time.time` is Minecraft time-of-day (0..24000, wraps every MC day)
+    // — it is NOT a monotonic tick counter. Using it would make trainer-side
+    // sequence ordering / discount calculation jump backwards every day. With
+    // only `bot.time.time` present the snapshot must fall through to `bot.tick`
+    // (also missing here) and finally to the 0 default.
     const bot = {
-      time: { time: 99 }, // `age` missing, `time` present
+      time: { time: 99 }, // `age` missing, only the bad `time` is present
       entity: { position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 } },
       inventory: { items: () => [], slots: [] },
     };
     const snap = snapshotObservation(bot, { include_inventory: false });
-    assert.equal(snap.tick, 99);
+    assert.notEqual(snap.tick, 99);
+    assert.equal(snap.tick, 0);
   });
 
   it('snapshotObservation reads bot.tick when bot.time is missing', () => {
