@@ -146,6 +146,12 @@ impl ModelManifest {
                 path.display()
             ))
         })?;
+        // `path.parent()` returns `Some("")` for bare filenames like
+        // `"model_manifest.json"`; `create_dir_all("")` errors on Windows,
+        // so only create when there's a real directory component.
+        if !dir.as_os_str().is_empty() && !dir.exists() {
+            fs::create_dir_all(dir).map_err(|e| RunnerError::io(dir, e))?;
+        }
         // Use the dotted-tmp pattern so a crash mid-write leaves a hidden
         // sibling, not a malformed manifest the watcher might pick up.
         let tmp: PathBuf = dir.join(format!(
@@ -316,5 +322,34 @@ mod tests {
         let bad = sample_manifest(0, "abc"); // version=0 is invalid
         let _ = bad.save_json(&path).unwrap_err();
         assert!(!path.exists());
+    }
+
+    /// `save_json` must create missing intermediate directories so callers
+    /// don't have to mkdir `models/` themselves before the first export.
+    #[test]
+    fn save_json_creates_missing_parent_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("a/b/c/model_manifest.json");
+        assert!(!path.parent().unwrap().exists());
+        let m = sample_manifest(1, "abc");
+        m.save_json(&path).unwrap();
+        assert!(path.exists());
+    }
+
+    /// `Path::new("model_manifest.json").parent()` returns `Some("")`, and
+    /// `fs::create_dir_all("")` errors on Windows. The bare-filename case
+    /// must still succeed (writes to cwd).
+    #[test]
+    fn save_json_handles_bare_filename() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Operate in the tempdir so we don't litter the repo root.
+        let prev_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let result = sample_manifest(1, "abc").save_json("model_manifest.json");
+        let exists = tmp.path().join("model_manifest.json").exists();
+        // Restore cwd before any assertion so a failure doesn't leak state.
+        std::env::set_current_dir(prev_cwd).unwrap();
+        result.unwrap();
+        assert!(exists);
     }
 }
