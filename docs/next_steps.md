@@ -24,21 +24,45 @@ agent against a real Minecraft server end-to-end.
 
 ### Phase 4 — `forge-mc-runner` + ONNX hot-reload + bench
 
-- New crate `crates/forge-mc-runner/` with `Runner<E: FlatObsEnv>`,
-  `LatentPlanner<M: LatentForwardModel>`, `TrajectoryWriter`,
-  `HotReloadWatcher`. Drives an episode loop, writes `TrajectoryV2`
-  files, swaps ONNX between episodes.
-- Additive `OnnxMuZeroModel::reload()` method on
+**Foundation landed (PR: this branch):**
+
+- `crates/forge-mc-runner/` crate scaffolded with the pieces the
+  full runner will assemble:
+  - `config::RunnerConfig` — episode loop knobs, `#[serde(default)]`,
+    `validate()` invariants.
+  - `manifest::{ModelManifest, ModelManifestFiles}` — the
+    `model_manifest.json` swap signal (schema version, monotonic
+    `version`, sha256-per-role). Atomic save (tmp + rename); pinned
+    `MANIFEST_SCHEMA_VERSION = 1`.
+  - `hot_reload::HotReloadWatcher` — polls for strictly-monotonic
+    version bumps; missing manifest = `Ok(None)`; lower versions
+    ignored (no downgrade); doc-contract "poll only between
+    episodes".
+  - `trajectory::TrajectoryWriter` — episode-scoped wrapper over
+    `forge_replay::v2::TrajectoryV2`. Directory created on first
+    save; wrong-order calls return `RunnerError::WriterState`.
+  - 42 unit tests covering happy, error, validation, atomic-cleanup,
+    missing-manifest paths.
+- `crates/forge-bench/benches/latent_mcts_inference.rs` Criterion
+  bench at 1 / 8 / 25 / 50 / 100 / 200 sim budgets using
+  `StubLatentModel` (no ONNX dep). Env-tunable via
+  `FORGE_BENCH_MCTS_{SIMS,OBS_DIM,ACTIONS,LATENT_DIM}`. **Closes the
+  bench gap from the original audit.**
+
+**Still to do for the live loop (follow-up PR):**
+
+- `Runner<E: FlatObsEnv, M: LatentForwardModel>` — wires Env +
+  planner + `TrajectoryWriter` + `HotReloadWatcher` into the episode
+  loop. Calls `watcher.poll()` only between episodes (the contract
+  the foundation already documents).
+- `LatentPlanner<M: LatentForwardModel>` — adapter around
+  `LatentMctsSearch` that produces `(action, policy_target,
+  value_target)` for the writer.
+- Additive `OnnxMuZeroModel::reload()` on
   `crates/forge-agent/src/latent_mcts/onnx_model.rs` with fixed
   mutex-acquisition order (representation → dynamics → prediction)
-  to make deadlock structurally impossible.
-- `model_manifest.json` (sha256 + version) is the swap signal; reload
-  only happens between episodes (doc + test).
-- `crates/forge-bench/benches/latent_mcts_inference.rs` Criterion
-  bench (NEW — the gap identified in the original audit) measures
-  per-decision latency at 1 / 8 / 25 / 50 / 100 / 200 simulation
-  budgets using `StubLatentModel` plus an optional `OnnxMuZeroModel`
-  feature-gated variant.
+  to make deadlock structurally impossible. Optional
+  `OnnxMuZeroModel` feature-gated variant of the bench follows.
 
 ### Phase 5 — Python MuZero trainer (`muzero_mc/`)
 

@@ -83,9 +83,10 @@ StepResult (forge-types)  -->  Observations + Rewards
 | `forge-python` | `crates/forge-python/Agent.md` | Python Bridge — Gymnasium-compatible PyO3 bindings |
 | `forge-bench` | `crates/forge-bench/Agent.md` | Performance Guardian — Criterion benchmarks |
 | `forge-wasm` | `crates/forge-wasm/Agent.md` | Web Presenter — wasm-bindgen browser bindings |
-| `forge-env` | (this file §Env-trait crates) | Env Abstractor — generic `Env` / `FlatObsEnv` / `StepInto` traits, zero FORGE deps |
+| `forge-env` | (this file §Env-trait crates) | Env Abstractor — generic `Env` / `FlatObsEnv` traits with buffer-filling reset/step, zero FORGE deps |
 | `forge-env-forge` | (this file §Env-trait crates) | FORGE Shim — single-agent `Env` impl over `WorldState` for backwards-compat |
 | `forge-env-mc` | (this file §Env-trait crates) | Minecraft Bridge — sync WebSocket client to mc-bot, JSON protocol v1 |
+| `forge-mc-runner` | `crates/forge-mc-runner/Agent.md` | Runner Foundation — `RunnerConfig`, `ModelManifest`, `HotReloadWatcher`, `TrajectoryWriter` for Phase 4 episode loops |
 | `mc-bot/` | `mc-bot/README.md` | Node Bridge — mineflayer + prismarine-viewer + reward registry |
 
 ### Env-Trait Crates (Minecraft RL integration)
@@ -93,18 +94,22 @@ StepResult (forge-types)  -->  Observations + Rewards
 Added on the `claude/minecraft-rl-agent-integration-xnJjt` branch.
 
 - **`forge-env`** — generic trait crate. Defines `Env`, `FlatObsEnv`,
-  `StepInto`, `ObsSpec`, `ActionSpec`. No dependency on `forge-types`
-  or `forge-core` — consumable by any backend.
+  `StepOutput`, `ObsSpec`, `ActionSpec`. `Env` requires buffer-filling
+  `reset_into` and `step_into`; `reset` and `step` are allocating
+  convenience wrappers. No dependency on `forge-types` or `forge-core`
+  — consumable by any backend.
 - **`forge-env-forge`** — wraps `WorldState` in `WorldEnv` + flat
-  `FlatForgeEnv`. Implements `StepInto` for zero-alloc buffer reuse.
+  `FlatForgeEnv`. Reuses caller-owned buffers through `Env::step_into`
+  for the zero-alloc hot path.
   Backwards-compat: `forge-python::ForgeEnv`, classical
   `forge-agent::mcts`, v1 `Trajectory` all untouched. CI gates parity
   via 200-step lockstep test.
 - **`forge-env-mc`** — sync `tungstenite` WebSocket client to a Node
   mc-bot. Loads `configs/minecraft/{action_map,rewards}.toml` and
   cross-checks `schema_id` (sha256) against the bot's `Hello` reply.
-  Intentionally NOT `StepInto` — wire-bound, exempt from zero-alloc
-  contract (documented carve-out).
+  Implements `Env::step_into` and reuses caller observation buffers, but
+  wire-bound I/O and JSON parsing remain exempt from the zero-alloc
+  audit (documented carve-out).
 - **`forge-replay::v2`** — additive module inside `forge-replay`.
   `TrajectoryV2` carries `Vec<f32>` obs + MCTS policy/value targets;
   `format_version=2` pinned. v1 `Trajectory` untouched.
@@ -112,7 +117,17 @@ Added on the `claude/minecraft-rl-agent-integration-xnJjt` branch.
   action map + reward registry layout. Pure JS canonicalisers produce
   byte-identical `schema_id` to the Rust side (cross-language
   regression gates pinned at `587b1307…` for actions and
-  `451b10f9…` for rewards).
+  `451b10f9…` for rewards). `SCHEMA_VERSION = 1` pinned on both
+  sides via paired `xlang_schema_version_*` tests.
+- **`forge-mc-runner`** — Phase 4 runner foundation (skeleton,
+  2026-05-17). Four modules: `RunnerConfig` (TOML, validate),
+  `ModelManifest` (atomic save, sha256-per-role, monotonic version,
+  pinned schema), `HotReloadWatcher` (between-episode poll-only
+  contract, strictly-monotonic version bumps, no downgrade),
+  `TrajectoryWriter` (episode-scoped wrapper over
+  `forge_replay::v2::TrajectoryV2`, atomic JSON save). The full
+  `Runner<E: FlatObsEnv, M: LatentForwardModel>` episode loop ships
+  in a follow-up — every dependency is testable in isolation now.
 
 ## Build & Test
 

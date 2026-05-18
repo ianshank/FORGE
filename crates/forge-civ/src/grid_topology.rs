@@ -109,3 +109,127 @@ impl Default for GridTopologyKind {
         Self::Square(crate::SquareTopology)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{HexTopology, SquareTopology};
+
+    /// Helper: square-grid `GridTopologyKind`.
+    fn square_kind() -> GridTopologyKind {
+        GridTopologyKind::Square(SquareTopology)
+    }
+
+    /// Helper: hex-grid `GridTopologyKind`.
+    fn hex_kind() -> GridTopologyKind {
+        GridTopologyKind::Hex(HexTopology)
+    }
+
+    /// `Default` impl returns the square variant — used by many configs.
+    #[test]
+    fn default_is_square_variant() {
+        let k = GridTopologyKind::default();
+        assert!(matches!(k, GridTopologyKind::Square(_)));
+    }
+
+    /// Square dispatch advertises 4 directions; hex dispatches 6.
+    #[test]
+    fn num_directions_dispatches_to_variant() {
+        let sq = square_kind();
+        let hx = hex_kind();
+        assert_eq!(sq.num_directions(), SquareTopology.num_directions());
+        assert_eq!(hx.num_directions(), HexTopology.num_directions());
+        assert_eq!(sq.num_directions(), 4);
+        assert_eq!(hx.num_directions(), 6);
+    }
+
+    /// `neighbor()` through the enum agrees with the concrete variant.
+    /// Asserts on both variants so the Hex dispatch arm gets exercised.
+    #[test]
+    fn neighbor_dispatch_matches_concrete_for_both_variants() {
+        let pos = Position::new(2, 2);
+        let (w, h) = (8u16, 8u16);
+        for dir in 0..6u8 {
+            let sq_via_enum = square_kind().neighbor(pos, dir % 4, w, h);
+            let sq_direct = SquareTopology.neighbor(pos, dir % 4, w, h);
+            assert_eq!(sq_via_enum, sq_direct, "square dir={dir}");
+
+            let hx_via_enum = hex_kind().neighbor(pos, dir, w, h);
+            let hx_direct = HexTopology.neighbor(pos, dir, w, h);
+            assert_eq!(hx_via_enum, hx_direct, "hex dir={dir}");
+        }
+    }
+
+    /// `neighbors()` enum dispatch returns the same set as the concrete impl
+    /// for both variants.
+    #[test]
+    fn neighbors_dispatch_matches_concrete_for_both_variants() {
+        let pos = Position::new(4, 4);
+        let (w, h) = (10u16, 10u16);
+        let sq_via_enum = square_kind().neighbors(pos, w, h);
+        let sq_direct = SquareTopology.neighbors(pos, w, h);
+        assert_eq!(sq_via_enum.len(), sq_direct.len());
+        for n in sq_direct.iter() {
+            assert!(sq_via_enum.contains(n));
+        }
+
+        let hx_via_enum = hex_kind().neighbors(pos, w, h);
+        let hx_direct = HexTopology.neighbors(pos, w, h);
+        assert_eq!(hx_via_enum.len(), hx_direct.len());
+        for n in hx_direct.iter() {
+            assert!(hx_via_enum.contains(n));
+        }
+    }
+
+    /// `distance()` dispatches correctly for both variants.
+    #[test]
+    fn distance_dispatch_matches_concrete_for_both_variants() {
+        let a = Position::new(0, 0);
+        let b = Position::new(3, 4);
+        assert_eq!(square_kind().distance(a, b), SquareTopology.distance(a, b));
+        assert_eq!(hex_kind().distance(a, b), HexTopology.distance(a, b));
+    }
+
+    /// `line_of_sight()` dispatches correctly for both variants.
+    #[test]
+    fn line_of_sight_dispatch_matches_concrete_for_both_variants() {
+        let from = Position::new(0, 0);
+        let to = Position::new(2, 2);
+        let sq = square_kind().line_of_sight(from, to);
+        let sq_direct = SquareTopology.line_of_sight(from, to);
+        assert_eq!(sq.len(), sq_direct.len());
+
+        let hx = hex_kind().line_of_sight(from, to);
+        let hx_direct = HexTopology.line_of_sight(from, to);
+        assert_eq!(hx.len(), hx_direct.len());
+    }
+
+    /// `disk()` dispatches correctly for both variants.
+    #[test]
+    fn disk_dispatch_matches_concrete_for_both_variants() {
+        let center = Position::new(5, 5);
+        let radius = 2u16;
+        let (w, h) = (16u16, 16u16);
+        let sq = square_kind().disk(center, radius, w, h);
+        let sq_direct = SquareTopology.disk(center, radius, w, h);
+        assert_eq!(sq.len(), sq_direct.len());
+
+        let hx = hex_kind().disk(center, radius, w, h);
+        let hx_direct = HexTopology.disk(center, radius, w, h);
+        assert_eq!(hx.len(), hx_direct.len());
+    }
+
+    /// Round-trip serialization preserves the variant for both arms.
+    #[test]
+    fn roundtrip_serde_preserves_variant() {
+        for kind in [square_kind(), hex_kind()] {
+            let json = serde_json::to_string(&kind).unwrap();
+            let back: GridTopologyKind = serde_json::from_str(&json).unwrap();
+            match (kind, back) {
+                (GridTopologyKind::Square(_), GridTopologyKind::Square(_)) => {}
+                (GridTopologyKind::Hex(_), GridTopologyKind::Hex(_)) => {}
+                other => panic!("variant changed after roundtrip: {other:?}"),
+            }
+        }
+    }
+}

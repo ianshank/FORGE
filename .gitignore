@@ -134,12 +134,18 @@ playwright-report/
 
 # Minecraft integration runtime artefacts
 # - replays/minecraft/  : TrajectoryV2 JSONL files written by forge-mc-runner
+# - trajectories/       : default forge-mc-runner output dir (RunnerConfig::Default)
 # - models/             : ONNX weights + manifest reloaded between episodes
 #                         (also caught by the existing *.onnx + models/ rules
 #                         above, kept here for discoverability when grepping
 #                         for "minecraft" in .gitignore)
 replays/minecraft/
 replay_buffer/minecraft/
+trajectories/
+# Atomic-save .tmp siblings — should never persist past a successful write
+# but pin in .gitignore so a crashed save during dev doesn't get committed.
+**/.*.json.tmp
+**/.model_manifest.json.tmp
 # mc-bot npm install output (covered by node_modules/ above, pinned for grep)
 mc-bot/node_modules/
 # mc-bot iteration debris — NEVER commit screenshots from a private MC world

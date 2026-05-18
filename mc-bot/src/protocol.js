@@ -81,9 +81,27 @@ export function parseClientMsg(input) {
   }
   switch (obj.type) {
     case 'reset': {
-      const seed = obj.seed === null || obj.seed === undefined ? null : Number(obj.seed);
-      if (seed !== null && !Number.isFinite(seed)) {
-        throw new Error(`reset.seed must be number or null, got ${obj.seed}`);
+      // Seed semantics: optional u64-shaped non-negative integer. We
+      // accept null/undefined as "caller didn't pin a seed". Reject
+      // anything that can't survive a roundtrip through Rust's u64 —
+      // floats, negatives, and values above Number.MAX_SAFE_INTEGER
+      // would silently corrupt determinism on the other side.
+      if (obj.seed === null || obj.seed === undefined) {
+        return { type: 'reset', seed: null };
+      }
+      const raw = obj.seed;
+      const seed = typeof raw === 'number' ? raw : Number(raw);
+      if (
+        !Number.isFinite(seed) ||
+        !Number.isInteger(seed) ||
+        seed < 0 ||
+        seed > Number.MAX_SAFE_INTEGER
+      ) {
+        throw new Error(
+          `reset.seed must be a non-negative integer \u2264 Number.MAX_SAFE_INTEGER or null, got ${JSON.stringify(
+            obj.seed,
+          )}`,
+        );
       }
       return { type: 'reset', seed };
     }

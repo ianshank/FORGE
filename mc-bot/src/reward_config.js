@@ -2,12 +2,14 @@
 // `crates/forge-env-mc/src/reward_config.rs` byte-for-byte at the
 // canonical-hash level.
 //
-// Canonical form: `JSON.stringify(entries)` where `entries` is the
-// raw TOML-parsed `[[reward]]` array in file order. JS and Rust both
-// serialise via their default-ordered JSON serialisers; for nested
-// objects, Rust's serde preserves field declaration order (matching
-// the TOML reader's order) and JS preserves insertion order from the
-// TOML parser. The xlang regression test catches drift.
+// Canonical form: `JSON.stringify(sortKeysDeep(entries))` where
+// `entries` is the raw TOML-parsed `[[reward]]` array in file order
+// (top-level order is preserved, NOT sorted, because it matches the
+// Vec<RewardEntry> on the Rust side). Every nested object/table is
+// then walked recursively with keys sorted alphabetically, mirroring
+// Rust's `toml::Value::Table` (backed by a `BTreeMap`). The xlang
+// regression test in `mc-bot/test/reward_config.test.js` catches
+// drift on either side.
 
 import { createHash } from 'node:crypto';
 

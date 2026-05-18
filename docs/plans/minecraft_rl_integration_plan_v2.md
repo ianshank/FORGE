@@ -17,7 +17,7 @@ Peer-review pass found ten substantive issues. v2 addresses all of them; v1 is k
 | 2 | Critical | Episode reset semantics for persistent MC world | New Phase 3 reset strategy (§3.3.2) |
 | 3 | Critical | `type Action: Copy` rejects FORGE's own `Action::Communicate` | Phase 1 trait revision (§3.1) |
 | 4 | Significant | Binary obs-frame protocol announced but unspecified | Removed from v1; deferred to protocol v2 (§4.4) |
-| 5 | Significant | Zero-alloc claim incompatible with `MinecraftEnv::step` | Explicit carve-out + opt-in `step_into` (§1, §3.1) |
+| 5 | Significant | Zero-alloc claim incompatible with wire-bound `MinecraftEnv` | Required buffer-filling `Env::step_into` plus explicit wire-bound allocation carve-out (§1, §3.1) |
 | 6 | Significant | ONNX opset / ort runtime version compat unverified | Phase 5 round-trip CI test (§3.5) |
 | 7 | Worth fixing | Bootstrap ONNX origin unspecified | Phase 5 `bootstrap.py` (§3.5) |
 | 8 | Worth fixing | Multi-agent `from_v1` flatten ambiguity | Signature change to `&[Observation] -> Vec<f32>` (§3.5) |
@@ -32,7 +32,7 @@ Everything not listed above is unchanged from v1.
 
 Same as v1 with one explicit clarification:
 
-**Zero-alloc carve-out.** CLAUDE.md mandates zero allocation on the hot path, enforced via `crates/forge-bench/src/bin/allocation_audit.rs`. The audit gate applies to `WorldState::step_into` and Rust-internal simulation paths. Wire-bound environments (`MinecraftEnv`) are *explicitly excluded* — they perform unavoidable network I/O and JSON parsing per step. Envs that *can* honor the contract (`FlatForgeEnv`, future in-process envs) implement an optional `Env::step_into(&mut StepOutput<Self>)` method whose buffers the caller reuses; `MinecraftEnv` provides only the allocating `step`. The allocation audit's CI gate excludes `forge-env-mc` by module path.
+**Zero-alloc carve-out.** CLAUDE.md mandates zero allocation on the hot path, enforced via `crates/forge-bench/src/bin/allocation_audit.rs`. The audit gate applies to `WorldState::step_into` and Rust-internal simulation paths. Every `Env` now implements buffer-filling `reset_into` and `step_into`; allocating `reset` and `step` are convenience wrappers. Wire-bound environments (`MinecraftEnv`) reuse caller observation buffers through `Env::step_into`, but internal WebSocket I/O and JSON parsing still allocate per step and are explicitly excluded from the allocation audit by module path. In-process envs such as `FlatForgeEnv` must honor the full no-allocation hot-path contract.
 
 | Concern | Pattern | Source |
 |---|---|---|
@@ -103,8 +103,10 @@ pub trait Env: Send {
     type Info: Default + Send;
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn reset(&mut self, seed: Option<u64>) -> Result<StepOutput<Self>, Self::Error>;
-    fn step(&mut self, action: Self::Action) -> Result<StepOutput<Self>, Self::Error>;
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Self::Obs)
+        -> Result<(), Self::Error>;
+    fn step_into(&mut self, action: Self::Action, out: &mut StepOutput<Self::Obs, Self::Info>)
+        -> Result<(), Self::Error>;
     fn obs_spec(&self) -> &ObsSpec;
     fn action_spec(&self) -> &ActionSpec;
 
@@ -113,21 +115,21 @@ pub trait Env: Send {
     fn name(&self) -> Cow<'_, str> { Cow::Borrowed("env") }
 
     fn close(&mut self) -> Result<(), Self::Error> { Ok(()) }
+
+    fn reset(&mut self, seed: Option<u64>) -> Result<Self::Obs, Self::Error>
+    where
+        Self::Obs: Default;
+    fn step(&mut self, action: Self::Action) -> Result<StepOutput<Self::Obs, Self::Info>, Self::Error>
+    where
+        Self::Obs: Default;
 }
 
-/// Optional zero-alloc step variant. Default impl delegates to `step()`.
-/// Implement when the env's obs/info can be written into pre-allocated buffers.
-pub trait StepInto: Env {
-    fn step_into(&mut self, action: Self::Action, out: &mut StepOutput<Self>)
-        -> Result<(), Self::Error>;
-}
-
-pub struct StepOutput<E: Env + ?Sized> {
-    pub obs: E::Obs,
+pub struct StepOutput<Obs, Info> {
+    pub obs: Obs,
     pub reward: f32,
     pub terminated: bool,
     pub truncated: bool,
-    pub info: E::Info,
+    pub info: Info,
 }
 
 /// Marker for envs feeding latent_mcts. Obs is a flat float vec; action a discrete index.
@@ -141,11 +143,11 @@ pub trait FlatObsEnv: Env<Obs = Vec<f32>, Action = u32> {
 Rationale:
 - **Drop `Copy` on `Action`** — `forge_types::Action::Communicate { message: String, ... }` is not `Copy`. `FlatObsEnv` constrains `Action = u32` so the hot path stays `Copy`.
 - **`Cow<'_, str>` for `name`** — allows static defaults *and* runtime-formatted names (server version, world seed).
-- **`StepInto` as separate trait** — keeps the zero-alloc contract opt-in. `FlatForgeEnv` implements it; `MinecraftEnv` does not (excluded from allocation audit by module path).
+- **Required buffer-filling methods** — `reset_into` and `step_into` are part of `Env`, while `reset` and `step` are allocating convenience wrappers. `FlatForgeEnv` must satisfy the full zero-alloc buffer contract; `MinecraftEnv` reuses caller observation buffers but remains excluded from the allocation audit because WebSocket I/O and JSON parsing allocate.
 
 **Tests:** Same as v1 plus:
 - `dynamic_name_via_cow_owned` — verifies `name()` can return an owned formatted string.
-- `step_into_writes_in_place` — `MockFlatEnv` implements `StepInto`; test asserts buffer reuse via `Vec::capacity` invariance across calls.
+- `step_into_reuses_buffer_capacity` — `MockFlatEnv` implements `Env::step_into`; test asserts buffer reuse via `Vec::capacity` invariance across calls.
 
 Everything else (spec types, error type, integration test) is identical to v1.
 
@@ -155,7 +157,7 @@ Everything else (spec types, error type, integration test) is identical to v1.
 
 Unchanged from v1 except:
 - `WorldEnv::name()` now returns `Cow::Owned(format!("forge-{}", config.world.world_id))` instead of a static string.
-- `FlatForgeEnv` implements `StepInto` — `step_into(&mut self, action, out)` reuses `out.obs.grid_view`/`out.obs.inventory` buffers and avoids allocating a fresh `Observation` per step. Property test `flatten_step_into_zero_alloc` runs the allocation audit on this path.
+- `FlatForgeEnv` implements `Env::step_into` — it reuses cached typed-observation buffers and writes flattened observations into the caller's `Vec<f32>` buffer without allocating on the hot path. `step_into_keeps_buffer_dim_stable` gates this behavior.
 
 Parity test scope unchanged: 1k deterministic steps vs `WorldState` direct path.
 
@@ -479,7 +481,7 @@ Unchanged from v1 in structure. End-of-phase artifacts now include:
 
 | End of Phase | Runnable artifact |
 |---|---|
-| 1 | `cargo test -p forge-env` — trait + `StepInto` proven via `MockFlatEnv` driving `latent_mcts`. |
+| 1 | `cargo test -p forge-env` — `Env::reset_into` / `Env::step_into` proven via `MockFlatEnv` driving `latent_mcts`. |
 | 2 | `cargo test -p forge-env-forge` — parity vs `WorldState`; allocation audit passes for `FlatForgeEnv::step_into`. |
 | 3 | `node mc-bot/src/index.js` connects to local MC server; bot teleports on reset, emits computed rewards; `cargo run -p forge-env-mc --example random_walk`. |
 | 4 | `forge-mc-runner` plays MC with bootstrap ONNX (after running `bootstrap` CLI), writes `TrajectoryV2`, hot-reloads on manifest bump. Criterion bench publishes inference latency. |
@@ -538,5 +540,5 @@ Net changes:
 - `name() -> Cow<'_, str>` instead of `&'static str`
 - `from_v1(t, flatten: &dyn Fn(&Observation) -> Vec<f32>)` → `&dyn Fn(&[Observation]) -> Vec<f32>`
 - `Hello` now carries `schema_id`
-- Zero-alloc carve-out explicit; opt-in `StepInto` trait added
+- Zero-alloc carve-out explicit; `Env::reset_into` / `Env::step_into` are required, with allocating convenience wrappers
 - Lock-ordering doc + test in `OnnxMuZeroModel::reload`

@@ -100,6 +100,15 @@ fn cfg_with_url_and_expected(url: String, expected_dim: usize) -> MinecraftEnvCo
     c
 }
 
+fn cfg_with_expected_schema(
+    url: String,
+    expected_schema_id: impl Into<String>,
+) -> MinecraftEnvConfig {
+    let mut c = cfg_with_url(url);
+    c.expected_schema_id = Some(expected_schema_id.into());
+    c
+}
+
 fn obs_msg(tick: u64) -> ServerMsg {
     ServerMsg::Observation {
         tick,
@@ -169,6 +178,27 @@ fn handshake_rejects_schema_version_mismatch() {
     };
     let server = Mock::spawn(&addr, hello, vec![]).run();
     let cfg = cfg_with_url(url);
+    let err = MinecraftEnv::connect(cfg, map)
+        .err()
+        .expect("expected error");
+    assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
+    let _ = server.join();
+}
+
+#[test]
+fn handshake_rejects_schema_id_mismatch_when_expected_set() {
+    let port = pick_port();
+    let url = format!("ws://127.0.0.1:{port}");
+    let addr = format!("127.0.0.1:{port}");
+    let map = sample_map();
+    let hello = ServerMsg::Hello {
+        schema_version: SCHEMA_VERSION,
+        action_count: map.action_count(),
+        obs_dim: OBS_DIM,
+        schema_id: "server-schema".into(),
+    };
+    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let cfg = cfg_with_expected_schema(url, "client-schema");
     let err = MinecraftEnv::connect(cfg, map)
         .err()
         .expect("expected error");
@@ -312,7 +342,7 @@ fn duplicate_hello_mid_episode_is_unexpected() {
 }
 
 #[test]
-fn obs_dim_mismatch_in_observation_returns_handshake_error() {
+fn obs_dim_mismatch_in_observation_returns_obs_dim_error() {
     let port = pick_port();
     let url = format!("ws://127.0.0.1:{port}");
     let addr = format!("127.0.0.1:{port}");
@@ -336,7 +366,7 @@ fn obs_dim_mismatch_in_observation_returns_handshake_error() {
     let mut env = MinecraftEnv::connect(cfg, map).unwrap();
     use forge_env::Env;
     let err = env.reset(None).unwrap_err();
-    assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
+    assert!(matches!(err, McEnvError::ObsDimMismatch { .. }));
     let _ = server.join();
 }
 

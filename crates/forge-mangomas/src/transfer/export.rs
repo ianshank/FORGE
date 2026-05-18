@@ -131,4 +131,70 @@ mod tests {
         assert_eq!(meta.state_dim, 22);
         assert_eq!(meta.total_transitions, 1000);
     }
+
+    #[test]
+    fn test_serialize_sweep_report_roundtrip() {
+        let report = SweepReport {
+            results: Vec::new(),
+            best: None,
+            total_time_secs: 1.5,
+        };
+        let json = serialize_sweep_report(&report).unwrap();
+        // Pretty-printed JSON should contain the field name.
+        assert!(json.contains("total_time_secs"));
+        let back: SweepReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.total_time_secs, 1.5);
+    }
+
+    #[test]
+    fn test_serialize_bdi_data_roundtrip() {
+        let data = BdiTrainingData {
+            samples: Vec::new(),
+            num_intentions: 4,
+            source_episodes: 10,
+        };
+        let json = serialize_bdi_data(&data).unwrap();
+        let back: BdiTrainingData = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.num_intentions, 4);
+        assert_eq!(back.source_episodes, 10);
+    }
+
+    #[test]
+    fn test_export_bundle_with_populated_fields() {
+        let bundle = ExportBundle {
+            sweep_report: Some(SweepReport {
+                results: Vec::new(),
+                best: None,
+                total_time_secs: 0.0,
+            }),
+            bdi_data: Some(BdiTrainingData {
+                samples: Vec::new(),
+                num_intentions: 2,
+                source_episodes: 1,
+            }),
+            rssm_metadata: Some(RssmExportMetadata {
+                state_dim: 8,
+                action_dim: 4,
+                total_transitions: 100,
+                num_sequences: 5,
+            }),
+        };
+        let json = serialize_bundle(&bundle).unwrap();
+        let back: ExportBundle = serde_json::from_str(&json).unwrap();
+        assert!(back.sweep_report.is_some());
+        assert!(back.bdi_data.is_some());
+        assert!(back.rssm_metadata.is_some());
+    }
+
+    #[test]
+    fn test_export_config_custom_output_dir() {
+        let cfg = WeightExportConfig {
+            output_dir: "/tmp/custom".to_string(),
+            export_sweep: false,
+            export_bdi: false,
+            export_rssm: false,
+        };
+        assert_eq!(cfg.output_dir, "/tmp/custom");
+        assert!(!cfg.export_sweep);
+    }
 }

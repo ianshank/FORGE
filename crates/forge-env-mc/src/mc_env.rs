@@ -76,6 +76,14 @@ impl MinecraftEnv {
                 });
             }
         }
+        if let Some(expected) = &config.expected_schema_id {
+            if expected != &schema_id {
+                return Err(McEnvError::HandshakeMismatch {
+                    client: format!("schema_id={expected}"),
+                    server: format!("schema_id={schema_id}"),
+                });
+            }
+        }
 
         let obs_spec = ObsSpec::flat_f32("minecraft_symbolic", obs_dim, -1.0e6, 1.0e6);
         let action_spec = ActionSpec::discrete(action_count);
@@ -137,9 +145,9 @@ impl MinecraftEnv {
                         got = obs.len(),
                         expected, "bot returned obs of wrong length"
                     );
-                    return Err(McEnvError::HandshakeMismatch {
-                        client: format!("obs_dim={expected}"),
-                        server: format!("obs_dim={}", obs.len()),
+                    return Err(McEnvError::ObsDimMismatch {
+                        expected,
+                        got: obs.len(),
                     });
                 }
                 // Reuse the caller's obs buffer.
@@ -169,11 +177,7 @@ impl Env for MinecraftEnv {
     type Error = McEnvError;
 
     #[instrument(skip_all, fields(env = "minecraft", seed))]
-    fn reset_into(
-        &mut self,
-        seed: Option<u64>,
-        out: &mut Vec<f32>,
-    ) -> Result<(), Self::Error> {
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Vec<f32>) -> Result<(), Self::Error> {
         self.ensure_open()?;
         tracing::Span::current().record("seed", seed.unwrap_or(0));
         self.client.send(&ClientMsg::Reset { seed })?;
@@ -184,10 +188,13 @@ impl Env for MinecraftEnv {
             ServerMsg::Observation { obs, .. } => {
                 let expected = self.obs_spec.num_elements();
                 if obs.len() != expected {
-                    error!(got = obs.len(), expected, "bot returned obs of wrong length on reset");
-                    return Err(McEnvError::HandshakeMismatch {
-                        client: format!("obs_dim={expected}"),
-                        server: format!("obs_dim={}", obs.len()),
+                    error!(
+                        got = obs.len(),
+                        expected, "bot returned obs of wrong length on reset"
+                    );
+                    return Err(McEnvError::ObsDimMismatch {
+                        expected,
+                        got: obs.len(),
                     });
                 }
                 out.clear();
@@ -211,7 +218,9 @@ impl Env for MinecraftEnv {
         out: &mut StepOutput<Vec<f32>, Self::Info>,
     ) -> Result<(), Self::Error> {
         self.ensure_open()?;
-        let n = self.action_spec.discrete_n().unwrap_or(0);
+        let n = self.action_spec.discrete_n().ok_or_else(|| {
+            McEnvError::Unexpected("minecraft action_spec is not discrete".into())
+        })?;
         if action >= n {
             return Err(McEnvError::InvalidAction {
                 action_id: action,

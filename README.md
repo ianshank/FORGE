@@ -440,8 +440,9 @@ episode reset, dynamic env names, dyn-compatible trait).
 What's landed on the `claude/minecraft-rl-agent-integration-xnJjt`
 branch (PR #53):
 
-- **`forge-env`** — generic `Env` / `FlatObsEnv` / `StepInto` trait
-  crate (no FORGE deps).
+- **`forge-env`** — generic `Env` / `FlatObsEnv` trait crate with
+    buffer-filling `reset_into` / `step_into` and allocating convenience
+    wrappers (no FORGE deps).
 - **`forge-env-forge`** — `WorldEnv` + `FlatForgeEnv` (single-agent
   `Env` impl over `WorldState`, parity-tested for 200-step lockstep).
 - **`forge-env-mc`** — sync WebSocket client to a Node mc-bot;
@@ -451,16 +452,34 @@ branch (PR #53):
   + MCTS policy/value targets; `format_version=2` pinned).
 - **`mc-bot/`** — Node 22 ESM package with protocol, action map,
   reward registry, and episode reset; xlang regression gates pin the
-  canonical sha256 of both action map and rewards config.
+  canonical sha256 of both action map and rewards config plus the
+  `SCHEMA_VERSION` constant.
 
-What's not yet on this branch (out of scope for the env-trait
-foundation): `forge-mc-runner` Rust binary, ONNX hot-reload, Python
-MuZero trainer, docker-compose orchestration, prismarine-viewer
-wire-up. See [`docs/next_steps.md`](docs/next_steps.md) for the
-remaining phases and follow-up priorities.
+What's landed in the Phase 4 foundation PR
+(`claude/minecraft-phase3-wireup-runner-foundation`):
 
-Coverage on new Minecraft-integration code: **97.2%** (per-file ≥ 93%).
-Workspace `cargo test --workspace`: 2473+ tests, all green.
+- **`forge-mc-runner`** — episode-runner foundation. Four modules:
+  `RunnerConfig` (TOML + `validate()`), `ModelManifest` (atomic save,
+  sha256-per-role, pinned `MANIFEST_SCHEMA_VERSION = 1`),
+  `HotReloadWatcher` (between-episode poll-only contract; no
+  downgrade), `TrajectoryWriter` (atomic `TrajectoryV2` save). 42
+  unit + 2 integration tests (44 total); every module independently
+  composable.
+- **`forge-bench/benches/latent_mcts_inference.rs`** — Criterion
+  bench at sim budgets `1 / 8 / 25 / 50 / 100 / 200` using
+  `StubLatentModel` (no ONNX dep). Env-tunable via
+  `FORGE_BENCH_MCTS_{SIMS,OBS_DIM,ACTIONS,LATENT_DIM}`.
+
+What's still out of scope (follow-up PR): the full `Runner<E, M>`
+episode loop + `LatentPlanner` adapter, additive
+`OnnxMuZeroModel::reload()`, Python `muzero_mc/` trainer + bootstrap
+exporter, docker-compose orchestration, prismarine-viewer wire-up.
+See [`docs/next_steps.md`](docs/next_steps.md).
+
+Coverage on Minecraft-integration code: every branch-modified file
+**>85% line coverage** (most 90-100%); workspace total **95.89%**.
+`cargo test --workspace --features forge-cloud/gcs`: 64/64 test-result
+lines OK. `npm test` (mc-bot): 116/116 pass.
 
 ## MangoMAS Integration
 

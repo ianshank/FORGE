@@ -1092,6 +1092,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "dhat",
+ "forge-agent",
  "forge-core",
  "forge-types",
  "rand 0.8.5",
@@ -1109,6 +1110,7 @@ dependencies = [
  "forge-types",
  "proptest",
  "serde",
+ "serde_json",
  "smallvec",
  "thiserror 2.0.18",
  "tracing",
@@ -1337,6 +1339,19 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "forge-mc-runner"
+version = "0.1.0"
+dependencies = [
+ "forge-replay",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
  "tracing",
 ]
 

@@ -175,4 +175,41 @@ mod tests {
             assert!(create_replay_transport(&config).is_err());
         }
     }
+
+    /// `Local` replay transport is not implemented yet; calling the
+    /// factory must return a clear `StorageError::ReadFailed`. This
+    /// is the only branch of `create_replay_transport` reachable
+    /// without the `gcs` feature and live GCS credentials.
+    ///
+    /// Uses `match` instead of `expect_err` because `Box<dyn ReplayTransport>`
+    /// (the Ok payload) is not `Debug`, which `expect_err` requires.
+    #[test]
+    fn test_create_local_replay_transport_returns_not_implemented_error() {
+        let config = StorageConfig::default();
+        match create_replay_transport(&config) {
+            Ok(_) => panic!("local transport should not succeed"),
+            Err(e) => {
+                let msg = format!("{e}");
+                assert!(
+                    msg.to_lowercase().contains("local")
+                        || msg.to_lowercase().contains("not yet implemented"),
+                    "expected diagnostic about local transport, got: {msg}"
+                );
+            }
+        }
+    }
+
+    /// Sanity-check that `Local` replay store and model store accept a
+    /// custom (non-default) directory path. Exercises the `info!` log
+    /// path with a non-default config and the boxed-trait return.
+    #[test]
+    fn test_create_local_stores_accept_custom_paths() {
+        let config = StorageConfig {
+            replay_archive_path: "custom/replays".to_string(),
+            model_registry_path: "custom/models".to_string(),
+            ..Default::default()
+        };
+        assert!(create_replay_store(&config).is_ok());
+        assert!(create_model_store(&config).is_ok());
+    }
 }

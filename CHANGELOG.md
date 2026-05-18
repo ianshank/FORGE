@@ -9,6 +9,190 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Branch audit follow-ups (2026-05-17)
+
+Xlang protocol pin + viewer/actions/observation tests + runner
+foundation-integration test.
+
+Resolved tech-debt items surfaced by a full branch scan
+(`claude/minecraft-phase3-wireup-runner-foundation`). The audit
+flagged hard-coded constants, missing test files, untested branches
+in `mc-bot/`, and one missing cross-language regression gate. None
+of the audit findings were correctness bugs — the wire-format
+schema_id contract is intact — but each gap is a future-rot vector.
+
+Test additions:
+
+- **`mc-bot/test/viewer.test.js` (new, 7 cases)** — covers
+  `startViewer` end-to-end: the three ESM-interop resolution paths
+  (`mineflayer` direct, `default.mineflayer`, `default` as fn), the
+  not-enabled early-return, the precise error when the module
+  exposes no callable, the verbatim pass-through of all viewer
+  config knobs, and the no-dynamic-import guarantee when
+  `viewerModule` is injected. Closes the "viewer.js has no test
+  file" gap from the audit.
+- **`mc-bot/test/actions.test.js` (+13 cases)** — covers `noop`,
+  `attack` (both swing-arm fallback and `nearestEntity`+`attack`
+  paths), `use`, `place`-missing-`activateItem`, `select_slot`,
+  `look`-missing-`look`, unknown-direction, `move`-with-throwing
+  `waitForTicks` (guard-fires-control-release invariant), the
+  `delay`-based fallback when `bot.waitForTicks` is absent, and the
+  bot/action `null`-validation paths. Forces the `actions.js`
+  fallback chains and control-release-on-error finally blocks under
+  test.
+- **`mc-bot/test/observation.test.js` (+8 cases)** — covers the
+  `bot.position`-when-no-entity fallback, the
+  `bot.oxygen`-when-no-`oxygenLevel` fallback, the
+  `bot.time.time`-when-no-`age` fallback, the `bot.tick`-when-no-
+  `time` fallback, the `buildInventoryMap`-`slots.filter` fallback
+  when `items()` is missing, the `features > 2` zero-padding loop,
+  the `stableStringHash`-bad-modulus-default fallback, and the
+  all-disabled observation-vector path.
+- **`mc-bot/test/protocol.test.js`** — added
+  `xlang_schema_version_matches_rust` regression test pinning
+  `SCHEMA_VERSION` to the literal `1`, mirroring the new Rust-side
+  counterpart so the constant drifts on both sides simultaneously.
+- **`crates/forge-env-mc/src/protocol.rs`** — added
+  `xlang_schema_version_pinned_to_known_good` Rust-side gate
+  matching the JS-side test. Bumping the protocol now requires
+  bumping both constants and both tests in the same PR (matches the
+  existing pattern for `action_map_pinned_to_known_good` and
+  `rewards_schema_id_pinned_to_known_good`).
+- **`crates/forge-mc-runner/tests/foundation_integration.rs` (new)**
+  — drives all four foundation modules through two episodes plus a
+  between-episode manifest bump. Asserts: TOML config loads +
+  validates; writer + watcher are lazy until first use; watcher
+  emits on v1 with `previous=None`; same-version poll returns
+  `None`; v2 poll emits with `previous=Some(1)`; trajectory files
+  load round-trip through `TrajectoryV2::load_json`; no `.tmp`
+  siblings remain after atomic saves; a second test exercises the
+  schema_id drift detection path between `RunnerConfig` and
+  `ModelManifest`. Promotes `ModelFileEntry` and
+  `MANIFEST_SCHEMA_VERSION` to the crate-root re-export list.
+
+Gates (all green):
+
+- `mc-bot` `npm test` — 116/116 pass, 22 suites, 0 failed, 0 skipped.
+- `cargo test --workspace --exclude forge-python --features
+  forge-cloud/gcs` — 64/64 test-result lines OK, 0 failed.
+- `cargo clippy --workspace --all-targets --features
+  forge-cloud/gcs -- -D warnings` — 0 warnings.
+- `cargo fmt --check` — clean.
+- `cargo llvm-cov` per-file: every file modified or added on this
+  branch is **>85%** line coverage (most 90-100%). Remaining
+  sub-85% files (`forge-server/main.rs` 0%; `forge-cloud/{backend,
+  storage, gcs_storage}.rs` 66.28–79.87%) are documented out-of-
+  scope: binary entry points and network-bound code that requires a
+  mock `object_store` backend.
+
+Out-of-scope items the audit flagged but not addressed in this PR:
+
+- `tick_ms = 50` hardcoded in `mc-bot/src/actions.js:4` — should
+  flow through `EpisodeConfig.tick_ms`. Plumbing change touches
+  `index.js` argument passing.
+- Hotbar bounds `0..=8` duplicated in `actions.js:36` and
+  `config.js:39` `inventory_slots: 9`. Move bounds derivation into
+  one place.
+- Chat-command effect duration/amplifier magic numbers in
+  `mc-bot/src/reset.js:63-71` (`/effect give @s … 1 10`). Add a
+  `reset.commands` config block.
+- `DEFAULT_POSITION_SCALE`/`DEFAULT_HASH_MOD`/`DEFAULT_MAX_STACK_SIZE`
+  triple-defined across `observation.js:1-6`, `config.js:39-43`,
+  `env.toml:29-33`. Single-source via runtime config injection.
+- `mc-bot/src/index.js` `createConnectionHandler` (43-136) is
+  monolithic; should split into transport / episode-state-machine /
+  message-dispatcher.
+- Mineflayer-coupling refactor in `actions.js` + `observation.js`
+  (introduce `ActionExecutor` + `BotSnapshotSource` interfaces).
+
+Each is tracked in the audit report (see PR description) for
+follow-up work.
+
+### Added — Minecraft RL Integration: Phase 4 foundation (`forge-mc-runner`) + latent_mcts benchmark (2026-05-17)
+
+Lays down the foundation pieces for Phase 4 of the Minecraft RL
+integration without yet wiring up the full episode runner. Each piece
+is independently tested and consumable by the eventual
+`Runner<E: FlatObsEnv, M: LatentForwardModel>` loop.
+
+New crate:
+
+- **`forge-mc-runner`** — foundation modules:
+  - `config::RunnerConfig` — episode loop knobs (counts, paths, ports,
+    seeds, planning budget, action repeat) with `#[serde(default)]`
+    field-wise overrides and a `validate()` invariant check.
+  - `manifest::ModelManifest` + `ModelManifestFiles` — the
+    `model_manifest.json` swap signal (schema version, monotonic
+    `version`, `schema_id`, per-role file path + sha256). Atomic
+    save (tmp-file + same-dir rename); load validates after parse.
+    Pinned `MANIFEST_SCHEMA_VERSION = 1`; mismatch is a hard error.
+  - `hot_reload::HotReloadWatcher` — polls the manifest for
+    strictly-monotonic version bumps. Documented contract: callers
+    poll only **between episodes** (per plan §3.4). Missing manifest
+    returns `Ok(None)`, never an error. `prime_with(version)`
+    suppresses the initial event after first-run bootstrap. Lower
+    versions are silently ignored (no downgrade).
+  - `trajectory::TrajectoryWriter` — episode-scoped wrapper over
+    `forge_replay::v2::TrajectoryV2`. Lifecycle: `start_episode →
+    record_step → finalize_and_save`. Forwards push-time validation
+    (obs dim, policy dim, action range). Directory created on first
+    save. Wrong-order calls return `RunnerError::WriterState`.
+  - `error::RunnerError` — single `thiserror` enum spanning
+    config / manifest / writer / IO / JSON / trajectory failures.
+  - 42 unit tests covering happy paths, error paths, validation,
+    atomic-write cleanup, and missing-manifest behaviour.
+
+The full `Runner` loop, `LatentPlanner` adapter, and ONNX
+`reload()` plumbing are deferred to a follow-up PR — this PR exists
+so the runner / trainer wire formats stop diverging before the
+live loop lands.
+
+New benchmark:
+
+- **`forge-bench::latent_mcts_inference`** (new Criterion bench) —
+  measures per-decision latency of `LatentMctsSearch::search` at
+  sim budgets `1 / 8 / 25 / 50 / 100 / 200` using `StubLatentModel`
+  (no ONNX dep). Env-tunable via `FORGE_BENCH_MCTS_SIMS`,
+  `FORGE_BENCH_MCTS_OBS_DIM`, `FORGE_BENCH_MCTS_ACTIONS`,
+  `FORGE_BENCH_MCTS_LATENT_DIM`. Closes the missing-bench gap called
+  out in the original audit and in `docs/next_steps.md` Phase 4.
+
+### Added — Test coverage hardening for sub-85% files (2026-05-17)
+
+Raised the per-file coverage floor toward 85% for the cheapest wins
+identified by `cargo llvm-cov --workspace`. Workspace total stays at
+~95.89% (well above the CI `--fail-under 85` gate); these additions
+specifically target files that fell below the 85% per-file floor:
+
+- **`forge-civ::grid_topology`** (was 54.55%) — added 8 dispatch
+  tests exercising the `GridTopologyKind` enum dispatch arms for both
+  `Square` and `Hex` variants (previously only square paths were
+  exercised through the wrapper). Tests cover `num_directions`,
+  `neighbor`, `neighbors`, `distance`, `line_of_sight`, `disk`,
+  `Default`, and serde round-trip for both variants. `serde_json`
+  added as a dev-dependency.
+- **`forge-mangomas::transfer::export`** (was 81.03%) — added 4
+  tests for `serialize_sweep_report`, `serialize_bdi_data`, a fully
+  populated `ExportBundle` round-trip, and a non-default
+  `WeightExportConfig`. Previously only the empty-bundle path was
+  covered.
+- **`forge-cloud::backend`** (was 43.28%) — added 2 tests covering
+  the `Local` arm of `create_replay_transport` (the
+  "not-implemented" diagnostic path) and the boxed-trait return path
+  for `create_replay_store` / `create_model_store` with non-default
+  paths. Uses `match` rather than `expect_err` because
+  `Box<dyn ReplayTransport>` is not `Debug`.
+
+Remaining sub-85% files documented as out-of-scope for this PR:
+
+- `forge-server::main.rs` (0%) — binary entry point. Extraction of
+  the bootstrap + simulation loop into a testable `lib::run` is
+  tracked for a follow-up.
+- `forge-cloud::{storage,gcs_storage}.rs` — network-bound code.
+  Local-feature coverage further requires a mock `object_store`
+  backend; live GCS smoke tests live in the opt-in `cloud-smoke`
+  job, not the default test set.
+
 ### Added — Minecraft RL Integration: env-trait foundation + Node bridge (2026-05-17)
 
 Introduces the env-agnostic abstraction layer that lets FORGE's
@@ -20,22 +204,25 @@ protocol). v1 trajectory format, classical `forge-agent::mcts`,
 
 New crates / packages:
 
-- **`forge-env`** (new crate) — generic `Env`, `FlatObsEnv`, `StepInto`
-  traits + `ObsSpec` / `ActionSpec` / `DType` space descriptors and
-  `EnvError`. No `forge-types` dependency; consumable by any backend.
-  Trait is dyn-compatible (`StepOutput<Obs, Info>` projection, not
-  `Self`).
+- **`forge-env`** (new crate) — generic `Env` and `FlatObsEnv` traits +
+  `StepOutput`, `ObsSpec` / `ActionSpec` / `DType` space descriptors,
+  and `EnvError`. `Env` requires buffer-filling `reset_into` and
+  `step_into`; `reset` and `step` are allocating convenience wrappers.
+  No `forge-types` dependency; consumable by any backend. Trait is
+  dyn-compatible (`StepOutput<Obs, Info>` projection, not `Self`).
 - **`forge-env-forge`** (new crate) — `WorldEnv` + `FlatForgeEnv`
-  shims over `forge_core::WorldState`. `FlatForgeEnv` implements
-  `StepInto` for zero-alloc buffer reuse. 200-step lockstep parity
-  test gates backwards compatibility (`tests/forge_env_parity.rs`).
+  shims over `forge_core::WorldState`. `FlatForgeEnv` reuses caller
+  buffers through `Env::step_into` for the zero-alloc hot path. 200-step
+  lockstep parity test gates backwards compatibility
+  (`tests/forge_env_parity.rs`).
 - **`forge-env-mc`** (new crate) — sync `tungstenite`-backed
   WebSocket client to a Node mc-bot. Loads
   `configs/minecraft/{action_map,rewards}.toml`, performs a strict
   `Hello` handshake (schema_version + action_count + obs_dim +
   schema_id), and surfaces JSON `ServerMsg` errors as
-  `McEnvError::Protocol`. Intentionally NOT `StepInto` (zero-alloc
-  carve-out documented at crate level). Mock-server integration tests
+  `McEnvError::Protocol`. Implements `Env::step_into` and reuses caller
+  observation buffers; wire-bound I/O and JSON parsing remain the
+  documented zero-alloc carve-out. Mock-server integration tests
   cover handshake mismatches, full short episodes, binary-frame
   rejection, server-close, and unexpected-Hello mid-episode.
 - **`forge-replay::v2`** (additive module) — `TrajectoryV2` /

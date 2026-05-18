@@ -138,4 +138,21 @@ mod tests {
         // If you change the protocol shape, bump SCHEMA_VERSION explicitly.
         assert_eq!(SCHEMA_VERSION, 1);
     }
+
+    /// Pinned cross-language regression gate. This exact value MUST
+    /// equal `mc-bot/src/protocol.js::SCHEMA_VERSION`, verified by the
+    /// JS-side counterpart test:
+    /// `mc-bot/test/protocol.test.js::xlang_schema_version_matches_rust`.
+    ///
+    /// If you bump the protocol, change BOTH constants in the same PR;
+    /// otherwise both this test and the JS-side counterpart will fail.
+    #[test]
+    fn xlang_schema_version_pinned_to_known_good() {
+        assert_eq!(
+            SCHEMA_VERSION, 1,
+            "protocol SCHEMA_VERSION drift — mc-bot/src/protocol.js \
+             SCHEMA_VERSION must also be bumped and its xlang test \
+             updated in the same PR"
+        );
+    }
 }
