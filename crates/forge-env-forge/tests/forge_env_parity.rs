@@ -25,8 +25,8 @@ fn world_env_reset_matches_world_state_reset() {
     let env_out = env.reset(Some(7)).unwrap();
     let raw_out = raw.reset(Some(7));
 
-    assert!(!raw_out.terminated);
-    assert!(!raw_out.truncated);
+    assert_eq!(raw_out.terminated, false);
+    assert_eq!(raw_out.truncated, false);
     assert_eq!(
         env_out.grid_view.len(),
         raw_out.observations[0].grid_view.len()

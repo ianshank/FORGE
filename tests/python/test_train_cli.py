@@ -1,13 +1,9 @@
 """Fast tests for the top-level training CLI parser."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
-
+# scripts/ is placed on sys.path by the root conftest.py (_ensure_importable).
 from train import _DEFAULT_EPISODES, _DEFAULT_SEED, parse_args
 
 

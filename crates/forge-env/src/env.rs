@@ -338,11 +338,7 @@ mod tests {
         let initial_cap = obs.capacity();
         env.reset_into(Some(1), &mut obs).unwrap();
         assert_eq!(obs.len(), 128);
-        assert_eq!(
-            obs.capacity(),
-            initial_cap,
-            "reset_into must reuse obs buffer"
-        );
+        assert_eq!(obs.capacity(), initial_cap, "reset_into must reuse obs buffer");
     }
 
     #[test]

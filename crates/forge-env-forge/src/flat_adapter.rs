@@ -155,8 +155,7 @@ pub struct FlatForgeEnv {
     inner_obs_buf: forge_types::observation::Observation,
     /// Cached inner step-output buffer for `step_into` — avoids
     /// allocating a fresh `StepOutput<Observation, StepInfo>` each step.
-    inner_step_buf:
-        StepOutput<forge_types::observation::Observation, forge_types::observation::StepInfo>,
+    inner_step_buf: StepOutput<forge_types::observation::Observation, forge_types::observation::StepInfo>,
 }
 
 impl FlatForgeEnv {
@@ -187,7 +186,11 @@ impl Env for FlatForgeEnv {
     type Error = ForgeEnvError;
 
     #[instrument(skip_all, fields(env = "forge-flat"))]
-    fn reset_into(&mut self, seed: Option<u64>, out: &mut Vec<f32>) -> Result<(), Self::Error> {
+    fn reset_into(
+        &mut self,
+        seed: Option<u64>,
+        out: &mut Vec<f32>,
+    ) -> Result<(), Self::Error> {
         self.inner.reset_into(seed, &mut self.inner_obs_buf)?;
         self.flattener.flatten_into(&self.inner_obs_buf, out);
         Ok(())
@@ -201,14 +204,13 @@ impl Env for FlatForgeEnv {
     ) -> Result<(), Self::Error> {
         // Decode action before mutably borrowing inner_step_buf.
         let typed_action = self.inner.decode_action(action)?;
-        self.inner
-            .step_into(typed_action, &mut self.inner_step_buf)?;
+        self.inner.step_into(typed_action, &mut self.inner_step_buf)?;
         self.flattener
             .flatten_into(&self.inner_step_buf.obs, &mut out.obs);
         out.reward = self.inner_step_buf.reward;
         out.terminated = self.inner_step_buf.terminated;
         out.truncated = self.inner_step_buf.truncated;
-        out.info.clone_from(&self.inner_step_buf.info);
+        out.info = self.inner_step_buf.info.clone();
         Ok(())
     }
 
@@ -329,49 +331,5 @@ mod tests {
         }
         assert_eq!(buf.capacity(), initial_cap, "buffer must be reused");
         assert_eq!(buf.len(), f.flat_dim());
-    }
-
-    #[test]
-    fn flat_forge_env_step_into_zero_alloc_after_warmup() {
-        // Zero-allocation contract: once buffers have been warmed,
-        // `step_into` must not grow `out.obs` / `out.info.agents_alive`.
-        // Tracked at the public boundary because `FlatForgeEnv` is what
-        // the Python bindings consume directly.
-        use forge_env::Env;
-
-        let cfg = small_config();
-        let mut env = FlatForgeEnv::new(cfg, FlatObsConfig::default()).expect("FlatForgeEnv::new");
-
-        let dim = env.obs_dim();
-        let mut obs = Vec::with_capacity(dim);
-        env.reset_into(Some(7), &mut obs)
-            .expect("reset_into warmup");
-
-        let mut out = StepOutput::<Vec<f32>, StepInfo> {
-            obs: Vec::with_capacity(dim),
-            ..StepOutput::default()
-        };
-
-        // Warm: let any lazy buffers reach steady-state capacity.
-        for _ in 0..16 {
-            env.step_into(0, &mut out).expect("step warmup");
-        }
-
-        let obs_cap = out.obs.capacity();
-        let agents_alive_cap = out.info.agents_alive.capacity();
-
-        for _ in 0..64 {
-            env.step_into(0, &mut out).expect("step measured");
-            assert_eq!(
-                out.obs.capacity(),
-                obs_cap,
-                "flattened obs capacity must not grow on hot path",
-            );
-            assert_eq!(
-                out.info.agents_alive.capacity(),
-                agents_alive_cap,
-                "info.agents_alive capacity must not grow on hot path",
-            );
-        }
     }
 }

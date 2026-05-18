@@ -12,7 +12,10 @@ import pytest
 # ---------------------------------------------------------------------------
 pytest.importorskip("stable_baselines3", reason="SB3 required")
 
-from forge_env.sb3_callbacks import (  # noqa: E402 — must follow importorskip guard above
+# Import after importorskip so collection doesn't crash when SB3 isn't
+# installed. Newer ruff understands the importorskip pattern and no longer
+# flags E402 here, so no per-line directive is needed.
+from forge_env.sb3_callbacks import (
     _EPISODE_KEY,
     _TASK_SUCCESS_KEY,
     ForgeCurriculumCallback,

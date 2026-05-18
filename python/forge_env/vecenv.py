@@ -302,7 +302,11 @@ class ForgeAsyncVecEnv:
             )
             process.start()
             child_conn.close()
-            self._parent_pipes.append(parent_conn)
+            # On Windows, mp.Pipe() returns PipeConnection (a subclass of
+            # Connection), but the type stubs declare it as Connection only
+            # for the POSIX side. The runtime object is always usable as a
+            # Connection, so the variance is purely a stub artefact.
+            self._parent_pipes.append(parent_conn)  # type: ignore[arg-type]
             self._processes.append(process)
 
         # Retrieve spaces from the first worker.
