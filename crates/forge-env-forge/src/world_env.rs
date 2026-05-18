@@ -124,11 +124,7 @@ impl Env for WorldEnv {
     type Error = ForgeEnvError;
 
     #[instrument(skip_all, fields(env = "forge-world"))]
-    fn reset_into(
-        &mut self,
-        seed: Option<u64>,
-        out: &mut Self::Obs,
-    ) -> Result<(), Self::Error> {
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Self::Obs) -> Result<(), Self::Error> {
         let result = self.state.reset(seed);
         *out = result.observations.into_iter().next().unwrap_or_else(|| {
             warn!("WorldState reset produced no observations; using default");

@@ -169,11 +169,7 @@ impl Env for MinecraftEnv {
     type Error = McEnvError;
 
     #[instrument(skip_all, fields(env = "minecraft", seed))]
-    fn reset_into(
-        &mut self,
-        seed: Option<u64>,
-        out: &mut Vec<f32>,
-    ) -> Result<(), Self::Error> {
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Vec<f32>) -> Result<(), Self::Error> {
         self.ensure_open()?;
         tracing::Span::current().record("seed", seed.unwrap_or(0));
         self.client.send(&ClientMsg::Reset { seed })?;
@@ -184,7 +180,10 @@ impl Env for MinecraftEnv {
             ServerMsg::Observation { obs, .. } => {
                 let expected = self.obs_spec.num_elements();
                 if obs.len() != expected {
-                    error!(got = obs.len(), expected, "bot returned obs of wrong length on reset");
+                    error!(
+                        got = obs.len(),
+                        expected, "bot returned obs of wrong length on reset"
+                    );
                     return Err(McEnvError::HandshakeMismatch {
                         client: format!("obs_dim={expected}"),
                         server: format!("obs_dim={}", obs.len()),

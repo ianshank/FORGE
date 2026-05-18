@@ -155,7 +155,8 @@ pub struct FlatForgeEnv {
     inner_obs_buf: forge_types::observation::Observation,
     /// Cached inner step-output buffer for `step_into` — avoids
     /// allocating a fresh `StepOutput<Observation, StepInfo>` each step.
-    inner_step_buf: StepOutput<forge_types::observation::Observation, forge_types::observation::StepInfo>,
+    inner_step_buf:
+        StepOutput<forge_types::observation::Observation, forge_types::observation::StepInfo>,
 }
 
 impl FlatForgeEnv {
@@ -186,11 +187,7 @@ impl Env for FlatForgeEnv {
     type Error = ForgeEnvError;
 
     #[instrument(skip_all, fields(env = "forge-flat"))]
-    fn reset_into(
-        &mut self,
-        seed: Option<u64>,
-        out: &mut Vec<f32>,
-    ) -> Result<(), Self::Error> {
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Vec<f32>) -> Result<(), Self::Error> {
         self.inner.reset_into(seed, &mut self.inner_obs_buf)?;
         self.flattener.flatten_into(&self.inner_obs_buf, out);
         Ok(())
@@ -204,7 +201,8 @@ impl Env for FlatForgeEnv {
     ) -> Result<(), Self::Error> {
         // Decode action before mutably borrowing inner_step_buf.
         let typed_action = self.inner.decode_action(action)?;
-        self.inner.step_into(typed_action, &mut self.inner_step_buf)?;
+        self.inner
+            .step_into(typed_action, &mut self.inner_step_buf)?;
         self.flattener
             .flatten_into(&self.inner_step_buf.obs, &mut out.obs);
         out.reward = self.inner_step_buf.reward;
