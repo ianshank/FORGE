@@ -10,7 +10,7 @@ use std::borrow::Cow;
 use forge_env::{ActionSpec, Env, ObsSpec, StepOutput};
 use forge_types::action::Action;
 use forge_types::config::{ForgeConfig, GridType};
-use forge_types::observation::{Observation, StepInfo};
+use forge_types::observation::{Observation, StepInfo, StepResult};
 use tracing::{instrument, warn};
 
 use crate::error::ForgeEnvError;
@@ -31,6 +31,10 @@ pub struct WorldEnv {
     config: ForgeConfig,
     obs_spec: ObsSpec,
     action_spec: ActionSpec,
+    /// Reusable buffer for `WorldState::step_into` — keeps the hot path
+    /// allocation-free after warmup. See the zero-allocation contract
+    /// documented in [`forge_types::observation::StepResult`].
+    step_result: StepResult,
 }
 
 impl WorldEnv {
@@ -60,6 +64,7 @@ impl WorldEnv {
             config,
             obs_spec,
             action_spec,
+            step_result: StepResult::default(),
         })
     }
 
@@ -140,12 +145,20 @@ impl Env for WorldEnv {
         out: &mut StepOutput<Self::Obs, Self::Info>,
     ) -> Result<(), Self::Error> {
         let actions = [action];
-        let result = self.state.step(&actions);
-        out.obs = result.observations.into_iter().next().unwrap_or_default();
-        out.reward = result.rewards.first().copied().unwrap_or(0.0);
-        out.terminated = result.terminated;
-        out.truncated = result.truncated;
-        out.info = result.info;
+        // Reuse the cached StepResult buffer to keep the hot path
+        // allocation-free after warmup (see zero-allocation contract in
+        // CLAUDE.md and `crates/forge-bench/src/bin/allocation_audit.rs`).
+        self.state.step_into(&actions, &mut self.step_result);
+        if let Some(first_obs) = self.step_result.observations.first() {
+            out.obs.clone_from(first_obs);
+        } else {
+            warn!("WorldState step produced no observations; using default");
+            out.obs = Observation::default();
+        }
+        out.reward = self.step_result.rewards.first().copied().unwrap_or(0.0);
+        out.terminated = self.step_result.terminated;
+        out.truncated = self.step_result.truncated;
+        out.info.clone_from(&self.step_result.info);
         Ok(())
     }
 
@@ -234,5 +247,33 @@ mod tests {
         assert!(!env.obs_spec().shape.is_empty());
         // action_spec is always Discrete
         assert!(env.action_spec().discrete_n().is_some());
+    }
+
+    #[test]
+    fn step_into_reuses_step_result_capacity_after_warmup() {
+        // Drives the zero-allocation contract: after warmup, repeated
+        // `step_into` calls must not grow the cached `StepResult` vectors.
+        // This is the regression guard for PR #53 review feedback.
+        let mut env = WorldEnv::new(tiny_config()).unwrap();
+        let _ = env.reset(Some(7)).unwrap();
+        let mut out: StepOutput<Observation, StepInfo> = StepOutput::default();
+        // Warm-up: let internal buffers reach steady-state capacity.
+        for _ in 0..16 {
+            env.step_into(Action::Noop, &mut out).unwrap();
+        }
+        let obs_cap = env.step_result.observations.capacity();
+        let rew_cap = env.step_result.rewards.capacity();
+        let agents_alive_cap = env.step_result.info.agents_alive.capacity();
+        let out_grid_cap = out.obs.grid_view.capacity();
+        for _ in 0..64 {
+            env.step_into(Action::Noop, &mut out).unwrap();
+            assert_eq!(env.step_result.observations.capacity(), obs_cap);
+            assert_eq!(env.step_result.rewards.capacity(), rew_cap);
+            assert_eq!(
+                env.step_result.info.agents_alive.capacity(),
+                agents_alive_cap
+            );
+            assert_eq!(out.obs.grid_view.capacity(), out_grid_cap);
+        }
     }
 }

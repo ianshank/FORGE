@@ -208,7 +208,7 @@ impl Env for FlatForgeEnv {
         out.reward = self.inner_step_buf.reward;
         out.terminated = self.inner_step_buf.terminated;
         out.truncated = self.inner_step_buf.truncated;
-        out.info = self.inner_step_buf.info.clone();
+        out.info.clone_from(&self.inner_step_buf.info);
         Ok(())
     }
 
@@ -329,5 +329,49 @@ mod tests {
         }
         assert_eq!(buf.capacity(), initial_cap, "buffer must be reused");
         assert_eq!(buf.len(), f.flat_dim());
+    }
+
+    #[test]
+    fn flat_forge_env_step_into_zero_alloc_after_warmup() {
+        // Zero-allocation contract: once buffers have been warmed,
+        // `step_into` must not grow `out.obs` / `out.info.agents_alive`.
+        // Tracked at the public boundary because `FlatForgeEnv` is what
+        // the Python bindings consume directly.
+        use forge_env::Env;
+
+        let cfg = small_config();
+        let mut env = FlatForgeEnv::new(cfg, FlatObsConfig::default()).expect("FlatForgeEnv::new");
+
+        let dim = env.obs_dim();
+        let mut obs = Vec::with_capacity(dim);
+        env.reset_into(Some(7), &mut obs)
+            .expect("reset_into warmup");
+
+        let mut out = StepOutput::<Vec<f32>, StepInfo> {
+            obs: Vec::with_capacity(dim),
+            ..StepOutput::default()
+        };
+
+        // Warm: let any lazy buffers reach steady-state capacity.
+        for _ in 0..16 {
+            env.step_into(0, &mut out).expect("step warmup");
+        }
+
+        let obs_cap = out.obs.capacity();
+        let agents_alive_cap = out.info.agents_alive.capacity();
+
+        for _ in 0..64 {
+            env.step_into(0, &mut out).expect("step measured");
+            assert_eq!(
+                out.obs.capacity(),
+                obs_cap,
+                "flattened obs capacity must not grow on hot path",
+            );
+            assert_eq!(
+                out.info.agents_alive.capacity(),
+                agents_alive_cap,
+                "info.agents_alive capacity must not grow on hot path",
+            );
+        }
     }
 }
