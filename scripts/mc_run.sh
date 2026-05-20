@@ -7,7 +7,8 @@
 #
 # Usage:
 #   scripts/mc_run.sh [--dry-run] [--build] [--detach] [--down] \
-#                      [--env-file PATH] [--service NAME]
+#                      [--env-file PATH] [--service NAME] \
+#                      [--profile NAME] [--gpu]
 #
 # Flags:
 #   --dry-run          Print the docker compose command(s) that would
@@ -21,6 +22,13 @@
 #                      back to compose.minecraft.env.example if the
 #                      first does not exist).
 #   --service NAME     Limit the action to a single service.
+#   --profile NAME     Activate a compose profile (e.g. `self-play`
+#                      brings up the v0.4 trainer + trainer-bootstrap
+#                      services in addition to the base stack).
+#   --gpu              Layer the GPU overlay file
+#                      (docker/compose.minecraft.gpu.yml) on top of the
+#                      base compose file. Requires nvidia-container-
+#                      toolkit on the host and `docker compose` v2.20+.
 #
 # Every behaviour is driven by env vars or flags — no values are
 # hard-coded inside this script.
@@ -34,6 +42,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${COMPOSE_FILE:-${REPO_ROOT}/docker/compose.minecraft.yml}"
+GPU_OVERLAY_FILE="${GPU_OVERLAY_FILE:-${REPO_ROOT}/docker/compose.minecraft.gpu.yml}"
 DEFAULT_ENV_FILE="${REPO_ROOT}/docker/compose.minecraft.env"
 EXAMPLE_ENV_FILE="${REPO_ROOT}/docker/compose.minecraft.env.example"
 
@@ -43,6 +52,8 @@ DETACH=0
 DOWN=0
 ENV_FILE=""
 SERVICE=""
+PROFILE=""
+USE_GPU=0
 
 # ---------------------------------------------------------------------
 # Helpers
@@ -76,6 +87,10 @@ while (( $# > 0 )); do
     --service)
       [[ -n "${2-}" ]] || die "--service requires a name"
       SERVICE="$2"; shift 2 ;;
+    --profile)
+      [[ -n "${2-}" ]] || die "--profile requires a name"
+      PROFILE="$2"; shift 2 ;;
+    --gpu) USE_GPU=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown flag: $1" ;;
   esac
@@ -109,6 +124,20 @@ compose_args=(
   "--env-file" "${ENV_FILE}"
   "-f" "${COMPOSE_FILE}"
 )
+
+# Layer the GPU overlay file when --gpu is set. Overlay must come
+# AFTER the base file so its `deploy.resources` block wins.
+if (( USE_GPU )); then
+  [[ -f "${GPU_OVERLAY_FILE}" ]] || die "GPU overlay file missing: ${GPU_OVERLAY_FILE}"
+  compose_args+=("-f" "${GPU_OVERLAY_FILE}")
+fi
+
+# Activate the named compose profile if --profile was passed.
+# Required when bringing up the v0.4 self-play services (trainer +
+# trainer-bootstrap live under `profiles: ["self-play"]`).
+if [[ -n "${PROFILE}" ]]; then
+  compose_args+=("--profile" "${PROFILE}")
+fi
 
 if (( DOWN )); then
   cmd=("docker" "${compose_args[@]}" "down" "--remove-orphans")
