@@ -1,4 +1,4 @@
-"""Streaming reader for ``TrajectoryV2`` JSONL files.
+"""Streaming reader for ``TrajectoryV2`` JSON files.
 
 The Rust ``forge_mc_runner::TrajectoryWriter`` writes one JSON document
 per episode (``<episode_id>.json``). This module iterates over those
@@ -7,11 +7,24 @@ files and yields tensor batches the trainer can consume directly.
 Memory discipline:
 
 - Files are read one episode at a time (no whole-directory buffering).
+- Within an episode, the JSON document is loaded with ``json.load`` --
+  this peaks at roughly the file size. For the expected episode budget
+  (up to 10k steps * ~1KB per step = ~10MB per file) that is well below
+  any realistic memory ceiling. Episodes much longer than that are NOT
+  supported by ``RunnerConfig::max_steps_per_episode``'s default of
+  1000 and would need an explicit override to produce.
 - Steps within an episode are concatenated lazily; the iterator never
-  holds more than ``batch_size`` rows in memory.
+  holds more than ``batch_size`` rows in memory at once even when a
+  single episode contains thousands of steps.
 - The optional ``torch`` import is deferred so module import does not
   require torch (the ``minecraft`` optional-deps group pulls it in,
   but downstream tools that only need the manifest do not).
+
+If episodes ever grow large enough that per-episode peak memory
+becomes a concern, swap ``json.load`` in :func:`load_trajectory` for
+an incremental parser (e.g. the ``ijson`` library on the ``steps``
+array). The public ``TrajectoryReader`` API is shape-stable across
+that change.
 
 No hard-coded values: batch size, ordering policy, and the directory
 glob pattern are all constructor arguments on

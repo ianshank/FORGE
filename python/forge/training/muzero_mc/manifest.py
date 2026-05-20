@@ -29,6 +29,7 @@ from __future__ import annotations
 __all__ = [
     "DEFAULT_BUNDLE_FILENAMES",
     "MANIFEST_FILENAME",
+    "MANIFEST_FILE_MODE",
     "MANIFEST_SCHEMA_VERSION",
     "ONNX_OPSET_VERSION",
     "ModelFileEntry",
@@ -72,6 +73,14 @@ ONNX_OPSET_VERSION: Final[int] = 17
 #: Canonical filename the Rust runner watches for. Bootstrap and
 #: trainer exports should write to this name in the bundle directory.
 MANIFEST_FILENAME: Final[str] = "model_manifest.json"
+
+#: File mode applied to the manifest after atomic rename. The
+#: ``tempfile.mkstemp`` default is ``0o600`` (user-only); we widen to
+#: ``0o644`` so a Rust-runner container running as a different UID in
+#: the docker-compose stack can still read the file the Python trainer
+#: wrote. The manifest is a public artefact in the bundle — secrets
+#: never live here.
+MANIFEST_FILE_MODE: Final[int] = 0o644
 
 #: Default per-role ONNX filenames inside a bundle directory. Callers
 #: can override on a per-role basis via :class:`ModelManifestFiles`,
@@ -316,6 +325,21 @@ def save_manifest(manifest: ModelManifest, path: str | os.PathLike[str]) -> Path
             f.flush()
             os.fsync(f.fileno())
         Path(tmp_name).replace(p)
+        # ``tempfile.mkstemp`` defaults to 0o600 (user-only). Widen to
+        # MANIFEST_FILE_MODE (0o644) so cross-user readers — typically
+        # the Rust runner container in the compose stack — can load
+        # the manifest. The manifest carries no secrets; it's a public
+        # bundle pointer.
+        try:
+            p.chmod(MANIFEST_FILE_MODE)
+        except OSError as e:
+            # chmod can fail on filesystems that don't honour POSIX
+            # mode bits (e.g. some Windows shares, FAT). Log and
+            # continue — the file is on disk regardless.
+            logger.debug(
+                "chmod on manifest failed (continuing)",
+                extra={"path": str(p), "error": str(e)},
+            )
         logger.debug("manifest saved", extra={"path": str(p), "version": manifest.version})
     except Exception:
         # Best-effort cleanup of the orphan tmp file on failure.

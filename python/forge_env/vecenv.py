@@ -302,11 +302,12 @@ class ForgeAsyncVecEnv:
             )
             process.start()
             child_conn.close()
-            # On Windows, mp.Pipe() returns PipeConnection (a subclass of
-            # Connection), but the type stubs declare it as Connection only
-            # for the POSIX side. The runtime object is always usable as a
-            # Connection, so the variance is purely a stub artefact.
-            self._parent_pipes.append(parent_conn)  # type: ignore[arg-type]
+            # On Windows, mp.Pipe() returns PipeConnection (a subclass
+            # of Connection) which Linux-side mypy stubs don't see, so
+            # the Windows-only [arg-type] complaint must be silenced.
+            # On Linux the ignore is unused — mark it accordingly so
+            # both platforms accept this line.
+            self._parent_pipes.append(parent_conn)  # type: ignore[arg-type, unused-ignore]
             self._processes.append(process)
 
         # Retrieve spaces from the first worker.

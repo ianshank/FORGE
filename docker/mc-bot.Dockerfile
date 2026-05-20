@@ -57,16 +57,19 @@ LABEL org.opencontainers.image.title="forge-mc-bot" \
 WORKDIR /app
 
 # Bring the installed node_modules from the builder.
-COPY --from=builder /app/node_modules ./node_modules
+# `--chown=node:node` on each COPY avoids a separate `chown -R` layer
+# that would walk every file in node_modules at build time (slow once
+# the dep tree grows). Matches BuildKit's incremental-layer model.
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 
 # Copy the source and the in-tree configs.
-COPY src ./src
-COPY README.md ./README.md
-COPY package.json ./package.json
+COPY --chown=node:node src ./src
+COPY --chown=node:node README.md ./README.md
+COPY --chown=node:node package.json ./package.json
 
 # Run as non-root by default (the `node` user is created in the
-# upstream image).
-RUN chown -R node:node /app
+# upstream image). No separate `chown -R` needed because every COPY
+# above already wrote the files as `node:node`.
 USER node
 
 # Network: WebSocket port for forge-env-mc, optional viewer port for
