@@ -28,6 +28,13 @@ mousedroid = ["huggingface-hub>=0.20", "torch>=2.0"]
 #   - openai SDK    -> sync/async OpenAI-compatible HTTP client
 #   - jsonschema    -> validates few-shot exemplars against the action schema
 teacher    = ["openai>=1.0,<2.0", "jsonschema>=4.0,<5.0"]
+# Minecraft MuZero training pipeline (Phase 5 — consumed by
+# `python/forge/training/muzero_mc/`):
+#   - torch         -> network init + ONNX export
+#   - onnx          -> ONNX graph manipulation for round-trip tests
+#   - onnxruntime   -> cross-runtime validation; matches the Rust
+#                      `onnxruntime`/`ort` crate version range
+minecraft  = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17"]
 all        = [
     "stable-baselines3>=2.0",
     "torch>=2.0",
@@ -36,6 +43,8 @@ all        = [
     "huggingface-hub>=0.20",
     "openai>=1.0,<2.0",
     "jsonschema>=4.0,<5.0",
+    "onnx>=1.16",
+    "onnxruntime>=1.17",
 ]
 
 [tool.maturin]
