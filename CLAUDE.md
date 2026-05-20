@@ -9,11 +9,16 @@
 - `pytest tests/python/ -v` — Run Python tests (requires `maturin develop` first)
 - `cd mc-bot && npm test` — Run Node-side mc-bot tests (no install required for the dep-free modules; `npm install` for mineflayer + Biome)
 - `cd mc-bot && npm run lint` — Biome lint + format check on the JS surface
-- `cargo run -p forge-mc-runner -- --dry-run --episodes 1` — Smoke-test the Phase-4 runner binary without docker / Minecraft (CI: `forge-mc-runner-bin` job)
+- `cargo run -p forge-mc-runner -- --dry-run --episodes 1` — Smoke-test the runner binary without docker / Minecraft (CI: `forge-mc-runner-bin` job)
+- `cargo test -p forge-agent --features onnx` + `cargo test -p forge-mc-runner --features onnx-reload` — Exercise the `OnnxMuZeroModel::reload()` + `into_reload_fn` ONNX hot-reload surface
+- `curl http://127.0.0.1:9090/metrics` — Scrape the runner's Prometheus endpoint (disabled by setting `metrics_port = 0` in the runner config; `metrics_bind` defaults to `127.0.0.1`)
 - `python -m forge.training.muzero_mc.cli bootstrap --obs-dim N --action-dim M --schema-id <sha> --out models/` — Phase-5 random-init bundle
 - `python -m forge.training.muzero_mc.cli validate-manifest <path>` — Validate a model_manifest.json (exit 0 / 3 / 4)
-- `scripts/mc_run.sh --dry-run` — Print resolved docker compose argv for the Phase-6 stack (no side effects)
+- `python -m forge.training.muzero_mc.cli train --input trajectories/ --out models/ --schema-id <sha> --obs-dim N --action-dim M --iters 100 --export-every 10` — Train loop consuming `.json` / `.json.gz` trajectories, periodic ONNX export + manifest bump that the runner's `HotReloadWatcher` picks up. `--obs-dim`, `--action-dim`, `--schema-id`, `--out`, `--input` are required; `--manifest` defaults to `<out>/model_manifest.json`
+- `scripts/mc_run.sh --dry-run` — Print resolved docker compose argv for the stack (no side effects)
 - `scripts/mc_run.sh --build` — Bring the Minecraft + mc-bot + runner stack up (foreground; Ctrl-C cleans up)
+- `cd mc-bot && npm run typecheck` — `tsc --noEmit` gate over the `.js` source (CI: `mc-bot-test` job runs this between `npm ci` and `npm test`)
+- `pytest tests/python/integration/ -m minecraft_e2e -v` — Run the opt-in compose-stack E2E (requires docker; never runs on a default `pytest` invocation)
 
 ## Architecture
 - **Workspace**: Multi-crate Rust workspace under `crates/`
@@ -27,7 +32,7 @@
 - **forge-env**: Generic `Env` / `FlatObsEnv` trait crate. No FORGE deps; every env implements buffer-filling `reset_into` / `step_into`, with allocating `reset` / `step` wrappers for convenience.
 - **forge-env-forge**: Single-agent `Env` impl over `WorldState`. Additive shim — does not replace `forge-python::ForgeEnv` or classical `mcts`.
 - **forge-env-mc**: Sync WebSocket client to a Node `mc-bot` exposing a Minecraft env via `Env` + `FlatObsEnv`.
-- **forge-mc-runner**: Phase 4 episode-runner foundation. Four modules: `RunnerConfig` (TOML + validate), `ModelManifest` (atomic save, sha256-per-role, monotonic version, pinned `MANIFEST_SCHEMA_VERSION = 1`), `HotReloadWatcher` (between-episode poll-only contract; no downgrade), `TrajectoryWriter` (atomic `TrajectoryV2` save). The full `Runner<E, M>` episode loop ships in a follow-up — every module is independently testable and composable now.
+- **forge-mc-runner**: End-to-end episode runner. `RunnerConfig` (TOML + validate; opt-in `trajectory_compression = "gzip"` + `trajectory_gzip_level` + `metrics_bind` + `metrics_histogram_buckets` fields), `ModelManifest` (atomic save, sha256-per-role, monotonic version, pinned `MANIFEST_SCHEMA_VERSION = 1`), `HotReloadWatcher` (between-episode poll-only contract; no downgrade), `TrajectoryWriter` (atomic `TrajectoryV2` save, opt-in `with_compression()` for `.json.gz`), `Runner<E, M>` (the episode loop with optional `MetricsRecorder` via `with_metrics()`), and `metrics.rs` (axum + prometheus server exposing the five v2-plan §3.6 signals). The `forge-mc-runner` binary is `#[tokio::main]` with SIGINT graceful shutdown joining the runner + metrics tasks. ONNX hot-reload integration (`OnnxMuZeroModel::reload()` + `onnx_reload::into_reload_fn`) is feature-gated behind `onnx-reload` so the runner stays buildable without ONNX Runtime.
 - **forge-replay::v2**: Env-agnostic flat-tensor trajectory format (additive; v1 untouched).
 - **mc-bot/**: Node bridge (mineflayer + reward registry + reset + viewer), out of the Cargo workspace.
 

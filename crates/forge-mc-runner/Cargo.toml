@@ -10,22 +10,34 @@ keywords.workspace = true
 categories.workspace = true
 description = "Episode runner that drives a FlatObsEnv + LatentMctsSearch, writes TrajectoryV2, and hot-reloads ONNX models between episodes."
 
+[features]
+default = []
+# Enables the `onnx_reload` module that wraps `OnnxMuZeroModel::reload`
+# into a `ReloadFn<OnnxMuZeroModel>` callback the runner can install.
+# Transitively requires `forge-agent`'s `onnx` feature (and therefore
+# `ort` + a working ONNX Runtime on the host).
+onnx-reload = ["forge-agent/onnx"]
+
 [dependencies]
 forge-agent = { workspace = true }
 forge-env = { workspace = true }
 forge-replay = { workspace = true }
 anyhow = { workspace = true }
+axum = "0.7"
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
+prometheus = "0.13"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync"] }
 toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
 
 [[bin]]
 name = "forge-mc-runner"

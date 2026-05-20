@@ -1355,15 +1355,214 @@ single `scripts/mc_run.sh --build` invocation. Branch
   `--dry-run --episodes 1` as a smoke gate. Catches regressions in
   the env + search + writer composition without requiring docker.
 
-**Deferred to follow-up:**
+**Deferred to follow-up — all closed on
+`feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` (see §3.10.5
+through §3.10.8 below).**
 
-- Prometheus `/metrics` endpoint on the runner binary (axum
-  + counter / histogram setup).
-- `tests/python/integration/test_minecraft_e2e.py` opt-in E2E test
-  spinning up the compose stack from pytest.
-- `mc-bot/` TypeScript migration (v2 plan §10 open decision).
-- Replay storage compression (defer until output volume is
-  measurable).
+- Prometheus `/metrics` endpoint on the runner binary → §3.10.6.
+- `tests/python/integration/test_minecraft_e2e.py` opt-in E2E →
+  §3.10.8.
+- `mc-bot/` TypeScript toolchain → §3.10.7 (file rewrite is the
+  remaining v0.4 follow-up).
+- Replay storage compression → §3.10.5.
+- `OnnxMuZeroModel::reload()` impl → §3.10.5.
+
+---
+
+### 3.10.5 ONNX hot-reload + opt-in trajectory gzip (2026-05-20)
+
+Branch `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` lands two
+additive primitives the v0.3-pre training story needs.
+
+**ONNX reload (`crates/forge-agent/src/latent_mcts/onnx_model.rs`):**
+
+```
+OnnxMuZeroModel::reload(&mut self, new_cfg)
+       │
+       ▼
+   ┌──────────────────────────────────────────┐
+   │ 1. validate_reload_paths(&new_cfg)       │
+   │    (all three .onnx files exist)         │
+   ├──────────────────────────────────────────┤
+   │ 2. let rep  = Session::from(... new)?    │
+   │    let dyn  = Session::from(... new)?    │  ◄── stack locals,
+   │    let pred = Session::from(... new)?    │      NO mutex held
+   ├──────────────────────────────────────────┤
+   │ 3. if any of the above failed → return   │
+   │    Err(OnnxReloadError::*) — model is    │
+   │    still byte-identical to pre-reload.   │
+   ├──────────────────────────────────────────┤
+   │ 4. self.representation = Mutex::new(rep);│  ◄── direct field
+   │    self.dynamics       = Mutex::new(dyn);│      replacement (the
+   │    self.prediction     = Mutex::new(pred);     `&mut self` borrow
+   │                                          │      already excludes
+   │                                          │      concurrent readers,
+   │                                          │      so each old `Mutex`
+   │                                          │      drops cleanly).
+   ├──────────────────────────────────────────┤
+   │ 5. Ok(())                                │
+   └──────────────────────────────────────────┘
+```
+
+Safety contract: `reload` takes `&mut self`, so the borrow checker
+forbids concurrent `&self` inference while a reload borrow is live.
+A multi-threaded `Arc<OnnxMuZeroModel>` caller would need an
+`ArcSwap<Sessions>` follow-up; documented as out of scope.
+
+`crates/forge-mc-runner/src/onnx_reload.rs` (feature-gated by
+`onnx-reload = ["forge-agent/onnx"]`) wraps `reload` into the
+`ReloadFn<OnnxMuZeroModel>` shape the existing `Runner::with_reload_fn`
+builder expects. The runner stays buildable without ONNX Runtime —
+the wrapper is opt-in.
+
+**Trajectory gzip (`crates/forge-replay/src/v2.rs`):**
+
+```
+TrajectoryV2::save_json     →  <id>.json
+TrajectoryV2::save_json_gz  →  <id>.json.gz   (flate2 encoder)
+TrajectoryV2::load_json     →  auto-detects .gz → GzDecoder
+                                .take(MAX_DECOMPRESSED_TRAJECTORY_BYTES)
+                                                ▲
+                                                │ 512 MiB gzip-bomb cap
+                                                ▼ serde_json sees EOF
+                                                  on a 10 GiB bomb
+```
+
+`MAX_DECOMPRESSED_TRAJECTORY_BYTES = 512 * 1024 * 1024` is mirrored on
+the Python side as `python/forge/training/muzero_mc/replay.py`'s
+`Final[int]`, with a cross-language test pinning the equality.
+`TrajectoryGzipLevel` (`Named(Fastest|Default|Best)` or `Custom(0..=9)`)
+validates the level at deserialisation time; TOML accepts both the
+named form (`gzip_level = "default"`) and the integer form
+(`gzip_level = 6`).
+
+`RunnerConfig` exposes the choice through two new
+`#[serde(default)]` fields: `trajectory_compression`
+(`TrajectoryCompression::None` / `::Gzip`, default `None`) and
+`trajectory_gzip_level` (default `Default`). Existing TOML configs
+deserialise unchanged.
+
+---
+
+### 3.10.6 Tokio + Prometheus metrics endpoint (2026-05-20)
+
+```
+forge-mc-runner binary (main.rs)
+│
+├── fn main() -> ExitCode                                  (sync entry point)
+│      │
+│      ▼
+│   load_config(cli.config) → RunnerConfig::validate()
+│      │
+│      ▼
+│   TokioBuilder::new_multi_thread()
+│      .worker_threads(cfg.tokio_worker_threads)          ◄── config-driven
+│      .enable_all()                                       (signal + time + io)
+│      .build()
+│      │
+│      ▼
+│   runtime.block_on(async_main(cli, config))
+│
+└── async_main(cli, config)
+       │
+       ├── tokio::spawn(serve_metrics(addr, registry, shutdown_rx))
+       │        ▲                                              │
+       │        │ axum router on                               │ tokio::oneshot
+       │        │ cfg.metrics_bind:cfg.metrics_port            │ (shutdown)
+       │        │ GET /metrics → Prometheus text format        │
+       │        │                                              │
+       └── tokio::task::spawn_blocking(move || runner.run())   │
+                │                                              │
+                ▼                                              ▼
+          per-step: recorder.record_planning_latency(dt)    SIGINT (ctrl-c)
+          per-ep:   recorder.record_episode_complete(rew)     │
+                                                              ▼
+                                              tokio::select! { runner_join,
+                                                               metrics_join }
+                                              cleanly tears both down
+```
+
+The binary uses the explicit `tokio::runtime::Builder` form (NOT
+the `#[tokio::main]` attribute) so the worker-thread count flows
+through `cfg.tokio_worker_threads` (default
+`DEFAULT_TOKIO_WORKER_THREADS = 2`). `.enable_all()` activates the
+time, signal, and IO drivers — required by the metrics axum task,
+the SIGINT shutdown future, and the `tokio::sync::oneshot` channel
+respectively.
+
+Five Prometheus signals matching v2-plan §3.6 (`forge_mc_episode_total`,
+`forge_mc_episode_reward_sum`, `forge_mc_planning_latency_seconds`,
+`forge_mc_model_version`, `forge_mc_protocol_error_total`). Metric names
+are `const &str` at the top of `metrics.rs` — single source of truth.
+
+`cfg.metrics_port = 0` (the existing `RunnerConfig::metrics_disabled`
+helper) skips the entire `tokio::spawn` branch, so the binary's
+behaviour when metrics are off is identical to the pre-track-2
+synchronous runner. `cfg.metrics_bind` (default `127.0.0.1`) and
+`cfg.metrics_histogram_buckets` (default Prometheus latency buckets)
+let operators override the bind interface and histogram resolution
+through the same `RunnerConfig.toml` they already edit.
+
+---
+
+### 3.10.7 mc-bot TypeScript toolchain (2026-05-20)
+
+Adds the `tsc --noEmit` gate over the existing `.js` source so the
+full file-rename (16 sources + 11 tests) can land as a follow-up
+without further CI plumbing.
+
+- **`mc-bot/tsconfig.json`** — ES2022 target, `allowJs: true`,
+  `checkJs: true`, `strict: true`, `noImplicitAny: false`,
+  `noEmit: true`. The `.js` files are type-checked in place; once
+  they're renamed, flipping `noImplicitAny` to `true` is a one-line
+  ratchet.
+- **`mc-bot/package.json`** — `typescript`, `@types/node`, `@types/ws`,
+  `tsx` devDeps + `typecheck` npm script (`tsc --noEmit`).
+- **`.github/workflows/ci.yml`** — `mc-bot-test` job now runs
+  `npm run typecheck` between `npm ci` and `npm test`, so any new
+  TypeScript regression fails CI.
+
+The 116-test `node:test` surface continues to run unchanged; this
+commit adds a typecheck layer on top.
+
+---
+
+### 3.10.8 Opt-in pytest E2E (2026-05-20)
+
+```
+workflow_dispatch ──▶ run_minecraft_e2e=true ──▶ python-test-minecraft-e2e job
+                                                          │
+                                                          ▼
+                                         cp compose.minecraft.env.example
+                                            → sed MC_EULA=TRUE (job-local)
+                                                          │
+                                                          ▼
+                                     pytest -m minecraft_e2e --no-cov
+                                                          │
+                              ┌───────────────────────────┴────────────────────┐
+                              │                                                │
+                              ▼                                                ▼
+              compose_up_minecraft_stack                       runner_health_check
+              (session fixture)                                (per-test fixture)
+                              │                                                │
+                              ▼                                                ▼
+              bash scripts/mc_run.sh --build --detach       docker inspect -f {{.State.Status}}
+              (with stderr-tail skip on failure)            (raise pytest.fail with last 50 log lines
+                              │                              on crash so a hang doesn't waste 120s)
+                              ▼
+              wait_until(forge_mc_episode_total >= N,
+                         health_check=runner_health_check,
+                         timeout=120s, interval=2s)
+                              │
+                              ▼ on test completion (success OR failure):
+              bash scripts/mc_run.sh --down  (idempotent)
+```
+
+Three tests cover the two-episode loop writing trajectories (accepts
+both `.json` and `.json.gz`), the five §3.6 metrics signals being
+present after the first episode, and `mc_run.sh --down` being
+idempotent on a torn-down stack. The default `pytest` invocation
+excludes the marker, so PR CI is untouched.
 
 ---
 

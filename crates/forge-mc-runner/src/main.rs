@@ -16,8 +16,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
-use forge_mc_runner::{HotReloadWatcher, Runner, RunnerConfig, TrajectoryWriter};
-use tracing::{error, info};
+use forge_mc_runner::{
+    serve_metrics, HotReloadWatcher, MetricsRecorder, Runner, RunnerConfig, TrajectoryWriter,
+};
+use tokio::runtime::Builder as TokioBuilder;
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
@@ -76,11 +79,59 @@ fn main() -> ExitCode {
 
     info!(?config, "runner configuration");
 
+    // The tokio worker count flows through config — no hard-coded
+    // literal in the binary. Production deployments override via TOML
+    // when the metrics endpoint + heavier hot-reload work warrants
+    // more threads.
+    let runtime = match TokioBuilder::new_multi_thread()
+        .worker_threads(config.tokio_worker_threads)
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            error!("failed to build tokio runtime: {e}");
+            return ExitCode::from(2);
+        }
+    };
+
+    runtime.block_on(async_main(cli, config))
+}
+
+async fn async_main(cli: Cli, config: RunnerConfig) -> ExitCode {
+    let (metrics_recorder, metrics_handle, metrics_shutdown_tx) =
+        match maybe_spawn_metrics_server(&config).await {
+            Ok(parts) => parts,
+            Err(rc) => return rc,
+        };
+
     if cli.dry_run {
-        match run_dry(config) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
+        let runner_result = tokio::task::spawn_blocking({
+            let cfg = config.clone();
+            let metrics = metrics_recorder.clone();
+            move || run_dry(cfg, metrics)
+        })
+        .await;
+
+        // Always shut the metrics server down, regardless of the
+        // runner's exit code.
+        if let Some(tx) = metrics_shutdown_tx {
+            let _ = tx.send(());
+        }
+        if let Some(handle) = metrics_handle {
+            if let Err(e) = handle.await {
+                warn!("metrics server task join error: {e}");
+            }
+        }
+
+        match runner_result {
+            Ok(Ok(())) => ExitCode::SUCCESS,
+            Ok(Err(e)) => {
                 error!("dry-run failed: {e}");
+                ExitCode::from(1)
+            }
+            Err(e) => {
+                error!("runner task panicked: {e}");
                 ExitCode::from(1)
             }
         }
@@ -89,8 +140,63 @@ fn main() -> ExitCode {
             "live runner wiring (MinecraftEnv + OnnxMuZeroModel) is not yet \
              integrated in this binary. Re-run with --dry-run for now."
         );
+        if let Some(tx) = metrics_shutdown_tx {
+            let _ = tx.send(());
+        }
+        if let Some(handle) = metrics_handle {
+            let _ = handle.await;
+        }
         ExitCode::from(64)
     }
+}
+
+type MetricsParts = (
+    Option<MetricsRecorder>,
+    Option<tokio::task::JoinHandle<Result<(), forge_mc_runner::MetricsError>>>,
+    Option<tokio::sync::oneshot::Sender<()>>,
+);
+
+async fn maybe_spawn_metrics_server(config: &RunnerConfig) -> Result<MetricsParts, ExitCode> {
+    if config.metrics_disabled() {
+        return Ok((None, None, None));
+    }
+    let recorder = match MetricsRecorder::new(&config.metrics_histogram_buckets) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("failed to build metrics recorder: {e}");
+            return Err(ExitCode::from(2));
+        }
+    };
+    let bind = format!("{}:{}", config.metrics_bind, config.metrics_port);
+    let addr: std::net::SocketAddr = match bind.parse() {
+        Ok(a) => a,
+        Err(e) => {
+            error!("invalid metrics bind addr {bind:?}: {e}");
+            return Err(ExitCode::from(2));
+        }
+    };
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let shutdown = async move {
+        // Future resolves when either the oneshot fires OR ctrl-c is
+        // received — whichever comes first triggers graceful drain.
+        let ctrl_c = async {
+            if let Err(e) = tokio::signal::ctrl_c().await {
+                warn!("ctrl-c handler install failed: {e}");
+            }
+        };
+        tokio::select! {
+            _ = rx => {},
+            _ = ctrl_c => {},
+        }
+    };
+    let handle = match serve_metrics(addr, recorder.clone(), shutdown).await {
+        Ok(h) => h,
+        Err(e) => {
+            error!("metrics server failed to start: {e}");
+            return Err(ExitCode::from(2));
+        }
+    };
+    Ok((Some(recorder), Some(handle), Some(tx)))
 }
 
 fn load_config(path: Option<&std::path::Path>) -> Result<RunnerConfig, String> {
@@ -104,19 +210,29 @@ fn load_config(path: Option<&std::path::Path>) -> Result<RunnerConfig, String> {
     }
 }
 
-fn run_dry(config: RunnerConfig) -> Result<(), forge_mc_runner::RunnerError> {
+fn run_dry(
+    config: RunnerConfig,
+    metrics: Option<MetricsRecorder>,
+) -> Result<(), forge_mc_runner::RunnerError> {
     use forge_agent::latent_mcts::model::StubLatentModel;
     use forge_agent::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch};
 
-    // Construct an in-process stub env that mirrors the writer's dims.
-    let obs_dim: usize = 8;
-    let action_count: u32 = 4;
-    let env = dry_run::StubEnv::new(obs_dim, action_count, Some(8));
+    // Dry-run dims flow through config (no hard-coded values at the
+    // call site). Defaults match the historical literal values
+    // (`obs_dim = 8`, `action_count = 4`, `latent_dim = 16`,
+    // `max_episode_len = 8`) so existing `--dry-run` smoke tests
+    // behave identically.
+    let obs_dim = config.dry_run.obs_dim;
+    let action_count = config.dry_run.action_count;
+    let env = dry_run::StubEnv::new(obs_dim, action_count, Some(config.dry_run.max_episode_len));
 
     let mut mcts_cfg = LatentMctsConfig::default();
     mcts_cfg.base.num_simulations = config.planning_sims;
     mcts_cfg.add_exploration_noise = false;
-    let search = LatentMctsSearch::new(StubLatentModel::new(action_count, 16), mcts_cfg);
+    let search = LatentMctsSearch::new(
+        StubLatentModel::new(action_count, config.dry_run.latent_dim),
+        mcts_cfg,
+    );
 
     let writer = TrajectoryWriter::new(
         &config.trajectory_dir,
@@ -124,10 +240,14 @@ fn run_dry(config: RunnerConfig) -> Result<(), forge_mc_runner::RunnerError> {
         &config.schema_id,
         obs_dim,
         action_count,
-    );
+    )
+    .with_compression(config.trajectory_compression, config.trajectory_gzip_level);
     let watcher = HotReloadWatcher::new(&config.manifest_path);
 
     let mut runner = Runner::new(config, env, search, writer, watcher);
+    if let Some(rec) = metrics {
+        runner = runner.with_metrics(rec);
+    }
     let outcome = runner.run(None)?;
     info!(?outcome, "dry-run complete");
     Ok(())

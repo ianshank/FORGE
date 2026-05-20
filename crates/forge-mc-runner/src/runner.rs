@@ -49,7 +49,33 @@ use crate::config::RunnerConfig;
 use crate::error::RunnerError;
 use crate::hot_reload::{HotReloadWatcher, ReloadEvent};
 use crate::manifest::ModelManifest;
+use crate::metrics::MetricsRecorder;
 use crate::trajectory::TrajectoryWriter;
+
+/// Prefix used for the trajectory-file episode identifier (e.g.
+/// `ep-000001.json`). The Python-side `TrajectoryReader` (in
+/// `python/forge/training/muzero_mc/replay.py`) globs files using
+/// this prefix, so any change MUST be mirrored there and version-
+/// pinned by a cross-language test.
+pub const EPISODE_ID_PREFIX: &str = "ep-";
+
+/// Zero-pad width for the episode sequence number in the formatted
+/// episode id (e.g. `ep-000001`). Matches the Python-side
+/// `TrajectoryReader` glob and trajectory naming convention.
+pub const EPISODE_ID_PAD_WIDTH: usize = 6;
+
+/// Format a 1-based episode sequence number into the canonical
+/// trajectory-id string (`ep-NNNNNN`). Pinned through
+/// [`EPISODE_ID_PREFIX`] and [`EPISODE_ID_PAD_WIDTH`] so no caller
+/// has to know the layout.
+pub fn format_episode_id(seq: u64) -> String {
+    format!(
+        "{prefix}{seq:0width$}",
+        prefix = EPISODE_ID_PREFIX,
+        seq = seq,
+        width = EPISODE_ID_PAD_WIDTH,
+    )
+}
 
 /// Signature for the model hot-reload callback.
 ///
@@ -127,6 +153,7 @@ where
     writer: TrajectoryWriter,
     watcher: HotReloadWatcher,
     reload_fn: Option<ReloadFn<M>>,
+    metrics: Option<MetricsRecorder>,
     obs_buf: Vec<f32>,
     step_out: StepOutput<Vec<f32>, E::Info>,
     episode_seq: u64,
@@ -156,6 +183,7 @@ where
             writer,
             watcher,
             reload_fn: None,
+            metrics: None,
             obs_buf: vec![0.0; obs_dim],
             step_out: StepOutput {
                 obs: vec![0.0; obs_dim],
@@ -175,6 +203,15 @@ where
     /// `last_model_version`) but performs no model mutation.
     pub fn with_reload_fn(mut self, reload_fn: ReloadFn<M>) -> Self {
         self.reload_fn = Some(reload_fn);
+        self
+    }
+
+    /// Builder helper to install a [`MetricsRecorder`]. Without it,
+    /// every per-episode / per-step metric call site is a no-op,
+    /// preserving the binary's zero-dependency story when
+    /// `RunnerConfig::metrics_disabled()` is true.
+    pub fn with_metrics(mut self, recorder: MetricsRecorder) -> Self {
+        self.metrics = Some(recorder);
         self
     }
 
@@ -242,6 +279,9 @@ where
         }
         self.last_model_version = Some(new_version);
         self.reloads_applied += 1;
+        if let Some(rec) = self.metrics.as_ref() {
+            rec.set_model_version(new_version);
+        }
         Ok(())
     }
 
@@ -250,7 +290,7 @@ where
     #[instrument(skip(self), fields(episode_seq = self.episode_seq + 1))]
     pub fn run_episode(&mut self) -> Result<EpisodeOutcome, RunnerError> {
         self.episode_seq += 1;
-        let episode_id = format!("ep-{:06}", self.episode_seq);
+        let episode_id = format_episode_id(self.episode_seq);
         let seed = self
             .config
             .base_seed
@@ -274,14 +314,30 @@ where
 
         for tick in 0..max_steps {
             // Plan from the *current* (pre-step) observation.
+            // Wall-clock per planning call is recorded into the
+            // `forge_mc_planning_latency_seconds` histogram if a
+            // metrics recorder is installed.
+            let plan_start = std::time::Instant::now();
+            let plan_result = self
+                .search
+                .search(&self.obs_buf)
+                .map_err(|e| RunnerError::Planner(e.to_string()));
+            if let Some(rec) = self.metrics.as_ref() {
+                rec.record_planning_latency_seconds(plan_start.elapsed().as_secs_f64());
+            }
             let LatentSearchResult {
                 action,
                 visit_counts,
                 root_value,
-            } = self
-                .search
-                .search(&self.obs_buf)
-                .map_err(|e| RunnerError::Planner(e.to_string()))?;
+            } = match plan_result {
+                Ok(r) => r,
+                Err(e) => {
+                    if let Some(rec) = self.metrics.as_ref() {
+                        rec.record_protocol_error("planner");
+                    }
+                    return Err(e);
+                }
+            };
 
             // Visit counts → policy target (normalised distribution).
             let policy_target = normalize_visits(&visit_counts);
@@ -350,6 +406,10 @@ where
 
         let ended_at = Utc::now().to_rfc3339();
         let trajectory_path = self.writer.finalize_and_save(&ended_at)?;
+
+        if let Some(rec) = self.metrics.as_ref() {
+            rec.record_episode_complete(total_reward);
+        }
 
         Ok(EpisodeOutcome {
             episode_id,
@@ -565,6 +625,7 @@ mod tests {
             action_repeat: 1,
             base_seed: Some(42),
             metrics_port: 0,
+            ..RunnerConfig::default()
         }
     }
 
@@ -595,6 +656,29 @@ mod tests {
     }
 
     // ----------------- tests -----------------
+
+    #[test]
+    fn format_episode_id_uses_zero_padded_prefix() {
+        assert_eq!(format_episode_id(1), "ep-000001");
+        assert_eq!(format_episode_id(42), "ep-000042");
+        assert_eq!(format_episode_id(999_999), "ep-999999");
+        // Values beyond the pad width grow the field — they don't
+        // truncate. Mirrors the Python-side glob behaviour
+        // (`ep-*.json` matches any number of digits).
+        assert_eq!(format_episode_id(1_000_000), "ep-1000000");
+    }
+
+    #[test]
+    fn episode_id_constants_match_python_side() {
+        // Cross-language pin: Python side hard-codes the same
+        // values in `python/forge/training/muzero_mc/replay.py`.
+        // If you change EPISODE_ID_PREFIX or EPISODE_ID_PAD_WIDTH
+        // here, bump them on the Python side too AND update the
+        // pinned test value in
+        // `tests/python/training/test_muzero_mc_replay.py`.
+        assert_eq!(EPISODE_ID_PREFIX, "ep-");
+        assert_eq!(EPISODE_ID_PAD_WIDTH, 6);
+    }
 
     #[test]
     fn normalize_visits_uniform_when_all_zero() {
@@ -780,6 +864,13 @@ mod tests {
 
     #[test]
     fn manifest_bump_between_episodes_triggers_reload_callback_exactly_once() {
+        // Exercises the contract via the actual `Runner::run` loop
+        // (not by hand-rolling a sequence of `maybe_reload` /
+        // `run_episode` calls). The loop polls once at the top of
+        // every episode, so for 3 episodes we should see 3 polls;
+        // with the manifest at v1 throughout episode 1, then bumped
+        // to v2 between episodes 1 and 2, we should see exactly 2
+        // reloads applied (v1 on the first poll, v2 on the second).
         let dir = tempfile::tempdir().unwrap();
         let manifest_path = dir.path().join("model_manifest.json");
         write_manifest(&manifest_path, 1);
@@ -792,27 +883,39 @@ mod tests {
 
         let reload_count = Arc::new(AtomicU64::new(0));
         let reload_count_in_fn = Arc::clone(&reload_count);
+        // Block the runner between episodes 1 and 2 via a barrier-
+        // like flag so the test can bump the manifest at the
+        // documented "between-episode" point. Implemented as a
+        // single side-channel atomic the reload callback reads to
+        // know whether the post-bump reload has been observed yet.
+        let bumped_after_first = Arc::new(AtomicU64::new(0));
+        let bumped_for_fn = Arc::clone(&bumped_after_first);
 
         let mut runner = Runner::new(cfg, env, search, writer, watcher).with_reload_fn(Box::new(
-            move |_model: &mut StubLatentModel, _manifest: &ModelManifest| {
+            move |_model: &mut StubLatentModel, manifest: &ModelManifest| {
+                if manifest.version == 2 {
+                    bumped_for_fn.store(1, Ordering::SeqCst);
+                }
                 reload_count_in_fn.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
         ));
 
-        // Episode 1: watcher sees v1 (first observation -> emits reload).
-        runner.run_episode().unwrap();
-        runner.maybe_reload().unwrap();
-        // No bump between ep1 and ep2.
-        runner.run_episode().unwrap();
-        runner.maybe_reload().unwrap();
-        // Bump to v2 -> emits reload.
-        write_manifest(&manifest_path, 2);
-        runner.maybe_reload().unwrap();
-        runner.run_episode().unwrap();
+        // First episode: runs against v1, reload callback fires once
+        // before the episode body begins.
+        runner.run(Some(1)).unwrap();
+        assert_eq!(reload_count.load(Ordering::SeqCst), 1);
+        assert_eq!(bumped_after_first.load(Ordering::SeqCst), 0);
 
-        // Two reloads applied: first poll (v1) and the bump to v2.
+        // Bump the manifest at the documented "between-episode" point
+        // and let the loop finish.
+        write_manifest(&manifest_path, 2);
+        runner.run(Some(2)).unwrap();
+
+        // Two reloads applied across the full 3-episode run: v1 on
+        // the first poll, v2 on the post-bump poll.
         assert_eq!(reload_count.load(Ordering::SeqCst), 2);
+        assert_eq!(bumped_after_first.load(Ordering::SeqCst), 1);
         assert_eq!(runner.reloads_applied(), 2);
         assert_eq!(runner.last_model_version(), Some(2));
     }

@@ -16,6 +16,9 @@
   "formatter": {
     "enabled": false
   },
+  "organizeImports": {
+    "enabled": false
+  },
   "javascript": {
     "formatter": {
       "enabled": false

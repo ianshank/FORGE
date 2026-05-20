@@ -239,85 +239,27 @@ class MuZeroTrainer:
     def _train_with_gradients(self, batch: dict[str, np.ndarray]) -> dict[str, float]:
         """Run forward + backward + optimizer step with gradient tracking.
 
-        Args:
-            batch: Training batch dictionary.
-
-        Returns:
-            Training metrics dictionary.
+        Thin delegate over
+        :func:`forge.training._muzero_step.train_with_gradients` — the
+        canonical home for the MuZero loss + clipping + L2 logic.
+        Returns a dict for backwards-compat with existing callers; the
+        underlying primitive returns a frozen :class:`TrainStepMetrics`.
         """
-        import torch
-        from torch import nn
-
-        from forge.models.muzero_networks import scalar_to_support
-
-        c = self._model.config
-        tc = self._config
-        device = torch.device(c.device)
-
-        obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=device)
-        actions = torch.as_tensor(batch["actions"], dtype=torch.long, device=device)
-        target_values = torch.as_tensor(batch["target_values"], dtype=torch.float32, device=device)
-        target_rewards = torch.as_tensor(
-            batch["target_rewards"], dtype=torch.float32, device=device
-        )
-        target_policies = torch.as_tensor(
-            batch["target_policies"], dtype=torch.float32, device=device
+        from forge.training._muzero_step import (
+            MuZeroStepConfig,
+            train_with_gradients,
         )
 
-        self._optimizer.zero_grad()
-
-        # Initial inference
-        latent = self._model.representation.forward(obs)
-        policy_logits, value_logits = self._model.prediction.forward(latent)
-
-        # Initial losses
-        target_val_dist = scalar_to_support(target_values[:, 0], c.value_support_size)
-        value_loss = nn.functional.cross_entropy(value_logits, target_val_dist)
-        log_probs = torch.log_softmax(policy_logits, dim=-1)
-        policy_loss = -torch.mean(torch.sum(target_policies[:, 0] * log_probs, dim=-1))
-        reward_loss = torch.tensor(0.0, device=device)
-
-        # Unroll
-        gs = tc.gradient_scale
-        num_steps = min(c.num_unroll_steps, actions.shape[1])
-        for k in range(num_steps):
-            action_oh = nn.functional.one_hot(actions[:, k], num_classes=c.action_dim).float()
-
-            # Scale gradient for dynamics (balance initial vs unrolled)
-            latent_scaled = latent.detach() * (1.0 - gs) + latent * gs
-            latent, rew_logits = self._model.dynamics.forward(latent_scaled, action_oh)
-            pol_logits, val_logits = self._model.prediction.forward(latent)
-
-            target_rew_dist = scalar_to_support(target_rewards[:, k], c.reward_support_size)
-            reward_loss = reward_loss + nn.functional.cross_entropy(rew_logits, target_rew_dist)
-
-            target_val_dist = scalar_to_support(target_values[:, k + 1], c.value_support_size)
-            value_loss = value_loss + nn.functional.cross_entropy(val_logits, target_val_dist)
-
-            log_p = torch.log_softmax(pol_logits, dim=-1)
-            policy_loss = policy_loss + (
-                -torch.mean(torch.sum(target_policies[:, k + 1] * log_p, dim=-1))
-            )
-
-        scale = 1.0 / (num_steps + 1)
-        total_loss = scale * (value_loss + policy_loss + reward_loss)
-
-        # L2 regularization
-        l2_reg = sum(p.pow(2).sum() for p in self._model.all_parameters())
-        total_loss = total_loss + c.weight_decay * l2_reg
-
-        total_loss.backward()
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(self._model.all_parameters(), max_norm=tc.max_grad_norm)
-        self._optimizer.step()
-
-        return {
-            "loss": float(total_loss.item()),
-            "policy_loss": float(policy_loss.item() * scale),
-            "value_loss": float(value_loss.item() * scale),
-            "reward_loss": float(reward_loss.item() * scale),
-            "l2_reg": float(l2_reg.item()),
-        }
+        metrics = train_with_gradients(
+            model=self._model,
+            optimizer=self._optimizer,
+            batch=batch,
+            step_config=MuZeroStepConfig(
+                max_grad_norm=self._config.max_grad_norm,
+                gradient_scale=self._config.gradient_scale,
+            ),
+        )
+        return metrics.to_dict()
 
     def train(
         self,

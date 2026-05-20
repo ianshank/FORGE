@@ -25,6 +25,10 @@ on:
         description: "Run opt-in LM Studio live-smoke job (requires vars.LMSTUDIO_SERVICE_IMAGE)"
         type: boolean
         default: false
+      run_minecraft_e2e:
+        description: "Run opt-in Minecraft E2E job (requires docker; spins up compose.minecraft.yml)"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -277,6 +281,48 @@ jobs:
             --format '{{json .State}}' 2>&1 || true
           echo "::endgroup::"
 
+  python-test-minecraft-e2e:
+    # Opt-in E2E that spins up docker/compose.minecraft.yml (Minecraft +
+    # mc-bot + runner) and drives the runner through two episodes,
+    # asserting trajectory files appear on disk and the metrics
+    # endpoint exposes the v2-plan §3.6 signals. Triggered only via
+    # workflow_dispatch with `run_minecraft_e2e=true`.
+    name: Python Minecraft E2E (opt-in)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_minecraft_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify docker compose is available
+        run: docker compose version
+      - name: Accept Minecraft EULA in the compose env
+        # CI is acknowledging Mojang's EULA on its own runner instance
+        # for the duration of this job only. Operators bringing the
+        # stack up locally must accept it via their own
+        # docker/compose.minecraft.env file.
+        run: |
+          cp docker/compose.minecraft.env.example docker/compose.minecraft.env
+          sed -i 's/^MC_EULA=FALSE/MC_EULA=TRUE/' docker/compose.minecraft.env
+          grep '^MC_EULA' docker/compose.minecraft.env
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pytest (no other deps needed — test uses stdlib urllib)
+        # Pin versions explicitly; no extra deps drift in CI.
+        run: pip install 'pytest==8.3.4'
+      - name: Run Minecraft E2E suite
+        run: pytest tests/python/integration/test_minecraft_e2e.py -m minecraft_e2e --no-cov -v
+      - name: Dump compose service logs on failure
+        if: failure()
+        run: |
+          for svc in forge-mc-server forge-mc-bot forge-mc-runner; do
+            echo "::group::$svc logs"
+            docker logs --tail=200 "$svc" 2>&1 || true
+            echo "::endgroup::"
+          done
+      - name: Tear down compose stack
+        if: always()
+        run: bash scripts/mc_run.sh --down || true
+
   python-test-fast:
     name: Python Tests (no native)
     runs-on: ubuntu-latest
@@ -320,6 +366,13 @@ jobs:
           else
             npm install --no-audit --no-fund
           fi
+      - name: TypeScript typecheck
+        working-directory: mc-bot
+        # `tsc --noEmit` against tsconfig.json with allowJs+checkJs
+        # validates the JSDoc-typed source surface. A follow-up
+        # commit renames .js → .ts; the typecheck step works either
+        # way.
+        run: npm run typecheck
       - name: Lint with Biome
         working-directory: mc-bot
         run: npm run lint

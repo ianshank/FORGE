@@ -22,6 +22,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 from forge.training.muzero_mc.bootstrap import BootstrapConfig, bootstrap
 from forge.training.muzero_mc.manifest import (
@@ -144,6 +145,110 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    # train
+    from forge.training.muzero_mc.trainer import (
+        DEFAULT_BATCH_SIZE,
+        DEFAULT_EXPORT_EVERY_N_ITERS,
+        DEFAULT_LOG_EVERY_N_ITERS,
+    )
+
+    p_train = sub.add_parser(
+        "train",
+        help=(
+            "Run MuZero training against a directory of TrajectoryV2 "
+            "files. Periodically exports an ONNX bundle + bumps the "
+            "manifest version the Rust runner hot-reloads."
+        ),
+    )
+    p_train.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Directory containing ep-*.json[.gz] trajectory files.",
+    )
+    p_train.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Bundle output directory (ONNX + manifest).",
+    )
+    p_train.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Manifest path (default: <out>/model_manifest.json). The "
+            "trainer resumes the version counter if this file exists "
+            "already."
+        ),
+    )
+    p_train.add_argument(
+        "--schema-id",
+        type=str,
+        required=True,
+        help="sha256 the env handshake advertises (stamped on every export).",
+    )
+    p_train.add_argument(
+        "--obs-dim",
+        type=int,
+        required=True,
+        help="Observation dim (must match the env + trajectory files).",
+    )
+    p_train.add_argument(
+        "--action-dim",
+        type=int,
+        required=True,
+        help="Discrete action count.",
+    )
+    p_train.add_argument(
+        "--iters",
+        type=int,
+        default=100,
+        help="Total gradient steps to run.",
+    )
+    p_train.add_argument(
+        "--export-every",
+        type=int,
+        default=DEFAULT_EXPORT_EVERY_N_ITERS,
+        help=f"Export cadence (default: {DEFAULT_EXPORT_EVERY_N_ITERS}). 0 disables mid-run exports.",
+    )
+    p_train.add_argument(
+        "--log-every",
+        type=int,
+        default=DEFAULT_LOG_EVERY_N_ITERS,
+        help=f"Log cadence (default: {DEFAULT_LOG_EVERY_N_ITERS}).",
+    )
+    p_train.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help=f"Training batch size (default: {DEFAULT_BATCH_SIZE}).",
+    )
+    p_train.add_argument(
+        "--latent-dim",
+        type=int,
+        default=None,
+        help="MuZeroConfig.latent_dim (default: config default).",
+    )
+    p_train.add_argument(
+        "--hidden-dim",
+        type=int,
+        default=None,
+        help="MuZeroConfig.hidden_dim (default: config default).",
+    )
+    p_train.add_argument(
+        "--num-blocks",
+        type=int,
+        default=None,
+        help="MuZeroConfig.num_blocks (default: config default).",
+    )
+    p_train.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="RNG seed (default: 0). Determinism gate for tests.",
+    )
+
     return parser
 
 
@@ -164,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_bootstrap(args)
     if args.cmd == "validate-manifest":
         return _run_validate(args)
+    if args.cmd == "train":
+        return _run_train(args)
     parser.error(f"unknown command: {args.cmd!r}")  # pragma: no cover — argparse blocks this
     return EXIT_USAGE
 
@@ -221,6 +328,79 @@ def _run_validate(args: argparse.Namespace) -> int:
         target,
         manifest.version,
         manifest.schema_id,
+    )
+    return EXIT_OK
+
+
+def _run_train(args: argparse.Namespace) -> int:
+    # Fail fast on a missing input directory BEFORE the heavy torch
+    # import — this lets the CLI surface clean diagnostics in
+    # environments where torch isn't installed (e.g. lint-only CI).
+    input_dir = Path(args.input)
+    if not input_dir.exists():
+        logger.error("train --input directory does not exist: %s", input_dir)
+        return EXIT_IO
+    if not input_dir.is_dir():
+        logger.error("train --input path is not a directory: %s", input_dir)
+        return EXIT_IO
+
+    try:
+        # Local imports: torch is an optional dep + trainer.py is only
+        # importable when `pip install -e .[minecraft]` has been run.
+        from forge.models.muzero_config import MuZeroConfig
+        from forge.models.muzero_world_model import MuZeroWorldModel
+        from forge.training.muzero_mc.replay import TrajectoryReader
+        from forge.training.muzero_mc.trainer import (
+            MuzeroMcTrainer,
+            MuZeroMcTrainerConfig,
+        )
+    except ImportError as e:
+        logger.error(
+            "train subcommand requires the [minecraft] optional deps "
+            "(torch + onnx + onnxruntime): %s",
+            e,
+        )
+        return EXIT_IO
+
+    try:
+        mz_kwargs: dict[str, Any] = {
+            "obs_dim": args.obs_dim,
+            "action_dim": args.action_dim,
+        }
+        if args.latent_dim is not None:
+            mz_kwargs["latent_dim"] = args.latent_dim
+        if args.hidden_dim is not None:
+            mz_kwargs["hidden_dim"] = args.hidden_dim
+        if args.num_blocks is not None:
+            mz_kwargs["num_blocks"] = args.num_blocks
+        model_cfg = MuZeroConfig(**mz_kwargs)
+        model = MuZeroWorldModel(model_cfg)
+
+        reader = TrajectoryReader(args.input, batch_size=args.batch_size)
+        trainer_cfg = MuZeroMcTrainerConfig(
+            train_iters=args.iters,
+            export_every_n_iters=args.export_every,
+            log_every_n_iters=args.log_every,
+            output_dir=args.out,
+            manifest_path=args.manifest,
+            schema_id=args.schema_id,
+            batch_size=args.batch_size,
+            seed=args.seed,
+        )
+        trainer = MuzeroMcTrainer(model, reader, trainer_cfg)
+        outcome = trainer.train()
+    except ValueError as e:
+        logger.error("invalid train config: %s", e)
+        return EXIT_USAGE
+    except (OSError, RuntimeError) as e:
+        logger.error("train failed: %s", e)
+        return EXIT_IO
+
+    logger.info(
+        "train complete: iters=%d, exports=%d, manifest_version=%d",
+        outcome["iters_completed"],
+        outcome["exports"],
+        outcome["last_manifest_version"],
     )
     return EXIT_OK
 

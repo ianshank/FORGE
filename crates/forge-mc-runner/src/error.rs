@@ -10,6 +10,19 @@ use thiserror::Error;
 /// Variants carry just enough structured context for callers to log
 /// usefully. File-IO failures preserve the offending path; JSON failures
 /// preserve the underlying parser diagnostic.
+///
+/// ## Why no `From<MetricsError> for RunnerError`?
+///
+/// Metrics failures are a *binary-level* concern (the runner is happy
+/// to keep stepping even when the metrics endpoint can't bind), and
+/// are surfaced by the binary's `main` directly via [`std::process::
+/// ExitCode`]. The runner loop ([`crate::Runner::run`]) never returns
+/// a metrics error because it never *interacts* with the metrics
+/// server beyond pushing samples into an in-process [`MetricsRecorder`].
+/// Keeping the two error surfaces separate avoids accidentally
+/// collapsing "metrics endpoint won't bind" failures into the same
+/// `RunnerError` channel that surfaces real per-episode runner
+/// problems.
 #[derive(Debug, Error)]
 pub enum RunnerError {
     /// Configured path does not exist on disk.

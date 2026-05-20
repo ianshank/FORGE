@@ -143,6 +143,17 @@ replays/minecraft/
 replay_buffer/minecraft/
 trajectories/
 _smoke_traj/
+# Gzip-compressed sibling of the .json trajectory output. Now opt-in
+# via RunnerConfig.trajectory_compression = "gzip" (v0.3-pre); same
+# .gitignore policy as plain .json — never tracked.
+**/trajectories/*.json.gz
+**/replays/minecraft/*.json.gz
+# muzero_mc trainer working directory: ONNX bundles + manifest. The
+# trainer writes one bundle every `export_every_n_iters`; lives under
+# the user-chosen --out path. Tracked the .example surface, NEVER
+# the live exports.
+muzero_mc_runs/
+training_runs/minecraft/
 # Compose-stack operator state (Phase 6).
 # - docker/compose.minecraft.env  : operator-edited env file (NEVER commit;
 #                                   may contain MC_EULA acceptance or
@@ -164,6 +175,13 @@ mc-bot/node_modules/
 # mc-bot iteration debris — NEVER commit screenshots from a private MC world
 mc-bot/screenshots/
 mc-bot/.logs/
+# TypeScript build artefacts. v0.3-pre adds the typecheck gate
+# (`tsc --noEmit`); the v0.4 `.js → .ts` rewrite emits to dist/ +
+# tsbuildinfo. Both excluded so a local `npm run build` doesn't
+# leak into commits.
+mc-bot/dist/
+mc-bot/.tsbuildinfo
+mc-bot/**/*.d.ts.map
 
 # Per-validation toolchain pin + per-gate triage logs emitted by the
 # post-merge validation harness (see docs/architecture.md §3.9 and the

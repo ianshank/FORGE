@@ -18,3 +18,15 @@ pub mod forward_model;
 pub mod latent_mcts;
 pub mod mcts;
 pub mod prelude;
+
+// Crate-root convenience re-exports of the most-used types so
+// downstream consumers can write `forge_agent::OnnxReloadError`
+// instead of the three-segment `forge_agent::latent_mcts::
+// onnx_model::OnnxReloadError`. The ONNX surface is feature-gated.
+pub use crate::latent_mcts::model::{LatentForwardModel, LatentInferenceOutput, StubLatentModel};
+#[cfg(feature = "onnx")]
+pub use crate::latent_mcts::onnx_model::{
+    validate_reload_paths, OnnxModelConfig, OnnxMuZeroModel, OnnxReloadError,
+};
+pub use crate::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch, LatentSearchResult};
+pub use crate::latent_mcts::state::LatentState;

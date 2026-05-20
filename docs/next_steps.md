@@ -23,12 +23,13 @@ trajectory writer) followed in `claude/minecraft-phase3-wireup-runner-foundation
 | **4 loop: `Runner<E,M>` + `LatentPlanner` + binary** | ✅ **landed** | **commit `b1cc7f8`** |
 | **5: Python `muzero_mc` (manifest / replay / bootstrap / CLI)** | ✅ **landed** | **commit `4c31a7c`** |
 | **6: Docker compose + mc-bot CI + Biome lint + quickstart** | ✅ **landed** | **commit `e872987`** |
-| 4: `OnnxMuZeroModel::reload()` impl | ⏳ deferred | follow-up |
-| 5: Full MuZero trainer loop | ⏳ deferred | follow-up |
-| 6: Prometheus `/metrics` endpoint | ⏳ deferred | follow-up |
-| 6: E2E pytest integration test | ⏳ deferred | follow-up |
-| 6: `mc-bot/` TypeScript migration | ⏳ deferred | v3 of MC plan |
-| 6: Replay storage compression | ⏳ deferred | measure first |
+| **4: `OnnxMuZeroModel::reload()` impl** | ✅ **landed** | branch `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` |
+| **5: Full MuZero trainer loop** | ✅ **landed** | branch `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` |
+| **6: Prometheus `/metrics` endpoint** | ✅ **landed** | branch `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` |
+| **6: E2E pytest integration test** | ✅ **landed** (opt-in `workflow_dispatch`) | branch `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` |
+| **6: `mc-bot/` TypeScript toolchain** | ✅ **landed** (tsconfig + `tsc --noEmit` gate) | branch `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` |
+| **6: Replay storage compression** | ✅ **landed** (opt-in gzip + bomb cap) | branch `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` |
+| 6: `mc-bot/` `.js → .ts` file rewrite | ⏳ deferred to v0.4 | toolchain in place; pure source rename |
 
 The sections below document what landed on the `feat/mc-phase4-runner-loop`
 branch and what specifically remains.
@@ -71,20 +72,19 @@ branch and what specifically remains.
   `FORGE_BENCH_MCTS_{SIMS,OBS_DIM,ACTIONS,LATENT_DIM}`. **Closes the
   bench gap from the original audit.**
 
-**Still to do for the live loop (follow-up PR):**
+**All three items in this section LANDED** on
+`feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` (see PR #58):
 
-- `Runner<E: FlatObsEnv, M: LatentForwardModel>` — wires Env +
-  planner + `TrajectoryWriter` + `HotReloadWatcher` into the episode
-  loop. Calls `watcher.poll()` only between episodes (the contract
-  the foundation already documents).
-- `LatentPlanner<M: LatentForwardModel>` — adapter around
-  `LatentMctsSearch` that produces `(action, policy_target,
-  value_target)` for the writer.
-- Additive `OnnxMuZeroModel::reload()` on
-  `crates/forge-agent/src/latent_mcts/onnx_model.rs` with fixed
-  mutex-acquisition order (representation → dynamics → prediction)
-  to make deadlock structurally impossible. Optional
-  `OnnxMuZeroModel` feature-gated variant of the bench follows.
+- `Runner<E: FlatObsEnv, M: LatentForwardModel>` shipped in commit
+  `b1cc7f8`.
+- `LatentPlanner<M>` shipped in the same commit (folded into
+  `Runner::run_episode`).
+- `OnnxMuZeroModel::reload(&mut self, new_config)` shipped in
+  commit `11240fc`. The design switched from "fixed mutex
+  acquisition order" to "build-first-then-swap with `&mut self`"
+  — the borrow checker now enforces sequencing against concurrent
+  inference, which is strictly stronger than runtime lock-order
+  discipline.
 
 ### Phase 5 — Python MuZero trainer (`muzero_mc/`)
 
@@ -228,6 +228,38 @@ The full three-service Docker Compose stack is now deployed:
 ---
 
 ## Near-term (v0.3)
+
+### Minecraft RL — deferred to v0.4
+
+The v0.3-pre branch (`feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip`)
+closed the five PR-#57 follow-ups. These remain outstanding:
+
+- **mc-bot `.js → .ts` file rewrite.** The TS toolchain
+  (`tsconfig.json` + `tsc --noEmit` CI gate) is in place; the 16
+  source files + 11 tests still need to be renamed and the
+  `@types/mineflayer` / `prismarine-viewer` stubs sketched out.
+  Schema-id parity must be pinned by a cross-language test against
+  the Rust constant before the rename lands.
+- **Multi-threaded `OnnxMuZeroModel` sharing.** Today's `reload(&mut
+  self)` is borrow-checker safe for the single-owner runner. A
+  follow-up `ArcSwap<Sessions>` refactor would let an
+  `Arc<OnnxMuZeroModel>` be shared across inference threads without
+  cross-generation session leakage; only needed when a real
+  multi-threaded inference caller appears.
+- **DPO / preference-trainer consuming teacher decision traces.** The
+  trace schema already carries `top_k_probs` / `value_hat`. A
+  DPO-style trainer would consume them as an alternative to the
+  current value+policy distillation loss.
+- **Replay-compression level tuning.** Today the default level is
+  flate2 `Compression::default()`. A sweep over `Fastest|Default|Best`
+  on a representative trajectory corpus could lower IO cost without
+  changing the API surface.
+- **Biome `formatter.enabled: true` + `linter.rules.recommended: true`
+  reformat sweep.** Cosmetic, defer to a stand-alone PR so the v0.3
+  diff stays reviewable.
+- **mc-bot `tsconfig` strictness ratcheting** —
+  `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` once the
+  source files are TypeScript.
 
 ### 6. GitHub Pages / WASM Live Demo  `[STATUS: not-started]`
 
