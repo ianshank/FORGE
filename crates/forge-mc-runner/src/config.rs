@@ -156,7 +156,74 @@ pub struct RunnerConfig {
     /// `serde(default)` means production TOMLs can omit the table
     /// entirely. See [`DryRunConfig`].
     pub dry_run: DryRunConfig,
+
+    /// Path to the `MinecraftEnvConfig` TOML (typically
+    /// `configs/minecraft/env.toml`). When set, the live runner path
+    /// loads + connects through this config. `None` keeps the binary
+    /// in dry-run-or-error mode (used by tests that don't touch
+    /// `forge-env-mc`). May be overridden by a `--mc-config` CLI flag.
+    #[serde(default)]
+    pub mc_env_config_path: Option<PathBuf>,
+
+    /// ONNX Runtime invariants the runner passes through to
+    /// `into_reload_fn`. See [`OnnxRuntimeConfig`].
+    #[serde(default)]
+    pub onnx: OnnxRuntimeConfig,
 }
+
+/// ONNX Runtime invariants the runner carries across reloads. These
+/// fields DON'T change between manifest versions; they're set once at
+/// runner construction and reused by every `into_reload_fn` callback.
+///
+/// Defaults delegate to
+/// [`forge_agent::latent_mcts::onnx_model::DEFAULT_LATENT_DIM`] +
+/// [`forge_agent::latent_mcts::onnx_model::DEFAULT_NUM_THREADS`] so
+/// every literal lives in one place (`onnx_model.rs`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct OnnxRuntimeConfig {
+    /// `action_space_size` passed to `OnnxModelConfig`. Should equal
+    /// the number of entries in `configs/minecraft/action_map.toml`.
+    /// `0` means "fall back to the action map's `action_count()` at
+    /// connect time" — the runner sets this automatically when it
+    /// loads the action map for the cross-check at handshake.
+    pub action_space_size: u32,
+    /// Latent dimensionality the model carries. Mirrors the
+    /// `MuZeroConfig.latent_dim` used at training time.
+    pub latent_dim: usize,
+    /// ONNX Runtime inter-op thread count. `0` means "leave at the
+    /// `ort` default" (single-threaded).
+    pub num_threads: usize,
+    /// Bundle directory that contains the per-role ONNX files. When
+    /// `None`, defaults to `manifest_path.parent()`.
+    pub bundle_dir: Option<PathBuf>,
+}
+
+impl Default for OnnxRuntimeConfig {
+    fn default() -> Self {
+        // Lazy const re-export so the runner crate doesn't need a
+        // direct compile-time link to forge-agent when the
+        // `onnx-reload` feature is off. The literals below are kept
+        // in sync with `forge_agent::latent_mcts::onnx_model::DEFAULT_*`
+        // by `crates/forge-mc-runner/src/config.rs::tests::onnx_runtime_defaults_match_forge_agent_consts`
+        // when the `onnx-reload` feature is enabled.
+        Self {
+            action_space_size: 0, // 0 = auto-derive from action_map
+            latent_dim: DEFAULT_LATENT_DIM_FALLBACK,
+            num_threads: DEFAULT_NUM_THREADS_FALLBACK,
+            bundle_dir: None,
+        }
+    }
+}
+
+/// Fallback for the latent dim when the `onnx-reload` feature isn't
+/// compiled in. Kept byte-identical to
+/// `forge_agent::latent_mcts::onnx_model::DEFAULT_LATENT_DIM` via the
+/// gated test below.
+pub const DEFAULT_LATENT_DIM_FALLBACK: usize = 256;
+
+/// Fallback for the thread count. See [`DEFAULT_LATENT_DIM_FALLBACK`].
+pub const DEFAULT_NUM_THREADS_FALLBACK: usize = 1;
 
 /// Default number of multi-thread tokio worker threads for the
 /// runner binary. The metrics endpoint and the SIGINT handler don't
@@ -197,9 +264,18 @@ impl Default for RunnerConfig {
             trajectory_gzip_level: TrajectoryGzipLevel::default(),
             tokio_worker_threads: DEFAULT_TOKIO_WORKER_THREADS,
             dry_run: DryRunConfig::default(),
+            mc_env_config_path: None,
+            onnx: OnnxRuntimeConfig::default(),
         }
     }
 }
+
+/// Environment variable that overrides `RunnerConfig.schema_id` at
+/// runtime. Used by `scripts/mc_self_play.sh` to feed the live
+/// `compute-schema-id` output into the runner WITHOUT patching the
+/// static `runner.toml` file. Empty / unset env vars are treated as
+/// "no override" — the TOML value wins.
+pub const SCHEMA_ID_ENV_VAR: &str = "FORGE_MC_SCHEMA_ID";
 
 impl RunnerConfig {
     /// Returns `true` iff `episodes == 0` (run forever).
@@ -210,6 +286,24 @@ impl RunnerConfig {
     /// Returns `true` iff metrics serving is disabled.
     pub fn metrics_disabled(&self) -> bool {
         self.metrics_port == 0
+    }
+
+    /// Apply env-var overrides in-place. Currently honours
+    /// [`SCHEMA_ID_ENV_VAR`]; future env-var overrides land here.
+    /// Returns `Self` for chainability after `Default::default()` or
+    /// `toml::from_str`.
+    ///
+    /// Empty env-var values are treated as unset — the TOML value
+    /// wins. This avoids surprising operators who export an empty
+    /// `FORGE_MC_SCHEMA_ID=` in a shell config.
+    #[must_use]
+    pub fn with_env_var_overrides(mut self) -> Self {
+        if let Ok(v) = std::env::var(SCHEMA_ID_ENV_VAR) {
+            if !v.is_empty() {
+                self.schema_id = v;
+            }
+        }
+        self
     }
 
     /// Validate cross-field invariants. Catches confusable misconfigs
@@ -233,6 +327,13 @@ impl RunnerConfig {
         if self.dry_run.max_episode_len == 0 {
             return Err("dry_run.max_episode_len must be >= 1".into());
         }
+        if self.onnx.latent_dim == 0 {
+            return Err("onnx.latent_dim must be >= 1".into());
+        }
+        // `onnx.num_threads == 0` is legal — ort interprets it as
+        // "library default". `onnx.action_space_size == 0` is also
+        // legal — the live runner derives it from the action map at
+        // connect time.
         if self.env_id.is_empty() {
             return Err("env_id must be non-empty".into());
         }
@@ -491,5 +592,142 @@ mod tests {
         // Other dry_run fields fall back to defaults.
         assert_eq!(cfg.dry_run.action_count, 4);
         assert_eq!(cfg.dry_run.latent_dim, 16);
+    }
+
+    #[test]
+    fn mc_env_config_path_defaults_to_none() {
+        // v0.4 BLOCKER addition. Existing v0.3-pre TOMLs MUST parse
+        // unchanged → field is Optional with `#[serde(default)]`.
+        let cfg = RunnerConfig::default();
+        assert!(cfg.mc_env_config_path.is_none());
+    }
+
+    #[test]
+    fn onnx_table_partial_toml_uses_defaults() {
+        let toml_src = r#"
+            env_id = "minecraft"
+            schema_id = "abc"
+            [onnx]
+            action_space_size = 12
+        "#;
+        let cfg: RunnerConfig = toml::from_str(toml_src).unwrap();
+        assert_eq!(cfg.onnx.action_space_size, 12);
+        assert_eq!(cfg.onnx.latent_dim, DEFAULT_LATENT_DIM_FALLBACK);
+        assert_eq!(cfg.onnx.num_threads, DEFAULT_NUM_THREADS_FALLBACK);
+        assert!(cfg.onnx.bundle_dir.is_none());
+    }
+
+    #[test]
+    fn validate_rejects_zero_onnx_latent_dim() {
+        let cfg = RunnerConfig {
+            onnx: OnnxRuntimeConfig {
+                latent_dim: 0,
+                ..OnnxRuntimeConfig::default()
+            },
+            ..RunnerConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("onnx.latent_dim"));
+    }
+
+    #[test]
+    fn validate_accepts_zero_action_space_size_and_num_threads() {
+        // 0 = auto-derive for action_space_size; 0 = library-default
+        // for num_threads. Both are explicitly legal.
+        let cfg = RunnerConfig {
+            onnx: OnnxRuntimeConfig {
+                action_space_size: 0,
+                num_threads: 0,
+                ..OnnxRuntimeConfig::default()
+            },
+            ..RunnerConfig::default()
+        };
+        cfg.validate().unwrap();
+    }
+
+    /// Pins the runner-side fallback consts byte-equal to the
+    /// `forge_agent::latent_mcts::onnx_model::DEFAULT_*` consts when
+    /// the `onnx-reload` feature is compiled in. The runner crate
+    /// otherwise has NO direct link to forge-agent.
+    #[test]
+    #[cfg(feature = "onnx-reload")]
+    fn onnx_runtime_defaults_match_forge_agent_consts() {
+        assert_eq!(
+            DEFAULT_LATENT_DIM_FALLBACK,
+            forge_agent::latent_mcts::onnx_model::DEFAULT_LATENT_DIM,
+            "onnx.latent_dim fallback drifted from forge-agent's source of truth",
+        );
+        assert_eq!(
+            DEFAULT_NUM_THREADS_FALLBACK,
+            forge_agent::latent_mcts::onnx_model::DEFAULT_NUM_THREADS,
+            "onnx.num_threads fallback drifted from forge-agent's source of truth",
+        );
+    }
+
+    #[test]
+    fn with_env_var_overrides_replaces_schema_id_when_set() {
+        // SAFETY: env-var mutation in tests is OK because cargo runs
+        // each test in a fresh-ish process (some test harnesses share
+        // env per-thread but we set + unset around the call).
+        let saved = std::env::var(SCHEMA_ID_ENV_VAR).ok();
+        // SAFETY: single-threaded test scope, set_var is safe under
+        // Rust 2024's stricter env-var rules.
+        unsafe {
+            std::env::set_var(SCHEMA_ID_ENV_VAR, "sha-from-env");
+        }
+        let cfg = RunnerConfig {
+            schema_id: "sha-from-toml".into(),
+            ..RunnerConfig::default()
+        }
+        .with_env_var_overrides();
+        assert_eq!(cfg.schema_id, "sha-from-env");
+        // Restore prior env so other tests aren't affected.
+        unsafe {
+            if let Some(v) = saved {
+                std::env::set_var(SCHEMA_ID_ENV_VAR, v);
+            } else {
+                std::env::remove_var(SCHEMA_ID_ENV_VAR);
+            }
+        }
+    }
+
+    #[test]
+    fn with_env_var_overrides_keeps_toml_when_env_unset() {
+        let saved = std::env::var(SCHEMA_ID_ENV_VAR).ok();
+        unsafe {
+            std::env::remove_var(SCHEMA_ID_ENV_VAR);
+        }
+        let cfg = RunnerConfig {
+            schema_id: "sha-from-toml".into(),
+            ..RunnerConfig::default()
+        }
+        .with_env_var_overrides();
+        assert_eq!(cfg.schema_id, "sha-from-toml");
+        unsafe {
+            if let Some(v) = saved {
+                std::env::set_var(SCHEMA_ID_ENV_VAR, v);
+            }
+        }
+    }
+
+    #[test]
+    fn with_env_var_overrides_treats_empty_env_as_unset() {
+        let saved = std::env::var(SCHEMA_ID_ENV_VAR).ok();
+        unsafe {
+            std::env::set_var(SCHEMA_ID_ENV_VAR, "");
+        }
+        let cfg = RunnerConfig {
+            schema_id: "sha-from-toml".into(),
+            ..RunnerConfig::default()
+        }
+        .with_env_var_overrides();
+        assert_eq!(cfg.schema_id, "sha-from-toml");
+        unsafe {
+            if let Some(v) = saved {
+                std::env::set_var(SCHEMA_ID_ENV_VAR, v);
+            } else {
+                std::env::remove_var(SCHEMA_ID_ENV_VAR);
+            }
+        }
     }
 }

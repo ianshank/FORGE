@@ -58,6 +58,21 @@ pub fn validate_reload_paths(config: &OnnxModelConfig) -> Result<(), OnnxReloadE
     Ok(())
 }
 
+/// Default latent dimensionality for the ONNX MuZero model.
+/// Mirrored across `OnnxModelConfig::default()` and any downstream
+/// caller (e.g. `forge_mc_runner::config::OnnxRuntimeConfig`) so the
+/// value flows from one source of truth.
+pub const DEFAULT_LATENT_DIM: usize = 256;
+
+/// Default ONNX Runtime inter-op thread count. Single-threaded by
+/// default — `ort` scales by intra-op threads internally, and the
+/// runner is CPU-bound on the planner not on parallel sessions.
+pub const DEFAULT_NUM_THREADS: usize = 1;
+
+/// Default action-space size baked into `OnnxModelConfig::default()`.
+/// Kept here so the magic value lives in exactly one place.
+pub const DEFAULT_ACTION_SPACE_SIZE: u32 = 75;
+
 /// Configuration for the ONNX MuZero model.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnnxModelConfig {
@@ -81,9 +96,9 @@ impl Default for OnnxModelConfig {
             representation_path: "representation.onnx".to_string(),
             dynamics_path: "dynamics.onnx".to_string(),
             prediction_path: "prediction.onnx".to_string(),
-            action_space_size: 75,
-            latent_dim: 256,
-            num_threads: 1,
+            action_space_size: DEFAULT_ACTION_SPACE_SIZE,
+            latent_dim: DEFAULT_LATENT_DIM,
+            num_threads: DEFAULT_NUM_THREADS,
         }
     }
 }

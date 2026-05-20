@@ -43,6 +43,13 @@ struct Cli {
     /// for CLI smoke tests without a live Minecraft server.
     #[arg(long)]
     dry_run: bool,
+
+    /// Override the runner config's `mc_env_config_path`. Lets
+    /// operators point the runner at a sibling `env.toml` without
+    /// editing `runner.toml`. Only consumed in the live path; ignored
+    /// for `--dry-run`.
+    #[arg(long, value_name = "TOML_PATH")]
+    mc_config: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -71,6 +78,19 @@ fn main() -> ExitCode {
         },
         None => config,
     };
+    // `--mc-config` CLI flag overrides `runner.toml`'s
+    // `mc_env_config_path`. Env-var ladder on `schema_id` is applied
+    // last so the orchestrator's `FORGE_MC_SCHEMA_ID` wins over both
+    // TOML and `--mc-config`.
+    let config = if let Some(path) = cli.mc_config.clone() {
+        RunnerConfig {
+            mc_env_config_path: Some(path),
+            ..config
+        }
+    } else {
+        config
+    };
+    let config = config.with_env_var_overrides();
 
     if let Err(e) = config.validate() {
         error!("invalid config: {e}");
@@ -136,17 +156,53 @@ async fn async_main(cli: Cli, config: RunnerConfig) -> ExitCode {
             }
         }
     } else {
-        error!(
-            "live runner wiring (MinecraftEnv + OnnxMuZeroModel) is not yet \
-             integrated in this binary. Re-run with --dry-run for now."
-        );
+        // Live runner path. Mirrors `--dry-run`'s `spawn_blocking`
+        // shape because `MinecraftEnv::connect` + `OnnxMuZeroModel::load`
+        // are synchronous blocking calls that would stall the async
+        // runtime otherwise.
+        #[cfg(feature = "mc-live")]
+        let runner_result = tokio::task::spawn_blocking({
+            let cfg = config.clone();
+            let metrics = metrics_recorder.clone();
+            move || forge_mc_runner::run_live(cfg, metrics)
+        })
+        .await;
+        #[cfg(not(feature = "mc-live"))]
+        let runner_result: Result<
+            Result<(), forge_mc_runner::RunnerError>,
+            tokio::task::JoinError,
+        > = {
+            error!(
+                "live runner not available: re-compile with `--features mc-live` \
+                 (transitively pulls forge-env-mc + ort). Re-run with --dry-run for the stub path."
+            );
+            Ok(Err(forge_mc_runner::RunnerError::ConfigLoad(
+                "binary built without `mc-live` feature".into(),
+            )))
+        };
+
+        // Tear the metrics server down regardless of the runner's
+        // exit code — same pattern as the dry-run branch.
         if let Some(tx) = metrics_shutdown_tx {
             let _ = tx.send(());
         }
         if let Some(handle) = metrics_handle {
-            let _ = handle.await;
+            if let Err(e) = handle.await {
+                warn!("metrics server task join error: {e}");
+            }
         }
-        ExitCode::from(64)
+
+        match runner_result {
+            Ok(Ok(())) => ExitCode::SUCCESS,
+            Ok(Err(e)) => {
+                error!("live runner failed: {e}");
+                ExitCode::from(1)
+            }
+            Err(e) => {
+                error!("live runner task panicked: {e}");
+                ExitCode::from(1)
+            }
+        }
     }
 }
 

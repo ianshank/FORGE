@@ -31,6 +31,8 @@
 pub mod config;
 pub mod error;
 pub mod hot_reload;
+#[cfg(feature = "mc-live")]
+pub mod live;
 pub mod manifest;
 pub mod metrics;
 #[cfg(feature = "onnx-reload")]
@@ -38,9 +40,11 @@ pub mod onnx_reload;
 pub mod runner;
 pub mod trajectory;
 
-pub use config::RunnerConfig;
+pub use config::{RunnerConfig, SCHEMA_ID_ENV_VAR};
 pub use error::RunnerError;
 pub use hot_reload::{HotReloadWatcher, ReloadEvent};
+#[cfg(feature = "mc-live")]
+pub use live::run_live;
 pub use manifest::{ModelFileEntry, ModelManifest, ModelManifestFiles, MANIFEST_SCHEMA_VERSION};
 pub use metrics::{serve_metrics, MetricsError, MetricsRecorder};
 #[cfg(feature = "onnx-reload")]

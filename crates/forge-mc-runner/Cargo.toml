@@ -17,10 +17,22 @@ default = []
 # Transitively requires `forge-agent`'s `onnx` feature (and therefore
 # `ort` + a working ONNX Runtime on the host).
 onnx-reload = ["forge-agent/onnx"]
+# Enables the `--live-stub` runner mode + the `MockMinecraftEnv`
+# helper used by the v0.4 self-improvement smoke test. Connects a
+# REAL `OnnxMuZeroModel` to a STUB env so the reload path can be
+# exercised on CI without a Minecraft server. Pulls `onnx-reload`
+# transitively because the stub still loads ONNX bundles.
+live-test-stub = ["onnx-reload"]
+# Enables the live-runner path that connects a real `MinecraftEnv`
+# to an `OnnxMuZeroModel`. Pulled by default in the binary builds
+# that ship with PR #58's CI; the optional gate keeps the lib crate
+# usable from downstream consumers that only want the runner core.
+mc-live = ["onnx-reload", "dep:forge-env-mc"]
 
 [dependencies]
 forge-agent = { workspace = true }
 forge-env = { workspace = true }
+forge-env-mc = { workspace = true, optional = true }
 forge-replay = { workspace = true }
 anyhow = { workspace = true }
 axum = "0.7"

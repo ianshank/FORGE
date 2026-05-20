@@ -1353,6 +1353,7 @@ dependencies = [
  "clap",
  "forge-agent",
  "forge-env",
+ "forge-env-mc",
  "forge-replay",
  "prometheus",
  "serde",

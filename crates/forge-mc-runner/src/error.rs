@@ -86,6 +86,20 @@ pub enum RunnerError {
     /// Reload callback returned an error.
     #[error("model reload failed: {0}")]
     Reload(String),
+
+    /// Live-runner config (e.g. `MinecraftEnvConfig`) failed to load
+    /// or validate. Captures the offending field / file path in the
+    /// message string. Distinct from [`Self::Io`] so callers can
+    /// surface clean diagnostics — config-load failures are a
+    /// startup-time problem, not a runtime IO blip.
+    #[error("config load failed: {0}")]
+    ConfigLoad(String),
+
+    /// Live env setup failed (WS handshake, action_count mismatch,
+    /// schema_id drift). Distinct from [`Self::Env`] which wraps a
+    /// per-step error from an already-connected env.
+    #[error("env setup failed: {0}")]
+    EnvSetup(String),
 }
 
 impl RunnerError {
