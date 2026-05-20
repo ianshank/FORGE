@@ -93,10 +93,14 @@ hot-reloads. Branch
 
 **Validation gates** (full, post-T8):
 
-- `cargo test -p forge-mc-runner --lib` → 81/81 pass.
+- `cargo test -p forge-mc-runner --lib` → 79/79 pass (T3+T4a
+  tests; the 3 env-var override tests consolidated into one
+  `with_env_var_overrides_covers_all_scenarios` to avoid
+  parallel-runner race).
 - `cargo test -p forge-replay --lib` → 85/85 pass.
-- `pytest tests/python/` → 1,434 passed, 42 skipped; coverage
-  90.80% (above 85% gate).
+- `pytest tests/python/` → 1,455+ passed on PR-CI Linux (40+
+  skipped on opt-in markers + missing optional extras); coverage
+  92.01% (above 85% gate).
 - `mypy python/ scripts/ --config-file pyproject.toml` → 0 issues
   across 102 source files.
 - `ruff check python/ tests/python/ scripts/` → clean.

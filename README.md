@@ -616,14 +616,21 @@ See [`docs/next_steps.md`](docs/next_steps.md) for the status table.
 Coverage on Minecraft-integration code: every branch-modified file
 **>85% line coverage** (most 90-100%), overall Python coverage
 **92.01%** (well above the 85% gate).
-`cargo test -p forge-mc-runner --lib`: **74 unit tests** + 5
-integration tests; `cargo test -p forge-replay --lib`: **85 tests**
-(includes the cross-language `MAX_DECOMPRESSED_TRAJECTORY_BYTES`
-pin and the `.tar.gz` extension regression).
-`pytest tests/python/`: **1,393+ tests** passing (33 skipped, 9
-deselected — opt-in `lmstudio` / `e2e_long` / `minecraft_e2e`).
-`pytest tests/python/training`: 53 / 53 pass (new
-`test_muzero_mc_trainer.py` adds 15 over PR #57).
+`cargo test -p forge-mc-runner --lib`: **79 unit tests** + 5
+integration tests (v0.4: +7 vs v0.3-pre from T3 + T4a + the
+consolidated env-var test); `cargo test -p forge-replay --lib`:
+**85 tests** (includes the cross-language
+`MAX_DECOMPRESSED_TRAJECTORY_BYTES` pin and the `.tar.gz` extension
+regression).
+`pytest tests/python/`: **1,455+ tests** passing on PR-CI Linux
+(was 1,393+ pre-v0.4; +60+ from T1 schema-id + T2 device + T4
+continuous + T4a atomic bundles + T5 compose validation +
+T6 mc_self_play unit + T7 self-improvement smoke). The opt-in
+`lmstudio`, `e2e_long`, and `minecraft_e2e` markers stay deselected
+by default; the new `minecraft_e2e_smoke` marker (v0.4) runs on
+every PR.
+`pytest tests/python/training`: 73+ pass on hosts with the
+`[minecraft]` extras (`torch`, `onnx`, `onnxscript`).
 `npm test` (mc-bot): 116 / 116 pass; `npm run typecheck` clean.
 
 ## MangoMAS Integration
@@ -769,7 +776,7 @@ docker build -f docker/Dockerfile.demo -t forge-demo .
 
 | Area | Details |
 | --- | --- |
-| Rust workspace | 27 crates; `forge-mc-runner` alone ships 74 lib + 5 integration tests on the v0.3-pre branch (see CHANGELOG for full counts) |
+| Rust workspace | 27 crates; `forge-mc-runner` ships 79 lib + 5 integration tests on the v0.4 branch (see CHANGELOG for full counts) |
 | Rust coverage | `cargo-tarpaulin` gated at 85% line coverage |
 | Python surface | `forge_env` wrappers plus `forge` training, MangoMAS bridge, traces, and utilities |
 | Python tests | 21 MangoMAS smoke tests, coverage-gated at 85% |

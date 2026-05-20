@@ -1,21 +1,55 @@
 # Minecraft RL Quickstart
 
 End-to-end walkthrough for the FORGE Minecraft integration: a real
-Minecraft server, the `mc-bot` mineflayer bridge, and the Rust
-`forge-mc-runner` driving latent-MCTS episodes — all wired together
+Minecraft server, the `mc-bot` mineflayer bridge, the Rust
+`forge-mc-runner` driving latent-MCTS episodes, and (v0.4+) the
+**Python trainer continuously consuming runner-emitted trajectories +
+bumping the manifest the runner hot-reloads** — all wired together
 via `docker compose`.
+
+## v0.4 happy path: one-command self-play
+
+If you just want the **self-improving loop** (runner playing + trainer
+training simultaneously), skip steps 2-3 and use:
+
+```sh
+# Accept Mojang's EULA (see §1 below)
+cp docker/compose.minecraft.env.example docker/compose.minecraft.env
+# edit and set MC_EULA=TRUE
+
+# Bring up the full self-play stack (CPU)
+scripts/mc_self_play.sh --detach
+
+# CUDA host with nvidia-container-toolkit:
+scripts/mc_self_play.sh --gpu --detach
+
+# Tear down:
+scripts/mc_self_play.sh --down
+```
+
+`mc_self_play.sh` automates §2 (bootstrap) + §3 (compose-up) for you
+via the `trainer-bootstrap` one-shot container — your host needs
+**only Docker Compose v2.20+**, no local Python / torch install.
+
+The longer-form sections below are for operators who want to drive
+the runner without the trainer (v0.3-pre flow) or who need to override
+specific steps.
 
 ## Prerequisites
 
 - Docker 24+ with the `compose` plugin (`docker compose version`).
 - Linux/macOS/Windows with WSL2.
 - ~4 GB of free disk for the Minecraft server image + world data.
-- For local Python tooling (bootstrap / validate-manifest): Python 3.11+
-  with this repo installed in editable mode and the `minecraft` extras:
+- For local Python tooling (bootstrap / validate-manifest / `train`):
+  Python 3.11+ with this repo installed in editable mode and the
+  `minecraft` extras:
 
   ```sh
   pip install -e ".[minecraft]"
   ```
+
+  v0.4: NOT needed for `mc_self_play.sh` — the orchestrator runs
+  bootstrap inside a container.
 
 ## 1. Accept the Minecraft EULA
 
@@ -36,20 +70,36 @@ editing the compose YAML.
 
 The Rust runner refuses to start without a `model_manifest.json` and
 the three ONNX files it references. The bootstrap CLI writes a
-random-init bundle:
+random-init bundle. v0.4 emits the **atomic versioned layout**:
+
+```
+models/
+├── model_manifest.json     (points at v00000001)
+└── v00000001/
+    ├── representation.onnx
+    ├── dynamics.onnx
+    └── prediction.onnx
+```
 
 ```sh
+# v0.4: compute schema_id directly from the shipped configs
+# (no need to scrape the bot's startup log):
+SCHEMA_ID=$(python -m forge.training.muzero_mc.cli compute-schema-id \
+    --action-map configs/minecraft/action_map.toml \
+    --rewards configs/minecraft/rewards.toml \
+    --quiet)
+
 python -m forge.training.muzero_mc.cli bootstrap \
     --obs-dim 920 \
     --action-dim 12 \
-    --schema-id "$(cat configs/minecraft/schema_id.txt)" \
+    --schema-id "$SCHEMA_ID" \
     --out models/
 ```
 
 `--schema-id` must equal the sha256 the mc-bot advertises in its
-`Hello` handshake (computed from `action_map.toml` + `rewards.toml` +
-`obs_dim` + `action_count`). The bot prints it on startup and pins it
-in `configs/minecraft/schema_id.txt` after the first run.
+`Hello` handshake (computed from `action_map.toml` + `rewards.toml`).
+`compute-schema-id --quiet` derives it deterministically from the
+TOMLs so the runner's startup cross-check passes on the first try.
 
 Validate the bundle before bringing the stack up:
 
@@ -116,12 +166,34 @@ print(f'{total} steps across {len(list(r.episode_paths()))} episodes')
 When you want to swap in fresh weights, write a new manifest into
 `models/model_manifest.json` with a **strictly greater** `version` than
 the one the runner last saw. The `HotReloadWatcher` polls between
-episodes and applies the swap atomically.
+episodes and applies the swap atomically. v0.4 layout: each bundle
+version lives in its own `v{NNNNNNNN}/` subdir; the manifest's per-
+role `path` field carries the prefix and the runner's
+`config_from_manifest` resolves it transparently against `bundle_dir`.
 
-The full trainer loop (load `TrajectoryV2` batches → train rep/dyn/pred
-nets → export ONNX → bump manifest) ships in a follow-up to
-`forge.training.muzero_mc`; the bootstrap CLI above produces a
-v1 bundle that demonstrates the full hot-reload path end-to-end.
+The **full trainer loop** (load `TrajectoryV2` batches → train
+rep/dyn/pred nets → export atomic versioned ONNX bundle → bump
+manifest) ships in `python/forge/training/muzero_mc/trainer.py` as
+of **v0.3-pre** (`MuzeroMcTrainer.train` for fixed-iter mode) and
+**v0.4** (`MuzeroMcTrainer.train_continuous` for the self-improving
+loop). Use the `train` CLI subcommand:
+
+```sh
+python -m forge.training.muzero_mc.cli train \
+    --input trajectories/ \
+    --out models/ \
+    --schema-id "$SCHEMA_ID" \
+    --obs-dim 920 --action-dim 12 \
+    --continuous \
+    --round-iters 10 \
+    --round-poll-sleep 5 \
+    --max-trajectories 200 \
+    --max-bundle-versions 5 \
+    --device cpu
+```
+
+Or — recommended — use `scripts/mc_self_play.sh` which wraps all of
+this in a single command (see top of file).
 
 ## Troubleshooting
 

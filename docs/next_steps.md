@@ -227,7 +227,7 @@ The full three-service Docker Compose stack is now deployed:
 
 ---
 
-## Near-term (v0.3)
+## Near-term (v0.4 landed; v0.5 candidates)
 
 ### Minecraft RL — v0.4 LANDED (branch `feat/mc-v04-self-improving-loop`)
 
