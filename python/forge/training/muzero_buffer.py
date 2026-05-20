@@ -321,25 +321,21 @@ class MuZeroReplayBuffer:
     ) -> float:
         """Compute the n-step bootstrapped return from a position.
 
-        Args:
-            game: The game history.
-            position: Starting position.
-            td_steps: Number of steps to look ahead.
-            discount: Reward discount factor.
-
-        Returns:
-            The n-step return value.
+        Thin delegate over
+        :func:`forge.training._targets.compute_n_step_return` — the
+        canonical home for this formula. Kept as a method so the
+        existing ``GameHistory``-shaped call sites need no rewrite.
         """
-        value = 0.0
-        for i in range(td_steps):
-            step = position + i
-            if step >= game.length:
-                break
-            value += (discount**i) * game.rewards[step]
+        from forge.training._targets import compute_n_step_return
 
-        # Bootstrap from the value at the end of the n-step window
-        bootstrap_pos = position + td_steps
-        if bootstrap_pos < len(game.root_values):
-            value += (discount**td_steps) * game.root_values[bootstrap_pos]
-
-        return value
+        # Only feed the prefix of `rewards` actually populated. The
+        # canonical helper itself bounds the loop by `len(rewards)`
+        # so passing the slice here just avoids an out-of-bounds
+        # short-circuit during the inner sum.
+        return compute_n_step_return(
+            rewards=game.rewards[: game.length],
+            values=game.root_values,
+            position=position,
+            td_steps=td_steps,
+            discount=discount,
+        )
