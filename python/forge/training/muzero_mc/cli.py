@@ -131,6 +131,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional torch RNG seed for reproducibility.",
     )
 
+    # compute-schema-id
+    p_sid = sub.add_parser(
+        "compute-schema-id",
+        help=(
+            "Compute the canonical SHA256 ``schema_id`` for a given "
+            "action_map.toml + rewards.toml pair. The same hash the "
+            "Rust env adapter + mc-bot agree on at handshake. Use "
+            "``--quiet`` to suppress logs so stdout is hash-only "
+            "(for shell substitution into `bootstrap --schema-id`)."
+        ),
+    )
+    p_sid.add_argument(
+        "--action-map",
+        type=Path,
+        required=True,
+        help="Path to configs/minecraft/action_map.toml (or equivalent).",
+    )
+    p_sid.add_argument(
+        "--rewards",
+        type=Path,
+        required=True,
+        help="Path to configs/minecraft/rewards.toml (or equivalent).",
+    )
+    p_sid.add_argument(
+        "--quiet",
+        action="store_true",
+        help=(
+            "Suppress INFO logs on stderr; print ONLY the 64-hex hash on "
+            "stdout (no trailing newline change). Useful for "
+            "``SCHEMA_ID=$(... compute-schema-id --quiet)``."
+        ),
+    )
+
     # validate-manifest
     p_val = sub.add_parser(
         "validate-manifest",
@@ -260,9 +293,14 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
+    # `compute-schema-id --quiet` routes logs to stderr only so stdout
+    # carries the hash and nothing else. Other subcommands keep the
+    # existing INFO-to-stdout default.
+    log_stream = sys.stderr if getattr(args, "quiet", False) else None
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=log_stream,
     )
 
     if args.cmd == "bootstrap":
@@ -271,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_validate(args)
     if args.cmd == "train":
         return _run_train(args)
+    if args.cmd == "compute-schema-id":
+        return _run_compute_schema_id(args)
     parser.error(f"unknown command: {args.cmd!r}")  # pragma: no cover — argparse blocks this
     return EXIT_USAGE
 
@@ -304,6 +344,42 @@ def _run_bootstrap(args: argparse.Namespace) -> int:
         result.manifest.version,
         result.manifest.schema_id,
     )
+    return EXIT_OK
+
+
+def _run_compute_schema_id(args: argparse.Namespace) -> int:
+    """``compute-schema-id`` subcommand entry.
+
+    Loads action_map.toml + rewards.toml, computes the canonical
+    combined SHA256 the Rust env adapter + mc-bot agree on at
+    handshake, prints it to stdout. ``--quiet`` ensures stdout is
+    hash-only (no logs, no trailing diagnostics) so callers can do
+    ``SCHEMA_ID=$(... compute-schema-id --quiet)`` without scrubbing.
+    """
+    from forge.training.muzero_mc.schema_id import compute_schema_id_from_paths
+
+    if not args.action_map.exists():
+        logger.error("--action-map path missing: %s", args.action_map)
+        return EXIT_IO
+    if not args.rewards.exists():
+        logger.error("--rewards path missing: %s", args.rewards)
+        return EXIT_IO
+    try:
+        schema_id = compute_schema_id_from_paths(args.action_map, args.rewards)
+    except (OSError, ValueError, KeyError) as e:
+        logger.error("schema-id computation failed: %s", e)
+        return EXIT_VALIDATION
+
+    # Hash to stdout; logs (if not --quiet) go through the standard
+    # logger which writes to stderr when --quiet is set.
+    print(schema_id)
+    if not args.quiet:
+        logger.info(
+            "schema_id=%s (action_map=%s, rewards=%s)",
+            schema_id,
+            args.action_map,
+            args.rewards,
+        )
     return EXIT_OK
 
 
