@@ -212,4 +212,5 @@ markers = [
   "lmstudio: opt-in tests requiring a running LM Studio (or OpenAI-compatible) endpoint.",
   "e2e_long: long-running (1000+ episodes) end-to-end pipeline test; opt-in via FORGE_E2E_LONG=1.",
   "minecraft_e2e: opt-in tests requiring the docker compose Minecraft stack (mc-bot + runner + Minecraft server). Triggered by the workflow_dispatch `python-test-minecraft-e2e` CI job; never runs on a default `pytest` invocation.",
+  "minecraft_e2e_smoke: fast Minecraft self-improvement smoke that drives the trainer in continuous mode against a pre-seeded trajectory dir. Runs on every PR CI (NOT opt-in) so manifest-bump regressions surface immediately. Requires torch + onnx extras (skips otherwise).",
 ]
