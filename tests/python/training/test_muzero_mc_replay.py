@@ -179,6 +179,128 @@ def test_step_batch_as_torch_returns_expected_tensor_shapes(tmp_path: Path) -> N
     assert tensors["terminated"].dtype.is_floating_point is False
 
 
+# --- gzip auto-detect + bomb-cap tests (Track 4) -------------------------
+
+
+def _write_gzip_trajectory(
+    dir_: Path,
+    *,
+    episode_id: str,
+    steps: int,
+    obs_dim: int = 4,
+    action_count: int = 3,
+    schema_id: str = "schema-sid",
+) -> Path:
+    """Write a gzip-compressed trajectory that mirrors the Rust
+    ``save_json_gz`` on-disk shape.
+    """
+    import gzip
+
+    payload: dict[str, Any] = {
+        "format_version": TRAJECTORY_FORMAT_VERSION,
+        "env_id": "stub-env",
+        "schema_id": schema_id,
+        "episode_id": episode_id,
+        "seed": 42,
+        "obs_dim": obs_dim,
+        "action_count": action_count,
+        "steps": [
+            {
+                "tick": t,
+                "obs": [float(t)] * obs_dim,
+                "action_id": t % action_count,
+                "policy_target": [1.0 / action_count] * action_count,
+                "value_target": float(t) * 0.5,
+                "reward": 1.0,
+                "terminated": t == steps - 1,
+                "truncated": False,
+            }
+            for t in range(steps)
+        ],
+        "final_reward": float(steps),
+        "started_at": "2026-05-21T00:00:00Z",
+        "ended_at": "2026-05-21T00:00:01Z",
+    }
+    p = dir_ / f"{episode_id}.json.gz"
+    with gzip.open(p, "wt", encoding="utf-8") as f:
+        json.dump(payload, f)
+    return p
+
+
+def test_load_trajectory_auto_detects_gzip_by_extension(tmp_path: Path) -> None:
+    """Mirrors the Rust ``load_json_auto_detects_gzip_by_extension``
+    cross-language test.
+    """
+    plain = _write_trajectory(tmp_path, episode_id="ep-000001", steps=3, obs_dim=4)
+    gz = _write_gzip_trajectory(tmp_path, episode_id="ep-000002", steps=3, obs_dim=4)
+
+    plain_data = load_trajectory(plain)
+    gz_data = load_trajectory(gz)
+    # Bodies are independent (different episode_ids) but shape +
+    # schema must match.
+    assert plain_data["obs_dim"] == gz_data["obs_dim"]
+    assert plain_data["action_count"] == gz_data["action_count"]
+    assert len(plain_data["steps"]) == len(gz_data["steps"]) == 3
+
+
+def test_load_trajectory_rejects_gzip_bomb(tmp_path: Path) -> None:
+    """Pathological gzip-bomb (decompresses past the
+    MAX_DECOMPRESSED_TRAJECTORY_BYTES cap) surfaces as
+    :class:`TrajectoryError`, not an OOM.
+    """
+    import gzip
+
+    from forge.training.muzero_mc.replay import MAX_DECOMPRESSED_TRAJECTORY_BYTES
+
+    p = tmp_path / "bomb.json.gz"
+    # Write zeros that decompress to MAX+1 bytes — flate2 / Python's
+    # gzip both compress this to a tiny on-disk size.
+    chunk = b"\x00" * (1024 * 1024)
+    written = 0
+    with gzip.open(p, "wb") as f:
+        while written <= MAX_DECOMPRESSED_TRAJECTORY_BYTES:
+            n = len(chunk) if (written + len(chunk)) < (MAX_DECOMPRESSED_TRAJECTORY_BYTES + 1) else (MAX_DECOMPRESSED_TRAJECTORY_BYTES + 1 - written)
+            f.write(chunk[:n])
+            written += n
+    with pytest.raises(TrajectoryError, match=r"byte cap|exceeds"):
+        load_trajectory(p)
+
+
+def test_load_trajectory_corrupt_gzip_returns_trajectory_error(tmp_path: Path) -> None:
+    p = tmp_path / "corrupt.json.gz"
+    p.write_bytes(b"this is not a gzip stream")
+    with pytest.raises(TrajectoryError, match="gzip decode"):
+        load_trajectory(p)
+
+
+def test_reader_iterates_mixed_json_and_jsongz(tmp_path: Path) -> None:
+    """A directory containing both ``.json`` and ``.json.gz`` files
+    yields all steps from both formats through the default reader
+    glob.
+    """
+    _write_trajectory(tmp_path, episode_id="ep-000001", steps=2, obs_dim=4)
+    _write_gzip_trajectory(tmp_path, episode_id="ep-000002", steps=3, obs_dim=4)
+
+    reader = TrajectoryReader(tmp_path, batch_size=10)
+    paths = [p.name for p in reader.episode_paths()]
+    assert "ep-000001.json" in paths
+    assert "ep-000002.json.gz" in paths
+
+    batches = list(reader)
+    total = sum(len(b) for b in batches)
+    assert total == 5  # 2 + 3 steps across the two files
+
+
+def test_max_decompressed_size_matches_documented_constant() -> None:
+    """The Python cap must equal 512 MiB (the documented Rust
+    constant). Catches accidental drift between the two sides; the
+    Rust gate is the authoritative source.
+    """
+    from forge.training.muzero_mc.replay import MAX_DECOMPRESSED_TRAJECTORY_BYTES
+
+    assert MAX_DECOMPRESSED_TRAJECTORY_BYTES == 512 * 1024 * 1024
+
+
 def test_missing_required_top_level_key_rejected(tmp_path: Path) -> None:
     p = tmp_path / "ep-broken.json"
     p.write_text(

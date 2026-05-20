@@ -1425,6 +1425,7 @@ dependencies = [
  "arrow",
  "bincode",
  "chrono",
+ "flate2",
  "forge-core",
  "forge-types",
  "parquet",

@@ -35,6 +35,8 @@ from __future__ import annotations
 
 __all__ = [
     "DEFAULT_TRAJECTORY_GLOB",
+    "GZIP_TRAJECTORY_GLOB",
+    "MAX_DECOMPRESSED_TRAJECTORY_BYTES",
     "TRAJECTORY_FORMAT_VERSION",
     "StepBatch",
     "TrajectoryError",
@@ -64,6 +66,21 @@ TRAJECTORY_FORMAT_VERSION: int = 2
 #: Default glob the reader uses to discover episode files inside the
 #: trajectory directory.
 DEFAULT_TRAJECTORY_GLOB: str = "ep-*.json"
+
+#: Gzip-compressed sibling of :data:`DEFAULT_TRAJECTORY_GLOB`. The
+#: reader picks up both by default so a directory containing a mix
+#: of compressed and plain trajectories iterates cleanly.
+GZIP_TRAJECTORY_GLOB: str = "ep-*.json.gz"
+
+#: Hard cap on decompressed bytes accepted by :func:`load_trajectory`
+#: when the file extension is ``.gz``. Mirrors the Rust constant
+#: ``forge_replay::v2::MAX_DECOMPRESSED_TRAJECTORY_BYTES`` byte-for-
+#: byte (512 MiB). Pathological gzip-bomb input is rejected with a
+#: :class:`TrajectoryError` rather than OOM'ing the process.
+MAX_DECOMPRESSED_TRAJECTORY_BYTES: int = 512 * 1024 * 1024
+
+#: File extension the reader treats as gzip-compressed JSON.
+_GZ_SUFFIX: str = ".gz"
 
 
 class TrajectoryError(Exception):
@@ -114,15 +131,44 @@ class StepBatch:
 
 def load_trajectory(path: str | os.PathLike[str]) -> dict[str, Any]:
     """Load a single ``TrajectoryV2`` JSON file and validate its
-    invariants.
+    invariants. Auto-detects gzip compression by ``.gz`` extension —
+    matches the Rust ``TrajectoryV2::load_json`` behaviour.
 
     Raises :class:`TrajectoryError` on schema drift (wrong
-    ``format_version``, missing keys, dim mismatch). Returns the raw
-    dict — callers iterate ``steps`` themselves.
+    ``format_version``, missing keys, dim mismatch), on corrupt gzip
+    bytes, or on decompressed payloads exceeding
+    :data:`MAX_DECOMPRESSED_TRAJECTORY_BYTES`. Returns the raw dict —
+    callers iterate ``steps`` themselves.
     """
+    # gzip is stdlib; the import is local so callers that never load
+    # a .gz file don't pay the cost.
+    import gzip
+
     p = Path(path)
-    with p.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    if p.suffix.lower() == _GZ_SUFFIX:
+        # Cap the read at MAX+1 bytes so a gzip-bomb that decompresses
+        # past the cap surfaces as TrajectoryError rather than OOM.
+        try:
+            with gzip.open(p, "rb") as f:  # binary so .read(N) counts bytes
+                raw = f.read(MAX_DECOMPRESSED_TRAJECTORY_BYTES + 1)
+        except OSError as e:
+            # Covers both Python-side "not a gzipped file" and the
+            # underlying file-open failures. Mirrors the Rust side's
+            # `TrajectoryError::Io` mapping.
+            raise TrajectoryError(f"{p}: gzip decode: {e}") from e
+        if len(raw) > MAX_DECOMPRESSED_TRAJECTORY_BYTES:
+            raise TrajectoryError(
+                f"{p}: decompressed trajectory exceeds "
+                f"{MAX_DECOMPRESSED_TRAJECTORY_BYTES}-byte cap "
+                f"(got >{MAX_DECOMPRESSED_TRAJECTORY_BYTES} bytes)"
+            )
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            raise TrajectoryError(f"{p}: parse gzip-decoded JSON: {e}") from e
+    else:
+        with p.open("r", encoding="utf-8") as f:
+            data = json.load(f)
     if not isinstance(data, dict):
         raise TrajectoryError(f"{p}: root must be JSON object")
     fmt = data.get("format_version")
@@ -208,12 +254,36 @@ class TrajectoryReader:
         return self._batch_size
 
     def episode_paths(self) -> list[Path]:
-        """Sorted list of episode file paths the reader will visit."""
-        paths = sorted(self._dir.glob(self._glob))
+        """Sorted list of episode file paths the reader will visit.
+
+        Globs both :data:`DEFAULT_TRAJECTORY_GLOB` and
+        :data:`GZIP_TRAJECTORY_GLOB` so a directory containing a mix
+        of compressed and plain trajectories iterates cleanly. The
+        glob the reader was constructed with (``self._glob``) takes
+        precedence; the gzip companion glob is added on top to
+        guarantee ``.json.gz`` files are picked up when the default
+        ``"ep-*.json"`` glob is in use. The final list is sorted +
+        de-duplicated so each file appears at most once.
+        """
+        primary = list(self._dir.glob(self._glob))
+        # Only add the gzip companion when the primary glob is the
+        # default; custom callers (e.g. tests) can still override.
+        if self._glob == DEFAULT_TRAJECTORY_GLOB:
+            primary.extend(self._dir.glob(GZIP_TRAJECTORY_GLOB))
+        # De-dup by absolute path; sort by stem so ep-000001 sorts
+        # next to ep-000001.json.gz reliably.
+        seen: set[Path] = set()
+        unique: list[Path] = []
+        for p in primary:
+            resolved = p.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                unique.append(p)
+        unique.sort()
         if self._shuffle:
             rng = random.Random(self._seed)
-            rng.shuffle(paths)
-        return paths
+            rng.shuffle(unique)
+        return unique
 
     def __iter__(self) -> Iterator[StepBatch]:
         return self._iter_batches()

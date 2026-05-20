@@ -6,7 +6,35 @@
 
 use std::path::PathBuf;
 
+use forge_replay::v2::TrajectoryGzipLevel;
 use serde::{Deserialize, Serialize};
+
+/// Compression codec for trajectory files written by
+/// [`crate::TrajectoryWriter`].
+///
+/// `None` keeps the existing `<episode_id>.json` (backwards-compat
+/// default). `Gzip` writes `<episode_id>.json.gz` via
+/// [`forge_replay::v2::TrajectoryV2::save_json_gz`]; the reader auto-
+/// detects gzip by extension.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrajectoryCompression {
+    /// Plain JSON (`.json`). Default — backwards-compatible.
+    #[default]
+    None,
+    /// Gzip-compressed JSON (`.json.gz`).
+    Gzip,
+}
+
+impl TrajectoryCompression {
+    /// Per-file extension this codec emits.
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Self::None => forge_replay::v2::JSON_EXT,
+            Self::Gzip => forge_replay::v2::JSON_GZ_EXT,
+        }
+    }
+}
 
 /// Top-level config for `forge-mc-runner`.
 ///
@@ -68,6 +96,18 @@ pub struct RunnerConfig {
     /// Defaults to the Prometheus standard latency buckets, suitable
     /// for sub-second per-decision MCTS planning calls.
     pub metrics_histogram_buckets: Vec<f64>,
+
+    /// Compression codec for trajectory files. Defaults to `None`
+    /// (plain `.json`) for backwards compatibility with existing
+    /// readers. Set to `Gzip` to write `.json.gz`; the reader
+    /// auto-detects by extension.
+    pub trajectory_compression: TrajectoryCompression,
+
+    /// Gzip compression level when
+    /// `trajectory_compression == TrajectoryCompression::Gzip`.
+    /// Defaults to `flate2::Compression::default()` (level 6).
+    /// Ignored when compression is `None`.
+    pub trajectory_gzip_level: TrajectoryGzipLevel,
 }
 
 /// Prometheus standard latency buckets (in seconds), used as the
@@ -98,6 +138,8 @@ impl Default for RunnerConfig {
             metrics_port: 9090,
             metrics_bind: DEFAULT_METRICS_BIND.to_string(),
             metrics_histogram_buckets: DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS.to_vec(),
+            trajectory_compression: TrajectoryCompression::default(),
+            trajectory_gzip_level: TrajectoryGzipLevel::default(),
         }
     }
 }

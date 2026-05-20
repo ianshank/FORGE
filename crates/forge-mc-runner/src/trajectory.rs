@@ -31,6 +31,8 @@ pub struct TrajectoryWriter {
     schema_id: String,
     obs_dim: usize,
     action_count: u32,
+    compression: crate::config::TrajectoryCompression,
+    gzip_level: forge_replay::v2::TrajectoryGzipLevel,
     current: Option<TrajectoryV2>,
 }
 
@@ -38,6 +40,9 @@ impl TrajectoryWriter {
     /// Build a writer rooted at `dir`. The directory is **not** created
     /// here — it's created on first `finalize_and_save` if missing, so
     /// constructing a writer in a test never touches the FS.
+    ///
+    /// Defaults to no compression. Use [`Self::with_compression`] to
+    /// opt into gzip.
     pub fn new(
         dir: impl Into<PathBuf>,
         env_id: impl Into<String>,
@@ -51,8 +56,28 @@ impl TrajectoryWriter {
             schema_id: schema_id.into(),
             obs_dim,
             action_count,
+            compression: crate::config::TrajectoryCompression::None,
+            gzip_level: forge_replay::v2::TrajectoryGzipLevel::default(),
             current: None,
         }
+    }
+
+    /// Builder-style override for the codec the writer uses on
+    /// `finalize_and_save`. `gzip_level` is only consulted when
+    /// `compression == TrajectoryCompression::Gzip`.
+    pub fn with_compression(
+        mut self,
+        compression: crate::config::TrajectoryCompression,
+        gzip_level: forge_replay::v2::TrajectoryGzipLevel,
+    ) -> Self {
+        self.compression = compression;
+        self.gzip_level = gzip_level;
+        self
+    }
+
+    /// Configured compression codec.
+    pub fn compression(&self) -> crate::config::TrajectoryCompression {
+        self.compression
     }
 
     /// Directory the writer is configured for.
@@ -138,10 +163,18 @@ impl TrajectoryWriter {
         if !self.dir.exists() {
             std::fs::create_dir_all(&self.dir).map_err(|e| RunnerError::io(&self.dir, e))?;
         }
-        let filename = format!("{}.json", t.episode_id);
+        let filename = format!("{}.{}", t.episode_id, self.compression.extension());
         let path = self.dir.join(filename);
-        t.save_json(&path)?;
-        debug!(path = %path.display(), len = t.len(), "trajectory written");
+        match self.compression {
+            crate::config::TrajectoryCompression::None => t.save_json(&path)?,
+            crate::config::TrajectoryCompression::Gzip => t.save_json_gz(&path, self.gzip_level)?,
+        }
+        debug!(
+            path = %path.display(),
+            len = t.len(),
+            compression = ?self.compression,
+            "trajectory written"
+        );
         Ok(path)
     }
 
@@ -337,5 +370,45 @@ mod tests {
         assert_eq!(w.directory(), std::path::Path::new("/tmp/x"));
         assert!(!w.has_episode_in_progress());
         assert_eq!(w.current_len(), 0);
+        assert_eq!(w.compression(), crate::config::TrajectoryCompression::None);
+    }
+
+    #[test]
+    fn writer_with_gzip_config_writes_json_gz() {
+        let dir = tempfile::tempdir().unwrap();
+        let traj_dir = dir.path().join("traj");
+        let mut w = TrajectoryWriter::new(&traj_dir, "stub-env", "schema-x", 2, 2)
+            .with_compression(
+                crate::config::TrajectoryCompression::Gzip,
+                forge_replay::v2::TrajectoryGzipLevel::default(),
+            );
+        assert_eq!(w.compression(), crate::config::TrajectoryCompression::Gzip);
+
+        w.start_episode("ep-gz", Some(7), "2026-05-21T00:00:00Z")
+            .unwrap();
+        w.record_step(StepV2 {
+            tick: 0,
+            obs: vec![0.0; 2],
+            action_id: 0,
+            policy_target: vec![0.5, 0.5],
+            value_target: 0.0,
+            reward: 1.0,
+            terminated: false,
+            truncated: false,
+        })
+        .unwrap();
+        let path = w.finalize_and_save("2026-05-21T00:00:01Z").unwrap();
+
+        assert!(path.exists());
+        assert!(
+            path.to_string_lossy().ends_with(".json.gz"),
+            "expected .json.gz suffix, got {}",
+            path.display()
+        );
+        // Round-trip: load via the (gzip-aware) reader.
+        let back = TrajectoryV2::load_json(&path).unwrap();
+        assert_eq!(back.episode_id, "ep-gz");
+        assert_eq!(back.steps.len(), 1);
+        assert!((back.steps[0].reward - 1.0).abs() < 1e-6);
     }
 }

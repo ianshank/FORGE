@@ -19,6 +19,10 @@ bincode = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 chrono = "0.4"
+# Gzip compression for the opt-in `TrajectoryV2::save_json_gz` path
+# (RunnerConfig.trajectory_compression = "gzip"). Always available;
+# the on-disk file extension drives the codec choice in `load_json`.
+flate2 = "1"
 # HuggingFace Datasets (Parquet) export, gated behind the `hf` feature so
 # the default build stays lean. Pinned to a single major to keep the dep
 # graph stable across the workspace. `flate2` enables gzip codec support

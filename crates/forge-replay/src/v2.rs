@@ -34,6 +34,89 @@ use crate::trajectory::Trajectory;
 /// converter; existing replays must not load under a higher version.
 pub const TRAJECTORY_FORMAT_VERSION: u32 = 2;
 
+/// On-disk file extension for plain JSON trajectories.
+pub const JSON_EXT: &str = "json";
+
+/// On-disk file extension for gzip-compressed JSON trajectories.
+/// (Path API returns just `"gz"` for `.json.gz` — we keep the
+/// combined form here for documentation / for callers building
+/// filenames.)
+pub const JSON_GZ_EXT: &str = "json.gz";
+
+/// Suffix returned by `Path::extension()` for gzip trajectory files.
+/// Used by [`TrajectoryV2::load_json`] to auto-detect compression.
+pub const GZ_SUFFIX: &str = "gz";
+
+/// Hard cap on decompressed bytes accepted by [`TrajectoryV2::load_json`]
+/// when the file extension is `.gz`.
+///
+/// Sized at ~125x a realistic 4 MB JSON episode, so legitimate
+/// trajectories never hit the cap. Pathological gzip-bomb input that
+/// would decompress past this limit produces an `UnexpectedEof` from
+/// `serde_json` after the inner reader is closed by `take()` — no
+/// OOM. Security defence-in-depth; the runner trusts its own
+/// trajectory dir, but the cap protects against a hostile actor that
+/// can drop a file there.
+pub const MAX_DECOMPRESSED_TRAJECTORY_BYTES: usize = 512 * 1024 * 1024;
+
+/// Gzip compression level for [`TrajectoryV2::save_json_gz`].
+///
+/// Accepts both the named variants and an explicit `Custom(0..=9)`
+/// integer for TOML configs. Maps onto [`flate2::Compression`] at the
+/// codec boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase", untagged)]
+pub enum TrajectoryGzipLevel {
+    /// `flate2::Compression::default()` (level 6).
+    #[serde(rename = "default")]
+    Named(NamedGzipLevel),
+    /// Caller-supplied level 0..=9. Validation lives in
+    /// [`TrajectoryGzipLevel::resolve`] — values outside that range
+    /// produce a `TrajectoryError::Io` rather than panicking.
+    Custom(u32),
+}
+
+/// Named gzip presets. Kept as a separate enum so the TOML
+/// representation can use lowercase string variants (`"fastest"`,
+/// `"default"`, `"best"`) without conflicting with the
+/// `Custom(u32)` integer form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NamedGzipLevel {
+    /// `flate2::Compression::fast()` (level 1).
+    Fastest,
+    /// `flate2::Compression::default()` (level 6).
+    Default,
+    /// `flate2::Compression::best()` (level 9).
+    Best,
+}
+
+impl Default for TrajectoryGzipLevel {
+    fn default() -> Self {
+        Self::Named(NamedGzipLevel::Default)
+    }
+}
+
+impl TrajectoryGzipLevel {
+    /// Resolve to a `flate2::Compression`, validating the
+    /// `Custom(level)` integer against `0..=9`.
+    pub fn resolve(&self) -> Result<flate2::Compression, TrajectoryError> {
+        Ok(match self {
+            Self::Named(NamedGzipLevel::Fastest) => flate2::Compression::fast(),
+            Self::Named(NamedGzipLevel::Default) => flate2::Compression::default(),
+            Self::Named(NamedGzipLevel::Best) => flate2::Compression::best(),
+            Self::Custom(level) => {
+                if *level > 9 {
+                    return Err(TrajectoryError::Io(format!(
+                        "gzip level must be in 0..=9, got {level}"
+                    )));
+                }
+                flate2::Compression::new(*level)
+            }
+        })
+    }
+}
+
 /// One transition in an env-agnostic trajectory.
 ///
 /// `policy_target` and `value_target` are emitted by the planner
@@ -234,14 +317,98 @@ impl TrajectoryV2 {
         Ok(())
     }
 
-    /// Load from a JSON file written by [`Self::save_json`].
-    /// Fails on `format_version` mismatch.
+    /// Gzip-compressed sibling of [`Self::save_json`]. Atomic write
+    /// (`.tmp` sibling + rename). Caller picks the filename — by
+    /// convention `<episode_id>.json.gz`.
+    ///
+    /// Compression level flows from the caller; `level.resolve()`
+    /// validates `Custom(>9)` and surfaces a [`TrajectoryError::Io`]
+    /// rather than panicking.
+    #[instrument(skip(self, level), fields(path = %path.as_ref().display(), len = self.steps.len()))]
+    pub fn save_json_gz(
+        &self,
+        path: impl AsRef<Path>,
+        level: TrajectoryGzipLevel,
+    ) -> Result<(), TrajectoryError> {
+        use std::io::Write;
+
+        self.validate()?;
+        let compression = level.resolve()?;
+        let path = path.as_ref();
+        let dir = path
+            .parent()
+            .ok_or_else(|| TrajectoryError::Io(format!("no parent dir for {}", path.display())))?;
+        let tmp = dir.join(format!(
+            ".{}.tmp",
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "trajectory.json.gz".into())
+        ));
+        let raw =
+            serde_json::to_vec(self).map_err(|e| TrajectoryError::Io(format!("serialise: {e}")))?;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), compression);
+        encoder
+            .write_all(&raw)
+            .map_err(|e| TrajectoryError::Io(format!("gzip encode: {e}")))?;
+        let compressed = encoder
+            .finish()
+            .map_err(|e| TrajectoryError::Io(format!("gzip finish: {e}")))?;
+        std::fs::write(&tmp, &compressed)
+            .map_err(|e| TrajectoryError::Io(format!("write {}: {e}", tmp.display())))?;
+        std::fs::rename(&tmp, path)
+            .map_err(|e| TrajectoryError::Io(format!("rename to {}: {e}", path.display())))?;
+        debug!(
+            raw_bytes = raw.len(),
+            compressed_bytes = compressed.len(),
+            "wrote gzip trajectory"
+        );
+        Ok(())
+    }
+
+    /// Load from a trajectory file. Auto-detects compression by
+    /// extension: paths ending in `.gz` decompress through
+    /// `flate2::read::GzDecoder` (capped at
+    /// [`MAX_DECOMPRESSED_TRAJECTORY_BYTES`]); other paths are read
+    /// as plain JSON via the existing path.
+    ///
+    /// Fails on `format_version` mismatch, on decompressed payloads
+    /// exceeding the cap, and on the usual serde / IO errors.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, TrajectoryError> {
         let path = path.as_ref();
-        let bytes = std::fs::read(path)
-            .map_err(|e| TrajectoryError::Io(format!("read {}: {e}", path.display())))?;
-        let t: TrajectoryV2 = serde_json::from_slice(&bytes)
-            .map_err(|e| TrajectoryError::Io(format!("deserialise: {e}")))?;
+        let is_gz = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.eq_ignore_ascii_case(GZ_SUFFIX))
+            .unwrap_or(false);
+        let t: TrajectoryV2 = if is_gz {
+            use std::io::Read;
+            let file = std::fs::File::open(path)
+                .map_err(|e| TrajectoryError::Io(format!("read {}: {e}", path.display())))?;
+            let decoder = flate2::read::GzDecoder::new(file);
+            // `.take()` caps decompressed bytes at MAX_DECOMPRESSED_*.
+            // Pathological gzip-bomb input has its inner stream
+            // truncated at the cap, after which `serde_json` sees an
+            // `UnexpectedEof` and surfaces TrajectoryError::Io — no
+            // OOM.
+            let mut capped = decoder.take(MAX_DECOMPRESSED_TRAJECTORY_BYTES as u64 + 1);
+            let mut buf = Vec::new();
+            capped
+                .read_to_end(&mut buf)
+                .map_err(|e| TrajectoryError::Io(format!("gzip decode {}: {e}", path.display())))?;
+            if buf.len() > MAX_DECOMPRESSED_TRAJECTORY_BYTES {
+                return Err(TrajectoryError::Io(format!(
+                    "decompressed trajectory exceeds {MAX_DECOMPRESSED_TRAJECTORY_BYTES}-byte cap (got >{} bytes)",
+                    MAX_DECOMPRESSED_TRAJECTORY_BYTES
+                )));
+            }
+            serde_json::from_slice(&buf)
+                .map_err(|e| TrajectoryError::Io(format!("deserialise: {e}")))?
+        } else {
+            let bytes = std::fs::read(path)
+                .map_err(|e| TrajectoryError::Io(format!("read {}: {e}", path.display())))?;
+            serde_json::from_slice(&bytes)
+                .map_err(|e| TrajectoryError::Io(format!("deserialise: {e}")))?
+        };
         t.validate()?;
         Ok(t)
     }
@@ -667,5 +834,119 @@ mod tests {
         assert_eq!(v2.steps[0].action_id, 3);
         assert_eq!(v2.obs_dim, 8);
         assert_eq!(v2.action_count, 4);
+    }
+
+    // ---------------- gzip compression tests (Track 4) ----------------
+
+    fn populated_traj(obs_dim: usize, action_count: u32, num_steps: usize) -> TrajectoryV2 {
+        let mut t = empty_traj(obs_dim, action_count);
+        for i in 0..num_steps {
+            t.push(make_step(obs_dim, action_count, 0, i as f32))
+                .unwrap();
+        }
+        t.finalize("2026-01-01T00:00:01Z");
+        t
+    }
+
+    #[test]
+    fn save_json_gz_then_load_json_roundtrips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ep-1.json.gz");
+        let original = populated_traj(4, 2, 5);
+        original
+            .save_json_gz(&path, TrajectoryGzipLevel::default())
+            .unwrap();
+        let back = TrajectoryV2::load_json(&path).unwrap();
+        assert_eq!(back.steps.len(), original.steps.len());
+        assert_eq!(back.episode_id, original.episode_id);
+        assert_eq!(back.obs_dim, original.obs_dim);
+        assert_eq!(back.action_count, original.action_count);
+    }
+
+    #[test]
+    fn load_json_auto_detects_gzip_by_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let json_path = dir.path().join("ep-a.json");
+        let gz_path = dir.path().join("ep-a.json.gz");
+        let traj = populated_traj(2, 2, 3);
+        traj.save_json(&json_path).unwrap();
+        traj.save_json_gz(&gz_path, TrajectoryGzipLevel::default())
+            .unwrap();
+
+        let from_json = TrajectoryV2::load_json(&json_path).unwrap();
+        let from_gz = TrajectoryV2::load_json(&gz_path).unwrap();
+        assert_eq!(from_json.steps.len(), from_gz.steps.len());
+        assert_eq!(from_json.episode_id, from_gz.episode_id);
+        for (a, b) in from_json.steps.iter().zip(from_gz.steps.iter()) {
+            assert_eq!(a.obs, b.obs);
+            assert_eq!(a.action_id, b.action_id);
+            assert!((a.reward - b.reward).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn load_json_gz_with_corrupt_bytes_returns_io_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("corrupt.json.gz");
+        // Random non-gzip bytes.
+        std::fs::write(&path, b"this is not a gzip stream").unwrap();
+        let err = TrajectoryV2::load_json(&path).unwrap_err();
+        assert!(matches!(err, TrajectoryError::Io(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn load_json_rejects_decompressed_payload_past_cap() {
+        // Build a gzip stream that decompresses to MAX_+1 bytes of
+        // zeros. flate2 compresses zeros aggressively so the on-disk
+        // file is tiny while the cap blocks the decompressed payload.
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bomb.json.gz");
+        let mut encoder = flate2::write::GzEncoder::new(
+            std::fs::File::create(&path).unwrap(),
+            flate2::Compression::default(),
+        );
+        // Write MAX_+1 zero bytes in 1 MB chunks.
+        let chunk = vec![0u8; 1024 * 1024];
+        let mut written = 0usize;
+        while written <= MAX_DECOMPRESSED_TRAJECTORY_BYTES {
+            let n = chunk
+                .len()
+                .min(MAX_DECOMPRESSED_TRAJECTORY_BYTES + 1 - written);
+            encoder.write_all(&chunk[..n]).unwrap();
+            written += n;
+        }
+        encoder.finish().unwrap();
+
+        let err = TrajectoryV2::load_json(&path).unwrap_err();
+        match err {
+            TrajectoryError::Io(msg) => assert!(
+                msg.contains("byte cap") || msg.contains("exceeds"),
+                "got: {msg}"
+            ),
+            other => panic!("expected TrajectoryError::Io, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn gzip_level_custom_rejects_out_of_range() {
+        let bad = TrajectoryGzipLevel::Custom(10);
+        let err = bad.resolve().unwrap_err();
+        assert!(matches!(err, TrajectoryError::Io(_)));
+    }
+
+    #[test]
+    fn gzip_level_named_resolves_to_flate2_compression() {
+        TrajectoryGzipLevel::Named(NamedGzipLevel::Fastest)
+            .resolve()
+            .unwrap();
+        TrajectoryGzipLevel::Named(NamedGzipLevel::Default)
+            .resolve()
+            .unwrap();
+        TrajectoryGzipLevel::Named(NamedGzipLevel::Best)
+            .resolve()
+            .unwrap();
+        TrajectoryGzipLevel::Custom(0).resolve().unwrap();
+        TrajectoryGzipLevel::Custom(9).resolve().unwrap();
     }
 }

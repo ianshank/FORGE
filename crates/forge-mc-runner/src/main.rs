@@ -213,7 +213,8 @@ fn run_dry(
         &config.schema_id,
         obs_dim,
         action_count,
-    );
+    )
+    .with_compression(config.trajectory_compression, config.trajectory_gzip_level);
     let watcher = HotReloadWatcher::new(&config.manifest_path);
 
     let mut runner = Runner::new(config, env, search, writer, watcher);
