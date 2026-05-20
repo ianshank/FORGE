@@ -43,6 +43,7 @@ use forge_agent::latent_mcts::model::LatentForwardModel;
 use forge_agent::latent_mcts::search::{LatentMctsSearch, LatentSearchResult};
 use forge_env::{FlatObsEnv, StepOutput};
 use forge_replay::v2::StepV2;
+use rand_pcg::Pcg64Mcg;
 use tracing::{debug, info, instrument, warn};
 
 use crate::config::RunnerConfig;
@@ -50,6 +51,7 @@ use crate::error::RunnerError;
 use crate::hot_reload::{HotReloadWatcher, ReloadEvent};
 use crate::manifest::ModelManifest;
 use crate::metrics::MetricsRecorder;
+use crate::random_baseline::sample_random_action;
 use crate::trajectory::TrajectoryWriter;
 
 /// Prefix used for the trajectory-file episode identifier (e.g.
@@ -159,6 +161,11 @@ where
     episode_seq: u64,
     last_model_version: Option<u64>,
     reloads_applied: u64,
+    /// Per-runner deterministic RNG used by the random-actions baseline
+    /// branch. Seeded lazily on first use from `config.base_seed`
+    /// (falls back to a wall-clock-derived seed); per-episode mixing
+    /// happens via the episode-seq stir below.
+    random_rng: Option<Pcg64Mcg>,
 }
 
 impl<E: FlatObsEnv, M: LatentForwardModel> Runner<E, M>
@@ -195,6 +202,7 @@ where
             episode_seq: 0,
             last_model_version: None,
             reloads_applied: 0,
+            random_rng: None,
         }
     }
 
@@ -245,6 +253,32 @@ where
     /// Borrow the runner config (read-only).
     pub fn config(&self) -> &RunnerConfig {
         &self.config
+    }
+
+    /// Lazily-initialised RNG for the random-actions baseline branch.
+    ///
+    /// Seed source:
+    ///   * `config.base_seed`           — deterministic across runs
+    ///   * `SystemTime` ns fallback     — non-deterministic but
+    ///     reproducible within a single runner process
+    ///
+    /// Returns `&mut Pcg64Mcg` so the planning branch can call
+    /// `sample_random_action(rng, action_count)` without re-seeding.
+    fn random_rng_mut(&mut self) -> &mut Pcg64Mcg {
+        if self.random_rng.is_none() {
+            let seed: u128 = match self.config.base_seed {
+                Some(s) => u128::from(s).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+                None => {
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_nanos())
+                        .unwrap_or(0xDEAD_BEEF_CAFE_F00D)
+                }
+            };
+            self.random_rng = Some(Pcg64Mcg::new(seed));
+        }
+        self.random_rng.as_mut().expect("just seeded")
     }
 
     /// Consume the runner and return its parts.
@@ -312,16 +346,36 @@ where
         let mut terminated = false;
         let mut truncated = false;
 
+        // Resolve action_count up-front for the random-actions branch.
+        // `FlatObsEnv::num_actions` is the canonical source — every
+        // env impl computes it from its `ActionSpec::discrete_n()`.
+        let action_count = self.env.num_actions();
+
         for tick in 0..max_steps {
             // Plan from the *current* (pre-step) observation.
             // Wall-clock per planning call is recorded into the
             // `forge_mc_planning_latency_seconds` histogram if a
             // metrics recorder is installed.
             let plan_start = std::time::Instant::now();
-            let plan_result = self
-                .search
-                .search(&self.obs_buf)
-                .map_err(|e| RunnerError::Planner(e.to_string()));
+            let plan_result = if self.config.random_actions {
+                // Random-actions baseline: skip MCTS entirely and
+                // sample uniformly from the action space. Returns a
+                // synthetic LatentSearchResult whose `visit_counts`
+                // is a uniform distribution (so the recorded
+                // `policy_target` reflects the random policy) and
+                // `root_value = 0.0`.
+                let rng = self.random_rng_mut();
+                let action = sample_random_action(rng, action_count);
+                Ok(LatentSearchResult {
+                    action,
+                    visit_counts: vec![1; action_count as usize],
+                    root_value: 0.0,
+                })
+            } else {
+                self.search
+                    .search(&self.obs_buf)
+                    .map_err(|e| RunnerError::Planner(e.to_string()))
+            };
             if let Some(rec) = self.metrics.as_ref() {
                 rec.record_planning_latency_seconds(plan_start.elapsed().as_secs_f64());
             }

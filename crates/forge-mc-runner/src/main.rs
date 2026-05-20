@@ -50,6 +50,17 @@ struct Cli {
     /// for `--dry-run`.
     #[arg(long, value_name = "TOML_PATH")]
     mc_config: Option<PathBuf>,
+
+    /// Run with uniformly-random action selection — bypasses MCTS
+    /// entirely. Used by `scripts/mc_capture_baseline.py` to capture
+    /// the untrained-baseline numbers a trained-agent comparison
+    /// hinges on (v0.5 first-real-run plan, T3 + T4).
+    ///
+    /// In live runs, also skips the ONNX bundle load: the runner
+    /// constructs a `RandomLatentModel` purely to satisfy the
+    /// `Runner<E, M: LatentForwardModel>` generic bound.
+    #[arg(long)]
+    random_actions: bool,
 }
 
 fn main() -> ExitCode {
@@ -85,6 +96,16 @@ fn main() -> ExitCode {
     let config = if let Some(path) = cli.mc_config.clone() {
         RunnerConfig {
             mc_env_config_path: Some(path),
+            ..config
+        }
+    } else {
+        config
+    };
+    // `--random-actions` CLI flag is OR-ed with the TOML field so
+    // operators can flip the baseline on without editing runner.toml.
+    let config = if cli.random_actions {
+        RunnerConfig {
+            random_actions: true,
             ..config
         }
     } else {

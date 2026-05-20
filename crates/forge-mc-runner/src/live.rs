@@ -48,6 +48,7 @@ use crate::hot_reload::HotReloadWatcher;
 use crate::manifest::ModelManifest;
 use crate::metrics::MetricsRecorder;
 use crate::onnx_reload::config_from_manifest;
+use crate::random_baseline::RandomLatentModel;
 use crate::runner::{ReloadFn, Runner};
 use crate::trajectory::TrajectoryWriter;
 
@@ -104,7 +105,17 @@ pub fn run_live(cfg: RunnerConfig, metrics: Option<MetricsRecorder>) -> Result<(
         )));
     }
 
-    // 4. Load manifest + resolve bundle dir.
+    // 4. Branch on random_actions BEFORE the ONNX bundle load. In
+    // random-baseline mode the runner never invokes the model, so we
+    // skip the manifest + bundle + ORT session entirely and run the
+    // loop with a `RandomLatentModel` stub for the type-generic
+    // bound.  This lets the v0.5 baseline-capture script run against
+    // a host without ONNX Runtime installed.
+    if cfg.random_actions {
+        return run_live_random(cfg, env, action_count, metrics);
+    }
+
+    // 4'. Load manifest + resolve bundle dir.
     let manifest = ModelManifest::load_json(&cfg.manifest_path).map_err(|e| {
         RunnerError::ConfigLoad(format!(
             "load manifest {}: {e}",
@@ -143,7 +154,7 @@ pub fn run_live(cfg: RunnerConfig, metrics: Option<MetricsRecorder>) -> Result<(
     info!(
         manifest_version = manifest.version,
         bundle_dir = %bundle_dir.display(),
-        "ONNX model loaded"
+        "runner mode: trained (ONNX model loaded)"
     );
     // Stamp the initial model version into the metrics gauge so
     // observers see `forge_mc_model_version >= 1` before the first
@@ -197,6 +208,69 @@ pub fn run_live(cfg: RunnerConfig, metrics: Option<MetricsRecorder>) -> Result<(
     runner = runner.with_reload_fn(reload_fn);
     let outcome = runner.run(None)?;
     info!(?outcome, "live runner finished");
+    Ok(())
+}
+
+/// Random-baseline live-runner branch — no ONNX, no manifest, no
+/// hot-reload. Constructs a `Runner<MinecraftEnv, RandomLatentModel>`
+/// where the runner's planning step samples actions uniformly at
+/// random (gated by `cfg.random_actions`) and the
+/// `RandomLatentModel` exists only to satisfy the type generic.
+///
+/// Used by the v0.5 first-real-run baseline-capture flow (T3/T4)
+/// to produce a calibrated random-policy comparison snapshot for
+/// the trained agent. Returns when the runner reaches its episode
+/// budget or hits a fatal env error.
+fn run_live_random(
+    cfg: RunnerConfig,
+    env: MinecraftEnv,
+    action_count: u32,
+    metrics: Option<MetricsRecorder>,
+) -> Result<(), RunnerError> {
+    info!(
+        action_count,
+        episodes = cfg.episodes,
+        "runner mode: random (no ONNX load, MCTS bypassed)"
+    );
+
+    let obs_dim = env.obs_spec().num_elements();
+    if obs_dim == 0 {
+        return Err(RunnerError::EnvSetup(
+            "MinecraftEnv obs_spec.num_elements() == 0; bot did not advertise an obs_dim".into(),
+        ));
+    }
+
+    // RandomLatentModel uses the resolved latent_dim purely as
+    // a zero-init `LatentState` size when inference is *accidentally*
+    // invoked. The runner's planning branch short-circuits before
+    // we ever call into the model in random mode.
+    let model = RandomLatentModel::new(action_count, cfg.onnx.latent_dim);
+    let mut mcts_cfg = LatentMctsConfig::default();
+    mcts_cfg.base.num_simulations = 0;
+    mcts_cfg.add_exploration_noise = false;
+    let search = LatentMctsSearch::new(model, mcts_cfg);
+
+    let writer = TrajectoryWriter::new(
+        &cfg.trajectory_dir,
+        &cfg.env_id,
+        &cfg.schema_id,
+        obs_dim,
+        action_count,
+    )
+    .with_compression(cfg.trajectory_compression, cfg.trajectory_gzip_level);
+
+    let watcher = HotReloadWatcher::new(&cfg.manifest_path);
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    if let Some(rec) = metrics {
+        // Stamp a constant `model_version=0` gauge so Prometheus
+        // observers see the random-baseline run as a distinct "zero"
+        // version from any trained-mode run that bumped > 0.
+        rec.set_model_version(0);
+        runner = runner.with_metrics(rec);
+    }
+    let outcome = runner.run(None)?;
+    info!(?outcome, "live runner (random baseline) finished");
     Ok(())
 }
 

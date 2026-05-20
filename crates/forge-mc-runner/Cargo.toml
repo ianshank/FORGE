@@ -39,6 +39,8 @@ axum = "0.7"
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
 prometheus = "0.13"
+rand = { workspace = true }
+rand_pcg = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -169,6 +169,23 @@ pub struct RunnerConfig {
     /// `into_reload_fn`. See [`OnnxRuntimeConfig`].
     #[serde(default)]
     pub onnx: OnnxRuntimeConfig,
+
+    /// When `true`, the runner samples actions uniformly at random
+    /// from `0..action_count` instead of asking the MCTS planner.
+    /// Used by `scripts/mc_capture_baseline.py` to capture the
+    /// untrained-baseline numbers a trained-agent comparison
+    /// hinges on (v0.5 first-real-run plan, T3 + T4).
+    ///
+    /// Bypasses MCTS entirely — see
+    /// [`crate::random_baseline`] for why uniform priors through
+    /// MCTS don't produce uniform action selection.
+    ///
+    /// In live runs, setting this `true` also lets the runner skip
+    /// the ONNX bundle load (the model never runs). The runner
+    /// constructs a [`crate::random_baseline::RandomLatentModel`]
+    /// purely to satisfy the type-generic bound on `Runner<E, M>`.
+    #[serde(default)]
+    pub random_actions: bool,
 }
 
 /// ONNX Runtime invariants the runner carries across reloads. These
@@ -266,6 +283,7 @@ impl Default for RunnerConfig {
             dry_run: DryRunConfig::default(),
             mc_env_config_path: None,
             onnx: OnnxRuntimeConfig::default(),
+            random_actions: false,
         }
     }
 }
@@ -384,6 +402,25 @@ mod tests {
         assert!(!cfg.metrics_disabled());
         assert_eq!(cfg.episodes, 1);
         assert_eq!(cfg.action_repeat, 1);
+    }
+
+    #[test]
+    fn random_actions_default_is_false() {
+        // Backwards-compat pin: existing TOMLs without `random_actions`
+        // must continue to route planning through MCTS.
+        let cfg = RunnerConfig::default();
+        assert_eq!(cfg.random_actions, false);
+    }
+
+    #[test]
+    fn random_actions_parses_from_partial_toml() {
+        let toml_src = r#"
+            env_id = "minecraft"
+            schema_id = "abc"
+            random_actions = true
+        "#;
+        let cfg: RunnerConfig = toml::from_str(toml_src).unwrap();
+        assert!(cfg.random_actions);
     }
 
     #[test]
