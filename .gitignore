@@ -142,10 +142,23 @@ playwright-report/
 replays/minecraft/
 replay_buffer/minecraft/
 trajectories/
+_smoke_traj/
+# Compose-stack operator state (Phase 6).
+# - docker/compose.minecraft.env  : operator-edited env file (NEVER commit;
+#                                   may contain MC_EULA acceptance or
+#                                   tokens). The .example sibling is
+#                                   tracked.
+# - minecraft-server-data/        : default compose volume for the
+#                                   itzg/minecraft-server world data
+docker/compose.minecraft.env
+minecraft-server-data/
 # Atomic-save .tmp siblings — should never persist past a successful write
 # but pin in .gitignore so a crashed save during dev doesn't get committed.
 **/.*.json.tmp
 **/.model_manifest.json.tmp
+**/.tmp-*.manifest
+# Tarpaulin / coverage CI side-effects within the runner crate
+crates/forge-mc-runner/cobertura.xml
 # mc-bot npm install output (covered by node_modules/ above, pinned for grep)
 mc-bot/node_modules/
 # mc-bot iteration debris — NEVER commit screenshots from a private MC world

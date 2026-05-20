@@ -56,6 +56,23 @@ pub enum RunnerError {
     /// validation and saving.
     #[error("trajectory error: {0}")]
     Trajectory(#[from] forge_replay::v2::TrajectoryError),
+
+    /// Wrapped error from a [`forge_env::Env`] implementation. The
+    /// concrete env error is `Send + Sync + 'static + std::error::Error`
+    /// but is not nameable from this crate, so we collapse to its
+    /// `Display` form. Callers wanting structured access should keep
+    /// their own copy.
+    #[error("env error: {0}")]
+    Env(String),
+
+    /// Wrapped error from the latent-MCTS planner (`anyhow::Error` from
+    /// `forge_agent::latent_mcts::search::LatentMctsSearch::search`).
+    #[error("planner error: {0}")]
+    Planner(String),
+
+    /// Reload callback returned an error.
+    #[error("model reload failed: {0}")]
+    Reload(String),
 }
 
 impl RunnerError {

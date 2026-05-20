@@ -86,8 +86,9 @@ StepResult (forge-types)  -->  Observations + Rewards
 | `forge-env` | (this file §Env-trait crates) | Env Abstractor — generic `Env` / `FlatObsEnv` traits with buffer-filling reset/step, zero FORGE deps |
 | `forge-env-forge` | (this file §Env-trait crates) | FORGE Shim — single-agent `Env` impl over `WorldState` for backwards-compat |
 | `forge-env-mc` | (this file §Env-trait crates) | Minecraft Bridge — sync WebSocket client to mc-bot, JSON protocol v1 |
-| `forge-mc-runner` | `crates/forge-mc-runner/Agent.md` | Runner Foundation — `RunnerConfig`, `ModelManifest`, `HotReloadWatcher`, `TrajectoryWriter` for Phase 4 episode loops |
-| `mc-bot/` | `mc-bot/README.md` | Node Bridge — mineflayer + prismarine-viewer + reward registry |
+| `forge-mc-runner` | `crates/forge-mc-runner/Agent.md` | Runner — `Runner<E,M>` episode loop + `LatentPlanner` + binary + the Phase-4 foundation modules (`RunnerConfig`, `ModelManifest`, `HotReloadWatcher`, `TrajectoryWriter`) |
+| `python/forge/training/muzero_mc/` | this file §Env-trait crates | Trainer Glue — Python `ModelManifest` mirror, `TrajectoryV2` JSONL reader, random-init ONNX bootstrap, `bootstrap`/`validate-manifest` CLI |
+| `mc-bot/` | `mc-bot/README.md` | Node Bridge — mineflayer + prismarine-viewer + reward registry; lint via Biome (`biome.json`) |
 
 ### Env-Trait Crates (Minecraft RL integration)
 
@@ -119,15 +120,44 @@ Added on the `claude/minecraft-rl-agent-integration-xnJjt` branch.
   regression gates pinned at `587b1307…` for actions and
   `451b10f9…` for rewards). `SCHEMA_VERSION = 1` pinned on both
   sides via paired `xlang_schema_version_*` tests.
-- **`forge-mc-runner`** — Phase 4 runner foundation (skeleton,
-  2026-05-17). Four modules: `RunnerConfig` (TOML, validate),
-  `ModelManifest` (atomic save, sha256-per-role, monotonic version,
-  pinned schema), `HotReloadWatcher` (between-episode poll-only
-  contract, strictly-monotonic version bumps, no downgrade),
-  `TrajectoryWriter` (episode-scoped wrapper over
-  `forge_replay::v2::TrajectoryV2`, atomic JSON save). The full
-  `Runner<E: FlatObsEnv, M: LatentForwardModel>` episode loop ships
-  in a follow-up — every dependency is testable in isolation now.
+- **`forge-mc-runner`** — Phase-4 runner. The four foundation modules
+  landed in PR #56: `RunnerConfig` (TOML, validate), `ModelManifest`
+  (atomic save, sha256-per-role, monotonic version, pinned schema),
+  `HotReloadWatcher` (between-episode poll-only contract,
+  strictly-monotonic version bumps, no downgrade), `TrajectoryWriter`
+  (episode-scoped wrapper over `forge_replay::v2::TrajectoryV2`,
+  atomic JSON save). The full episode loop landed on
+  `feat/mc-phase4-runner-loop` (2026-05-20): `Runner<E: FlatObsEnv,
+  M: LatentForwardModel>` drives reset → plan → step → record →
+  finalize with `std::mem::swap`-based zero-per-step-alloc obs
+  buffers, opt-in `ReloadFn<M>` callback applied strictly between
+  episodes via the new `LatentMctsSearch::model_mut()` accessor, and
+  a clap CLI binary (`--dry-run`, `--config`, `--episodes`). 55 unit
+  + 3 integration + 2 foundation-integration tests; the
+  `forge-mc-runner-bin` CI job runs `--dry-run --episodes 1` on
+  every push.
+- **`python/forge/training/muzero_mc/`** — Python side of the Phase-4
+  hot-reload loop and Phase-5 bootstrap. `manifest.py` mirrors the
+  Rust `ModelManifest` byte-for-byte (atomic `.tmp-*.manifest` +
+  `os.replace`); `replay.py` streams `TrajectoryV2` JSONL into
+  `StepBatch` minibatches with lazy `torch.tensor` conversion;
+  `bootstrap.py` reuses the existing `MuZeroExporter` /
+  `MuZeroWorldModel` to write a random-init ONNX bundle plus
+  versioned manifest the runner picks up cold. `cli.py` exposes
+  `bootstrap` + `validate-manifest` subcommands. Optional deps
+  (`torch`, `onnx`, `onnxruntime`) live under
+  `[project.optional-dependencies] minecraft`. 38 tests, mypy strict
+  clean, ruff clean.
+- **`docker/compose.minecraft.yml`** + **`docker/mc-bot.Dockerfile`** +
+  **`scripts/mc_run.sh`** — Phase-6 end-to-end orchestration. Three
+  services (Minecraft / mc-bot / runner) wired together by an
+  env-driven compose file; multi-arch image build via BuildKit;
+  EULA is opt-in via env var, never baked into the image; the
+  orchestration script supports `--dry-run`, `--build`, `--detach`,
+  `--down`, `--env-file`, `--service`. `examples/minecraft/
+  quickstart.md` is the operator walkthrough. CI gains `mc-bot-test`
+  (Biome + node:test) and `forge-mc-runner-bin` (`--dry-run` smoke)
+  jobs.
 
 ## Build & Test
 

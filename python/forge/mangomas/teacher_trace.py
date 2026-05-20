@@ -227,12 +227,11 @@ class TeacherTraceReader:
     def _read_file(self, path: Path) -> Any:
         import gzip
 
-        # mypy can't unify the signatures of gzip.open and the builtin open
-        # under a single ternary expression (their `mode` overloads differ),
-        # so we suppress the `[operator]` complaint on the call site rather
-        # than introducing a dummy adapter just to satisfy the stubs.
+        # gzip.open and the builtin open have different `mode` overload
+        # signatures, but the ternary picks one shape per call so mypy is
+        # happy without an explicit annotation.
         opener = gzip.open if path.suffix == ".gz" else open
-        with opener(path, "rt", encoding="utf-8") as f:  # type: ignore[operator]
+        with opener(path, "rt", encoding="utf-8") as f:
             for raw_line in f:
                 line = raw_line.strip()
                 if not line:

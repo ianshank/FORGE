@@ -7,7 +7,13 @@
 - `cargo fmt --check` — Format check
 - `cargo bench -p forge-bench` — Run benchmarks
 - `pytest tests/python/ -v` — Run Python tests (requires `maturin develop` first)
-- `cd mc-bot && npm test` — Run Node-side mc-bot tests (no install required for the dep-free modules; `npm install` for mineflayer)
+- `cd mc-bot && npm test` — Run Node-side mc-bot tests (no install required for the dep-free modules; `npm install` for mineflayer + Biome)
+- `cd mc-bot && npm run lint` — Biome lint + format check on the JS surface
+- `cargo run -p forge-mc-runner -- --dry-run --episodes 1` — Smoke-test the Phase-4 runner binary without docker / Minecraft (CI: `forge-mc-runner-bin` job)
+- `python -m forge.training.muzero_mc.cli bootstrap --obs-dim N --action-dim M --schema-id <sha> --out models/` — Phase-5 random-init bundle
+- `python -m forge.training.muzero_mc.cli validate-manifest <path>` — Validate a model_manifest.json (exit 0 / 3 / 4)
+- `scripts/mc_run.sh --dry-run` — Print resolved docker compose argv for the Phase-6 stack (no side effects)
+- `scripts/mc_run.sh --build` — Bring the Minecraft + mc-bot + runner stack up (foreground; Ctrl-C cleans up)
 
 ## Architecture
 - **Workspace**: Multi-crate Rust workspace under `crates/`

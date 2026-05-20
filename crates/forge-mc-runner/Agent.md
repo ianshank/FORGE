@@ -2,30 +2,27 @@
 
 ## Persona
 
-You are the **Runner Foundation** — the building blocks of the Phase 4
-episode-runner crate for the FORGE Minecraft RL integration. You do
-not yet ship a runnable `Runner<E, M>` loop; you ship the four
-self-contained modules that the loop will assemble:
+You are the **Runner** — the Phase-4 episode driver and the four
+foundation modules it sits on top of. Two layers:
 
-| Module | Role |
-|---|---|
-| `config::RunnerConfig` | TOML-driven knobs for the episode loop |
-| `manifest::ModelManifest` | The `model_manifest.json` swap signal |
-| `hot_reload::HotReloadWatcher` | Between-episode version-bump poller |
-| `trajectory::TrajectoryWriter` | Episode-scoped `TrajectoryV2` writer |
+| Layer | Modules | Status |
+|---|---|---|
+| Runner loop + binary | `runner::Runner<E,M>`, `main.rs` (clap CLI), `EpisodeOutcome`, `RunnerOutcome`, `ReloadFn<M>` | Landed `2026-05-20` (commit `b1cc7f8`) |
+| Foundation | `config::RunnerConfig`, `manifest::ModelManifest`, `hot_reload::HotReloadWatcher`, `trajectory::TrajectoryWriter` | Landed PR #56 |
 
-Each module is independently testable; together they compose into the
-foundation that `forge-mc-runner`'s eventual `main()` will glue into a
-working `Runner`. Every interface here is **stable** — the upcoming
-`Runner` PR adds new types but does not break the four below.
+The Runner stitches the four foundation modules together with the
+existing `forge-env::FlatObsEnv` trait and `forge-agent::latent_mcts::
+LatentMctsSearch` to drive episodes end-to-end. Every interface is
+**stable**: the foundation modules' public API is unchanged from PR #56;
+the new Runner / binary / `ReloadFn` types are purely additive.
 
-## Why the foundation ships before the loop
+## Why the loop landed after the foundation
 
-The runner-side and trainer-side wire formats need to stop diverging
-before either side can integrate. Landing the manifest schema and
-trajectory writer first lets `python/forge/training/muzero_mc/
-exporter.py` and the future Rust runner be developed in parallel
-against a pinned contract.
+The runner-side and trainer-side wire formats stabilised first
+(`ModelManifest`, `TrajectoryV2`) so `python/forge/training/muzero_mc/`
+and the runner could be developed in parallel against a pinned
+contract. The loop now consumes those contracts without modifying
+them.
 
 ## Module-by-module contract
 
@@ -100,40 +97,96 @@ A single `RunnerError` enum spans every failure mode:
 `io(path, source)` helper preserves the path so log messages always
 identify the file that broke.
 
-## What's deliberately NOT here
+## Runner — the loop on top of the foundation
 
-- `Runner<E: FlatObsEnv, M: LatentForwardModel>` — the actual episode
-  loop. Follow-up PR; will compose the four modules above.
-- `LatentPlanner` adapter around `LatentMctsSearch` — produces
-  `(action, policy_target, value_target)` triples for `TrajectoryWriter`.
-- `OnnxMuZeroModel::reload()` — additive method on
+- `Runner<E: FlatObsEnv, M: LatentForwardModel>` owns the env, the
+  `LatentMctsSearch`, the `TrajectoryWriter`, the `HotReloadWatcher`,
+  the `ReloadFn` callback (optional), and two pre-allocated obs
+  buffers swapped via `std::mem::swap` at the end of every step
+  (zero per-step alloc on the hot path).
+- `run_episode()` drives one episode: `writer.start_episode → env.reset_into → loop { search.search → env.step_into × action_repeat → writer.record_step → swap obs ↔ step_out.obs } → writer.finalize_and_save`. Visit counts are normalised
+  (via the internal `normalize_visits` helper) into the policy target
+  `StepV2.policy_target`; `LatentSearchResult.root_value` becomes the
+  `value_target`. Runner-side truncation when `steps == max_steps`.
+- `run(max_episodes)` polls the watcher at the top of every iteration
+  (strictly between episodes, plan §3.4). On a `ReloadEvent` the
+  runner takes `self.search.model_mut()` and invokes the installed
+  `ReloadFn` — the borrow checker prevents this colliding with a
+  live `search()` borrow because `search()` takes `&self`.
+- `with_reload_fn(reload_fn)` is the builder hook. Without a callback
+  the watcher still records `last_model_version` and increments
+  `reloads_applied`, but the model is left untouched (useful for
+  smoke testing or for envs whose models don't support reload, like
+  `StubLatentModel` in tests).
+- `prime_watcher_with(version)` suppresses the initial reload against
+  an already-bootstrapped manifest.
+
+## Binary — `forge-mc-runner`
+
+- clap CLI: `--config <TOML>`, `--episodes <n>`, `--dry-run`,
+  `--log-level`.
+- `--dry-run` constructs an in-process stub env + `StubLatentModel`
+  via the `dry_run::StubEnv` module so the loop can be smoke-tested
+  without docker or a Minecraft server. The CI job
+  `forge-mc-runner-bin` runs `--dry-run --episodes 1` on every push.
+- Live wiring against `forge-env-mc::MinecraftEnv` and
+  `OnnxMuZeroModel` is the next follow-up. Without it the binary
+  exits with code 64 and a clear error.
+
+## Additive `RunnerError` variants (loop-land)
+
+| Variant | When |
+|---|---|
+| `Env(String)` | Wrapped `forge_env::Env::Error` from the underlying env (Display form — concrete type isn't nameable from this crate) |
+| `Planner(String)` | Wrapped anyhow error from `LatentMctsSearch::search` |
+| `Reload(String)` | The installed reload callback returned an error |
+
+## What's deliberately still NOT here
+
+- `OnnxMuZeroModel::reload()` impl — additive method on
   `crates/forge-agent/src/latent_mcts/onnx_model.rs` with fixed
-  mutex-acquisition order. Lives in `forge-agent`, not here.
-- Prometheus `/metrics` HTTP endpoint — `metrics_port` is wired but
-  the server itself ships with the runner main.
+  mutex-acquisition order (representation → dynamics → prediction).
+  Lives in `forge-agent`, not here. Phase-4 deferred follow-up.
+- Live `MinecraftEnv` + `OnnxMuZeroModel` wiring in `main.rs` — the
+  binary's non-dry-run path currently exits 64. Will land alongside
+  the ONNX reload impl.
+- Prometheus `/metrics` HTTP endpoint — `metrics_port` is wired in
+  `RunnerConfig` but the server itself ships with a separate
+  Phase-6 follow-up.
 
 ## Test layout
 
-- `src/*.rs` — per-module `#[cfg(test)] mod tests` blocks (42 tests).
-- `tests/foundation_integration.rs` — 2 end-to-end tests proving the
-  four modules compose under the lifecycle the eventual `Runner` will
-  drive (TOML load → two episodes → between-episode manifest bump →
-  trajectory round-trip → schema_id drift detection).
+- `src/runner.rs` — 13 unit tests (normalize_visits, run_episode,
+  run, reload callback semantics, prime_watcher_with, no-callback
+  recording, callback-error propagation, between-episode-poll
+  contract).
+- `src/config.rs|manifest.rs|hot_reload.rs|trajectory.rs` — per-module
+  `#[cfg(test)] mod tests` blocks (42 tests, unchanged from PR #56).
+- `tests/runner_integration.rs` — 3 end-to-end tests exercising the
+  public API only: manifest bump v1 → v2 with trajectory round-trip,
+  reload-callback error propagation, and zero-sim degenerate
+  uniform-policy fallback.
+- `tests/foundation_integration.rs` — 2 foundation integration tests
+  unchanged from PR #56.
 
 ## Build & test
 
 | Command | Purpose |
 |---|---|
-| `cargo build -p forge-mc-runner` | Build the crate |
+| `cargo build -p forge-mc-runner` | Build the crate (lib + bin) |
 | `cargo test -p forge-mc-runner` | All unit + integration tests |
 | `cargo clippy -p forge-mc-runner --all-targets -- -D warnings` | Lint |
 | `cargo bench -p forge-bench --bench latent_mcts_inference` | Companion bench (lives in forge-bench) |
+| `cargo run -p forge-mc-runner -- --dry-run --episodes 1` | Smoke-test the binary end-to-end without docker |
 
 ## Related docs
 
-- `docs/architecture.md` §3.10.1 — C4-style component diagram for
-  the runner foundation.
-- `docs/plans/minecraft_rl_integration_plan_v2.md` Phase 4 — the
-  full plan the foundation is built against.
-- `docs/next_steps.md` Phase 4 — what's landed vs. follow-up.
-- `CHANGELOG.md` "Phase 4 foundation" entry — per-module summary.
+- `docs/architecture.md` §3.10.1 (foundation), §3.10.2 (runner loop +
+  binary), §3.10.3 (Python `muzero_mc`), §3.10.4 (Phase-6
+  orchestration) — C4-style component diagrams.
+- `docs/plans/minecraft_rl_integration_plan_v2.md` Phase 4–6 — the
+  full plan the runner is built against.
+- `docs/next_steps.md` Phase 4 / 5 / 6 — what's landed vs. follow-up.
+- `CHANGELOG.md` "Phase 4 — Runner<E,M> episode loop" + "Phase 5 —
+  Python muzero_mc" + "Phase 6 — Compose stack + mc-bot CI" entries.
+- `examples/minecraft/quickstart.md` — operator walkthrough.
