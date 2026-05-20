@@ -32,10 +32,12 @@ pub mod config;
 pub mod error;
 pub mod hot_reload;
 pub mod manifest;
+pub mod runner;
 pub mod trajectory;
 
 pub use config::RunnerConfig;
 pub use error::RunnerError;
 pub use hot_reload::{HotReloadWatcher, ReloadEvent};
 pub use manifest::{ModelFileEntry, ModelManifest, ModelManifestFiles, MANIFEST_SCHEMA_VERSION};
+pub use runner::{EpisodeOutcome, ReloadFn, Runner, RunnerOutcome};
 pub use trajectory::TrajectoryWriter;

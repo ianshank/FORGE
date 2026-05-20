@@ -143,6 +143,23 @@ impl<M: LatentForwardModel> LatentMctsSearch<M> {
         Self { model, config }
     }
 
+    /// Borrow the underlying model immutably (for introspection — number
+    /// of actions, etc.).
+    pub fn model(&self) -> &M {
+        &self.model
+    }
+
+    /// Borrow the underlying model mutably.
+    ///
+    /// Intended use is between-episode hot-reload by the runner. The
+    /// `&mut self` requirement here is what enforces "not during a
+    /// search": [`search`](Self::search) takes `&self`, so callers
+    /// cannot hold a live search borrow while also asking for a mutable
+    /// model borrow.
+    pub fn model_mut(&mut self) -> &mut M {
+        &mut self.model
+    }
+
     /// Run MCTS search from an observation and return the best action.
     ///
     /// # Arguments
