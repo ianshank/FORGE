@@ -1,0 +1,49 @@
+# GPU overlay for the v0.4 self-improving Minecraft stack.
+#
+# Invoked alongside the base file:
+#
+#     docker compose \
+#       -f docker/compose.minecraft.yml \
+#       -f docker/compose.minecraft.gpu.yml \
+#       --profile self-play \
+#       up
+#
+# (`scripts/mc_self_play.sh --gpu` does this for you.)
+#
+# Adds an `nvidia` device reservation to the `trainer` service so
+# PyTorch can pick up the host GPU. Requires:
+#
+#   - nvidia-container-toolkit installed on the host
+#   - `docker compose` >= v2.20 (older versions silently ignore
+#     `deploy.resources.reservations.devices`)
+#
+# Verify with `docker compose version` BEFORE bringing the stack
+# up; `mc_self_play.sh --gpu` does the preflight automatically.
+#
+# Does NOT change the runner or mc-bot services — they remain CPU-
+# bound. Only the trainer benefits from GPU; ONNX inference in the
+# runner stays on CPU (the `ort` Rust crate defaults to CPU and the
+# runner's `OnnxRuntimeConfig.num_threads` is the only knob).
+
+services:
+  trainer:
+    # Pass-through to enable CUDA inside the container. The image
+    # built with `--build-arg TORCH_VARIANT=cu121` picks up the GPU
+    # automatically once the device reservation is in place.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${TRAINER_GPU_COUNT:-1}
+              capabilities: [gpu]
+    environment:
+      # Force the trainer to pick `cuda` instead of `cpu` when this
+      # overlay is in effect. Operators can still override via the
+      # base .env file if they want `auto` (which is identical here
+      # since the GPU is now visible).
+      TRAINER_DEVICE: ${TRAINER_DEVICE:-cuda}
+      # Helpful diagnostic — surface the device list at trainer
+      # startup so operators don't have to shell into the container
+      # to confirm CUDA worked.
+      NVIDIA_VISIBLE_DEVICES: ${TRAINER_GPU_DEVICES:-all}
