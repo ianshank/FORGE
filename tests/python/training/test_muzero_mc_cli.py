@@ -10,8 +10,12 @@ which gates on ``torch`` availability via
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 — used as a runtime fixture type.
+from typing import TYPE_CHECKING
 
 from forge.training.muzero_mc.cli import EXIT_IO, EXIT_OK, EXIT_VALIDATION, main
+
+if TYPE_CHECKING:
+    import pytest
 from forge.training.muzero_mc.manifest import (
     MANIFEST_FILENAME,
     MANIFEST_SCHEMA_VERSION,
@@ -76,14 +80,14 @@ def test_validate_manifest_schema_drift_returns_validation_error(tmp_path: Path)
     assert rc == EXIT_VALIDATION
 
 
-def test_build_parser_has_all_three_subcommands() -> None:
+def test_build_parser_has_all_four_subcommands() -> None:
     from forge.training.muzero_mc.cli import build_parser
 
     parser = build_parser()
     # argparse's sub-parser registry lives under _subparsers (private
     # but stable since Python 3.0). Reach into it to assert every
     # subcommand is registered without invoking them. Uses an equality
-    # comparison (not `<=`) so a future deletion of `train` fails
+    # comparison (not `<=`) so a future deletion of any subcommand fails
     # this test rather than silently passing.
     sub_actions = [
         a for a in parser._actions if hasattr(a, "choices") and a.choices and "bootstrap" in a.choices
@@ -91,7 +95,75 @@ def test_build_parser_has_all_three_subcommands() -> None:
     assert sub_actions, "no subparser action found"
     raw_choices = sub_actions[0].choices
     assert raw_choices is not None
-    assert set(raw_choices) == {"bootstrap", "validate-manifest", "train"}
+    assert set(raw_choices) == {
+        "bootstrap",
+        "validate-manifest",
+        "train",
+        "compute-schema-id",
+    }
+
+
+def test_compute_schema_id_prints_hash_quiet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Happy path: `compute-schema-id --quiet` loads two TOMLs and
+    prints ONLY the 64-hex sha256 to stdout (stderr-bound logs).
+    """
+    am_path = tmp_path / "action_map.toml"
+    am_path.write_text(
+        '[[action]]\nid = 0\nkind = "noop"\nticks = 1\n', encoding="utf-8"
+    )
+    rw_path = tmp_path / "rewards.toml"
+    rw_path.write_text(
+        '[[reward]]\nkind = "survival"\nvalue = 0.01\n', encoding="utf-8"
+    )
+    rc = main(
+        [
+            "compute-schema-id",
+            "--action-map",
+            str(am_path),
+            "--rewards",
+            str(rw_path),
+            "--quiet",
+        ]
+    )
+    assert rc == EXIT_OK
+    captured = capsys.readouterr()
+    hash_line = captured.out.strip()
+    assert len(hash_line) == 64
+    assert all(c in "0123456789abcdef" for c in hash_line)
+
+
+def test_compute_schema_id_missing_action_map_returns_io(tmp_path: Path) -> None:
+    rw_path = tmp_path / "rewards.toml"
+    rw_path.write_text(
+        '[[reward]]\nkind = "survival"\nvalue = 0.01\n', encoding="utf-8"
+    )
+    rc = main(
+        [
+            "compute-schema-id",
+            "--action-map",
+            str(tmp_path / "missing.toml"),
+            "--rewards",
+            str(rw_path),
+        ]
+    )
+    assert rc == EXIT_IO
+
+
+def test_compute_schema_id_missing_rewards_returns_io(tmp_path: Path) -> None:
+    am_path = tmp_path / "action_map.toml"
+    am_path.write_text('[[action]]\nid = 0\nkind = "noop"\n', encoding="utf-8")
+    rc = main(
+        [
+            "compute-schema-id",
+            "--action-map",
+            str(am_path),
+            "--rewards",
+            str(tmp_path / "missing.toml"),
+        ]
+    )
+    assert rc == EXIT_IO
 
 
 def test_train_subcommand_requires_input_dir(tmp_path: Path) -> None:

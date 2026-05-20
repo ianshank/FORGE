@@ -108,6 +108,10 @@ services:
       FORGE_MC_BOT_URL: ws://mc-bot:${MC_BOT_WS_PORT:-8765}
       FORGE_MC_RUNNER_EPISODES: ${RUNNER_EPISODES:-10}
       FORGE_MC_RUNNER_CONFIG: /app/configs/runner.toml
+      # v0.4: env-var ladder lets `mc_self_play.sh` propagate the
+      # freshly-computed schema_id without patching the static
+      # runner.toml. See `RunnerConfig::with_env_var_overrides`.
+      FORGE_MC_SCHEMA_ID: ${FORGE_MC_SCHEMA_ID:-}
       RUST_LOG: ${RUST_LOG:-forge_mc_runner=info,forge_env_mc=info,forge_agent=info}
     volumes:
       - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
@@ -116,5 +120,85 @@ services:
     command:
       - "--config"
       - "/app/configs/runner.toml"
+
+  # v0.4 self-improving loop: trainer service. Under `profiles:
+  # ["self-play"]` so default `mc_run.sh` invocations stay unchanged
+  # — existing v0.3-pre operators see ZERO behavioural change.
+  trainer:
+    build:
+      context: ..
+      dockerfile: docker/trainer.Dockerfile
+      args:
+        TORCH_VARIANT: ${TRAINER_TORCH_VARIANT:-cpu}
+    image: ${TRAINER_IMAGE:-forge-mc-trainer:dev}
+    container_name: forge-mc-trainer
+    profiles: ["self-play"]
+    restart: ${TRAINER_RESTART_POLICY:-on-failure}
+    depends_on:
+      runner:
+        condition: service_started
+    environment:
+      TRAINER_DEVICE: ${TRAINER_DEVICE:-cpu}
+      TRAINER_ROUND_ITERS: ${TRAINER_ROUND_ITERS:-10}
+      TRAINER_POLL_SLEEP: ${TRAINER_POLL_SLEEP:-5}
+      TRAINER_MAX_TRAJECTORIES: ${TRAINER_MAX_TRAJECTORIES:-200}
+      TRAINER_MAX_BUNDLE_VERSIONS: ${TRAINER_MAX_BUNDLE_VERSIONS:-5}
+      TRAINER_EXPORT_EVERY: ${TRAINER_EXPORT_EVERY:-10}
+      TRAINER_SCHEMA_ID: ${FORGE_MC_SCHEMA_ID:-}
+      TRAINER_OBS_DIM: ${TRAINER_OBS_DIM:-31}
+      TRAINER_ACTION_DIM: ${TRAINER_ACTION_DIM:-12}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
+      - ${MODELS_DIR:-../models}:/app/models
+      # Trajectory mount is rw because the trainer's
+      # `_trim_replay_buffer` (T4) unlinks oldest-by-mtime files
+      # when `max_trajectories` is set. The runner is the SOLE
+      # writer of new files; the trainer is the SOLE deleter of
+      # old files; the in-process newest-N floor guards against
+      # the trainer racing the runner's in-flight write.
+      - ${TRAJECTORIES_DIR:-../trajectories}:/app/trajectories
+    command:
+      - "python"
+      - "-u"
+      - "-m"
+      - "forge.training.muzero_mc.cli"
+      - "train"
+      - "--continuous"
+      - "--input=/app/trajectories"
+      - "--out=/app/models"
+      - "--schema-id=${FORGE_MC_SCHEMA_ID:-unset}"
+      - "--obs-dim=${TRAINER_OBS_DIM:-31}"
+      - "--action-dim=${TRAINER_ACTION_DIM:-12}"
+      - "--device=${TRAINER_DEVICE:-cpu}"
+      - "--round-iters=${TRAINER_ROUND_ITERS:-10}"
+      - "--round-poll-sleep=${TRAINER_POLL_SLEEP:-5}"
+      - "--max-trajectories=${TRAINER_MAX_TRAJECTORIES:-200}"
+      - "--max-bundle-versions=${TRAINER_MAX_BUNDLE_VERSIONS:-5}"
+      - "--export-every=${TRAINER_EXPORT_EVERY:-10}"
+
+  # One-shot bootstrap container — invoked by `mc_self_play.sh` via
+  # `docker compose run --rm trainer-bootstrap bootstrap ...` to
+  # produce the initial random-init ONNX bundle + manifest before
+  # the runner starts. Resolves the bootstrap chicken-and-egg
+  # (operator host needs torch to run bootstrap locally; this
+  # container has it).
+  trainer-bootstrap:
+    build:
+      context: ..
+      dockerfile: docker/trainer.Dockerfile
+      args:
+        TORCH_VARIANT: ${TRAINER_TORCH_VARIANT:-cpu}
+    image: ${TRAINER_IMAGE:-forge-mc-trainer:dev}
+    container_name: forge-mc-trainer-bootstrap
+    profiles: ["self-play"]
+    # No `restart` policy — one-shot.
+    volumes:
+      - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    # Default command is a no-op; `mc_self_play.sh` overrides with
+    # `compute-schema-id` or `bootstrap` argv.
+    entrypoint: ["python", "-u", "-m", "forge.training.muzero_mc.cli"]
+    command: ["--help"]
 
 volumes: {}

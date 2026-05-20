@@ -154,6 +154,18 @@ _smoke_traj/
 # the live exports.
 muzero_mc_runs/
 training_runs/minecraft/
+# v0.4 atomic versioned bundle subdirs emitted by
+# `MuzeroMcTrainer._export_bundle` (T4a). Layout:
+#   models/
+#   ├── model_manifest.json
+#   └── v00000001/
+#       ├── representation.onnx
+#       ├── dynamics.onnx
+#       └── prediction.onnx
+# Already covered by the existing `models/` rule above, pinned here
+# for discoverability when grepping the .gitignore for v0.4 churn.
+models/v*/
+**/models/v*/
 # Compose-stack operator state (Phase 6).
 # - docker/compose.minecraft.env  : operator-edited env file (NEVER commit;
 #                                   may contain MC_EULA acceptance or

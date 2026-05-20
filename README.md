@@ -439,25 +439,51 @@ episode reset, dynamic env names, dyn-compatible trait).
 
 ### Quickstart
 
-End-to-end (Minecraft server + mc-bot + Rust runner via docker compose):
+**v0.4 self-improving loop** (Minecraft server + mc-bot + runner +
+**continuous trainer**, one command):
 
 ```bash
 # 1. Accept Mojang's EULA
 cp docker/compose.minecraft.env.example docker/compose.minecraft.env
 # edit and set MC_EULA=TRUE
 
-# 2. Bootstrap a random-init model bundle (Python 3.11+ with [minecraft] extras)
+# 2. Bring the self-play stack up (CPU). Operator host needs ONLY
+#    docker compose v2 — no torch / Python extras locally (bootstrap
+#    runs inside the trainer-bootstrap container).
+scripts/mc_self_play.sh --detach
+
+# 3. With a CUDA host + nvidia-container-toolkit:
+scripts/mc_self_play.sh --gpu --detach
+
+# 4. Watch the bot's first-person view in the browser
+open http://localhost:3007
+
+# 5. Tear down:
+scripts/mc_self_play.sh --down
+```
+
+The orchestrator computes `schema_id`, runs `bootstrap` inside a
+one-shot container if no manifest exists, exports
+`FORGE_MC_SCHEMA_ID` to the runner, and brings up all four services
+(`minecraft`, `mc-bot`, `runner`, `trainer`). The trainer
+continuously consumes runner-emitted trajectories and bumps the
+manifest the runner's `HotReloadWatcher` picks up.
+
+**Legacy quickstart (v0.3-pre — runner only, no trainer)**:
+
+```bash
+cp docker/compose.minecraft.env.example docker/compose.minecraft.env
+# edit MC_EULA=TRUE
+
 pip install -e ".[minecraft]"
 python -m forge.training.muzero_mc.cli bootstrap \
-    --obs-dim 920 --action-dim 12 \
-    --schema-id "$(cat configs/minecraft/schema_id.txt)" \
+    --obs-dim 31 --action-dim 12 \
+    --schema-id "$(python -m forge.training.muzero_mc.cli \
+        compute-schema-id --action-map configs/minecraft/action_map.toml \
+        --rewards configs/minecraft/rewards.toml --quiet)" \
     --out models/
 
-# 3. Bring the stack up (foreground; Ctrl-C runs `compose down`)
 scripts/mc_run.sh --build
-
-# Watch the bot's first-person view in the browser
-open http://localhost:3007
 ```
 
 Full walkthrough including troubleshooting:
@@ -590,14 +616,21 @@ See [`docs/next_steps.md`](docs/next_steps.md) for the status table.
 Coverage on Minecraft-integration code: every branch-modified file
 **>85% line coverage** (most 90-100%), overall Python coverage
 **92.01%** (well above the 85% gate).
-`cargo test -p forge-mc-runner --lib`: **74 unit tests** + 5
-integration tests; `cargo test -p forge-replay --lib`: **85 tests**
-(includes the cross-language `MAX_DECOMPRESSED_TRAJECTORY_BYTES`
-pin and the `.tar.gz` extension regression).
-`pytest tests/python/`: **1,393+ tests** passing (33 skipped, 9
-deselected — opt-in `lmstudio` / `e2e_long` / `minecraft_e2e`).
-`pytest tests/python/training`: 53 / 53 pass (new
-`test_muzero_mc_trainer.py` adds 15 over PR #57).
+`cargo test -p forge-mc-runner --lib`: **79 unit tests** + 5
+integration tests (v0.4: +7 vs v0.3-pre from T3 + T4a + the
+consolidated env-var test); `cargo test -p forge-replay --lib`:
+**85 tests** (includes the cross-language
+`MAX_DECOMPRESSED_TRAJECTORY_BYTES` pin and the `.tar.gz` extension
+regression).
+`pytest tests/python/`: **1,455+ tests** passing on PR-CI Linux
+(was 1,393+ pre-v0.4; +60+ from T1 schema-id + T2 device + T4
+continuous + T4a atomic bundles + T5 compose validation +
+T6 mc_self_play unit + T7 self-improvement smoke). The opt-in
+`lmstudio`, `e2e_long`, and `minecraft_e2e` markers stay deselected
+by default; the new `minecraft_e2e_smoke` marker (v0.4) runs on
+every PR.
+`pytest tests/python/training`: 73+ pass on hosts with the
+`[minecraft]` extras (`torch`, `onnx`, `onnxscript`).
 `npm test` (mc-bot): 116 / 116 pass; `npm run typecheck` clean.
 
 ## MangoMAS Integration
@@ -743,7 +776,7 @@ docker build -f docker/Dockerfile.demo -t forge-demo .
 
 | Area | Details |
 | --- | --- |
-| Rust workspace | 27 crates; `forge-mc-runner` alone ships 74 lib + 5 integration tests on the v0.3-pre branch (see CHANGELOG for full counts) |
+| Rust workspace | 27 crates; `forge-mc-runner` ships 79 lib + 5 integration tests on the v0.4 branch (see CHANGELOG for full counts) |
 | Rust coverage | `cargo-tarpaulin` gated at 85% line coverage |
 | Python surface | `forge_env` wrappers plus `forge` training, MangoMAS bridge, traces, and utilities |
 | Python tests | 21 MangoMAS smoke tests, coverage-gated at 85% |

@@ -1566,6 +1566,216 @@ excludes the marker, so PR CI is untouched.
 
 ---
 
+### 3.10.9 Live runner wiring (v0.4, 2026-05-20)
+
+Closes the v0.3-pre BLOCKER (`ExitCode 64` "live runner wiring not
+yet integrated"). The runner binary's `async_main` else-branch now
+dispatches to `forge_mc_runner::live::run_live` via
+`tokio::task::spawn_blocking`, mirroring the `--dry-run` shape
+(both `MinecraftEnv::connect` and `OnnxMuZeroModel::load` are
+synchronous blocking calls).
+
+```
+forge-mc-runner binary (cargo build --features mc-live)
+│
+├── main.rs::async_main
+│      │
+│      ├── if cli.dry_run → run_dry      (StubFlatEnv + StubLatentModel)
+│      │
+│      └── else            → run_live    (MinecraftEnv + OnnxMuZeroModel)
+│                                  ▲
+│                                  │ #[cfg(feature = "mc-live")]
+│                                  │
+└── live.rs::run_live(cfg, metrics)
+       │
+       ├── load MinecraftEnvConfig from cfg.mc_env_config_path
+       │   (Option<PathBuf> on RunnerConfig + --mc-config CLI flag)
+       ├── load ActionMap.from_toml(env_cfg.action_map_path)
+       ├── cross-check schema_id (cfg.schema_id ⇄ env handshake)
+       │   ▲
+       │   │ env-var ladder: FORGE_MC_SCHEMA_ID overrides runner.toml
+       │   │ (RunnerConfig::with_env_var_overrides; populated by
+       │   │  scripts/mc_self_play.sh from `compute-schema-id --quiet`)
+       │
+       ├── MinecraftEnv::connect(env_cfg, action_map)
+       │   ↳ McEnvError → RunnerError::EnvSetup(String)
+       │
+       ├── ModelManifest::load_json(cfg.manifest_path)
+       ├── config_from_manifest(...)
+       │   ↳ OnnxRuntimeConfig: action_space_size=0 auto-derives
+       │     from action_map.action_count(); latent_dim + num_threads
+       │     come from forge_agent::DEFAULT_{LATENT_DIM,NUM_THREADS}
+       │
+       ├── OnnxMuZeroModel::load(onnx_cfg)
+       │   ↳ recorder.set_model_version(manifest.version)  ◄── initial stamp
+       │
+       ├── LatentMctsSearch::new(model, mcts_cfg)
+       ├── TrajectoryWriter::new(...).with_compression(...)
+       ├── HotReloadWatcher::new(cfg.manifest_path)
+       │
+       ├── into_reload_fn wrapped to also call
+       │   recorder.set_model_version on each successful reload
+       │   ▲
+       │   │ closes the metrics gap: forge_mc_model_version gauge
+       │   │ now bumps in lockstep with the manifest version, so
+       │   │ the T7 smoke can assert "version >= 2" after one
+       │   │ trainer export round.
+       │
+       └── runner.run(None)
+```
+
+**Feature matrix**:
+
+- `default = []` — runner builds without ONNX / `forge-env-mc`.
+- `onnx-reload = ["forge-agent/onnx"]` — wraps `OnnxMuZeroModel::reload`
+  into the runner's `ReloadFn<M>` callback shape. Lib-only.
+- `mc-live = ["onnx-reload", "dep:forge-env-mc"]` — pulls the live
+  wiring; runner binary's else-branch becomes operational.
+- `live-test-stub = ["onnx-reload"]` — placeholder for the T7
+  follow-up that wires a `MockMinecraftEnv` for fast CI smoke.
+
+**Backwards-compat**: `--dry-run` continues to use
+`StubLatentModel` (no live deps). `RunnerConfig.mc_env_config_path`
++ `[onnx]` table default to `None` / sensible fallbacks via
+`#[serde(default)]`, so existing v0.3-pre TOMLs parse unchanged.
+
+---
+
+### 3.10.10 Continuous trainer + atomic versioned bundles (v0.4, 2026-05-20)
+
+```
+Trainer host (CPU or GPU)                      Runner host
+─────────────────────────                      ───────────
+MuzeroMcTrainer.train_continuous(              MinecraftEnv via
+   round_iters, stop)                          mc-bot WS
+    │                                              │
+    │ ┌─ cold-start guard:                         │
+    │ │   while not reader.episode_paths():        │
+    │ │       sleep(round_poll_sleep_s)            │
+    │ │   if stop(): return                        │
+    │ │                                            │
+    │ ├─ for _ in range(round_iters):              │
+    │ │       train_step()  ◄──────reads─────── trajectories/
+    │ │       if iter % export_every == 0:         │
+    │ │           _export_bundle()                 │
+    │ │                                            │
+    │ ├─ end-of-round export (if cadence missed)   │
+    │ │                                            │
+    │ └─ _trim_replay_buffer(max_trajectories)     │
+    │        ▲                                     │
+    │        │ delete oldest by mtime;             │
+    │        │ KEEP newest DEFAULT_TRIM_KEEP_NEWEST=4
+    │        │ (guard against runner's in-flight write)
+    │        │                                     │
+    │    yields summary dict                       │
+    └─────────────────────────────────────────► HotReloadWatcher
+                                                  polls manifest
+
+_export_bundle (T4a atomic layout):
+   models/
+   ├── model_manifest.json     (points at v{N})
+   ├── v00000001/
+   │   ├── representation.onnx
+   │   ├── dynamics.onnx
+   │   └── prediction.onnx
+   ├── v00000002/...
+   └── v{N}/...
+
+Step-by-step (atomicity contract):
+
+  1. mkdir models/v{N+1}/
+  2. MuZeroExporter.export_onnx(v{N+1}/)
+        ↳ NEW bundle dir; v{N}/ untouched
+  3. build_manifest(..., representation_filename="v{N+1}/representation.onnx", ...)
+  4. save_manifest(...)                  ◄── tmp + os.replace (atomic)
+        ↳ HotReloadWatcher's next poll sees v{N+1}
+  5. _gc_old_bundle_versions(out_dir, max_bundle_versions)
+        ↳ runs AFTER manifest swap so runner has a safety window
+          to load v{N+1} before v{N-max_bundle_versions} disappears
+```
+
+**Public surface added in T4 + T4a**:
+
+- `MuzeroMcTrainer.train_continuous(round_iters, stop) -> Iterator[dict]`
+- `MuzeroMcTrainer._trim_replay_buffer(max_trajectories) -> int`
+- `MuzeroMcTrainer._gc_old_bundle_versions(out_dir, keep) -> int`
+- `format_bundle_version_dir(version: int) -> str` +
+  `BUNDLE_VERSION_PREFIX = "v"` + `BUNDLE_VERSION_PAD_WIDTH = 8`
+- New CLI flags: `--continuous`, `--round-iters`,
+  `--round-poll-sleep`, `--max-trajectories`,
+  `--max-bundle-versions`
+
+---
+
+### 3.10.11 Self-play orchestration (v0.4, 2026-05-20)
+
+```
+$ scripts/mc_self_play.sh --gpu --detach
+│
+├── preflight: `docker compose version` (must be v2.20+)
+│
+├── docker compose run --rm trainer-bootstrap
+│         compute-schema-id --quiet                   ─► SCHEMA_ID (64-hex)
+│         ◄── stdout-only (logs routed to stderr)
+│
+├── export FORGE_MC_SCHEMA_ID="$SCHEMA_ID"
+│         ▲
+│         │ runner's env-var ladder (T3 RunnerConfig::with_env_var_overrides)
+│         │ picks it up at startup, overrides static runner.toml
+│
+├── if !exists(models/model_manifest.json):
+│     docker compose run --rm trainer-bootstrap
+│           bootstrap --schema-id "$SCHEMA_ID" \
+│                     --obs-dim "${OBS_DIM:-31}" \
+│                     --action-dim "${ACTION_DIM:-12}" \
+│                     --out /app/models
+│           ▲
+│           │ atomic versioned layout from T4a applies:
+│           │   models/v00000001/{representation,dynamics,prediction}.onnx
+│           │   models/model_manifest.json (points at v00000001)
+│
+├── trap SIGINT/TERM → mc_run.sh --down --profile self-play [--gpu]
+│   (foreground only — detach path leaves cleanup to the operator)
+│
+└── env FORGE_MC_SCHEMA_ID="$SCHEMA_ID" \
+      mc_run.sh --profile self-play [--gpu] [--detach] --env-file <env>
+              │
+              ▼
+      docker compose -f compose.minecraft.yml \
+                     [-f compose.minecraft.gpu.yml] \
+                     --env-file <env> \
+                     --profile self-play \
+                     up [-d]
+              │
+              ├── service: minecraft   (itzg/minecraft-server)
+              ├── service: mc-bot      (Node + mineflayer)
+              ├── service: runner      (forge-mc-runner binary)
+              └── service: trainer     (PyTorch + onnx; train --continuous)
+                          │
+                          ├── deploy.resources.reservations.devices.driver: nvidia
+                          │   (only when -f compose.minecraft.gpu.yml is layered)
+                          │
+                          └── mounts:
+                              - models/        (rw — writes bundles + manifest)
+                              - trajectories/  (rw — reads runner output + trim oldest)
+```
+
+**Tests**:
+
+- `tests/python/integration/test_compose_minecraft.py` — 11 pure-YAML
+  assertions on the compose layout (profiles, mounts, env passthrough,
+  GPU overlay) — runs on every PR CI, no Docker required.
+- `tests/python/integration/test_mc_self_play_unit.py` — 9 tests
+  driving the orchestrator in `--dry-run` mode + asserting on the
+  printed argv chain.
+- `tests/python/integration/test_minecraft_self_improvement_smoke.py`
+  — PR-CI smoke under the `minecraft_e2e_smoke` marker (NOT
+  deselected by `addopts`). Drives `train_continuous` against a
+  pre-seeded trajectory dir + asserts atomic versioned-bundle layout
+  + manifest bump within a 60s budget.
+
+---
+
 ## Level 4: Code-Level Detail
 
 ### 4.1 Key Data Structures

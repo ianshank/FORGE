@@ -131,6 +131,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional torch RNG seed for reproducibility.",
     )
 
+    # compute-schema-id
+    p_sid = sub.add_parser(
+        "compute-schema-id",
+        help=(
+            "Compute the canonical SHA256 ``schema_id`` for a given "
+            "action_map.toml + rewards.toml pair. The same hash the "
+            "Rust env adapter + mc-bot agree on at handshake. Use "
+            "``--quiet`` to suppress logs so stdout is hash-only "
+            "(for shell substitution into `bootstrap --schema-id`)."
+        ),
+    )
+    p_sid.add_argument(
+        "--action-map",
+        type=Path,
+        required=True,
+        help="Path to configs/minecraft/action_map.toml (or equivalent).",
+    )
+    p_sid.add_argument(
+        "--rewards",
+        type=Path,
+        required=True,
+        help="Path to configs/minecraft/rewards.toml (or equivalent).",
+    )
+    p_sid.add_argument(
+        "--quiet",
+        action="store_true",
+        help=(
+            "Suppress INFO logs on stderr; print ONLY the 64-hex hash on "
+            "stdout (no trailing newline change). Useful for "
+            "``SCHEMA_ID=$(... compute-schema-id --quiet)``."
+        ),
+    )
+
     # validate-manifest
     p_val = sub.add_parser(
         "validate-manifest",
@@ -248,6 +281,76 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="RNG seed (default: 0). Determinism gate for tests.",
     )
+    from forge.training.muzero_mc.trainer import (
+        DEFAULT_DEVICE,
+        DEFAULT_ROUND_POLL_SLEEP_S,
+    )
+
+    p_train.add_argument(
+        "--device",
+        type=str,
+        default=DEFAULT_DEVICE,
+        choices=["cpu", "cuda", "auto"],
+        help=(
+            f"Torch device for training (default: {DEFAULT_DEVICE!r}). "
+            "'auto' picks CUDA if torch.cuda.is_available() else CPU."
+        ),
+    )
+    p_train.add_argument(
+        "--continuous",
+        action="store_true",
+        help=(
+            "Run the trainer forever (or until SIGINT). Each round runs "
+            "`--round-iters` gradient steps and exports an ONNX bundle. "
+            "Backwards-compat: omitted → fixed-iters mode (the v0.3-pre "
+            "behaviour driven by `--iters`)."
+        ),
+    )
+    p_train.add_argument(
+        "--round-iters",
+        type=int,
+        default=10,
+        help=(
+            "Gradient steps per continuous-mode round (default: 10). "
+            "Only consumed when `--continuous` is set."
+        ),
+    )
+    p_train.add_argument(
+        "--round-poll-sleep",
+        type=float,
+        default=DEFAULT_ROUND_POLL_SLEEP_S,
+        help=(
+            "Cold-start poll sleep when the trajectory dir is empty "
+            f"(default: {DEFAULT_ROUND_POLL_SLEEP_S}s). Only consumed "
+            "with `--continuous`."
+        ),
+    )
+    p_train.add_argument(
+        "--max-trajectories",
+        type=int,
+        default=None,
+        help=(
+            "Cap the number of trajectory files on disk. Default "
+            "(unset) keeps the disk unbounded for backwards-compat. "
+            "When set, the trainer trims oldest-by-mtime after each "
+            "continuous-mode round (the newest few files are always "
+            "kept — they may be a runner in-flight write)."
+        ),
+    )
+    from forge.training.muzero_mc.trainer import DEFAULT_MAX_BUNDLE_VERSIONS
+
+    p_train.add_argument(
+        "--max-bundle-versions",
+        type=int,
+        default=DEFAULT_MAX_BUNDLE_VERSIONS,
+        help=(
+            f"Cap historical bundle subdirs (`vNNNNNNNN/`) at this "
+            f"count (default: {DEFAULT_MAX_BUNDLE_VERSIONS}). 0 = "
+            "disable GC (keep all history). Old bundles are deleted "
+            "AFTER the manifest swap so the runner has a safety "
+            "window to load the new version."
+        ),
+    )
 
     return parser
 
@@ -260,9 +363,14 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
+    # `compute-schema-id --quiet` routes logs to stderr only so stdout
+    # carries the hash and nothing else. Other subcommands keep the
+    # existing INFO-to-stdout default.
+    log_stream = sys.stderr if getattr(args, "quiet", False) else None
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=log_stream,
     )
 
     if args.cmd == "bootstrap":
@@ -271,6 +379,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_validate(args)
     if args.cmd == "train":
         return _run_train(args)
+    if args.cmd == "compute-schema-id":
+        return _run_compute_schema_id(args)
     parser.error(f"unknown command: {args.cmd!r}")  # pragma: no cover — argparse blocks this
     return EXIT_USAGE
 
@@ -304,6 +414,42 @@ def _run_bootstrap(args: argparse.Namespace) -> int:
         result.manifest.version,
         result.manifest.schema_id,
     )
+    return EXIT_OK
+
+
+def _run_compute_schema_id(args: argparse.Namespace) -> int:
+    """``compute-schema-id`` subcommand entry.
+
+    Loads action_map.toml + rewards.toml, computes the canonical
+    combined SHA256 the Rust env adapter + mc-bot agree on at
+    handshake, prints it to stdout. ``--quiet`` ensures stdout is
+    hash-only (no logs, no trailing diagnostics) so callers can do
+    ``SCHEMA_ID=$(... compute-schema-id --quiet)`` without scrubbing.
+    """
+    from forge.training.muzero_mc.schema_id import compute_schema_id_from_paths
+
+    if not args.action_map.exists():
+        logger.error("--action-map path missing: %s", args.action_map)
+        return EXIT_IO
+    if not args.rewards.exists():
+        logger.error("--rewards path missing: %s", args.rewards)
+        return EXIT_IO
+    try:
+        schema_id = compute_schema_id_from_paths(args.action_map, args.rewards)
+    except (OSError, ValueError, KeyError) as e:
+        logger.error("schema-id computation failed: %s", e)
+        return EXIT_VALIDATION
+
+    # Hash to stdout; logs (if not --quiet) go through the standard
+    # logger which writes to stderr when --quiet is set.
+    print(schema_id)
+    if not args.quiet:
+        logger.info(
+            "schema_id=%s (action_map=%s, rewards=%s)",
+            schema_id,
+            args.action_map,
+            args.rewards,
+        )
     return EXIT_OK
 
 
@@ -386,9 +532,17 @@ def _run_train(args: argparse.Namespace) -> int:
             schema_id=args.schema_id,
             batch_size=args.batch_size,
             seed=args.seed,
+            device=args.device,
+            round_poll_sleep_s=args.round_poll_sleep,
+            max_trajectories=args.max_trajectories,
+            max_bundle_versions=args.max_bundle_versions,
         )
         trainer = MuzeroMcTrainer(model, reader, trainer_cfg)
-        outcome = trainer.train()
+        outcome = (
+            _drive_continuous_loop(trainer, round_iters=args.round_iters)
+            if args.continuous
+            else trainer.train()
+        )
     except ValueError as e:
         logger.error("invalid train config: %s", e)
         return EXIT_USAGE
@@ -396,13 +550,67 @@ def _run_train(args: argparse.Namespace) -> int:
         logger.error("train failed: %s", e)
         return EXIT_IO
 
-    logger.info(
-        "train complete: iters=%d, exports=%d, manifest_version=%d",
-        outcome["iters_completed"],
-        outcome["exports"],
-        outcome["last_manifest_version"],
-    )
+    if args.continuous:
+        logger.info(
+            "train --continuous complete: rounds=%d, iters=%d, exports=%d, manifest_version=%d",
+            outcome["rounds"],
+            outcome["iters_completed"],
+            outcome["exports"],
+            outcome["last_manifest_version"],
+        )
+    else:
+        logger.info(
+            "train complete: iters=%d, exports=%d, manifest_version=%d",
+            outcome["iters_completed"],
+            outcome["exports"],
+            outcome["last_manifest_version"],
+        )
     return EXIT_OK
+
+
+def _drive_continuous_loop(trainer: Any, *, round_iters: int) -> dict[str, Any]:
+    """Drive `trainer.train_continuous(...)` to completion with SIGINT
+    handling. Extracted from `_run_train` to keep that function under
+    ruff's branch-count + statement-count caps.
+
+    Installs a temporary SIGINT handler that flips a stop flag; the
+    trainer polls the flag and breaks cleanly out of its inner loop.
+    The previous handler is restored on exit (try/finally).
+    """
+    import signal
+
+    stop_flag = {"stop": False}
+
+    def _on_sigint(_signum: int, _frame: Any) -> None:
+        stop_flag["stop"] = True
+        logger.info("SIGINT received; trainer will stop after current round")
+
+    old_handler = signal.signal(signal.SIGINT, _on_sigint)
+    outcome: dict[str, Any] = {
+        "rounds": 0,
+        "iters_completed": 0,
+        "exports": 0,
+        "last_manifest_version": 0,
+    }
+    try:
+        for round_summary in trainer.train_continuous(
+            round_iters=round_iters,
+            stop=lambda: stop_flag["stop"],
+        ):
+            outcome["rounds"] += 1
+            outcome["iters_completed"] = round_summary["iters_completed"]
+            outcome["exports"] += round_summary["exports"]
+            outcome["last_manifest_version"] = round_summary["last_manifest_version"]
+            logger.info(
+                "round %d: iter=%d exports_this_round=%d manifest_version=%d",
+                round_summary["round"],
+                round_summary["iters_completed"],
+                round_summary["exports"],
+                round_summary["last_manifest_version"],
+            )
+    finally:
+        signal.signal(signal.SIGINT, old_handler)
+    return outcome
 
 
 if __name__ == "__main__":  # pragma: no cover — module-as-script.
