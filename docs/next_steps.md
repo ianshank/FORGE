@@ -72,20 +72,19 @@ branch and what specifically remains.
   `FORGE_BENCH_MCTS_{SIMS,OBS_DIM,ACTIONS,LATENT_DIM}`. **Closes the
   bench gap from the original audit.**
 
-**Still to do for the live loop (follow-up PR):**
+**All three items in this section LANDED** on
+`feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` (see PR #58):
 
-- `Runner<E: FlatObsEnv, M: LatentForwardModel>` — wires Env +
-  planner + `TrajectoryWriter` + `HotReloadWatcher` into the episode
-  loop. Calls `watcher.poll()` only between episodes (the contract
-  the foundation already documents).
-- `LatentPlanner<M: LatentForwardModel>` — adapter around
-  `LatentMctsSearch` that produces `(action, policy_target,
-  value_target)` for the writer.
-- Additive `OnnxMuZeroModel::reload()` on
-  `crates/forge-agent/src/latent_mcts/onnx_model.rs` with fixed
-  mutex-acquisition order (representation → dynamics → prediction)
-  to make deadlock structurally impossible. Optional
-  `OnnxMuZeroModel` feature-gated variant of the bench follows.
+- `Runner<E: FlatObsEnv, M: LatentForwardModel>` shipped in commit
+  `b1cc7f8`.
+- `LatentPlanner<M>` shipped in the same commit (folded into
+  `Runner::run_episode`).
+- `OnnxMuZeroModel::reload(&mut self, new_config)` shipped in
+  commit `11240fc`. The design switched from "fixed mutex
+  acquisition order" to "build-first-then-swap with `&mut self`"
+  — the borrow checker now enforces sequencing against concurrent
+  inference, which is strictly stronger than runtime lock-order
+  discipline.
 
 ### Phase 5 — Python MuZero trainer (`muzero_mc/`)
 

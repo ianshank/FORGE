@@ -14,7 +14,7 @@
 - `curl http://127.0.0.1:9090/metrics` — Scrape the runner's Prometheus endpoint (disabled by setting `metrics_port = 0` in the runner config; `metrics_bind` defaults to `127.0.0.1`)
 - `python -m forge.training.muzero_mc.cli bootstrap --obs-dim N --action-dim M --schema-id <sha> --out models/` — Phase-5 random-init bundle
 - `python -m forge.training.muzero_mc.cli validate-manifest <path>` — Validate a model_manifest.json (exit 0 / 3 / 4)
-- `python -m forge.training.muzero_mc.cli train --input trajectories/ --manifest models/model_manifest.json --iters 100 --export-every 10` — Train loop consuming `.json` / `.json.gz` trajectories, periodic ONNX export + manifest bump that the runner's `HotReloadWatcher` picks up
+- `python -m forge.training.muzero_mc.cli train --input trajectories/ --out models/ --schema-id <sha> --obs-dim N --action-dim M --iters 100 --export-every 10` — Train loop consuming `.json` / `.json.gz` trajectories, periodic ONNX export + manifest bump that the runner's `HotReloadWatcher` picks up. `--obs-dim`, `--action-dim`, `--schema-id`, `--out`, `--input` are required; `--manifest` defaults to `<out>/model_manifest.json`
 - `scripts/mc_run.sh --dry-run` — Print resolved docker compose argv for the stack (no side effects)
 - `scripts/mc_run.sh --build` — Bring the Minecraft + mc-bot + runner stack up (foreground; Ctrl-C cleans up)
 - `cd mc-bot && npm run typecheck` — `tsc --noEmit` gate over the `.js` source (CI: `mc-bot-test` job runs this between `npm ci` and `npm test`)

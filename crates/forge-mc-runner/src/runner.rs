@@ -864,6 +864,13 @@ mod tests {
 
     #[test]
     fn manifest_bump_between_episodes_triggers_reload_callback_exactly_once() {
+        // Exercises the contract via the actual `Runner::run` loop
+        // (not by hand-rolling a sequence of `maybe_reload` /
+        // `run_episode` calls). The loop polls once at the top of
+        // every episode, so for 3 episodes we should see 3 polls;
+        // with the manifest at v1 throughout episode 1, then bumped
+        // to v2 between episodes 1 and 2, we should see exactly 2
+        // reloads applied (v1 on the first poll, v2 on the second).
         let dir = tempfile::tempdir().unwrap();
         let manifest_path = dir.path().join("model_manifest.json");
         write_manifest(&manifest_path, 1);
@@ -876,27 +883,39 @@ mod tests {
 
         let reload_count = Arc::new(AtomicU64::new(0));
         let reload_count_in_fn = Arc::clone(&reload_count);
+        // Block the runner between episodes 1 and 2 via a barrier-
+        // like flag so the test can bump the manifest at the
+        // documented "between-episode" point. Implemented as a
+        // single side-channel atomic the reload callback reads to
+        // know whether the post-bump reload has been observed yet.
+        let bumped_after_first = Arc::new(AtomicU64::new(0));
+        let bumped_for_fn = Arc::clone(&bumped_after_first);
 
         let mut runner = Runner::new(cfg, env, search, writer, watcher).with_reload_fn(Box::new(
-            move |_model: &mut StubLatentModel, _manifest: &ModelManifest| {
+            move |_model: &mut StubLatentModel, manifest: &ModelManifest| {
+                if manifest.version == 2 {
+                    bumped_for_fn.store(1, Ordering::SeqCst);
+                }
                 reload_count_in_fn.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
         ));
 
-        // Episode 1: watcher sees v1 (first observation -> emits reload).
-        runner.run_episode().unwrap();
-        runner.maybe_reload().unwrap();
-        // No bump between ep1 and ep2.
-        runner.run_episode().unwrap();
-        runner.maybe_reload().unwrap();
-        // Bump to v2 -> emits reload.
-        write_manifest(&manifest_path, 2);
-        runner.maybe_reload().unwrap();
-        runner.run_episode().unwrap();
+        // First episode: runs against v1, reload callback fires once
+        // before the episode body begins.
+        runner.run(Some(1)).unwrap();
+        assert_eq!(reload_count.load(Ordering::SeqCst), 1);
+        assert_eq!(bumped_after_first.load(Ordering::SeqCst), 0);
 
-        // Two reloads applied: first poll (v1) and the bump to v2.
+        // Bump the manifest at the documented "between-episode" point
+        // and let the loop finish.
+        write_manifest(&manifest_path, 2);
+        runner.run(Some(2)).unwrap();
+
+        // Two reloads applied across the full 3-episode run: v1 on
+        // the first poll, v2 on the post-bump poll.
         assert_eq!(reload_count.load(Ordering::SeqCst), 2);
+        assert_eq!(bumped_after_first.load(Ordering::SeqCst), 1);
         assert_eq!(runner.reloads_applied(), 2);
         assert_eq!(runner.last_model_version(), Some(2));
     }

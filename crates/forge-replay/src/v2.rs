@@ -582,6 +582,21 @@ mod tests {
     }
 
     #[test]
+    fn max_decompressed_bytes_is_pinned_cross_language() {
+        // Mirrors `MAX_DECOMPRESSED_TRAJECTORY_BYTES` in
+        // `python/forge/training/muzero_mc/replay.py`. If you change
+        // this value in EITHER file, change it in BOTH and update
+        // the Python-side
+        // `test_max_decompressed_size_matches_rust_constant` to
+        // assert the new value.
+        assert_eq!(
+            MAX_DECOMPRESSED_TRAJECTORY_BYTES,
+            512 * 1024 * 1024,
+            "cross-language pin against Python side",
+        );
+    }
+
+    #[test]
     fn push_validates_obs_dim() {
         let mut t = empty_traj(8, 4);
         let bad = StepV2 {

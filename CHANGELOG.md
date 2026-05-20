@@ -43,10 +43,14 @@ ONNX hot-reload (Track 1):
   `Arc<OnnxMuZeroModel>` caller is explicitly out of scope and
   documented (would need an `ArcSwap<Sessions>` follow-up).
 - **`crates/forge-mc-runner/src/onnx_reload.rs`** (new, behind
-  `onnx-reload` feature) — `config_from_manifest(manifest, bundle_dir)
-  -> OnnxModelConfig` + `into_reload_fn(model) -> ReloadFn<…>` wrappers
-  bridge the new method to the existing `Runner::with_reload_fn`
-  builder hook.
+  `onnx-reload` feature) —
+  `config_from_manifest(manifest, bundle_dir, action_space_size, latent_dim, num_threads) -> OnnxModelConfig`
+  + `into_reload_fn(bundle_dir, action_space_size, latent_dim, num_threads) -> ReloadFn<OnnxMuZeroModel>`
+  wrappers bridge the new method to the existing
+  `Runner::with_reload_fn` builder hook. The runner instantiates
+  the `OnnxMuZeroModel` itself; the reload callback only needs the
+  bundle directory + invariants to construct the new
+  `OnnxModelConfig` against the freshly-bumped manifest.
 - **`crates/forge-mc-runner/Cargo.toml`** — declares the
   `onnx-reload = ["forge-agent/onnx"]` feature so the runner stays
   buildable on machines without ONNX Runtime.
@@ -162,6 +166,72 @@ Cross-cutting:
 - mypy strict + ruff clean on every new Python file; zero new
   `# type: ignore` / `# noqa` lines added beyond the minimum for
   `from __future__ import annotations` typing.
+
+Hardening + corrections (commits `19306ad`, `beb3536`, `6979009`,
+plus the cross-file fixes folded into this PR's final docs sweep):
+
+- **`thiserror` derive on `OnnxReloadError`** + compound `.json.gz`
+  extension auto-detect on both sides (Rust `final_ext_is_gz &&
+  stem_ext_is_json`; Python `UnicodeDecodeError` / `JSONDecodeError`
+  wrap on the plain-JSON path so a stray `*.tar.gz` surfaces a
+  clean `TrajectoryError` rather than gzip-bytes-fed-to-JSON
+  confusion). Cross-language regression tests pin both sides.
+- **`RunnerConfig::DryRunConfig`** lifts the dry-run binary's
+  inline literals (`obs_dim = 8`, `action_count = 4`,
+  `latent_dim = 16`, `max_episode_len = 8`) into a config struct
+  with `Default` so `--dry-run` carries zero magic numbers.
+- **`RunnerConfig::tokio_worker_threads`** (default
+  `DEFAULT_TOKIO_WORKER_THREADS = 2`) replaces the literal
+  `#[tokio::main(worker_threads = 2)]` attribute. `main` is now
+  sync; the runtime is constructed explicitly via
+  `tokio::runtime::Builder::new_multi_thread().worker_threads(
+  cfg.tokio_worker_threads).enable_all().build()`.
+- **`EPISODE_ID_PREFIX = "ep-"` + `EPISODE_ID_PAD_WIDTH = 6`** +
+  `format_episode_id(seq: u64)` factored out and mirrored Python-
+  side. `DEFAULT_TRAJECTORY_GLOB` / `GZIP_TRAJECTORY_GLOB` now
+  derive from `EPISODE_ID_PREFIX`. Cross-language pin tests on
+  both sides.
+- **`MAX_DECOMPRESSED_TRAJECTORY_BYTES`** also pinned Rust-side
+  (was Python-only before).
+- **`_helpers.py` unit tests** (16 new) — exercise `wait_until` +
+  the three docker shims via mocks, no `minecraft_e2e` marker, run
+  on every PR CI invocation.
+- **`train` CLI input-dir fast-fail** — `python -m
+  forge.training.muzero_mc.cli train --input <missing>` now
+  surfaces `EXIT_IO` BEFORE importing torch, so the CLI works in
+  lint-only environments.
+- **Crate-root re-exports** of the ONNX hot-reload surface from
+  `forge_agent` (lets callers write `forge_agent::OnnxReloadError`
+  instead of the three-segment path).
+- **`MetricsError`** intentionally omits `From<MetricsError> for
+  RunnerError`: the runner loop never produces / consumes
+  `MetricsError`. Documented in `RunnerError`'s doc comment.
+- **`organizeImports: false`** in `mc-bot/biome.json` — the Biome
+  rule was tripping on pre-existing JS surfaces masked by the
+  earlier typecheck failure. The `.js → .ts` rewrite (v0.4)
+  re-enables both `organizeImports` and `formatter.enabled` in
+  one cosmetic sweep.
+- **`mc-bot/tsconfig.json` `checkJs: false`** — pure `tsc` project-
+  structure gate against the legacy JS surface; `.ts` files added
+  to the source tree ARE type-checked (the `strict: true` /
+  `checkJs: false` combination only relaxes the JS half).
+
+Validation gates (full):
+
+- `cargo test -p forge-mc-runner --lib` 74 / 74; `--tests` 5 / 5.
+- `cargo test -p forge-replay --lib` 85 / 85 (includes the new
+  `max_decompressed_bytes_is_pinned_cross_language` + the
+  `.tar.gz` regression).
+- `pytest tests/python/` 1393+ passed, 33 skipped, 9 deselected;
+  coverage 92.01% (>= 85% gate).
+- `mypy python/ scripts/ --config-file pyproject.toml` 0 issues
+  across 101 source files.
+- `ruff check python/ tests/python/ scripts/` all checks passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` clean.
+- `cargo fmt --all --check` clean.
+- `cargo run -p forge-mc-runner -- --dry-run --episodes 1` exits 0.
+- `cd mc-bot && npm run typecheck && npm run lint && npm test`
+  green on Node 22.
 
 ---
 

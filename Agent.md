@@ -188,3 +188,13 @@ Added on the `claude/minecraft-rl-agent-integration-xnJjt` branch.
 | `cargo fmt --check` | Format check |
 | `cargo bench -p forge-bench` | Run benchmarks |
 | `maturin develop && pytest tests/python/ -v` | Build + run Python tests |
+| `cargo run -p forge-mc-runner -- --dry-run --episodes 1` | Smoke-test the Minecraft runner binary without docker |
+| `cargo test -p forge-mc-runner --features onnx-reload` | Exercise the ONNX hot-reload feature surface |
+| `cargo run -p forge-mc-runner -- --config configs/minecraft/runner.toml` | Live run with metrics endpoint (curl `http://127.0.0.1:9090/metrics`) |
+| `python -m forge.training.muzero_mc.cli bootstrap --obs-dim N --action-dim M --schema-id <sha> --out models/` | Phase-5 random-init bundle |
+| `python -m forge.training.muzero_mc.cli validate-manifest <path>` | Validate a model_manifest.json (exit 0 / 3 / 4) |
+| `python -m forge.training.muzero_mc.cli train --input trajectories/ --out models/ --schema-id <sha> --obs-dim N --action-dim M --iters 100 --export-every 10` | v0.3-pre trainer loop: consumes `.json` / `.json.gz` trajectories, exports ONNX + bumps the manifest the runner reloads |
+| `scripts/mc_run.sh --build` | Bring the Minecraft + mc-bot + runner compose stack up |
+| `scripts/mc_run.sh --down` | Tear down the compose stack (idempotent) |
+| `cd mc-bot && npm run typecheck && npm run lint && npm test` | mc-bot Node 22 typecheck + Biome lint + 116-test `node:test` suite |
+| `pytest tests/python/integration/ -m minecraft_e2e -v` | Opt-in E2E driving the compose stack (requires docker; gated by the `python-test-minecraft-e2e` `workflow_dispatch` CI job) |

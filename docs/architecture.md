@@ -1392,9 +1392,13 @@ OnnxMuZeroModel::reload(&mut self, new_cfg)
    │    Err(OnnxReloadError::*) — model is    │
    │    still byte-identical to pre-reload.   │
    ├──────────────────────────────────────────┤
-   │ 4. *self.representation.lock() = rep;    │  ◄── contractual
-   │    *self.dynamics.lock()       = dyn;    │      lock order
-   │    *self.prediction.lock()     = pred;   │      rep → dyn → pred
+   │ 4. self.representation = Mutex::new(rep);│  ◄── direct field
+   │    self.dynamics       = Mutex::new(dyn);│      replacement (the
+   │    self.prediction     = Mutex::new(pred);     `&mut self` borrow
+   │                                          │      already excludes
+   │                                          │      concurrent readers,
+   │                                          │      so each old `Mutex`
+   │                                          │      drops cleanly).
    ├──────────────────────────────────────────┤
    │ 5. Ok(())                                │
    └──────────────────────────────────────────┘
@@ -1445,23 +1449,46 @@ deserialise unchanged.
 ```
 forge-mc-runner binary (main.rs)
 │
-├── #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
+├── fn main() -> ExitCode                                  (sync entry point)
+│      │
+│      ▼
+│   load_config(cli.config) → RunnerConfig::validate()
+│      │
+│      ▼
+│   TokioBuilder::new_multi_thread()
+│      .worker_threads(cfg.tokio_worker_threads)          ◄── config-driven
+│      .enable_all()                                       (signal + time + io)
+│      .build()
+│      │
+│      ▼
+│   runtime.block_on(async_main(cli, config))
 │
-├── tokio::spawn(serve_metrics(addr, registry, shutdown_rx))
-│        ▲                                              │
-│        │ axum router on cfg.metrics_bind:metrics_port │ tokio::oneshot
-│        │ GET /metrics → Prometheus text format        │ (shutdown)
-│        │                                              │
-└── tokio::task::spawn_blocking(move || runner.run())   │
-         │                                              │
-         │                                              │
-         ▼                                              ▼
-   per-step: recorder.record_planning_latency(dt)    SIGINT (ctrl-c)
-   per-ep:   recorder.record_episode_complete(rew)     │
-                                                       ▼
-                                       tokio::select! { runner_join, metrics_join }
-                                       cleanly tears both down
+└── async_main(cli, config)
+       │
+       ├── tokio::spawn(serve_metrics(addr, registry, shutdown_rx))
+       │        ▲                                              │
+       │        │ axum router on                               │ tokio::oneshot
+       │        │ cfg.metrics_bind:cfg.metrics_port            │ (shutdown)
+       │        │ GET /metrics → Prometheus text format        │
+       │        │                                              │
+       └── tokio::task::spawn_blocking(move || runner.run())   │
+                │                                              │
+                ▼                                              ▼
+          per-step: recorder.record_planning_latency(dt)    SIGINT (ctrl-c)
+          per-ep:   recorder.record_episode_complete(rew)     │
+                                                              ▼
+                                              tokio::select! { runner_join,
+                                                               metrics_join }
+                                              cleanly tears both down
 ```
+
+The binary uses the explicit `tokio::runtime::Builder` form (NOT
+the `#[tokio::main]` attribute) so the worker-thread count flows
+through `cfg.tokio_worker_threads` (default
+`DEFAULT_TOKIO_WORKER_THREADS = 2`). `.enable_all()` activates the
+time, signal, and IO drivers — required by the metrics axum task,
+the SIGINT shutdown future, and the `tokio::sync::oneshot` channel
+respectively.
 
 Five Prometheus signals matching v2-plan §3.6 (`forge_mc_episode_total`,
 `forge_mc_episode_reward_sum`, `forge_mc_planning_latency_seconds`,
