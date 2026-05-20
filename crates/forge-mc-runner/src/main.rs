@@ -16,8 +16,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
-use forge_mc_runner::{HotReloadWatcher, Runner, RunnerConfig, TrajectoryWriter};
-use tracing::{error, info};
+use forge_mc_runner::{
+    serve_metrics, HotReloadWatcher, MetricsRecorder, Runner, RunnerConfig, TrajectoryWriter,
+};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
@@ -42,7 +44,8 @@ struct Cli {
     dry_run: bool,
 }
 
-fn main() -> ExitCode {
+#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
+async fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
@@ -76,11 +79,39 @@ fn main() -> ExitCode {
 
     info!(?config, "runner configuration");
 
+    let (metrics_recorder, metrics_handle, metrics_shutdown_tx) =
+        match maybe_spawn_metrics_server(&config).await {
+            Ok(parts) => parts,
+            Err(rc) => return rc,
+        };
+
     if cli.dry_run {
-        match run_dry(config) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
+        let runner_result = tokio::task::spawn_blocking({
+            let cfg = config.clone();
+            let metrics = metrics_recorder.clone();
+            move || run_dry(cfg, metrics)
+        })
+        .await;
+
+        // Always shut the metrics server down, regardless of the
+        // runner's exit code.
+        if let Some(tx) = metrics_shutdown_tx {
+            let _ = tx.send(());
+        }
+        if let Some(handle) = metrics_handle {
+            if let Err(e) = handle.await {
+                warn!("metrics server task join error: {e}");
+            }
+        }
+
+        match runner_result {
+            Ok(Ok(())) => ExitCode::SUCCESS,
+            Ok(Err(e)) => {
                 error!("dry-run failed: {e}");
+                ExitCode::from(1)
+            }
+            Err(e) => {
+                error!("runner task panicked: {e}");
                 ExitCode::from(1)
             }
         }
@@ -89,8 +120,63 @@ fn main() -> ExitCode {
             "live runner wiring (MinecraftEnv + OnnxMuZeroModel) is not yet \
              integrated in this binary. Re-run with --dry-run for now."
         );
+        if let Some(tx) = metrics_shutdown_tx {
+            let _ = tx.send(());
+        }
+        if let Some(handle) = metrics_handle {
+            let _ = handle.await;
+        }
         ExitCode::from(64)
     }
+}
+
+type MetricsParts = (
+    Option<MetricsRecorder>,
+    Option<tokio::task::JoinHandle<Result<(), forge_mc_runner::MetricsError>>>,
+    Option<tokio::sync::oneshot::Sender<()>>,
+);
+
+async fn maybe_spawn_metrics_server(config: &RunnerConfig) -> Result<MetricsParts, ExitCode> {
+    if config.metrics_disabled() {
+        return Ok((None, None, None));
+    }
+    let recorder = match MetricsRecorder::new(&config.metrics_histogram_buckets) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("failed to build metrics recorder: {e}");
+            return Err(ExitCode::from(2));
+        }
+    };
+    let bind = format!("{}:{}", config.metrics_bind, config.metrics_port);
+    let addr: std::net::SocketAddr = match bind.parse() {
+        Ok(a) => a,
+        Err(e) => {
+            error!("invalid metrics bind addr {bind:?}: {e}");
+            return Err(ExitCode::from(2));
+        }
+    };
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let shutdown = async move {
+        // Future resolves when either the oneshot fires OR ctrl-c is
+        // received — whichever comes first triggers graceful drain.
+        let ctrl_c = async {
+            if let Err(e) = tokio::signal::ctrl_c().await {
+                warn!("ctrl-c handler install failed: {e}");
+            }
+        };
+        tokio::select! {
+            _ = rx => {},
+            _ = ctrl_c => {},
+        }
+    };
+    let handle = match serve_metrics(addr, recorder.clone(), shutdown).await {
+        Ok(h) => h,
+        Err(e) => {
+            error!("metrics server failed to start: {e}");
+            return Err(ExitCode::from(2));
+        }
+    };
+    Ok((Some(recorder), Some(handle), Some(tx)))
 }
 
 fn load_config(path: Option<&std::path::Path>) -> Result<RunnerConfig, String> {
@@ -104,7 +190,10 @@ fn load_config(path: Option<&std::path::Path>) -> Result<RunnerConfig, String> {
     }
 }
 
-fn run_dry(config: RunnerConfig) -> Result<(), forge_mc_runner::RunnerError> {
+fn run_dry(
+    config: RunnerConfig,
+    metrics: Option<MetricsRecorder>,
+) -> Result<(), forge_mc_runner::RunnerError> {
     use forge_agent::latent_mcts::model::StubLatentModel;
     use forge_agent::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch};
 
@@ -128,6 +217,9 @@ fn run_dry(config: RunnerConfig) -> Result<(), forge_mc_runner::RunnerError> {
     let watcher = HotReloadWatcher::new(&config.manifest_path);
 
     let mut runner = Runner::new(config, env, search, writer, watcher);
+    if let Some(rec) = metrics {
+        runner = runner.with_metrics(rec);
+    }
     let outcome = runner.run(None)?;
     info!(?outcome, "dry-run complete");
     Ok(())

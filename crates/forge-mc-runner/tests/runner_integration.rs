@@ -176,6 +176,7 @@ fn end_to_end_two_episodes_with_manifest_bump() {
         action_repeat: 1,
         base_seed: Some(7),
         metrics_port: 0,
+        ..RunnerConfig::default()
     };
     cfg.validate().unwrap();
 
@@ -266,6 +267,7 @@ fn run_propagates_reload_callback_errors() {
         action_repeat: 1,
         base_seed: Some(7),
         metrics_port: 0,
+        ..RunnerConfig::default()
     };
 
     let mut runner = build_runner(cfg, 2, 2, 2).with_reload_fn(Box::new(
@@ -300,6 +302,7 @@ fn zero_simulation_search_yields_uniform_policy_target() {
         action_repeat: 1,
         base_seed: Some(0),
         metrics_port: 0,
+        ..RunnerConfig::default()
     };
 
     let env = StubFlatEnv::new(2, 4, 2);

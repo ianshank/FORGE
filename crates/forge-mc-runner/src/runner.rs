@@ -49,6 +49,7 @@ use crate::config::RunnerConfig;
 use crate::error::RunnerError;
 use crate::hot_reload::{HotReloadWatcher, ReloadEvent};
 use crate::manifest::ModelManifest;
+use crate::metrics::MetricsRecorder;
 use crate::trajectory::TrajectoryWriter;
 
 /// Signature for the model hot-reload callback.
@@ -127,6 +128,7 @@ where
     writer: TrajectoryWriter,
     watcher: HotReloadWatcher,
     reload_fn: Option<ReloadFn<M>>,
+    metrics: Option<MetricsRecorder>,
     obs_buf: Vec<f32>,
     step_out: StepOutput<Vec<f32>, E::Info>,
     episode_seq: u64,
@@ -156,6 +158,7 @@ where
             writer,
             watcher,
             reload_fn: None,
+            metrics: None,
             obs_buf: vec![0.0; obs_dim],
             step_out: StepOutput {
                 obs: vec![0.0; obs_dim],
@@ -175,6 +178,15 @@ where
     /// `last_model_version`) but performs no model mutation.
     pub fn with_reload_fn(mut self, reload_fn: ReloadFn<M>) -> Self {
         self.reload_fn = Some(reload_fn);
+        self
+    }
+
+    /// Builder helper to install a [`MetricsRecorder`]. Without it,
+    /// every per-episode / per-step metric call site is a no-op,
+    /// preserving the binary's zero-dependency story when
+    /// `RunnerConfig::metrics_disabled()` is true.
+    pub fn with_metrics(mut self, recorder: MetricsRecorder) -> Self {
+        self.metrics = Some(recorder);
         self
     }
 
@@ -242,6 +254,9 @@ where
         }
         self.last_model_version = Some(new_version);
         self.reloads_applied += 1;
+        if let Some(rec) = self.metrics.as_ref() {
+            rec.set_model_version(new_version);
+        }
         Ok(())
     }
 
@@ -274,14 +289,30 @@ where
 
         for tick in 0..max_steps {
             // Plan from the *current* (pre-step) observation.
+            // Wall-clock per planning call is recorded into the
+            // `forge_mc_planning_latency_seconds` histogram if a
+            // metrics recorder is installed.
+            let plan_start = std::time::Instant::now();
+            let plan_result = self
+                .search
+                .search(&self.obs_buf)
+                .map_err(|e| RunnerError::Planner(e.to_string()));
+            if let Some(rec) = self.metrics.as_ref() {
+                rec.record_planning_latency_seconds(plan_start.elapsed().as_secs_f64());
+            }
             let LatentSearchResult {
                 action,
                 visit_counts,
                 root_value,
-            } = self
-                .search
-                .search(&self.obs_buf)
-                .map_err(|e| RunnerError::Planner(e.to_string()))?;
+            } = match plan_result {
+                Ok(r) => r,
+                Err(e) => {
+                    if let Some(rec) = self.metrics.as_ref() {
+                        rec.record_protocol_error("planner");
+                    }
+                    return Err(e);
+                }
+            };
 
             // Visit counts → policy target (normalised distribution).
             let policy_target = normalize_visits(&visit_counts);
@@ -350,6 +381,10 @@ where
 
         let ended_at = Utc::now().to_rfc3339();
         let trajectory_path = self.writer.finalize_and_save(&ended_at)?;
+
+        if let Some(rec) = self.metrics.as_ref() {
+            rec.record_episode_complete(total_reward);
+        }
 
         Ok(EpisodeOutcome {
             episode_id,
@@ -565,6 +600,7 @@ mod tests {
             action_repeat: 1,
             base_seed: Some(42),
             metrics_port: 0,
+            ..RunnerConfig::default()
         }
     }
 

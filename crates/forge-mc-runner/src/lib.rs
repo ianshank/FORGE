@@ -32,6 +32,7 @@ pub mod config;
 pub mod error;
 pub mod hot_reload;
 pub mod manifest;
+pub mod metrics;
 #[cfg(feature = "onnx-reload")]
 pub mod onnx_reload;
 pub mod runner;
@@ -41,6 +42,7 @@ pub use config::RunnerConfig;
 pub use error::RunnerError;
 pub use hot_reload::{HotReloadWatcher, ReloadEvent};
 pub use manifest::{ModelFileEntry, ModelManifest, ModelManifestFiles, MANIFEST_SCHEMA_VERSION};
+pub use metrics::{serve_metrics, MetricsError, MetricsRecorder};
 #[cfg(feature = "onnx-reload")]
 pub use onnx_reload::{config_from_manifest, into_reload_fn};
 pub use runner::{EpisodeOutcome, ReloadFn, Runner, RunnerOutcome};

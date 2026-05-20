@@ -56,7 +56,32 @@ pub struct RunnerConfig {
     /// TCP port for the runner's Prometheus `/metrics` endpoint.
     /// `0` disables the endpoint entirely (useful in tests).
     pub metrics_port: u16,
+
+    /// Interface the metrics endpoint binds to. Defaults to
+    /// ``"127.0.0.1"`` (localhost-only) for safety; compose-stack
+    /// operators override to ``"0.0.0.0"`` so a sibling Prometheus
+    /// container can scrape across the docker network.
+    pub metrics_bind: String,
+
+    /// Histogram bucket boundaries (in seconds) for the
+    /// ``forge_mc_planning_latency_seconds`` Prometheus histogram.
+    /// Defaults to the Prometheus standard latency buckets, suitable
+    /// for sub-second per-decision MCTS planning calls.
+    pub metrics_histogram_buckets: Vec<f64>,
 }
+
+/// Prometheus standard latency buckets (in seconds), used as the
+/// default for `RunnerConfig::metrics_histogram_buckets`. Each MCTS
+/// planning call should land somewhere in this range under realistic
+/// `planning_sims` budgets; if a deployment needs tighter resolution
+/// it overrides this list via TOML.
+pub const DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS: &[f64] = &[
+    0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+];
+
+/// Default localhost bind for the metrics endpoint. Pinned as a
+/// `const` so the default flows through one source of truth.
+pub const DEFAULT_METRICS_BIND: &str = "127.0.0.1";
 
 impl Default for RunnerConfig {
     fn default() -> Self {
@@ -71,6 +96,8 @@ impl Default for RunnerConfig {
             action_repeat: 1,
             base_seed: None,
             metrics_port: 9090,
+            metrics_bind: DEFAULT_METRICS_BIND.to_string(),
+            metrics_histogram_buckets: DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS.to_vec(),
         }
     }
 }
@@ -103,6 +130,28 @@ impl RunnerConfig {
         }
         if self.manifest_path.as_os_str().is_empty() {
             return Err("manifest_path must be non-empty".into());
+        }
+        if !self.metrics_disabled() {
+            if self.metrics_bind.is_empty() {
+                return Err("metrics_bind must be non-empty when metrics_port != 0".into());
+            }
+            if self.metrics_histogram_buckets.is_empty() {
+                return Err(
+                    "metrics_histogram_buckets must be non-empty when metrics_port != 0".into(),
+                );
+            }
+            // Buckets must be strictly increasing and positive for
+            // Prometheus to accept them.
+            let mut prev = 0.0f64;
+            for (i, &b) in self.metrics_histogram_buckets.iter().enumerate() {
+                if !b.is_finite() || b <= prev {
+                    return Err(format!(
+                        "metrics_histogram_buckets must be strictly increasing positive finite floats; \
+                         index {i} ({b}) violates this (previous = {prev})"
+                    ));
+                }
+                prev = b;
+            }
         }
         Ok(())
     }
@@ -223,6 +272,7 @@ mod tests {
             action_repeat: 4,
             base_seed: Some(123),
             metrics_port: 0,
+            ..RunnerConfig::default()
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let back: RunnerConfig = serde_json::from_str(&json).unwrap();
