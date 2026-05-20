@@ -215,6 +215,12 @@ jobs:
           pip install maturin pytest pytest-cov numpy gymnasium httpx jsonschema \
             stable-baselines3
           pip install torch --index-url https://download.pytorch.org/whl/cpu
+          # v0.4: install onnx + onnxruntime so the new
+          # `minecraft_e2e_smoke` tests (which `importorskip("onnx")`)
+          # actually run on PR CI rather than silently skipping. These
+          # are the same wheels the `[minecraft]` optional-dep group
+          # carries, pinned to match the workspace's numpy<2.0 gate.
+          pip install "onnx>=1.16" "onnxruntime>=1.17"
       - name: Build native extension
         run: maturin develop
       - name: Pytest with coverage

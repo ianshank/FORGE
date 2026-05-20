@@ -664,14 +664,28 @@ mod tests {
         );
     }
 
+    /// All three env-var override scenarios consolidated into one
+    /// `#[test]` so cargo's parallel test runner cannot interleave
+    /// our env-var mutations across threads.
+    ///
+    /// Rust 2024 made `std::env::set_var` `unsafe` precisely because
+    /// concurrent mutators race the process-global env table; the
+    /// peer-review-flagged "single-threaded test scope" claim only
+    /// holds when ALL mutators of the same env var sit in the same
+    /// `#[test]` function.
+    ///
+    /// Sequential cases (cleared between each):
+    /// 1. env set → overrides TOML.
+    /// 2. env unset → TOML wins (default-state inheritance).
+    /// 3. env set to empty string → treated as unset; TOML wins.
     #[test]
-    fn with_env_var_overrides_replaces_schema_id_when_set() {
-        // SAFETY: env-var mutation in tests is OK because cargo runs
-        // each test in a fresh-ish process (some test harnesses share
-        // env per-thread but we set + unset around the call).
+    fn with_env_var_overrides_covers_all_scenarios() {
         let saved = std::env::var(SCHEMA_ID_ENV_VAR).ok();
-        // SAFETY: single-threaded test scope, set_var is safe under
-        // Rust 2024's stricter env-var rules.
+
+        // --- case 1: env set ---
+        // SAFETY: All env mutation is contained in this single test;
+        // no other test in the suite touches SCHEMA_ID_ENV_VAR, so
+        // cargo's parallel runner cannot race us.
         unsafe {
             std::env::set_var(SCHEMA_ID_ENV_VAR, "sha-from-env");
         }
@@ -681,19 +695,8 @@ mod tests {
         }
         .with_env_var_overrides();
         assert_eq!(cfg.schema_id, "sha-from-env");
-        // Restore prior env so other tests aren't affected.
-        unsafe {
-            if let Some(v) = saved {
-                std::env::set_var(SCHEMA_ID_ENV_VAR, v);
-            } else {
-                std::env::remove_var(SCHEMA_ID_ENV_VAR);
-            }
-        }
-    }
 
-    #[test]
-    fn with_env_var_overrides_keeps_toml_when_env_unset() {
-        let saved = std::env::var(SCHEMA_ID_ENV_VAR).ok();
+        // --- case 2: env unset ---
         unsafe {
             std::env::remove_var(SCHEMA_ID_ENV_VAR);
         }
@@ -703,16 +706,8 @@ mod tests {
         }
         .with_env_var_overrides();
         assert_eq!(cfg.schema_id, "sha-from-toml");
-        unsafe {
-            if let Some(v) = saved {
-                std::env::set_var(SCHEMA_ID_ENV_VAR, v);
-            }
-        }
-    }
 
-    #[test]
-    fn with_env_var_overrides_treats_empty_env_as_unset() {
-        let saved = std::env::var(SCHEMA_ID_ENV_VAR).ok();
+        // --- case 3: env set to empty string (treated as unset) ---
         unsafe {
             std::env::set_var(SCHEMA_ID_ENV_VAR, "");
         }
@@ -722,6 +717,8 @@ mod tests {
         }
         .with_env_var_overrides();
         assert_eq!(cfg.schema_id, "sha-from-toml");
+
+        // Restore prior env so the suite stays hygienic.
         unsafe {
             if let Some(v) = saved {
                 std::env::set_var(SCHEMA_ID_ENV_VAR, v);
