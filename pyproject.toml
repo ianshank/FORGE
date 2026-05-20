@@ -207,8 +207,9 @@ testpaths = ["tests/python"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short -m 'not lmstudio and not e2e_long' --cov=python --cov-report=term-missing --cov-fail-under=85"
+addopts = "-v --tb=short -m 'not lmstudio and not e2e_long and not minecraft_e2e' --cov=python --cov-report=term-missing --cov-fail-under=85"
 markers = [
   "lmstudio: opt-in tests requiring a running LM Studio (or OpenAI-compatible) endpoint.",
   "e2e_long: long-running (1000+ episodes) end-to-end pipeline test; opt-in via FORGE_E2E_LONG=1.",
+  "minecraft_e2e: opt-in tests requiring the docker compose Minecraft stack (mc-bot + runner + Minecraft server). Triggered by the workflow_dispatch `python-test-minecraft-e2e` CI job; never runs on a default `pytest` invocation.",
 ]
