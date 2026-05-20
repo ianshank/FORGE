@@ -224,11 +224,7 @@ fn run_dry(
     // behave identically.
     let obs_dim = config.dry_run.obs_dim;
     let action_count = config.dry_run.action_count;
-    let env = dry_run::StubEnv::new(
-        obs_dim,
-        action_count,
-        Some(config.dry_run.max_episode_len),
-    );
+    let env = dry_run::StubEnv::new(obs_dim, action_count, Some(config.dry_run.max_episode_len));
 
     let mut mcts_cfg = LatentMctsConfig::default();
     mcts_cfg.base.num_simulations = config.planning_sims;
