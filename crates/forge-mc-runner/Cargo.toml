@@ -10,6 +10,14 @@ keywords.workspace = true
 categories.workspace = true
 description = "Episode runner that drives a FlatObsEnv + LatentMctsSearch, writes TrajectoryV2, and hot-reloads ONNX models between episodes."
 
+[features]
+default = []
+# Enables the `onnx_reload` module that wraps `OnnxMuZeroModel::reload`
+# into a `ReloadFn<OnnxMuZeroModel>` callback the runner can install.
+# Transitively requires `forge-agent`'s `onnx` feature (and therefore
+# `ort` + a working ONNX Runtime on the host).
+onnx-reload = ["forge-agent/onnx"]
+
 [dependencies]
 forge-agent = { workspace = true }
 forge-env = { workspace = true }

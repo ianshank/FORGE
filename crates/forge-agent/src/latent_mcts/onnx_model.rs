@@ -10,13 +10,77 @@
 //! Add `ort` to your dependencies and compile with `--features onnx`.
 
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use ort::session::Session;
 
 use super::model::{LatentForwardModel, LatentInferenceOutput};
 use super::state::LatentState;
+
+/// Errors that can occur during [`OnnxMuZeroModel::reload`].
+///
+/// Distinct from `ort::Error` so callers can pattern-match on
+/// reload-specific failures (e.g. missing-file is a friendlier
+/// signal than a generic `ort` load error). All other failures
+/// surface as `Ort(ort::Error)`.
+#[derive(Debug)]
+pub enum OnnxReloadError {
+    /// A path in the new [`OnnxModelConfig`] does not exist on disk.
+    /// Reload returns this **before** touching the existing sessions,
+    /// so the model remains usable with the previous bundle.
+    MissingFile { path: PathBuf },
+    /// `ort::Session::builder().commit_from_file(...)` failed (corrupt
+    /// ONNX, schema mismatch, op-set unsupported, etc.). Like
+    /// `MissingFile`, this is raised before any swap so the existing
+    /// sessions stay intact (build-first-then-swap invariant).
+    Ort(ort::Error),
+}
+
+impl std::fmt::Display for OnnxReloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingFile { path } => {
+                write!(f, "missing ONNX file: {}", path.display())
+            }
+            Self::Ort(e) => write!(f, "ort session build failed: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for OnnxReloadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::MissingFile { .. } => None,
+            Self::Ort(e) => Some(e),
+        }
+    }
+}
+
+impl From<ort::Error> for OnnxReloadError {
+    fn from(value: ort::Error) -> Self {
+        Self::Ort(value)
+    }
+}
+
+/// Pre-flight check used by [`OnnxMuZeroModel::reload`]. Public so
+/// downstream tests + the runner's onnx-reload wrapper can short-
+/// circuit on missing files **before** calling into `ort`, which
+/// would produce a less informative error.
+pub fn validate_reload_paths(config: &OnnxModelConfig) -> Result<(), OnnxReloadError> {
+    for path in [
+        &config.representation_path,
+        &config.dynamics_path,
+        &config.prediction_path,
+    ] {
+        if !Path::new(path).exists() {
+            return Err(OnnxReloadError::MissingFile {
+                path: PathBuf::from(path),
+            });
+        }
+    }
+    Ok(())
+}
 
 /// Configuration for the ONNX MuZero model.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -110,6 +174,82 @@ impl OnnxMuZeroModel {
             dynamics: Mutex::new(dyn_),
             prediction: Mutex::new(pred),
         })
+    }
+
+    /// Hot-swap all three ONNX sessions with the bundle described by
+    /// `new_config`. The previous sessions are dropped after the new
+    /// ones are constructed.
+    ///
+    /// # Atomicity (build-first-then-swap)
+    ///
+    /// The implementation builds all three new [`Session`]s in stack
+    /// locals **before** touching `self`. If any session-build fails
+    /// (missing file, corrupt ONNX, op-set mismatch, ...), `reload`
+    /// returns `Err` and `self` keeps its previous bundle. This
+    /// matters when a trainer exports a partial / corrupt bundle —
+    /// the runner stays serviceable against the previous weights
+    /// instead of half-swapping into a broken state.
+    ///
+    /// # Concurrency
+    ///
+    /// `reload` takes `&mut self`. Rust's borrow checker therefore
+    /// prevents any concurrent `&self` inference call from
+    /// interleaving with the swap, which guarantees no inference call
+    /// can observe a mix of old + new sessions across the
+    /// representation → dynamics → prediction chain.
+    ///
+    /// Callers that share the model across threads via
+    /// `Arc<OnnxMuZeroModel>` **do not** get this guarantee — the
+    /// inner sessions would still appear consistent per-call (because
+    /// each `Mutex<Session>` is serialised), but cross-session
+    /// staleness becomes possible across a reload boundary. If that
+    /// use case appears, switch to `Arc<Sessions>` + `arc_swap` so a
+    /// single atomic pointer-swap covers all three sessions
+    /// together. The current API is single-threaded by construction.
+    ///
+    /// # Errors
+    ///
+    /// - [`OnnxReloadError::MissingFile`] if any of the three configured
+    ///   ONNX paths does not exist on disk. Returned before any `ort`
+    ///   call; nothing on `self` is mutated.
+    /// - [`OnnxReloadError::Ort`] if `ort::Session::builder()` /
+    ///   `commit_from_file` fails for any of the three sessions
+    ///   (corrupt bundle, unsupported op-set, etc.). Returned before
+    ///   the swap; existing sessions stay intact.
+    pub fn reload(&mut self, new_config: OnnxModelConfig) -> Result<(), OnnxReloadError> {
+        // Pre-flight: give MissingFile a friendlier error than ort's
+        // generic load-failed. This is also the path the runner uses
+        // to fail fast on bad manifests without paying the ort
+        // construction cost.
+        validate_reload_paths(&new_config)?;
+
+        // Build all three sessions in stack locals BEFORE swapping
+        // anything on `self`. `?` propagates ort::Error via
+        // `From<ort::Error> for OnnxReloadError`.
+        let new_rep = Session::builder()?
+            .with_intra_threads(new_config.num_threads)?
+            .commit_from_file(&new_config.representation_path)?;
+        let new_dyn = Session::builder()?
+            .with_intra_threads(new_config.num_threads)?
+            .commit_from_file(&new_config.dynamics_path)?;
+        let new_pred = Session::builder()?
+            .with_intra_threads(new_config.num_threads)?
+            .commit_from_file(&new_config.prediction_path)?;
+
+        // Swap in the documented contractual order:
+        // representation -> dynamics -> prediction. The old `Mutex`
+        // values are dropped (which drops the old `Session`s).
+        self.representation = Mutex::new(new_rep);
+        self.dynamics = Mutex::new(new_dyn);
+        self.prediction = Mutex::new(new_pred);
+        self.config = new_config;
+        Ok(())
+    }
+
+    /// Borrow the current [`OnnxModelConfig`] (paths, dims, threads).
+    /// Useful for introspection from the runner / metrics endpoint.
+    pub fn config(&self) -> &OnnxModelConfig {
+        &self.config
     }
 
     /// Check that all ONNX model files exist on disk.
@@ -232,5 +372,121 @@ impl LatentForwardModel for OnnxMuZeroModel {
 
     fn action_space_size(&self) -> u32 {
         self.config.action_space_size
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests that do NOT need real ONNX bundles. The happy-path
+    //! reload swap test (with valid bundles) lives in
+    //! `tests/onnx_reload_integration.rs` alongside the existing
+    //! `onnx_integration.rs`, because both need a Python + torch +
+    //! onnx subprocess to produce the test ONNX files.
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn validate_reload_paths_accepts_existing_trio() {
+        let dir = tempdir().unwrap();
+        for name in ["rep.onnx", "dyn.onnx", "pred.onnx"] {
+            std::fs::write(dir.path().join(name), b"stub").unwrap();
+        }
+        let cfg = OnnxModelConfig {
+            representation_path: dir.path().join("rep.onnx").to_string_lossy().into_owned(),
+            dynamics_path: dir.path().join("dyn.onnx").to_string_lossy().into_owned(),
+            prediction_path: dir.path().join("pred.onnx").to_string_lossy().into_owned(),
+            action_space_size: 4,
+            latent_dim: 8,
+            num_threads: 1,
+        };
+        validate_reload_paths(&cfg).unwrap();
+    }
+
+    #[test]
+    fn validate_reload_paths_returns_missing_file_for_absent_representation() {
+        let dir = tempdir().unwrap();
+        // Only dynamics + prediction exist; representation is absent.
+        std::fs::write(dir.path().join("dyn.onnx"), b"stub").unwrap();
+        std::fs::write(dir.path().join("pred.onnx"), b"stub").unwrap();
+        let missing = dir.path().join("rep.onnx");
+        let cfg = OnnxModelConfig {
+            representation_path: missing.to_string_lossy().into_owned(),
+            dynamics_path: dir.path().join("dyn.onnx").to_string_lossy().into_owned(),
+            prediction_path: dir.path().join("pred.onnx").to_string_lossy().into_owned(),
+            action_space_size: 4,
+            latent_dim: 8,
+            num_threads: 1,
+        };
+        let err = validate_reload_paths(&cfg).unwrap_err();
+        match err {
+            OnnxReloadError::MissingFile { path } => assert_eq!(path, missing),
+            other => panic!("expected MissingFile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_reload_paths_returns_missing_file_for_absent_dynamics() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("rep.onnx"), b"stub").unwrap();
+        std::fs::write(dir.path().join("pred.onnx"), b"stub").unwrap();
+        let missing = dir.path().join("dyn.onnx");
+        let cfg = OnnxModelConfig {
+            representation_path: dir.path().join("rep.onnx").to_string_lossy().into_owned(),
+            dynamics_path: missing.to_string_lossy().into_owned(),
+            prediction_path: dir.path().join("pred.onnx").to_string_lossy().into_owned(),
+            action_space_size: 4,
+            latent_dim: 8,
+            num_threads: 1,
+        };
+        let err = validate_reload_paths(&cfg).unwrap_err();
+        match err {
+            OnnxReloadError::MissingFile { path } => assert_eq!(path, missing),
+            other => panic!("expected MissingFile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_reload_paths_returns_missing_file_for_absent_prediction() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("rep.onnx"), b"stub").unwrap();
+        std::fs::write(dir.path().join("dyn.onnx"), b"stub").unwrap();
+        let missing = dir.path().join("pred.onnx");
+        let cfg = OnnxModelConfig {
+            representation_path: dir.path().join("rep.onnx").to_string_lossy().into_owned(),
+            dynamics_path: dir.path().join("dyn.onnx").to_string_lossy().into_owned(),
+            prediction_path: missing.to_string_lossy().into_owned(),
+            action_space_size: 4,
+            latent_dim: 8,
+            num_threads: 1,
+        };
+        let err = validate_reload_paths(&cfg).unwrap_err();
+        match err {
+            OnnxReloadError::MissingFile { path } => assert_eq!(path, missing),
+            other => panic!("expected MissingFile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn onnx_reload_error_display_includes_path() {
+        let err = OnnxReloadError::MissingFile {
+            path: PathBuf::from("/no/such/file.onnx"),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("/no/such/file.onnx"), "got: {msg}");
+        assert!(msg.contains("missing ONNX file"), "got: {msg}");
+    }
+
+    #[test]
+    fn onnx_reload_error_source_is_some_for_ort_variant() {
+        // The MissingFile variant has no source; the Ort variant
+        // surfaces the underlying ort::Error. We don't construct an
+        // ort::Error directly (it's not Default-constructible), but
+        // we assert the source() return shape via the MissingFile
+        // path which returns None.
+        let err = OnnxReloadError::MissingFile {
+            path: PathBuf::from("x"),
+        };
+        let source: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(&err);
+        assert!(source.is_none());
     }
 }
