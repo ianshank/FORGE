@@ -133,7 +133,10 @@ mod tests {
         assert!((out.value - 0.0).abs() < f32::EPSILON);
         // Uniform priors sum to 1.0 ± floating-point drift.
         let sum: f32 = out.policy_logits.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-5, "uniform priors must sum to 1.0, got {sum}");
+        assert!(
+            (sum - 1.0).abs() < 1e-5,
+            "uniform priors must sum to 1.0, got {sum}"
+        );
     }
 
     #[test]

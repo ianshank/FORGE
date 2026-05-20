@@ -10,7 +10,7 @@ covered by the `python-test-maturin` job instead.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator  # noqa: TC003 — runtime use in pytest fixture yield
 from typing import Any
 
 import pytest

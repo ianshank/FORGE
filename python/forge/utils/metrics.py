@@ -110,7 +110,7 @@ def fetch_prometheus_metrics(
     failure / non-2xx status. Callers that want a soft-failure path
     should wrap this in their own ``try``.
     """
-    with urllib.request.urlopen(url, timeout=timeout_secs) as resp:  # noqa: S310 — operator-supplied URL
+    with urllib.request.urlopen(url, timeout=timeout_secs) as resp:
         raw = resp.read()
     if isinstance(raw, bytes):
         return raw.decode("utf-8", errors="replace")

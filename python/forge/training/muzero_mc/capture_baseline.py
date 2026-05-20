@@ -19,8 +19,6 @@ module's constants (or the runner's own config).
 from __future__ import annotations
 
 __all__ = [
-    "BaselineRecord",
-    "CaptureConfig",
     "DEFAULT_DOCKER_LOGS_TAIL",
     "DEFAULT_METRICS_URL",
     "DEFAULT_RUNNER_CONTAINER",
@@ -28,6 +26,8 @@ __all__ = [
     "DEFAULT_TRAJECTORY_GLOB_PATTERN",
     "VARIANT_RANDOM",
     "VARIANT_TRAINED",
+    "BaselineRecord",
+    "CaptureConfig",
     "capture_baseline",
     "load_episode_records",
     "resolve_trajectory_dir",
@@ -36,7 +36,7 @@ __all__ = [
 import json
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable  # noqa: TC003 — runtime use in collect_per_episode_payload
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -307,7 +307,7 @@ def capture_baseline(
 
         try:
             last_scrape = metrics_fetcher(cfg.metrics_url)
-        except Exception as exc:  # noqa: BLE001 — surface AND keep polling
+        except Exception as exc:
             logger.debug("metrics scrape transient error: %s", exc)
             sleeper(cfg.poll_interval_secs)
             continue

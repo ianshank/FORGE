@@ -11,18 +11,18 @@ from __future__ import annotations
 import gzip
 import json
 import logging
-from pathlib import Path
+from pathlib import Path  # noqa: TC003 — runtime use in pytest tmp_path fixture
 from typing import Any
 
 import pytest
 
 from forge.training.muzero_mc.capture_baseline import (
     ALL_VARIANTS,
-    BaselineRecord,
-    CaptureConfig,
     DEFAULT_METRICS_URL,
     VARIANT_RANDOM,
     VARIANT_TRAINED,
+    BaselineRecord,
+    CaptureConfig,
     capture_baseline,
     collect_per_episode_payload,
     load_episode_records,
@@ -34,7 +34,6 @@ from forge.utils.metrics import (
     scrape_counter,
     scrape_gauge,
 )
-
 
 # --- Metrics module pins -------------------------------------------
 

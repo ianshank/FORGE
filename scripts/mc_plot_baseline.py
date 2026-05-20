@@ -108,13 +108,14 @@ def render_summary_table(summaries: list[VariantSummary]) -> str:
         "Steps mean | Steps median | Steps std | Steps p95 |\n"
         "|---|---|---|---|---|---|---|---|---|---|\n"
     )
-    rows = []
-    for s in summaries:
-        rows.append(
+    rows = [
+        (
             f"| {s.variant} | {s.episodes} | {s.reward_mean:.3f} | {s.reward_median:.3f} | "
             f"{s.reward_std:.3f} | {s.reward_p95:.3f} | {s.steps_mean:.1f} | "
             f"{s.steps_median:.1f} | {s.steps_std:.1f} | {s.steps_p95:.1f} |"
         )
+        for s in summaries
+    ]
     return header + "\n".join(rows)
 
 

@@ -436,9 +436,11 @@ fn handshake_accepts_matching_grid_shape() {
         channels: 7,
         vector_dim: 73,
     };
-    let obs_dim =
-        (grid.height as usize) * (grid.width as usize) * (grid.depth as usize) * (grid.channels as usize)
-            + (grid.vector_dim as usize);
+    let obs_dim = (grid.height as usize)
+        * (grid.width as usize)
+        * (grid.depth as usize)
+        * (grid.channels as usize)
+        + (grid.vector_dim as usize);
     let hello = hello_with_grid(map.action_count(), obs_dim, map.canonical_sha256(), grid);
     let server = Mock::spawn(&addr, hello, vec![]).run();
 
@@ -477,7 +479,12 @@ fn handshake_rejects_grid_shape_mismatch() {
     let obs_dim = (server_grid.height as usize)
         * (server_grid.width as usize)
         * (server_grid.channels as usize);
-    let hello = hello_with_grid(map.action_count(), obs_dim, map.canonical_sha256(), server_grid);
+    let hello = hello_with_grid(
+        map.action_count(),
+        obs_dim,
+        map.canonical_sha256(),
+        server_grid,
+    );
     let server = Mock::spawn(&addr, hello, vec![]).run();
 
     let mut cfg = cfg_with_url(url);
@@ -530,8 +537,15 @@ fn handshake_accepts_any_grid_shape_when_expected_is_none() {
         channels: 7,
         vector_dim: 0,
     };
-    let obs_dim = 3 * 3 * 1 * 7;
-    let hello = hello_with_grid(map.action_count(), obs_dim, map.canonical_sha256(), server_grid);
+    // 3 (h) * 3 (w) * 1 (d) * 7 (ch) = 63 floats — single Y-layer with the
+    // documented per-tile channel count.
+    let obs_dim: usize = 3 * 3 * 7;
+    let hello = hello_with_grid(
+        map.action_count(),
+        obs_dim,
+        map.canonical_sha256(),
+        server_grid,
+    );
     let server = Mock::spawn(&addr, hello, vec![]).run();
     let mut cfg = cfg_with_url(url);
     cfg.observation.expected_dim = Some(obs_dim);

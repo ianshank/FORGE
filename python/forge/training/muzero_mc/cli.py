@@ -352,7 +352,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # capture-baseline (v0.5 Phase 1)
+    _add_capture_baseline_subcommand(sub)
+
+    return parser
+
+
+def _add_capture_baseline_subcommand(sub: argparse._SubParsersAction[Any]) -> None:
+    """Register the v0.5 `capture-baseline` subcommand on the parser.
+
+    Lifted out of ``build_parser`` so the parent stays under ruff's
+    PLR0915 (too-many-statements) threshold; the inner argparse
+    boilerplate is single-purpose and reads cleaner as its own block.
+    """
     from forge.training.muzero_mc.capture_baseline import (
         ALL_VARIANTS,
         DEFAULT_METRICS_URL,
@@ -433,8 +444,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the resolved CaptureConfig + exit 0 (no scrape, no write).",
     )
-
-    return parser
 
 
 def main(argv: list[str] | None = None) -> int:

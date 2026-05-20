@@ -182,9 +182,12 @@ mod tests {
         assert_eq!(c.expected_schema_id, None);
         assert_eq!(c.episode.max_ticks, default_max_ticks());
         assert_eq!(c.observation.grid_radius, default_grid_radius());
-        assert_eq!(c.observation.grid_height_radius, default_grid_height_radius());
+        assert_eq!(
+            c.observation.grid_height_radius,
+            default_grid_height_radius()
+        );
         assert_eq!(c.observation.grid_channels, default_grid_channels());
-        assert_eq!(c.observation.include_block_grid, false);
+        assert!(!c.observation.include_block_grid);
         assert_eq!(c.observation.flat_vector_dim, None);
         assert_eq!(c.observation.expected_grid_shape, None);
     }
@@ -222,7 +225,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("read {}: {e}", env_toml.display()));
         let cfg: MinecraftEnvConfig = toml::from_str(&raw).expect("parse env.toml");
 
-        assert_eq!(cfg.observation.include_block_grid, true);
+        assert!(cfg.observation.include_block_grid);
         assert_eq!(cfg.observation.grid_radius, 5);
         assert_eq!(cfg.observation.grid_height_radius, 0);
         assert_eq!(cfg.observation.grid_channels, 7);
@@ -262,7 +265,7 @@ mod tests {
         });
         let s = toml::to_string(&c).unwrap();
         let back: MinecraftEnvConfig = toml::from_str(&s).unwrap();
-        assert_eq!(back.observation.include_block_grid, true);
+        assert!(back.observation.include_block_grid);
         assert_eq!(back.observation.expected_dim, Some(920));
         assert_eq!(back.observation.flat_vector_dim, Some(73));
         assert_eq!(

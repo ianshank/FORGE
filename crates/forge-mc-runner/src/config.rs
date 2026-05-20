@@ -409,7 +409,7 @@ mod tests {
         // Backwards-compat pin: existing TOMLs without `random_actions`
         // must continue to route planning through MCTS.
         let cfg = RunnerConfig::default();
-        assert_eq!(cfg.random_actions, false);
+        assert!(!cfg.random_actions);
     }
 
     #[test]
