@@ -27,6 +27,67 @@ describe('protocol — helloMsg', () => {
   it('rejects empty schema_id', () => {
     assert.throws(() => helloMsg({ actionCount: 1, obsDim: 10, schemaId: '' }));
   });
+
+  it('omits grid_shape entirely when caller passes null', () => {
+    const m = helloMsg({ actionCount: 1, obsDim: 31, schemaId: 'a', gridShape: null });
+    assert.equal('grid_shape' in m, false);
+  });
+
+  it('passes through a well-formed grid_shape', () => {
+    const m = helloMsg({
+      actionCount: 1,
+      obsDim: 920,
+      schemaId: 'a',
+      gridShape: { height: 11, width: 11, depth: 11, channels: 7, vector_dim: 73 },
+    });
+    assert.deepEqual(m.grid_shape, {
+      height: 11,
+      width: 11,
+      depth: 11,
+      channels: 7,
+      vector_dim: 73,
+    });
+  });
+
+  it('defaults grid_shape.vector_dim to 0 when omitted', () => {
+    const m = helloMsg({
+      actionCount: 1,
+      obsDim: 847,
+      schemaId: 'a',
+      gridShape: { height: 11, width: 11, depth: 11, channels: 7 },
+    });
+    assert.equal(m.grid_shape.vector_dim, 0);
+  });
+
+  it('rejects grid_shape with non-positive dims', () => {
+    assert.throws(() =>
+      helloMsg({
+        actionCount: 1,
+        obsDim: 10,
+        schemaId: 'a',
+        gridShape: { height: 0, width: 11, depth: 11, channels: 7 },
+      }),
+    );
+    assert.throws(() =>
+      helloMsg({
+        actionCount: 1,
+        obsDim: 10,
+        schemaId: 'a',
+        gridShape: { height: 11, width: 11, depth: 11, channels: -1 },
+      }),
+    );
+  });
+
+  it('rejects grid_shape with negative vector_dim', () => {
+    assert.throws(() =>
+      helloMsg({
+        actionCount: 1,
+        obsDim: 10,
+        schemaId: 'a',
+        gridShape: { height: 11, width: 11, depth: 11, channels: 7, vector_dim: -1 },
+      }),
+    );
+  });
 });
 
 describe('protocol — observationMsg', () => {

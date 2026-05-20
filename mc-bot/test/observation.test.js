@@ -40,6 +40,41 @@ describe('observation', () => {
     assert.equal(computeObsDim({ include_position: false, include_velocity: false, include_orientation: false, include_vitals: false, include_inventory: false }), 0);
   });
 
+  it('flat_vector_dim zero-pads the flat vector up to the target', () => {
+    // 31 raw features + zero-pad up to 73 = 73-float flat surface.
+    // The grid is OFF here, so the total observation is exactly 73.
+    const config = { flat_vector_dim: 73 };
+    assert.equal(computeObsDim(config), 73);
+    const snap = snapshotObservation(stubBot(), config);
+    assert.equal(snap.obs.length, 73);
+    // Tail must be zero-pad (raw goes to 31 floats with defaults).
+    for (let i = 31; i < 73; i += 1) {
+      assert.equal(snap.obs[i], 0);
+    }
+  });
+
+  it('include_block_grid prepends the block-grid floats', () => {
+    // Default grid is 11×11×11×7 = 9317 floats with the encoder.  The
+    // first-real-run plan targets a 2D variant via
+    // grid_height_radius=0 (847 grid floats), so test both shapes
+    // resolve to the documented total.
+    const flatConfig = {
+      flat_vector_dim: 73,
+      include_block_grid: true,
+      grid_radius: 5,
+      grid_height_radius: 0,
+    };
+    assert.equal(computeObsDim(flatConfig), 11 * 11 * 1 * 7 + 73);
+    assert.equal(computeObsDim({ ...flatConfig, grid_height_radius: 5 }), 11 * 11 * 11 * 7 + 73);
+  });
+
+  it('include_block_grid disabled emits the 31-float legacy shape', () => {
+    // Backwards-compat pin: the existing flat 31-float surface keeps
+    // working for downstream consumers that haven't migrated.
+    const config = { inventory_slots: 9, inventory_features_per_slot: 2 };
+    assert.equal(computeObsDim(config), 31);
+  });
+
   it('builds finite vectors and inventory maps from bot state', () => {
     const config = { inventory_slots: 9, inventory_features_per_slot: 2 };
     const snapshot = snapshotObservation(stubBot(), config);

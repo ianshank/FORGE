@@ -1,9 +1,15 @@
+import { DEFAULT_HASH_MOD, stableStringHash } from './hash.js';
+import { encodeBlockGrid, gridFlatDim } from './observation_grid.js';
+
 const DEFAULT_POSITION_SCALE = 1024;
-const DEFAULT_HASH_MOD = 4096;
 const DEFAULT_MAX_STACK_SIZE = 64;
 const DEFAULT_HOTBAR_SLOTS = 9;
 const DEFAULT_SLOT_FEATURES = 2;
 const HOTBAR_SLOT_OFFSET = 36;
+
+// Re-export for any downstream module that still imports
+// `stableStringHash` from `observation.js`.
+export { stableStringHash };
 
 function finiteNumber(value, fallback = 0) {
   const numberValue = Number(value);
@@ -12,6 +18,15 @@ function finiteNumber(value, fallback = 0) {
 
 function boolDefault(value, fallback) {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function flatVectorDimFromConfig(config) {
+  // Optional zero-padding target for the flat (non-grid) vector. Lets
+  // operators decouple the bot-emitted shape from the trainer's
+  // expected `vector_dim` without inventing semantically-empty
+  // features. `null`/omitted ⇒ no padding (legacy 31-float shape).
+  const raw = config?.flat_vector_dim;
+  return Number.isInteger(raw) && raw > 0 ? raw : null;
 }
 
 function inventorySlots(config) {
@@ -24,7 +39,7 @@ function slotFeatures(config) {
   return Number.isInteger(features) && features > 0 ? features : DEFAULT_SLOT_FEATURES;
 }
 
-export function computeObsDim(config = {}) {
+function flatVectorDimRaw(config) {
   let dim = 0;
   if (boolDefault(config.include_position, true)) dim += 3;
   if (boolDefault(config.include_velocity, true)) dim += 3;
@@ -36,14 +51,18 @@ export function computeObsDim(config = {}) {
   return dim;
 }
 
-export function stableStringHash(text, modulus = DEFAULT_HASH_MOD) {
-  const hashMod = Number.isInteger(modulus) && modulus > 0 ? modulus : DEFAULT_HASH_MOD;
-  let hash = 2166136261;
-  for (const char of String(text)) {
-    hash ^= char.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) % hashMod;
+export function computeFlatVectorDim(config = {}) {
+  const rawFlat = flatVectorDimRaw(config);
+  const padTarget = flatVectorDimFromConfig(config);
+  return padTarget !== null ? Math.max(rawFlat, padTarget) : rawFlat;
+}
+
+export function computeObsDim(config = {}) {
+  const flat = computeFlatVectorDim(config);
+  const gridDim = boolDefault(config?.include_block_grid, false)
+    ? gridFlatDim(config)
+    : 0;
+  return gridDim + flat;
 }
 
 function itemNumericId(item, hashMod) {
@@ -130,10 +149,16 @@ export function observationVectorFromSnapshot(snapshot, config = {}) {
   if (boolDefault(config.include_orientation, true)) pushOrientation(vector, snapshot);
   if (boolDefault(config.include_vitals, true)) pushVitals(vector, snapshot, config);
   if (boolDefault(config.include_inventory, true)) pushInventory(vector, snapshot, config);
-  const expectedDim = computeObsDim(config);
-  if (vector.length !== expectedDim) {
-    throw new Error(`observation length ${vector.length} did not match computed dim ${expectedDim}`);
+  const targetFlat = computeFlatVectorDim(config);
+  if (vector.length > targetFlat) {
+    throw new Error(
+      `observation length ${vector.length} exceeds computeFlatVectorDim=${targetFlat}`,
+    );
   }
+  // Zero-pad up to the configured `flat_vector_dim`. This decouples the
+  // bot-emitted feature surface from the trainer's expected
+  // `vector_dim` without inventing semantically-empty features.
+  while (vector.length < targetFlat) vector.push(0);
   return vector;
 }
 
@@ -173,6 +198,15 @@ export function snapshotObservation(bot, config = {}) {
     inventory: buildInventoryMap(bot),
     hotbar,
   };
-  snapshot.obs = observationVectorFromSnapshot(snapshot, config);
+  const flatVector = observationVectorFromSnapshot(snapshot, config);
+  if (boolDefault(config?.include_block_grid, false)) {
+    const grid = encodeBlockGrid(bot, config);
+    snapshot.gridMissedTiles = grid.missedTiles;
+    snapshot.gridTopBlockTypes = grid.topBlockTypes;
+    snapshot.gridShape = grid.shape;
+    snapshot.obs = [...grid.floats, ...flatVector];
+  } else {
+    snapshot.obs = flatVector;
+  }
   return snapshot;
 }

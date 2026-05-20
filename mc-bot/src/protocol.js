@@ -3,13 +3,40 @@
 
 export const SCHEMA_VERSION = 1;
 
+function validateGridShape(gridShape) {
+  // Optional handshake payload. Carries the spatial dimensions of the
+  // block-grid prefix on the wire so the Rust client can refuse a bot
+  // that hashes the same `obs_dim` but encodes the grid in a different
+  // order (regression catch for cross-language drift).
+  const required = ['height', 'width', 'depth', 'channels'];
+  for (const key of required) {
+    const value = gridShape[key];
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`grid_shape.${key} must be a positive integer, got ${value}`);
+    }
+  }
+  const vectorDim = gridShape.vector_dim ?? 0;
+  if (!Number.isInteger(vectorDim) || vectorDim < 0) {
+    throw new Error(`grid_shape.vector_dim must be a non-negative integer, got ${vectorDim}`);
+  }
+  return {
+    height: gridShape.height,
+    width: gridShape.width,
+    depth: gridShape.depth,
+    channels: gridShape.channels,
+    vector_dim: vectorDim,
+  };
+}
+
 /**
  * Build a Hello server message.
  *
- * @param {{ actionCount: number, obsDim: number, schemaId: string }} args
+ * @param {{ actionCount: number, obsDim: number, schemaId: string,
+ *           gridShape?: { height: number, width: number, depth: number,
+ *                         channels: number, vector_dim?: number } | null }} args
  * @returns {object}
  */
-export function helloMsg({ actionCount, obsDim, schemaId }) {
+export function helloMsg({ actionCount, obsDim, schemaId, gridShape = null }) {
   if (!Number.isInteger(actionCount) || actionCount <= 0) {
     throw new Error(`actionCount must be positive integer, got ${actionCount}`);
   }
@@ -19,13 +46,17 @@ export function helloMsg({ actionCount, obsDim, schemaId }) {
   if (typeof schemaId !== 'string' || schemaId.length === 0) {
     throw new Error('schemaId must be a non-empty string');
   }
-  return {
+  const message = {
     type: 'hello',
     schema_version: SCHEMA_VERSION,
     action_count: actionCount,
     obs_dim: obsDim,
     schema_id: schemaId,
   };
+  if (gridShape !== null && gridShape !== undefined) {
+    message.grid_shape = validateGridShape(gridShape);
+  }
+  return message;
 }
 
 /**

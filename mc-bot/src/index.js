@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { executeAction } from './actions.js';
 import { loadConfigBundle } from './config.js';
 import { snapshotObservation, computeObsDim } from './observation.js';
+import { gridShapePayload } from './observation_grid.js';
 import { errorMsg, helloMsg, observationMsg, parseClientMsg } from './protocol.js';
 import { applyReset } from './reset.js';
 import { startViewer } from './viewer.js';
@@ -57,6 +58,7 @@ export function createConnectionHandler({ bot, bundle, logger = console }) {
       actionCount: bundle.actionMap.actionCount,
       obsDim,
       schemaId: bundle.schemaId,
+      gridShape: gridShapePayload(envConfig.observation),
     }));
 
     let queue = Promise.resolve();

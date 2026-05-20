@@ -10,6 +10,52 @@ use serde::{Deserialize, Serialize};
 /// The bot's `Hello` reply must match.
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// Frozen channel order for the block-grid observation prefix.
+///
+/// MUST stay in sync with the JS-side
+/// `mc-bot/src/observation_grid.js::BLOCK_FEATURE_CHANNELS` —
+/// reordering on either side silently mis-trains the CNN. Coordinated
+/// tests live in `xlang_block_feature_channels_pinned_to_known_good`
+/// (this side) and
+/// `mc-bot/test/observation_grid.test.js::feature channel order pin`
+/// (JS side); drift fails both tests simultaneously.
+pub const BLOCK_FEATURE_CHANNELS: [&str; 7] = [
+    "block_type_hash",
+    "light_level",
+    "hardness",
+    "is_solid",
+    "is_liquid",
+    "is_dangerous",
+    "biome_id_hash",
+];
+
+/// Spatial layout of the block-grid prefix in the observation vector.
+///
+/// When present in the bot's `Hello`, the client cross-checks each
+/// dimension against `config.observation.expected_grid_shape` and
+/// refuses to start on mismatch. This catches a regression where the
+/// JS encoder advertises the same flat `obs_dim` but reorders the
+/// grid axes (silently mis-training the CNN).
+///
+/// `vector_dim` is the size of the non-grid suffix in the same flat
+/// observation buffer — i.e. `obs_dim == height * width * depth *
+/// channels + vector_dim` must hold when grid_shape is `Some`.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GridShape {
+    /// X-axis ego-centric tile count (2 * grid_radius + 1 on the bot).
+    pub height: u32,
+    /// Z-axis ego-centric tile count (2 * grid_radius + 1 on the bot).
+    pub width: u32,
+    /// Y-axis ego-centric tile count (2 * grid_height_radius + 1).
+    pub depth: u32,
+    /// Per-tile feature channel count.
+    pub channels: u32,
+    /// Non-grid flat-vector dim that follows the grid in `obs`.
+    /// Operators may set this to `0` when the bot emits only the grid.
+    #[serde(default)]
+    pub vector_dim: u32,
+}
+
 /// Messages sent from the Rust client to the Node bot.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -44,6 +90,11 @@ pub enum ServerMsg {
         /// SHA256 of `(action_map_canonical, rewards_canonical, obs_layout)`.
         /// Client MUST refuse to start if this disagrees with its own.
         schema_id: String,
+        /// Optional spatial layout of the block-grid prefix in the
+        /// observation buffer. `None` keeps the legacy flat-only
+        /// contract for bots that don't emit a grid.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        grid_shape: Option<GridShape>,
     },
     /// Per-tick observation, reward, terminal flags, and free-form info.
     Observation {
@@ -98,12 +149,66 @@ mod tests {
             action_count: 32,
             obs_dim: 960,
             schema_id: "abcd1234".to_string(),
+            grid_shape: None,
         };
         let j = serde_json::to_string(&m).unwrap();
         assert!(j.contains("\"type\":\"hello\""));
         assert!(j.contains("\"obs_dim\":960"));
+        // grid_shape:None must be elided so legacy bots stay
+        // wire-compatible with this serializer's output.
+        assert!(!j.contains("grid_shape"));
         let back: ServerMsg = serde_json::from_str(&j).unwrap();
         assert_eq!(m, back);
+    }
+
+    #[test]
+    fn server_hello_with_grid_shape_roundtrip() {
+        let m = ServerMsg::Hello {
+            schema_version: SCHEMA_VERSION,
+            action_count: 12,
+            obs_dim: 920,
+            schema_id: "abc".to_string(),
+            grid_shape: Some(GridShape {
+                height: 11,
+                width: 11,
+                depth: 11,
+                channels: 7,
+                vector_dim: 73,
+            }),
+        };
+        let j = serde_json::to_string(&m).unwrap();
+        assert!(j.contains("\"grid_shape\""));
+        assert!(j.contains("\"channels\":7"));
+        let back: ServerMsg = serde_json::from_str(&j).unwrap();
+        assert_eq!(m, back);
+    }
+
+    #[test]
+    fn server_hello_accepts_grid_shape_without_vector_dim() {
+        // Bots may omit `vector_dim` entirely when the obs is grid-only;
+        // serde_default must fill it in as 0 so the wire stays
+        // backwards-compatible.
+        let raw = r#"{
+            "type": "hello",
+            "schema_version": 1,
+            "action_count": 4,
+            "obs_dim": 847,
+            "schema_id": "abc",
+            "grid_shape": {
+                "height": 11, "width": 11, "depth": 11, "channels": 7
+            }
+        }"#;
+        let back: ServerMsg = serde_json::from_str(raw).unwrap();
+        match back {
+            ServerMsg::Hello {
+                grid_shape: Some(g),
+                ..
+            } => {
+                assert_eq!(g.vector_dim, 0);
+                assert_eq!(g.channels, 7);
+            }
+            other => panic!("expected Hello with grid_shape, got {other:?}"),
+        }
     }
 
     #[test]
@@ -154,5 +259,32 @@ mod tests {
              SCHEMA_VERSION must also be bumped and its xlang test \
              updated in the same PR"
         );
+    }
+
+    /// Pinned cross-language channel-order regression gate. This exact
+    /// order MUST equal
+    /// `mc-bot/src/observation_grid.js::BLOCK_FEATURE_CHANNELS`;
+    /// the JS-side counterpart pins the same names via
+    /// `mc-bot/test/observation_grid.test.js`.
+    ///
+    /// Reordering on either side silently mis-trains the CNN — drift
+    /// fails both this test and the JS-side counterpart simultaneously.
+    #[test]
+    fn xlang_block_feature_channels_pinned_to_known_good() {
+        assert_eq!(
+            BLOCK_FEATURE_CHANNELS,
+            [
+                "block_type_hash",
+                "light_level",
+                "hardness",
+                "is_solid",
+                "is_liquid",
+                "is_dangerous",
+                "biome_id_hash",
+            ],
+            "BLOCK_FEATURE_CHANNELS drift — coordinate with \
+             mc-bot/src/observation_grid.js + its JS-side pin test"
+        );
+        assert_eq!(BLOCK_FEATURE_CHANNELS.len(), 7);
     }
 }
