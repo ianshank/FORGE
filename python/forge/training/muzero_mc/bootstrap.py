@@ -164,8 +164,20 @@ def bootstrap(cfg: BootstrapConfig) -> BootstrapResult:
     _set_inference_mode(model)
 
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
+    # v0.4 atomic-bundle layout: write the ONNX files into a per-
+    # version subdir (`v00000001/` for the typical cold-start with
+    # `version=1`) so the trainer's later exports never overwrite
+    # this initial bundle in place. The manifest carries the
+    # versioned relative path (`v00000001/representation.onnx`)
+    # which the Rust runner's `config_from_manifest` resolves
+    # against `bundle_dir` transparently.
+    from forge.training.muzero_mc.trainer import format_bundle_version_dir
+
+    bundle_subdir_name = format_bundle_version_dir(cfg.version)
+    versioned_dir = cfg.output_dir / bundle_subdir_name
+    versioned_dir.mkdir(parents=True, exist_ok=True)
     exporter = MuZeroExporter(model)
-    onnx_paths_list = exporter.export_onnx(cfg.output_dir, opset_version=cfg.opset_version)
+    onnx_paths_list = exporter.export_onnx(versioned_dir, opset_version=cfg.opset_version)
 
     # The exporter writes representation.onnx, dynamics.onnx,
     # prediction.onnx in that order (see
@@ -185,9 +197,9 @@ def bootstrap(cfg: BootstrapConfig) -> BootstrapResult:
         version=cfg.version,
         schema_id=cfg.schema_id,
         files_dir=cfg.output_dir,
-        representation_filename=cfg.filenames["representation"],
-        dynamics_filename=cfg.filenames["dynamics"],
-        prediction_filename=cfg.filenames["prediction"],
+        representation_filename=f"{bundle_subdir_name}/{cfg.filenames['representation']}",
+        dynamics_filename=f"{bundle_subdir_name}/{cfg.filenames['dynamics']}",
+        prediction_filename=f"{bundle_subdir_name}/{cfg.filenames['prediction']}",
     )
 
     manifest_path = cfg.output_dir / cfg.manifest_filename

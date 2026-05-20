@@ -337,6 +337,20 @@ def build_parser() -> argparse.ArgumentParser:
             "kept — they may be a runner in-flight write)."
         ),
     )
+    from forge.training.muzero_mc.trainer import DEFAULT_MAX_BUNDLE_VERSIONS
+
+    p_train.add_argument(
+        "--max-bundle-versions",
+        type=int,
+        default=DEFAULT_MAX_BUNDLE_VERSIONS,
+        help=(
+            f"Cap historical bundle subdirs (`vNNNNNNNN/`) at this "
+            f"count (default: {DEFAULT_MAX_BUNDLE_VERSIONS}). 0 = "
+            "disable GC (keep all history). Old bundles are deleted "
+            "AFTER the manifest swap so the runner has a safety "
+            "window to load the new version."
+        ),
+    )
 
     return parser
 
@@ -521,6 +535,7 @@ def _run_train(args: argparse.Namespace) -> int:
             device=args.device,
             round_poll_sleep_s=args.round_poll_sleep,
             max_trajectories=args.max_trajectories,
+            max_bundle_versions=args.max_bundle_versions,
         )
         trainer = MuzeroMcTrainer(model, reader, trainer_cfg)
         outcome = (

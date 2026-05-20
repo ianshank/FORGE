@@ -495,6 +495,121 @@ def test_trim_replay_buffer_keeps_newest_when_cap_below_floor(tmp_path: Path) ->
     assert surviving_indices == expected_indices
 
 
+def test_format_bundle_version_dir_matches_pad_width() -> None:
+    """Pins `format_bundle_version_dir` against
+    `BUNDLE_VERSION_PAD_WIDTH = 8` + `BUNDLE_VERSION_PREFIX = "v"`.
+    Drift on either side fails this test.
+    """
+    from forge.training.muzero_mc.trainer import (
+        BUNDLE_VERSION_PAD_WIDTH,
+        BUNDLE_VERSION_PREFIX,
+        format_bundle_version_dir,
+    )
+
+    assert BUNDLE_VERSION_PREFIX == "v"
+    assert BUNDLE_VERSION_PAD_WIDTH == 8
+    assert format_bundle_version_dir(1) == "v00000001"
+    assert format_bundle_version_dir(42) == "v00000042"
+    assert format_bundle_version_dir(99_999_999) == "v99999999"
+    # Overflow grows the field (matches `format_episode_id`).
+    assert format_bundle_version_dir(100_000_000) == "v100000000"
+
+
+def test_export_bundle_writes_versioned_subdir(tmp_path: Path) -> None:
+    """Pin T4a's atomicity contract: `_export_bundle` MUST write
+    the three ONNX files into `output_dir/vNNNNNNNN/` (NEW subdir),
+    NOT in-place into `output_dir/`. The manifest's per-role `path`
+    field carries the versioned prefix.
+    """
+    pytest.importorskip("torch")
+    pytest.importorskip("onnx")
+    from forge.models.muzero_config import MuZeroConfig
+    from forge.models.muzero_world_model import MuZeroWorldModel
+    from forge.training.muzero_mc.replay import TrajectoryReader
+    from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
+
+    traj_dir = tmp_path / "trajectories"
+    traj_dir.mkdir()
+    out_dir = tmp_path / "models"
+    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    reader = TrajectoryReader(traj_dir, batch_size=2)
+    cfg = MuZeroMcTrainerConfig(
+        schema_id="x", output_dir=out_dir, device="cpu", max_bundle_versions=0
+    )
+    trainer = MuzeroMcTrainer(model, reader, cfg)
+    trainer._export_bundle()
+    # Bundle subdir exists; flat onnx files do NOT exist at top level.
+    assert (out_dir / "v00000001").is_dir()
+    assert (out_dir / "v00000001" / "representation.onnx").is_file()
+    assert (out_dir / "v00000001" / "dynamics.onnx").is_file()
+    assert (out_dir / "v00000001" / "prediction.onnx").is_file()
+    assert not (out_dir / "representation.onnx").exists()
+    # Manifest's per-role path uses the versioned prefix.
+    import json
+
+    manifest_data = json.loads((out_dir / "model_manifest.json").read_text())
+    assert manifest_data["files"]["representation"]["path"].startswith("v00000001/")
+    assert manifest_data["version"] == 1
+
+
+def test_export_bundle_subsequent_versions_dont_overwrite(tmp_path: Path) -> None:
+    """The active bundle (`v{N}/`) MUST never be overwritten in place.
+    Pinned via writing two bundles and asserting BOTH subdirs survive.
+    """
+    pytest.importorskip("torch")
+    pytest.importorskip("onnx")
+    from forge.models.muzero_config import MuZeroConfig
+    from forge.models.muzero_world_model import MuZeroWorldModel
+    from forge.training.muzero_mc.replay import TrajectoryReader
+    from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
+
+    traj_dir = tmp_path / "trajectories"
+    traj_dir.mkdir()
+    out_dir = tmp_path / "models"
+    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    reader = TrajectoryReader(traj_dir, batch_size=2)
+    cfg = MuZeroMcTrainerConfig(
+        schema_id="x", output_dir=out_dir, device="cpu", max_bundle_versions=0
+    )
+    trainer = MuzeroMcTrainer(model, reader, cfg)
+    trainer._export_bundle()
+    trainer._export_bundle()
+    assert (out_dir / "v00000001").is_dir()
+    assert (out_dir / "v00000002").is_dir()
+    import json
+
+    manifest_data = json.loads((out_dir / "model_manifest.json").read_text())
+    assert manifest_data["version"] == 2
+    assert "v00000002/" in manifest_data["files"]["representation"]["path"]
+
+
+def test_export_bundle_gc_removes_old_versions(tmp_path: Path) -> None:
+    """With `max_bundle_versions=2`, the trainer keeps only the two
+    newest bundles; older `v{N}/` subdirs are removed after the
+    manifest swap.
+    """
+    pytest.importorskip("torch")
+    pytest.importorskip("onnx")
+    from forge.models.muzero_config import MuZeroConfig
+    from forge.models.muzero_world_model import MuZeroWorldModel
+    from forge.training.muzero_mc.replay import TrajectoryReader
+    from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
+
+    traj_dir = tmp_path / "trajectories"
+    traj_dir.mkdir()
+    out_dir = tmp_path / "models"
+    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    reader = TrajectoryReader(traj_dir, batch_size=2)
+    cfg = MuZeroMcTrainerConfig(
+        schema_id="x", output_dir=out_dir, device="cpu", max_bundle_versions=2
+    )
+    trainer = MuzeroMcTrainer(model, reader, cfg)
+    for _ in range(4):
+        trainer._export_bundle()
+    surviving = sorted(p.name for p in out_dir.iterdir() if p.is_dir())
+    assert surviving == ["v00000003", "v00000004"]
+
+
 def test_train_continuous_stops_on_flag(tmp_path: Path) -> None:
     """`train_continuous` yields summaries until `stop()` returns True.
     Cold-start phase: empty trajectory dir → trainer sleeps in the
