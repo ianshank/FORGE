@@ -1078,6 +1078,293 @@ ships a Criterion bench at sim budgets `1 / 8 / 25 / 50 / 100 /
 `FORGE_BENCH_MCTS_{SIMS,OBS_DIM,ACTIONS,LATENT_DIM}`. Closes the
 audit-flagged bench gap from `docs/next_steps.md` Phase 4.
 
+### 3.10.2 forge-mc-runner — Phase 4 Runner Loop + Binary (2026-05-20)
+
+The full episode-driving `Runner<E: FlatObsEnv, M: LatentForwardModel>`
+that the §3.10.1 foundation was scaffolded for. Branch
+`feat/mc-phase4-runner-loop` commit `b1cc7f8`.
+
+```
+                ┌──────────────────────────────────────────────────┐
+                │                  Runner<E, M>                    │
+                │                                                  │
+                │     ┌──────────────────────────┐                 │
+                │     │     run(max_episodes)    │                 │
+                │     │  ┌────────────────────┐  │                 │
+                │     │  │   maybe_reload()   │◄─┼──┐              │
+                │     │  │  poll watcher;     │  │  │ between      │
+                │     │  │  invoke ReloadFn   │  │  │ episodes     │
+                │     │  │  on version bump   │  │  │ only         │
+                │     │  └─────────┬──────────┘  │  │ (plan §3.4)  │
+                │     │            │             │  │              │
+                │     │  ┌─────────▼──────────┐  │  │              │
+                │     │  │   run_episode()    │  │  │              │
+                │     │  │ ┌────────────────┐ │  │  │              │
+                │     │  │ │ writer.start_  │ │  │  │              │
+                │     │  │ │   episode()    │ │  │  │              │
+                │     │  │ ├────────────────┤ │  │  │              │
+                │     │  │ │ env.reset_into │ │  │  │              │
+                │     │  │ │  (&mut obs_buf)│ │  │  │              │
+                │     │  │ ├────────────────┤ │  │  │              │
+   For each ──► │     │  │ │ search.search( │ │  │  │              │
+   step:        │     │  │ │   &obs_buf)    │ │  │  │              │
+                │     │  │ │  → visit_cnts, │ │  │  │              │
+                │     │  │ │     root_value │ │  │  │              │
+                │     │  │ ├────────────────┤ │  │  │              │
+                │     │  │ │ env.step_into  │ │  │  │              │
+                │     │  │ │  (action,      │ │  │  │              │
+                │     │  │ │   &mut step_   │ │  │  │              │
+                │     │  │ │       out)     │ │  │  │              │
+                │     │  │ │  (×action_     │ │  │  │              │
+                │     │  │ │     repeat)    │ │  │  │              │
+                │     │  │ ├────────────────┤ │  │  │              │
+                │     │  │ │ writer.record_ │ │  │  │              │
+                │     │  │ │   step(StepV2) │ │  │  │              │
+                │     │  │ ├────────────────┤ │  │  │              │
+                │     │  │ │ swap(obs_buf,  │ │  │  │              │
+                │     │  │ │   step_out.obs)│ │  │  │              │
+                │     │  │ └────────────────┘ │  │  │              │
+                │     │  ├────────────────────┤  │  │              │
+                │     │  │ writer.finalize_   │  │  │              │
+                │     │  │   and_save()       │  │  │              │
+                │     │  └────────────┬───────┘  │  │              │
+                │     │               │          │  │              │
+                │     └───────────────┼──────────┘  │              │
+                │                     └─────────────┘              │
+                │                                                  │
+                │   `ReloadFn<M> = Box<dyn FnMut(&mut M,            │
+                │       &ModelManifest) -> Result<(),               │
+                │           RunnerError> + Send>`                   │
+                │   installed via `with_reload_fn(...)` builder.   │
+                │                                                  │
+                │   Buffer discipline: obs_buf + step_out.obs       │
+                │   swapped via std::mem::swap → no per-step alloc. │
+                └──────────────────────────────────────────────────┘
+```
+
+**Public API additions** (all backwards-compatible):
+
+- `Runner<E: FlatObsEnv, M: LatentForwardModel>` — owns the env,
+  `LatentMctsSearch`, `TrajectoryWriter`, `HotReloadWatcher`, and the
+  pre-allocated `Vec<f32>` obs buffers.
+- `Runner::run_episode() → Result<EpisodeOutcome, RunnerError>` —
+  drives one episode end-to-end; visit counts normalised to a policy
+  distribution; `root_value` becomes the `value_target`. Runner-side
+  truncation when `steps_taken ≥ max_steps_per_episode` and the env
+  hasn't terminated.
+- `Runner::run(max_episodes: Option<u64>) → Result<RunnerOutcome,
+  RunnerError>` — outer loop polling the watcher at the top of every
+  iteration.
+- `Runner::with_reload_fn(reload_fn: ReloadFn<M>) → Self` — builder
+  hook for the hot-reload callback.
+- `Runner::prime_watcher_with(version: u64)` — pre-seeds the watcher
+  so an already-bootstrapped manifest does not trigger a spurious
+  first-poll reload.
+- `LatentMctsSearch::model() / model_mut()` — new accessors in
+  `forge-agent` (additive). The runner uses `model_mut` between
+  episodes to hand the model to the reload callback; `search` still
+  takes `&self`, so the borrow checker enforces "no model swap during
+  search".
+- `RunnerError::Env(String)` / `RunnerError::Planner(String)` /
+  `RunnerError::Reload(String)` — additive variants spanning env-trait
+  failures, anyhow-wrapped planner failures, and reload-callback
+  failures.
+
+**Binary.** `forge-mc-runner` is now an actual `[[bin]]` with a clap
+CLI:
+
+```
+forge-mc-runner [--config <TOML>] [--episodes <n>] [--dry-run] [--log-level …]
+```
+
+Live wiring against `forge-env-mc::MinecraftEnv` and `OnnxMuZeroModel`
+is the next follow-up. `--dry-run` exercises the loop with an
+in-process stub env + `StubLatentModel` so the CLI plumbing is
+verifiable without docker or a Minecraft server. The CI
+`forge-mc-runner-bin` job runs `--dry-run --episodes 1` on every push.
+
+**Tests.** 13 unit tests + 3 integration tests, on top of the 42
+foundation tests. Highlights:
+
+- Trajectory file readback under the public `TrajectoryV2::load_json`
+  surface — verifies obs_dim, action_count, policy targets sum ≈ 1.0,
+  and last-step termination flags.
+- Manifest bump v1 → v2 between episodes triggers the reload
+  callback exactly once; observed manifest versions match the bump
+  sequence.
+- Reload callback errors propagate as `RunnerError::Reload` without
+  advancing `last_model_version` or incrementing `reloads_applied`.
+- Zero-sim degenerate search yields a uniform policy target via the
+  `normalize_visits` fallback path — verifies the trainer-side
+  invariant that `policy_target.iter().sum() ≈ 1.0`.
+
+### 3.10.3 muzero_mc — Python MuZero Hot-Reload Glue (2026-05-20)
+
+Lands the Python side of the §3.10.2 hot-reload loop. Branch
+`feat/mc-phase4-runner-loop` commit `4c31a7c`.
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│            python/forge/training/muzero_mc/  (NEW package)         │
+│                                                                    │
+│  ┌──────────────────┐    ┌──────────────────┐    ┌─────────────┐   │
+│  │ manifest.py      │    │ replay.py        │    │ bootstrap.py│   │
+│  │                  │    │                  │    │             │   │
+│  │ ModelManifest    │    │ TrajectoryReader │    │ Bootstrap   │   │
+│  │ (Python ↔ Rust   │    │ (TrajectoryV2    │    │   Config    │   │
+│  │  mirror, atomic  │    │  JSONL → torch   │    │ → MuZeroExp.│   │
+│  │  save, validate) │    │  StepBatch)      │    │   _onnx_    │   │
+│  │                  │    │                  │    │ → manifest  │   │
+│  │ MANIFEST_SCHEMA  │    │ TRAJECTORY_FMT_  │    │             │   │
+│  │   _VERSION = 1   │    │   VERSION = 2    │    │ + sha256    │   │
+│  │ ONNX_OPSET = 17  │    │                  │    │   per-role  │   │
+│  └────────┬─────────┘    └────────┬─────────┘    └──────┬──────┘   │
+│           │                       │                     │          │
+│           └──────────┬────────────┴─────────────────────┘          │
+│                      │                                             │
+│                      ▼                                             │
+│         ┌─────────────────────────────┐                            │
+│         │ cli.py                      │                            │
+│         │  - bootstrap                │                            │
+│         │  - validate-manifest        │                            │
+│         │ exit codes 0 / 2 / 3 / 4    │                            │
+│         └─────────────────────────────┘                            │
+│                                                                    │
+│  Cross-language constants pinned in both sides:                    │
+│   MANIFEST_SCHEMA_VERSION   ↔   forge_mc_runner::manifest::        │
+│   TRAJECTORY_FORMAT_VERSION ↔   forge_replay::v2::TRAJECTORY_FMT_  │
+│                                                                    │
+│  Atomic save:  .tmp-*.manifest sibling + os.replace                │
+│  ↔   crates/forge-mc-runner/src/manifest.rs save_json              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Module contracts:**
+
+- `manifest.ModelManifest` is byte-compatible with the Rust struct —
+  both sides agree on `schema_version`, `version`, `schema_id`,
+  `created_at`, and the three-role `files` map. `to_json_dict` uses
+  `dataclasses.asdict` so future fields propagate automatically;
+  `from_json_dict` narrows the loaded JSON via `_require_int` /
+  `_entry_from_dict` so mypy strict mode is satisfied without
+  `# type: ignore`.
+- `manifest.save_manifest` validates **before** any disk write, then
+  writes to a `.tmp-*.manifest` sibling in the same directory and
+  `os.replace`s into place. The trainer-side discipline matches the
+  Rust `ModelManifest::save_json`, so the runner's `HotReloadWatcher`
+  never sees a half-written file regardless of which side wrote it.
+- `replay.TrajectoryReader` iterates trajectory files one at a time
+  (no whole-directory buffering) and yields `StepBatch` instances of
+  configurable size. `StepBatch.as_torch()` is the only path that
+  imports torch — every other module is importable without it.
+  Optional cross-checks on `obs_dim` / `action_count` / `schema_id`
+  fail fast on drift between the env and the trainer.
+- `bootstrap.bootstrap(BootstrapConfig)` reuses the existing
+  `forge.models.muzero_export.MuZeroExporter` — the package does
+  *not* introduce a parallel ONNX export path. The `schema_id` is
+  caller-supplied (the env-handshake sha256 the bot advertises);
+  bootstrap cannot invent it. Reproducible via `seed`.
+- `cli.main(argv)` is a library entry point — tests call it directly
+  without spawning subprocesses. `if __name__ == "__main__":` at the
+  bottom of `cli.py` forwards to `sys.exit(main())`.
+
+**Optional dependency group** in `pyproject.toml`:
+
+```toml
+minecraft = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17"]
+```
+
+The `[all]` group folds these in. Bootstrap and `StepBatch.as_torch`
+are the only call sites that require torch.
+
+**Tests.** 38 total, all passing in 0.20 s with no `# type: ignore`
+in the package. JSON shape is regression-tested against the expected
+Rust top-level field set so cross-language drift fails fast without
+needing a Rust subprocess.
+
+### 3.10.4 Phase 6 — Docker Compose + mc-bot CI + Biome (2026-05-20)
+
+End-to-end orchestration so the entire stack is reproducible from a
+single `scripts/mc_run.sh --build` invocation. Branch
+`feat/mc-phase4-runner-loop` commit `e872987`.
+
+```
+                       ┌────────────────────────────────┐
+                       │   scripts/mc_run.sh            │
+                       │   (idempotent orchestrator)    │
+                       │   --dry-run / --build /        │
+                       │   --detach / --down / ...      │
+                       └──────────────┬─────────────────┘
+                                      │
+                                      ▼
+                       ┌──────────────────────────────────────────┐
+                       │ docker/compose.minecraft.yml             │
+                       │ (env-file: compose.minecraft.env[.example]) │
+                       │                                          │
+                       │  ┌───────────┐  ┌──────────┐  ┌────────┐ │
+                       │  │ minecraft │◄─│  mc-bot  │◄─│ runner │ │
+                       │  │ (itzg/    │  │ (Node 22 │  │ (Rust  │ │
+                       │  │  mc-      │  │  + mine- │  │  binary│ │
+                       │  │  server,  │  │  flayer  │  │  from  │ │
+                       │  │  EULA via │  │  + viewer│  │  §3.10.│ │
+                       │  │  env)     │  │  )       │  │  2)    │ │
+                       │  │ :25565    │  │ :8765 WS │  │ :9090  │ │
+                       │  └───────────┘  │ :3007 web│  │  (when │ │
+                       │   healthcheck:  └──────────┘  │   wired│ │
+                       │   mc-monitor    healthcheck:  │   in   │ │
+                       │                 net.connect   │   FU)  │ │
+                       │                                ───────  │
+                       │                                          │
+                       │  Every port / image / restart-policy /   │
+                       │  filename is ${VAR:-default}.            │
+                       └──────────────────────────────────────────┘
+```
+
+**Operator-facing properties** (the v2 plan §3.6 deliverables):
+
+- **EULA is opt-in.** `MC_EULA` defaults to FALSE; the operator must
+  set it to TRUE in the env file before the `minecraft` service will
+  accept. We do not embed `EULA=TRUE` in the image.
+- **Multi-arch image.** `docker/mc-bot.Dockerfile` is a two-stage
+  Node 22-slim build with BuildKit `--platform=$BUILDPLATFORM` hints
+  so the same Dockerfile builds for amd64 + arm64 without edits.
+  Runs as the `node` user (non-root).
+- **Compose stack is config-driven.** `docker/compose.minecraft.env.example`
+  is the annotated example; the real `compose.minecraft.env` is
+  `.gitignore`d so operators don't accidentally commit MC EULA
+  acceptance or auth tokens.
+- **Idempotent orchestration.** `scripts/mc_run.sh` re-runs without
+  side effects (compose only refreshes services whose images / configs
+  changed). SIGINT in foreground mode triggers a clean `compose down`
+  via a `trap`.
+- **Per-bot lint.** `mc-bot/biome.json` + the `lint` / `lint:fix` /
+  `format` npm scripts replace ESLint with Biome 1.9.4 (zero-config,
+  single binary). The CI job `mc-bot-test` runs both `npm run lint`
+  and `npm test` on every push.
+- **Quickstart.** `examples/minecraft/quickstart.md` walks an operator
+  through EULA acceptance → bootstrap → up → viewer → trajectory
+  inspection → hot reload, plus a troubleshooting table.
+
+**CI additions** in `.github/workflows/ci.yml`:
+
+- `mc-bot-test` — `setup-node@v4` (Node 22) + `npm ci` (or
+  `npm install` on lockfile absence) + `npm run lint` + `npm test`.
+  Runs the 116 mc-bot tests on every CI build, which previously did
+  not happen.
+- `forge-mc-runner-bin` — builds the §3.10.2 binary and runs
+  `--dry-run --episodes 1` as a smoke gate. Catches regressions in
+  the env + search + writer composition without requiring docker.
+
+**Deferred to follow-up:**
+
+- Prometheus `/metrics` endpoint on the runner binary (axum
+  + counter / histogram setup).
+- `tests/python/integration/test_minecraft_e2e.py` opt-in E2E test
+  spinning up the compose stack from pytest.
+- `mc-bot/` TypeScript migration (v2 plan §10 open decision).
+- Replay storage compression (defer until output volume is
+  measurable).
+
 ---
 
 ## Level 4: Code-Level Detail

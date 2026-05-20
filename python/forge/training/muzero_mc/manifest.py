@@ -255,17 +255,23 @@ def _require_int(data: dict[str, object], key: str) -> int:
     accept ``int(obj)`` on the bare values; this helper narrows the
     type with an explicit isinstance check, producing the same
     ``ValueError`` shape ``from_json_dict`` already promises.
+
+    Strictness: matches the Rust ``serde_json`` decoder — a JSON
+    integer field MUST arrive as a JSON number, never as the quoted
+    string form (``"1"``). Accepting strings here would silently let
+    Python load manifests the Rust runner would reject, introducing
+    cross-language divergence on a contract that is supposed to be
+    byte-identical.
     """
     v = data[key]
     if isinstance(v, bool):
-        # JSON has no separate bool type vs int; reject booleans
-        # explicitly so we don't silently accept ``true`` where the
-        # Rust side expects a number.
+        # JSON has no separate bool type vs int and Python's ``bool``
+        # subclasses ``int``; reject booleans explicitly so we don't
+        # silently accept ``true`` where the Rust side expects a
+        # number.
         raise ValueError(f"manifest field {key!r} must be an integer (got bool)")
     if isinstance(v, int):
         return v
-    if isinstance(v, str) and v.lstrip("-").isdigit():
-        return int(v)
     raise ValueError(f"manifest field {key!r} must be an integer (got {type(v).__name__})")
 
 

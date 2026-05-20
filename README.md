@@ -428,7 +428,7 @@ python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765
 
 **Features:** Live terminal streaming via SSE, ASCII world canvas with colored tiles, real-time stats panel (steps/sec, seed, progress), section navigation, PASS/FAIL badges, and quick mode toggle.
 
-## Minecraft Integration (in progress)
+## Minecraft Integration
 
 FORGE ships an env-agnostic Minecraft RL bridge so the same `latent_mcts`
 planner that drives `WorldState` can act in a real Minecraft server.
@@ -437,12 +437,40 @@ Architecture and contracts are documented in
 the v2 plan supersedes v1 with peer-review fixes (reward subsystem,
 episode reset, dynamic env names, dyn-compatible trait).
 
-What's landed on the `claude/minecraft-rl-agent-integration-xnJjt`
-branch (PR #53):
+### Quickstart
+
+End-to-end (Minecraft server + mc-bot + Rust runner via docker compose):
+
+```bash
+# 1. Accept Mojang's EULA
+cp docker/compose.minecraft.env.example docker/compose.minecraft.env
+# edit and set MC_EULA=TRUE
+
+# 2. Bootstrap a random-init model bundle (Python 3.11+ with [minecraft] extras)
+pip install -e ".[minecraft]"
+python -m forge.training.muzero_mc.cli bootstrap \
+    --obs-dim 920 --action-dim 12 \
+    --schema-id "$(cat configs/minecraft/schema_id.txt)" \
+    --out models/
+
+# 3. Bring the stack up (foreground; Ctrl-C runs `compose down`)
+scripts/mc_run.sh --build
+
+# Watch the bot's first-person view in the browser
+open http://localhost:3007
+```
+
+Full walkthrough including troubleshooting:
+[`examples/minecraft/quickstart.md`](examples/minecraft/quickstart.md).
+
+### What's landed
+
+**PR #53 (`claude/minecraft-rl-agent-integration-xnJjt`)** — env-trait
+foundation, Phases 1, 2, 3 (Rust + Node):
 
 - **`forge-env`** — generic `Env` / `FlatObsEnv` trait crate with
-    buffer-filling `reset_into` / `step_into` and allocating convenience
-    wrappers (no FORGE deps).
+  buffer-filling `reset_into` / `step_into` and allocating convenience
+  wrappers (no FORGE deps).
 - **`forge-env-forge`** — `WorldEnv` + `FlatForgeEnv` (single-agent
   `Env` impl over `WorldState`, parity-tested for 200-step lockstep).
 - **`forge-env-mc`** — sync WebSocket client to a Node mc-bot;
@@ -455,31 +483,66 @@ branch (PR #53):
   canonical sha256 of both action map and rewards config plus the
   `SCHEMA_VERSION` constant.
 
-What's landed in the Phase 4 foundation PR
-(`claude/minecraft-phase3-wireup-runner-foundation`):
+**PR #56 (`claude/minecraft-phase3-wireup-runner-foundation`)** — Phase 4
+foundation:
 
 - **`forge-mc-runner`** — episode-runner foundation. Four modules:
   `RunnerConfig` (TOML + `validate()`), `ModelManifest` (atomic save,
   sha256-per-role, pinned `MANIFEST_SCHEMA_VERSION = 1`),
   `HotReloadWatcher` (between-episode poll-only contract; no
-  downgrade), `TrajectoryWriter` (atomic `TrajectoryV2` save). 42
-  unit + 2 integration tests (44 total); every module independently
-  composable.
+  downgrade), `TrajectoryWriter` (atomic `TrajectoryV2` save).
 - **`forge-bench/benches/latent_mcts_inference.rs`** — Criterion
   bench at sim budgets `1 / 8 / 25 / 50 / 100 / 200` using
-  `StubLatentModel` (no ONNX dep). Env-tunable via
-  `FORGE_BENCH_MCTS_{SIMS,OBS_DIM,ACTIONS,LATENT_DIM}`.
+  `StubLatentModel` (no ONNX dep).
 
-What's still out of scope (follow-up PR): the full `Runner<E, M>`
-episode loop + `LatentPlanner` adapter, additive
-`OnnxMuZeroModel::reload()`, Python `muzero_mc/` trainer + bootstrap
-exporter, docker-compose orchestration, prismarine-viewer wire-up.
-See [`docs/next_steps.md`](docs/next_steps.md).
+**Branch `feat/mc-phase4-runner-loop` (this PR)** — Phases 4 loop, 5,
+and 6:
+
+- **`forge-mc-runner::Runner<E,M>`** — full episode loop
+  (reset → plan → step → record → finalize) on top of the foundation
+  modules. Hot-reload via opt-in `ReloadFn` callback applied strictly
+  between episodes; obs buffers swapped in place for zero per-step
+  allocation. Reusable `LatentMctsSearch::model_mut()` accessor lets
+  the runner mutate the underlying model only when no search borrow is
+  live.
+- **`forge-mc-runner` binary** — clap CLI with `--config`,
+  `--episodes`, `--dry-run`. Dry-run exercises the loop with an
+  in-process stub env + stub model so the CLI plumbing is verifiable
+  without docker or a Minecraft server.
+- **`python/forge/training/muzero_mc/`** — Python mirror of the Rust
+  `ModelManifest`, streaming `TrajectoryV2` JSONL reader (`StepBatch`
+  with optional `as_torch()` conversion), random-init bootstrap that
+  reuses the existing `MuZeroExporter` to write a v1 ONNX bundle, plus
+  a `bootstrap` / `validate-manifest` CLI.
+- **`docker/compose.minecraft.yml`** + **`docker/mc-bot.Dockerfile`** +
+  **`scripts/mc_run.sh`** — three-service compose stack (Minecraft +
+  mc-bot + runner) with multi-arch images. Every port / image tag /
+  filename flows through `${VAR:-default}` so CI / developers can
+  override without editing YAML. Orchestration script is idempotent,
+  supports `--dry-run`, `--build`, `--detach`, `--down`.
+- **CI:** new `mc-bot-test` (Node 22 + Biome + `node:test`) and
+  `forge-mc-runner-bin` (`--dry-run` smoke) jobs in `.github/workflows/ci.yml`.
+- **`mc-bot/biome.json`** — Biome 1.9.4 replaces ESLint for JS lint +
+  formatting.
+
+### What's still out of scope (follow-up PRs)
+
+- Additive `OnnxMuZeroModel::reload()` impl on
+  `crates/forge-agent/src/latent_mcts/onnx_model.rs` (fixed mutex
+  acquisition order: representation → dynamics → prediction).
+- Full MuZero training loop (`trainer.py`, `exporter.py` integration
+  with `bootstrap.py` for incremental version bumps).
+- Prometheus `/metrics` endpoint on the runner binary.
+- Opt-in `tests/python/integration/test_minecraft_e2e.py` driving the
+  full compose stack from pytest.
+- `mc-bot/` TypeScript migration; replay storage compression.
+
+See [`docs/next_steps.md`](docs/next_steps.md) for the status table.
 
 Coverage on Minecraft-integration code: every branch-modified file
-**>85% line coverage** (most 90-100%); workspace total **95.89%**.
-`cargo test --workspace --features forge-cloud/gcs`: 64/64 test-result
-lines OK. `npm test` (mc-bot): 116/116 pass.
+**>85% line coverage** (most 90-100%). `cargo test --workspace --lib`:
+**2,546 tests passing**. `pytest tests/python/training`: 38 / 38 pass.
+`npm test` (mc-bot): 116 / 116 pass.
 
 ## MangoMAS Integration
 

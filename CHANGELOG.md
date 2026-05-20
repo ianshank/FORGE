@@ -9,6 +9,231 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Minecraft RL Integration: Phase 6 — Compose stack + mc-bot CI + Biome lint + quickstart (2026-05-20)
+
+Lands the end-to-end orchestration layer for the Minecraft RL integration.
+Branch `feat/mc-phase4-runner-loop` (commit `e872987`).
+
+Orchestration:
+
+- **`docker/mc-bot.Dockerfile`** — Multi-stage Node 22-slim image.
+  Multi-arch via BuildKit (amd64 + arm64), rootless (`node` user). Every
+  port + version flows through ARGs; no values are baked into the image.
+- **`docker/compose.minecraft.yml`** — Three-service compose stack:
+  `minecraft` (itzg/minecraft-server with EULA passed via env var, never
+  baked into the image), `mc-bot` (the bridge with prismarine-viewer),
+  and `runner` (the Phase-4 Rust binary). Every value is
+  `${VAR:-default}` so CI / developers can override MC version, ports,
+  image tags, and restart policies without editing the YAML.
+- **`docker/compose.minecraft.env.example`** — Annotated example env
+  file with every override exposed. EULA defaults FALSE; operators must
+  opt in explicitly.
+- **`scripts/mc_run.sh`** — Idempotent orchestration entry point with
+  `--dry-run`, `--build`, `--detach`, `--down`, `--env-file PATH`,
+  `--service NAME`, `--help`. Falls back to the example env file with a
+  clear `WARN` when `compose.minecraft.env` is absent. SIGINT in
+  foreground mode triggers a clean `compose down`. Zero hard-coded
+  paths/values; everything derives from `$SCRIPT_DIR` or flags.
+- **`examples/minecraft/quickstart.md`** — Step-by-step walkthrough:
+  accept EULA, bootstrap a model bundle via the Phase-5 CLI, bring the
+  stack up, watch the bot in prismarine-viewer at `:3007`, inspect
+  trajectories, hot-reload by bumping the manifest version. Includes a
+  troubleshooting table mapping common symptoms to causes.
+
+mc-bot tooling:
+
+- **`mc-bot/biome.json`** + **`mc-bot/package.json`** — Biome 1.9.4
+  replaces ESLint (zero-dep, single binary, formats + lints together).
+  Adds `lint`, `lint:fix`, `format` npm scripts and
+  `@biomejs/biome ^1.9.4` as a devDependency. The existing 116
+  `node:test` cases continue to run via `npm test`.
+
+CI:
+
+- **`.github/workflows/ci.yml`** — Two new CI jobs that previously did
+  not exist:
+  - **`mc-bot-test`** — `setup-node@v4` with Node 22, runs `npm ci` (or
+    falls back to `npm install` when no lockfile is present), then
+    `npm run lint` (Biome) and `npm test` (`node:test`). The 116 mc-bot
+    tests now run on every CI build.
+  - **`forge-mc-runner-bin`** — Builds the Phase-4 runner binary
+    (`cargo build -p forge-mc-runner --bin forge-mc-runner`) and runs
+    `--dry-run --episodes 1` as a smoke gate. Catches regressions in
+    the env + search + writer composition without needing docker.
+
+Gates (all green on branch tip):
+
+- `scripts/mc_run.sh --dry-run` exits 0; tested with up (default),
+  up `--build --detach`, and `--down`.
+- `docker compose --env-file ... -f compose.minecraft.yml config` parses
+  cleanly with the example env file.
+- No literals in any new file; every port, image tag, filename, restart
+  policy, EULA flag, and timeout flows through an env var.
+
+Deferred (separate follow-up):
+
+- Prometheus `/metrics` endpoint on `forge-mc-runner` (axum + counter /
+  histogram setup).
+- `tests/python/integration/test_minecraft_e2e.py` opt-in E2E test
+  spinning up the compose stack from pytest.
+- `mc-bot/` TypeScript migration (v2 plan §10 open decision).
+- Replay storage compression (defer until output volume is measurable).
+
+### Added — Minecraft RL Integration: Phase 5 — Python `muzero_mc` manifest mirror + replay reader + bootstrap CLI (2026-05-20)
+
+Lands the Python side of the Phase-4/5 hot-reload loop. Branch
+`feat/mc-phase4-runner-loop` (commit `4c31a7c`).
+
+New package `python/forge/training/muzero_mc/` (5 modules):
+
+- **`manifest.py`** — Python mirror of `forge_mc_runner::ModelManifest`.
+  Pinned cross-language constants
+  (`MANIFEST_SCHEMA_VERSION = 1`, `ONNX_OPSET_VERSION = 17`,
+  `MANIFEST_FILENAME = "model_manifest.json"`,
+  `DEFAULT_BUNDLE_FILENAMES`). `ModelManifest` /
+  `ModelManifestFiles` / `ModelFileEntry` dataclasses with `validate()`
+  matching the Rust invariants exactly. Atomic save (`.tmp-*.manifest`
+  sibling + `os.replace`), JSON load with validation,
+  `sha256_file(path)` stream-hashing helper, and a `build_manifest(...)`
+  helper that assembles the manifest from three ONNX files on disk.
+- **`replay.py`** — Streaming reader for `TrajectoryV2` JSONL files.
+  `TrajectoryReader` yields `StepBatch` instances of configurable size;
+  lazy `torch.tensor` conversion via `StepBatch.as_torch()` so module
+  import does not require torch. Optional cross-checks against expected
+  `obs_dim`, `action_count`, `schema_id` for fail-fast drift detection.
+  Deterministic-shuffle support with seed.
+- **`bootstrap.py`** — Reuses the existing
+  `forge.models.muzero_export.MuZeroExporter` and
+  `MuZeroWorldModel` to write a random-init ONNX bundle plus a
+  versioned manifest. `BootstrapConfig` defaults flow back to
+  `MuZeroConfig` for latent/hidden/blocks; the `schema_id` is
+  caller-supplied (the env-handshake sha256, which bootstrap cannot
+  invent). Idempotent + reproducible via `seed`.
+- **`cli.py`** — `python -m forge.training.muzero_mc.cli`
+  with two subcommands: `bootstrap` (writes ONNX bundle + manifest) and
+  `validate-manifest` (load + validate; exit codes 0 / 3 / 4 for
+  ok / validation-failed / io-error). All defaults trace back to the
+  manifest module constants — no hard-coded values in the CLI.
+
+Build:
+
+- **`pyproject.toml`** — adds
+  `[project.optional-dependencies] minecraft = ["torch>=2.0",
+  "onnx>=1.16", "onnxruntime>=1.17"]` and folds the new packages into
+  the `[all]` group. The `manifest` + `replay` modules import without
+  torch installed (torch is only pulled in by `bootstrap` and by
+  `StepBatch.as_torch`).
+
+Tests (38 total, all passing):
+
+- **`test_muzero_mc_manifest.py`** (18) — round-trip save / load,
+  `build_manifest` from on-disk files, validation rejects schema-version
+  drift / zero version / empty `schema_id` / empty per-role
+  `path|sha256`, atomic-write leaves no orphan `.tmp` sibling,
+  `sha256_file` matches a known reference, JSON top-level field names
+  match the Rust struct exactly (catches drift without spawning a Rust
+  subprocess), missing-file and malformed-JSON error shapes.
+- **`test_muzero_mc_replay.py`** (13) — batch sizes / shapes,
+  `format_version` rejection, expected `obs_dim` / `action_count` /
+  `schema_id` cross-checks, sorted-by-default ordering, deterministic
+  shuffle with seed, `batch_size=0` rejection, `StepBatch.as_torch`
+  tensor shapes (gated on torch availability), missing-key rejection.
+- **`test_muzero_mc_cli.py`** (7) — `validate-manifest` OK / dir-target
+  / missing-file IO / invalid-JSON / schema-drift, parser introspection,
+  `bootstrap` rejects invalid `--obs-dim` before reaching torch import.
+
+Gates (all green):
+
+- `ruff check python/forge/training/muzero_mc tests/python/training` —
+  clean.
+- `mypy python/forge/training/muzero_mc tests/python/training` —
+  *Success: no issues found in 9 source files*.
+- `pytest tests/python/training -q` — 38 passed in 0.20 s.
+
+Backwards-compatible: this is a pure addition. The existing
+`muzero_export` / `muzero_world_model` / `muzero_config` modules are
+reused unchanged; manifest format is identical to the Rust runner's
+expected shape.
+
+The full MuZero training loop (loss + Adam stepping + periodic export +
+manifest bump) is deferred to a follow-up. The bootstrap + manifest +
+replay trio in this commit is sufficient for the Rust runner to start
+end-to-end against a freshly-init bundle.
+
+### Added — Minecraft RL Integration: Phase 4 — `Runner<E,M>` episode loop + binary (2026-05-20)
+
+Closes the Phase-4 wire-up left over from PR #56's foundation. Branch
+`feat/mc-phase4-runner-loop` (commit `b1cc7f8`).
+
+New code:
+
+- **`crates/forge-mc-runner/src/runner.rs`** —
+  `Runner<E: FlatObsEnv, M: LatentForwardModel>` drives the full
+  reset → plan → step → record → finalize loop, reusing the existing
+  `LatentMctsSearch`, `TrajectoryWriter`, and `HotReloadWatcher`. Visit
+  counts are normalised to a policy distribution; `root_value` becomes
+  the `value_target`. Pre- and post-step obs buffers are swapped via
+  `std::mem::swap` (no per-step allocation on the hot path).
+- **Hot-reload** via opt-in `ReloadFn<M> = Box<dyn FnMut(&mut M,
+  &ModelManifest) -> Result<(), RunnerError> + Send>` callback,
+  installed through a `with_reload_fn(...)` builder. The watcher is
+  polled strictly between episodes (plan §3.4); the model is borrowed
+  mutably via the new `LatentMctsSearch::model_mut()` accessor.
+  `prime_watcher_with(version)` lets the runner skip a spurious
+  first-poll reload against an already-bootstrapped manifest.
+- **`crates/forge-mc-runner/src/main.rs`** — clap CLI binary
+  `forge-mc-runner` with `--config <TOML>`, `--episodes <n>`,
+  `--dry-run`, `--log-level`. Live wiring against
+  `forge-env-mc::MinecraftEnv` and `OnnxMuZeroModel` is the next
+  follow-up; `--dry-run` exercises the loop with an in-process stub env
+  + stub model so the CLI plumbing is verifiable without docker or a
+  Minecraft server.
+- **`crates/forge-agent/src/latent_mcts/search.rs`** —
+  `LatentMctsSearch::model_mut()` and `model()` accessors (additive,
+  no behavioural change).
+- **`RunnerError`** gains three additive variants — `Env(String)`,
+  `Planner(String)`, `Reload(String)` — so failures from the env
+  trait, the planner, and the reload callback all flow through the
+  same enum.
+
+Tests added:
+
+- **`crates/forge-mc-runner/src/runner.rs::tests`** (13) —
+  `normalize_visits` uniform-on-zero and proportional-on-nonzero;
+  single-episode recording with full step-count + reward + termination
+  assertions and trajectory file readback; runner-side truncation at
+  `max_steps`; multi-episode outcome accumulation; manifest-bump
+  callback exactly-once semantics across three episodes;
+  `prime_watcher_with` suppression; no-callback version recording;
+  callback-error propagation as `RunnerError::Reload`; and the
+  between-episode-poll contract.
+- **`crates/forge-mc-runner/tests/runner_integration.rs`** (3) —
+  end-to-end with manifest bump v1 → v2 and trajectory file inspection,
+  reload-callback-error propagation, and zero-sim degenerate search
+  uniform-policy fallback. Exercises only the re-exported public
+  surface (no `#[cfg(test)]` internals).
+
+Verified (branch tip):
+
+- `cargo test --workspace --lib`: **27 crates, 2,546 lib tests passing**
+  (+11 vs the pre-Phase-4 2,535 baseline).
+- `cargo test -p forge-mc-runner`: 55 unit + 3 integration + 2
+  foundation-integration tests, all green.
+- `cargo clippy -p forge-mc-runner -p forge-agent --all-targets
+  -- -D warnings`: clean.
+- `cargo fmt --all -- --check`: clean.
+- `cargo run -p forge-mc-runner -- --dry-run --episodes 2`: end-to-end
+  binary smoke pass — two trajectory files written + outcome printed.
+
+No hard-coded values: every magic number flows through `RunnerConfig`
+(buffer dims via the writer, episode caps, `action_repeat`,
+`base_seed`, `planning_sims`, `metrics_port`).
+
+Backwards-compatible: the four foundation modules' public APIs are
+unchanged; the new Runner / `main.rs` / reload plumbing are purely
+additive. `LatentMctsSearch::model()` and `model_mut()` are
+non-breaking additions.
+
 ### Added — Branch audit follow-ups (2026-05-17)
 
 Xlang protocol pin + viewer/actions/observation tests + runner

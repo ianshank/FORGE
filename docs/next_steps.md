@@ -8,8 +8,30 @@ Post-demo-UI priorities, roughly in order of impact.
 
 Branch `claude/minecraft-rl-agent-integration-xnJjt` landed the
 env-trait foundation (Phases 1, 2, 3 Rust, 3 Node, 5 Rust v2 replay)
-in PR #53. The remaining phases are the work needed to actually run an
-agent against a real Minecraft server end-to-end.
+in PR #53. Phase-4 foundation (config / manifest / hot-reload watcher /
+trajectory writer) followed in `claude/minecraft-phase3-wireup-runner-foundation`.
+
+**Status as of branch `feat/mc-phase4-runner-loop` (2026-05-20):**
+
+| Phase | Status | Where |
+|---|---|---|
+| 1: `forge-env` generic trait | ✅ landed | PR #53 |
+| 2: `forge-env-forge` shim | ✅ landed | PR #53 |
+| 3a: Rust WS client (`forge-env-mc`) | ✅ landed | PR #53 |
+| 3b: Node `mc-bot/` bridge | ✅ landed | PR #53 |
+| 4 foundation: config / manifest / watcher / writer | ✅ landed | PR #56 |
+| **4 loop: `Runner<E,M>` + `LatentPlanner` + binary** | ✅ **landed** | **commit `b1cc7f8`** |
+| **5: Python `muzero_mc` (manifest / replay / bootstrap / CLI)** | ✅ **landed** | **commit `4c31a7c`** |
+| **6: Docker compose + mc-bot CI + Biome lint + quickstart** | ✅ **landed** | **commit `e872987`** |
+| 4: `OnnxMuZeroModel::reload()` impl | ⏳ deferred | follow-up |
+| 5: Full MuZero trainer loop | ⏳ deferred | follow-up |
+| 6: Prometheus `/metrics` endpoint | ⏳ deferred | follow-up |
+| 6: E2E pytest integration test | ⏳ deferred | follow-up |
+| 6: `mc-bot/` TypeScript migration | ⏳ deferred | v3 of MC plan |
+| 6: Replay storage compression | ⏳ deferred | measure first |
+
+The sections below document what landed on the `feat/mc-phase4-runner-loop`
+branch and what specifically remains.
 
 ### Phase 3 mineflayer wire-up (Node entry point)
 

@@ -82,19 +82,36 @@ pub struct EpisodeOutcome {
 }
 
 /// Aggregate summary returned by [`Runner::run`].
+///
+/// Per-run counters (`episodes_completed`, `total_steps`,
+/// `terminated_count`, `truncated_count`) are scoped to the current
+/// [`Runner::run`] call; they start at zero on every invocation.
+///
+/// `reloads_applied` and `last_model_version` are **lifetime totals**
+/// snapshotted from the runner — they reflect every reload the runner
+/// has seen since construction, not just those applied during the
+/// current `run`. This matches the integration tests at
+/// `tests/runner_integration.rs` which assert across successive calls
+/// to `runner.run(Some(1))`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RunnerOutcome {
-    /// Number of episodes the runner finished (regardless of outcome).
+    /// Episodes finished during *this* `run` call (regardless of
+    /// terminated vs truncated outcome).
     pub episodes_completed: u64,
-    /// Sum of `steps` across all episodes.
+    /// Sum of `EpisodeOutcome.steps` across the episodes finished
+    /// during *this* `run` call.
     pub total_steps: u64,
-    /// Count of episodes that terminated naturally.
+    /// Episodes that finished with `terminated=true` during this
+    /// `run` call.
     pub terminated_count: u64,
-    /// Count of episodes that truncated (env-side or runner-side).
+    /// Episodes that finished with `truncated=true` (env-side or
+    /// runner-side) during this `run` call.
     pub truncated_count: u64,
-    /// Number of hot reloads applied across the run.
+    /// **Lifetime total** of reloads the runner has applied since
+    /// construction — not limited to this `run` call.
     pub reloads_applied: u64,
-    /// Last model version observed in the manifest, if any.
+    /// **Lifetime** last manifest version the runner observed via the
+    /// watcher; `None` until the first reload.
     pub last_model_version: Option<u64>,
 }
 
@@ -286,6 +303,20 @@ where
             truncated = self.step_out.truncated;
             total_reward += step_reward;
 
+            // Runner-side truncation prediction: if this is the final
+            // iteration the loop will execute (last `tick` before the
+            // cap) and the env did not flag terminated/truncated on its
+            // own, set `truncated = true` BEFORE building the StepV2 so
+            // the recorded trajectory's last step matches the
+            // `EpisodeOutcome.truncated` value the caller sees. Without
+            // this, downstream trainers that rely on `StepV2.truncated`
+            // for n-step bootstrap-cut decisions would silently treat
+            // a runner-side truncation as a normal continuation.
+            let last_iteration = tick + 1 >= max_steps;
+            if last_iteration && !terminated && !truncated {
+                truncated = true;
+            }
+
             // Record the step using the PRE-step observation (obs_buf).
             let step = StepV2 {
                 tick,
@@ -309,7 +340,10 @@ where
             }
         }
 
-        // Runner-side truncation when we hit the per-episode step cap.
+        // Belt-and-braces post-loop check. With the in-loop
+        // last-iteration guard above this should always be a no-op,
+        // but the assertion remains so that future loop refactors
+        // still produce a consistent `EpisodeOutcome.truncated`.
         if steps_taken >= max_steps && !terminated && !truncated {
             truncated = true;
         }
@@ -631,6 +665,71 @@ mod tests {
         assert_eq!(ep.steps, 7);
         assert!(!ep.terminated);
         assert!(ep.truncated, "runner must truncate at max_steps");
+    }
+
+    /// Regression for the code-review finding (HIGH confidence): on
+    /// runner-side truncation the *last recorded* `StepV2.truncated`
+    /// must match the `EpisodeOutcome.truncated` value. Without the
+    /// in-loop truncation prediction, the on-disk trajectory's final
+    /// step would carry `truncated=false` even though the runner
+    /// considered the episode truncated — silently misleading
+    /// downstream trainers that look at the per-step flag for
+    /// bootstrap-cut decisions.
+    #[test]
+    fn last_recorded_step_truncated_flag_matches_episode_outcome_on_runner_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = StubFlatEnv::new(2, 2, None);
+        let search = make_search(2, 2);
+        let writer = make_writer(&dir.path().join("traj"), 2, 2);
+        let watcher = HotReloadWatcher::new(dir.path().join("manifest.json"));
+        let cfg = make_config(1, 4);
+
+        let mut runner = Runner::new(cfg, env, search, writer, watcher);
+        let ep = runner.run_episode().unwrap();
+        assert_eq!(ep.steps, 4);
+        assert!(ep.truncated, "runner must truncate at max_steps");
+
+        let back = TrajectoryV2::load_json(&ep.trajectory_path).unwrap();
+        let last = back.steps.last().expect("at least one step");
+        assert!(
+            last.truncated,
+            "last recorded StepV2.truncated must match EpisodeOutcome.truncated \
+             (regression: previously false on disk while outcome said true)"
+        );
+        assert!(!last.terminated);
+        // All earlier steps should NOT have the truncated flag — only
+        // the final one carries the runner-side signal.
+        for (i, step) in back.steps[..back.steps.len() - 1].iter().enumerate() {
+            assert!(
+                !step.truncated,
+                "step {i} unexpectedly carries truncated=true"
+            );
+        }
+    }
+
+    /// Companion regression: when the env *itself* terminates before
+    /// max_steps, the runner must NOT spuriously set truncated on the
+    /// terminal step. Both EpisodeOutcome and the last StepV2 should
+    /// carry terminated=true and truncated=false.
+    #[test]
+    fn env_natural_termination_does_not_get_runner_truncation_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = StubFlatEnv::new(2, 2, Some(2));
+        let search = make_search(2, 2);
+        let writer = make_writer(&dir.path().join("traj"), 2, 2);
+        let watcher = HotReloadWatcher::new(dir.path().join("manifest.json"));
+        let cfg = make_config(1, 10);
+
+        let mut runner = Runner::new(cfg, env, search, writer, watcher);
+        let ep = runner.run_episode().unwrap();
+        assert_eq!(ep.steps, 2);
+        assert!(ep.terminated);
+        assert!(!ep.truncated);
+
+        let back = TrajectoryV2::load_json(&ep.trajectory_path).unwrap();
+        let last = back.steps.last().expect("at least one step");
+        assert!(last.terminated);
+        assert!(!last.truncated);
     }
 
     #[test]

@@ -61,8 +61,13 @@ services:
     depends_on:
       minecraft:
         condition: service_healthy
+    # Environment overrides. The mc-bot reads its WS bind address +
+    # port from `configs/minecraft/env.toml` (mounted read-only below),
+    # not from these env vars; values here are passed through to the
+    # container for any future code paths that consume them. Keep
+    # additive — do not introduce env-driven knobs that don't have a
+    # corresponding code-path on the bot side.
     environment:
-      MC_BOT_HOST: ${MC_BOT_HOST:-0.0.0.0}
       MC_BOT_WS_PORT: ${MC_BOT_WS_PORT:-8765}
       MC_BOT_VIEWER_PORT: ${MC_BOT_VIEWER_PORT:-3007}
       MC_BOT_TARGET_HOST: ${MC_BOT_TARGET_HOST:-minecraft}
@@ -74,11 +79,18 @@ services:
       - "${MC_BOT_VIEWER_PORT:-3007}:${MC_BOT_VIEWER_PORT:-3007}"
     volumes:
       - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
+    # NOTE on the healthcheck: `net.connect` is asynchronous, so a
+    # plain `.on('connect', () => process.exit(0))` form would race the
+    # node process exiting before the connect callback ever fires when
+    # the kernel ACK takes longer than the synchronous portion of the
+    # script. We bind explicit `process.exit(0/1)` calls on `connect`
+    # and `error`, and destroy the socket on success so the event loop
+    # doesn't keep the process alive past the callback.
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "node -e \"require('net').connect(${MC_BOT_WS_PORT:-8765}, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))\"",
+          "node -e \"var s=require('net').connect(${MC_BOT_WS_PORT:-8765},'127.0.0.1');s.on('connect',function(){s.destroy();process.exit(0);});s.on('error',function(){process.exit(1);});\"",
         ]
       interval: 15s
       timeout: 5s
