@@ -29,6 +29,7 @@ rand_pcg = { workspace = true }
 ort = { version = "2.0.0-rc.9", optional = true, default-features = false }
 ndarray = { version = "0.16", optional = true }
 anyhow.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 proptest = { workspace = true }

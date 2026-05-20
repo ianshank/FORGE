@@ -366,20 +366,36 @@ impl TrajectoryV2 {
     }
 
     /// Load from a trajectory file. Auto-detects compression by
-    /// extension: paths ending in `.gz` decompress through
-    /// `flate2::read::GzDecoder` (capped at
+    /// extension: paths ending in the compound `.json.gz` extension
+    /// decompress through `flate2::read::GzDecoder` (capped at
     /// [`MAX_DECOMPRESSED_TRAJECTORY_BYTES`]); other paths are read
     /// as plain JSON via the existing path.
+    ///
+    /// The compound-extension check (`.json.gz`, not just `.gz`) is
+    /// deliberate so a stray `*.tar.gz` or other gzip-but-not-JSON
+    /// file accidentally placed in the trajectory directory surfaces
+    /// a clear "unsupported extension" path rather than mid-decode
+    /// confusion from `serde_json`.
     ///
     /// Fails on `format_version` mismatch, on decompressed payloads
     /// exceeding the cap, and on the usual serde / IO errors.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, TrajectoryError> {
         let path = path.as_ref();
-        let is_gz = path
+        // Final extension must be `gz` AND the stem must also end in
+        // `.json` for us to treat the file as gzipped trajectory JSON.
+        let final_ext_is_gz = path
             .extension()
             .and_then(|e| e.to_str())
             .map(|e| e.eq_ignore_ascii_case(GZ_SUFFIX))
             .unwrap_or(false);
+        let stem_ext_is_json = path
+            .file_stem()
+            .map(Path::new)
+            .and_then(|p| p.extension())
+            .and_then(|e| e.to_str())
+            .map(|e| e.eq_ignore_ascii_case(JSON_EXT))
+            .unwrap_or(false);
+        let is_gz = final_ext_is_gz && stem_ext_is_json;
         let t: TrajectoryV2 = if is_gz {
             use std::io::Read;
             let file = std::fs::File::open(path)
@@ -892,6 +908,39 @@ mod tests {
         std::fs::write(&path, b"this is not a gzip stream").unwrap();
         let err = TrajectoryV2::load_json(&path).unwrap_err();
         assert!(matches!(err, TrajectoryError::Io(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn load_json_ignores_non_json_gzip_extensions() {
+        // A stray `.tar.gz` (or any other `*.gz` that isn't `.json.gz`)
+        // must NOT be auto-decompressed by `load_json`. We construct a
+        // file with the wrong compound extension and assert the loader
+        // attempts a plain-JSON read (which surfaces a serde error on
+        // the gzip bytes), NOT a GzDecoder read (which would surface
+        // an Io error). Regression test pinning the
+        // `final_ext_is_gz && stem_ext_is_json` discipline against
+        // future "simplification" of the extension check.
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("archive.tar.gz");
+        let mut encoder = flate2::write::GzEncoder::new(
+            std::fs::File::create(&path).unwrap(),
+            flate2::Compression::default(),
+        );
+        encoder.write_all(b"{\"format_version\":2}").unwrap();
+        encoder.finish().unwrap();
+        let err = TrajectoryV2::load_json(&path).unwrap_err();
+        // Plain-JSON path: serde fails because the file is gzipped
+        // bytes, not JSON. Surfaces as TrajectoryError::Io with a
+        // "deserialise: ..." prefix. The KEY assertion is that the
+        // gzip-decoder path did NOT run — that would have produced
+        // "{\"format_version\":2}" which validate() would then reject
+        // with the format-version mismatch error.
+        let msg = format!("{err}");
+        assert!(
+            msg.starts_with("io error: deserialise:"),
+            "expected plain-JSON deserialise error for .tar.gz file, got {err:?}",
+        );
     }
 
     #[test]

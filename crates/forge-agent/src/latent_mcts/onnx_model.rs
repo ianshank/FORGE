@@ -24,43 +24,19 @@ use super::state::LatentState;
 /// reload-specific failures (e.g. missing-file is a friendlier
 /// signal than a generic `ort` load error). All other failures
 /// surface as `Ort(ort::Error)`.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum OnnxReloadError {
     /// A path in the new [`OnnxModelConfig`] does not exist on disk.
     /// Reload returns this **before** touching the existing sessions,
     /// so the model remains usable with the previous bundle.
+    #[error("missing ONNX file: {}", .path.display())]
     MissingFile { path: PathBuf },
     /// `ort::Session::builder().commit_from_file(...)` failed (corrupt
     /// ONNX, schema mismatch, op-set unsupported, etc.). Like
     /// `MissingFile`, this is raised before any swap so the existing
     /// sessions stay intact (build-first-then-swap invariant).
-    Ort(ort::Error),
-}
-
-impl std::fmt::Display for OnnxReloadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingFile { path } => {
-                write!(f, "missing ONNX file: {}", path.display())
-            }
-            Self::Ort(e) => write!(f, "ort session build failed: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for OnnxReloadError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::MissingFile { .. } => None,
-            Self::Ort(e) => Some(e),
-        }
-    }
-}
-
-impl From<ort::Error> for OnnxReloadError {
-    fn from(value: ort::Error) -> Self {
-        Self::Ort(value)
-    }
+    #[error("ort session build failed: {0}")]
+    Ort(#[from] ort::Error),
 }
 
 /// Pre-flight check used by [`OnnxMuZeroModel::reload`]. Public so

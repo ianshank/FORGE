@@ -131,8 +131,11 @@ class StepBatch:
 
 def load_trajectory(path: str | os.PathLike[str]) -> dict[str, Any]:
     """Load a single ``TrajectoryV2`` JSON file and validate its
-    invariants. Auto-detects gzip compression by ``.gz`` extension —
-    matches the Rust ``TrajectoryV2::load_json`` behaviour.
+    invariants. Auto-detects gzip compression by the compound
+    ``.json.gz`` extension — matches the Rust
+    ``TrajectoryV2::load_json`` behaviour, which deliberately checks
+    the compound form so a stray ``*.tar.gz`` accidentally placed in
+    the trajectory directory does not get fed to ``GzDecoder``.
 
     Raises :class:`TrajectoryError` on schema drift (wrong
     ``format_version``, missing keys, dim mismatch), on corrupt gzip
@@ -145,7 +148,11 @@ def load_trajectory(path: str | os.PathLike[str]) -> dict[str, Any]:
     import gzip
 
     p = Path(path)
-    if p.suffix.lower() == _GZ_SUFFIX:
+    # Final extension `.gz` AND stem extension `.json` for the
+    # compound form. Mirrors Rust's `final_ext_is_gz && stem_ext_is_json`
+    # check in `crates/forge-replay/src/v2.rs::load_json`.
+    is_gz = p.suffix.lower() == _GZ_SUFFIX and Path(p.stem).suffix.lower() == ".json"
+    if is_gz:
         # Cap the read at MAX+1 bytes so a gzip-bomb that decompresses
         # past the cap surfaces as TrajectoryError rather than OOM.
         try:
@@ -167,8 +174,16 @@ def load_trajectory(path: str | os.PathLike[str]) -> dict[str, Any]:
         except (UnicodeDecodeError, json.JSONDecodeError) as e:
             raise TrajectoryError(f"{p}: parse gzip-decoded JSON: {e}") from e
     else:
-        with p.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with p.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            # Wraps the stdlib error in TrajectoryError so callers
+            # only need a single except clause for both the plain and
+            # the gzipped path. Specifically defends against the
+            # case where a non-JSON `.gz` file (e.g. `.tar.gz`)
+            # bypasses our `is_gz` discriminator and lands here.
+            raise TrajectoryError(f"{p}: parse JSON: {e}") from e
     if not isinstance(data, dict):
         raise TrajectoryError(f"{p}: root must be JSON object")
     fmt = data.get("format_version")

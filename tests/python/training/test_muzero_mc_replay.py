@@ -266,6 +266,27 @@ def test_load_trajectory_rejects_gzip_bomb(tmp_path: Path) -> None:
         load_trajectory(p)
 
 
+def test_load_trajectory_ignores_non_json_gzip_extensions(tmp_path: Path) -> None:
+    """A stray ``.tar.gz`` (or any other ``*.gz`` that isn't
+    ``.json.gz``) must NOT be auto-decompressed. The loader falls
+    back to a plain-JSON read, which surfaces a clean
+    :class:`TrajectoryError` rather than feeding gzipped bytes to
+    ``GzDecoder`` and producing confusing diagnostics. Pins the
+    ``final_ext_is_gz && stem_ext_is_json`` discipline against
+    future "simplification" of the extension check. Mirrors the
+    Rust ``load_json_ignores_non_json_gzip_extensions`` regression
+    test.
+    """
+    import gzip
+
+    p = tmp_path / "archive.tar.gz"
+    with gzip.open(p, "wb") as f:
+        f.write(b'{"format_version":2}')
+    # Plain-JSON path attempts UTF-8 decode on gzip bytes → fails.
+    with pytest.raises(TrajectoryError):
+        load_trajectory(p)
+
+
 def test_load_trajectory_corrupt_gzip_returns_trajectory_error(tmp_path: Path) -> None:
     p = tmp_path / "corrupt.json.gz"
     p.write_bytes(b"this is not a gzip stream")
