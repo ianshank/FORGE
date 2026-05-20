@@ -439,25 +439,51 @@ episode reset, dynamic env names, dyn-compatible trait).
 
 ### Quickstart
 
-End-to-end (Minecraft server + mc-bot + Rust runner via docker compose):
+**v0.4 self-improving loop** (Minecraft server + mc-bot + runner +
+**continuous trainer**, one command):
 
 ```bash
 # 1. Accept Mojang's EULA
 cp docker/compose.minecraft.env.example docker/compose.minecraft.env
 # edit and set MC_EULA=TRUE
 
-# 2. Bootstrap a random-init model bundle (Python 3.11+ with [minecraft] extras)
+# 2. Bring the self-play stack up (CPU). Operator host needs ONLY
+#    docker compose v2 — no torch / Python extras locally (bootstrap
+#    runs inside the trainer-bootstrap container).
+scripts/mc_self_play.sh --detach
+
+# 3. With a CUDA host + nvidia-container-toolkit:
+scripts/mc_self_play.sh --gpu --detach
+
+# 4. Watch the bot's first-person view in the browser
+open http://localhost:3007
+
+# 5. Tear down:
+scripts/mc_self_play.sh --down
+```
+
+The orchestrator computes `schema_id`, runs `bootstrap` inside a
+one-shot container if no manifest exists, exports
+`FORGE_MC_SCHEMA_ID` to the runner, and brings up all four services
+(`minecraft`, `mc-bot`, `runner`, `trainer`). The trainer
+continuously consumes runner-emitted trajectories and bumps the
+manifest the runner's `HotReloadWatcher` picks up.
+
+**Legacy quickstart (v0.3-pre — runner only, no trainer)**:
+
+```bash
+cp docker/compose.minecraft.env.example docker/compose.minecraft.env
+# edit MC_EULA=TRUE
+
 pip install -e ".[minecraft]"
 python -m forge.training.muzero_mc.cli bootstrap \
-    --obs-dim 920 --action-dim 12 \
-    --schema-id "$(cat configs/minecraft/schema_id.txt)" \
+    --obs-dim 31 --action-dim 12 \
+    --schema-id "$(python -m forge.training.muzero_mc.cli \
+        compute-schema-id --action-map configs/minecraft/action_map.toml \
+        --rewards configs/minecraft/rewards.toml --quiet)" \
     --out models/
 
-# 3. Bring the stack up (foreground; Ctrl-C runs `compose down`)
 scripts/mc_run.sh --build
-
-# Watch the bot's first-person view in the browser
-open http://localhost:3007
 ```
 
 Full walkthrough including troubleshooting:

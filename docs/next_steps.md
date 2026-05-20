@@ -229,10 +229,29 @@ The full three-service Docker Compose stack is now deployed:
 
 ## Near-term (v0.3)
 
-### Minecraft RL — deferred to v0.4
+### Minecraft RL — v0.4 LANDED (branch `feat/mc-v04-self-improving-loop`)
 
-The v0.3-pre branch (`feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip`)
-closed the five PR-#57 follow-ups. These remain outstanding:
+The v0.4 milestone shipped the **self-improving training loop**:
+live runner online + continuous trainer + atomic versioned bundles +
+one-command orchestrator. 9 tracks, single PR (#59). Closes the
+v0.3-pre `ExitCode 64` BLOCKER ("live runner wiring not yet
+integrated").
+
+| Status | Track | Commit |
+|---|---|---|
+| ✅ | T1 — `compute-schema-id` CLI + Python schema_id twin | `1a31222` |
+| ✅ | T2 — `MuZeroMcTrainerConfig.device` + GPU plumbing | `95ea03d` |
+| ✅ | T3 — Live runner wiring (BLOCKER) + `FORGE_MC_SCHEMA_ID` ladder | `1725d43` |
+| ✅ | T4 — `train --continuous` + cold-start guard + replay-buffer hygiene | `60241d2` |
+| ✅ | T4a — Atomic per-version ONNX bundle export (BLOCKER) | `4013118` |
+| ✅ | T5 — Compose trainer service + GPU overlay | `a5ffd8e` |
+| ✅ | T6 — `scripts/mc_self_play.sh` orchestrator | `0e990f0` |
+| ✅ | T7 — Self-improvement smoke (PR-CI) + opt-in milestone | `cab1280` |
+| ✅ | T8 — Docs sweep | (this commit) |
+
+### Minecraft RL — deferred to v0.5
+
+After v0.4 lands, these items remain for a future milestone:
 
 - **mc-bot `.js → .ts` file rewrite.** The TS toolchain
   (`tsconfig.json` + `tsc --noEmit` CI gate) is in place; the 16

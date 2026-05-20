@@ -19,6 +19,12 @@
 - `scripts/mc_run.sh --build` — Bring the Minecraft + mc-bot + runner stack up (foreground; Ctrl-C cleans up)
 - `cd mc-bot && npm run typecheck` — `tsc --noEmit` gate over the `.js` source (CI: `mc-bot-test` job runs this between `npm ci` and `npm test`)
 - `pytest tests/python/integration/ -m minecraft_e2e -v` — Run the opt-in compose-stack E2E (requires docker; never runs on a default `pytest` invocation)
+- `python -m forge.training.muzero_mc.cli compute-schema-id --action-map configs/minecraft/action_map.toml --rewards configs/minecraft/rewards.toml --quiet` — v0.4: print the canonical 64-hex schema_id to stdout (stderr-bound logs). Used by `mc_self_play.sh` to populate `FORGE_MC_SCHEMA_ID` before compose-up
+- `python -m forge.training.muzero_mc.cli train --input trajectories/ --out models/ --schema-id <sha> --obs-dim N --action-dim M --continuous --round-iters 10 --round-poll-sleep 5 --max-trajectories 200 --max-bundle-versions 5 --device cpu` — v0.4 continuous trainer: yields one round summary per loop iteration, polls trajectory dir for new files (cold-start safe), exports an atomic `v{NNNNNNNN}/` bundle subdir + bumps manifest each round. SIGINT-clean shutdown
+- `cargo build -p forge-mc-runner --features mc-live --features onnx-reload` — v0.4 live runner build (requires `forge-env-mc` + ONNX Runtime). CI builds this for the binary smoke job
+- `scripts/mc_self_play.sh [--gpu] [--detach]` — v0.4 one-command orchestrator: preflights compose v2, computes schema_id via `trainer-bootstrap` one-shot, exports `FORGE_MC_SCHEMA_ID`, runs `bootstrap` if needed, brings up self-play profile. `--gpu` layers `compose.minecraft.gpu.yml`
+- `scripts/mc_self_play.sh --dry-run` — Print every step's resolved docker-compose argv to STDERR + exit 0 (used by `tests/python/integration/test_mc_self_play_unit.py`)
+- `pytest tests/python/integration/test_minecraft_self_improvement_smoke.py -v` — v0.4 self-improvement smoke (PR-CI gate; runs by default, skips if torch+onnx extras missing)
 
 ## Architecture
 - **Workspace**: Multi-crate Rust workspace under `crates/`

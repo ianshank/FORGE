@@ -9,6 +9,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Minecraft RL Integration: v0.4 self-improving training loop — live runner + continuous trainer + atomic versioned bundles (2026-05-20)
+
+Closes the v0.3-pre BLOCKER (`ExitCode 64` "live runner wiring not
+yet integrated") and delivers a **self-improving training loop**:
+the runner plays Minecraft live while the trainer continuously
+trains on emitted trajectories and bumps the manifest the runner
+hot-reloads. Branch
+`feat/mc-v04-self-improving-loop`; PR #59.
+
+9 tracks (T1-T8 + T4a):
+
+- **T1 — `compute-schema-id` CLI wrapper + Python schema_id twin**:
+  `python -m forge.training.muzero_mc.cli compute-schema-id
+  --action-map PATH --rewards PATH [--quiet]` computes the
+  canonical 64-hex schema_id without spinning up the Rust binary.
+  Python twin mirrors the Rust + JS canonicalisations byte-for-byte;
+  cross-language fixture-hash test pins all three sides.
+- **T2 — `MuZeroMcTrainerConfig.device` + GPU plumbing**:
+  `device: str = "cpu"` validated cpu/cuda/auto; `--device` CLI
+  flag; `MuZeroWorldModel.to` delegates to sub-networks.
+  Backwards-compat: default stays `cpu`.
+- **T3 — Live runner wiring (BLOCKER)**: replaces ExitCode 64
+  else-branch with `run_live(cfg, metrics)` — sync function from
+  `spawn_blocking`, mirrors `run_dry` shape. Loads
+  `MinecraftEnvConfig` → connects bot → loads `ModelManifest` +
+  `OnnxMuZeroModel` → installs reload-fn wrapper that calls
+  `recorder.set_model_version(manifest.version)` on every successful
+  hot-reload. New `--mc-config <TOML>` CLI flag +
+  `FORGE_MC_SCHEMA_ID` env-var ladder on `RunnerConfig.schema_id`.
+  New `mc-live` + `live-test-stub` Cargo features.
+- **T4 — `train --continuous` + cold-start guard + replay-buffer
+  hygiene**: new `train_continuous(round_iters, stop)` yields per-
+  round summaries; polls `episode_paths()` until non-empty before
+  `train_step` (cold-start guard). New `--continuous` /
+  `--round-iters` / `--round-poll-sleep` / `--max-trajectories`
+  CLI flags. `_trim_replay_buffer` deletes oldest-by-mtime files,
+  always keeps newest `DEFAULT_TRIM_KEEP_NEWEST = 4`.
+- **T4a — Atomic per-version ONNX bundle export (BLOCKER)**:
+  `_export_bundle` writes to a NEW `v{NNNNNNNN}/` subdir; manifest
+  atomically flips its pointer. Eliminates the v0.3-pre race
+  where the runner could read a manifest pointing at a half-
+  written bundle. `DEFAULT_MAX_BUNDLE_VERSIONS = 5` GC cap; old
+  subdirs cleaned up AFTER the manifest swap so the runner has
+  a safety window. Bootstrap emits the versioned layout too.
+- **T5 — Compose `trainer` + `trainer-bootstrap` services + GPU
+  overlay**: new `docker/trainer.Dockerfile` (parameterised
+  `--build-arg TORCH_VARIANT={cpu,cu121}`); new services under
+  `profiles: ["self-play"]` (existing `mc_run.sh` callers
+  ignore them). New `docker/compose.minecraft.gpu.yml` overlay
+  with `nvidia` device reservation. The `trainer-bootstrap`
+  one-shot resolves the bootstrap chicken-and-egg.
+- **T6 — `scripts/mc_self_play.sh` orchestrator**: one-command
+  bring-up of the self-play stack. Preflights Compose v2 minimum,
+  computes `schema_id` via the trainer-bootstrap container,
+  exports `FORGE_MC_SCHEMA_ID`, runs `bootstrap` if needed, then
+  dispatches to `mc_run.sh --profile self-play [--gpu] [--detach]`.
+  `--dry-run` mode prints argv to STDERR. `mc_run.sh` extended
+  with `--profile` / `--gpu` flag passthrough.
+- **T7 — Self-improvement smoke (PR-CI gate)**: new
+  `minecraft_e2e_smoke` marker that runs on every PR CI (NOT
+  deselected by `addopts`). Two smoke tests drive
+  `train_continuous` against a pre-seeded trajectory dir +
+  assert atomic versioned-bundle layout + manifest bump within
+  a 60s budget. Existing `minecraft_e2e` marker continues to
+  cover the full docker compose stack via `workflow_dispatch`.
+- **T8 — Docs sweep** (this commit): CHANGELOG, README,
+  CLAUDE.md, Agent.md, docs/next_steps.md, docs/architecture.md
+  §3.10.9-11, examples/minecraft/quickstart.md.
+
+**Cross-cutting**:
+
+- **No hard-coded values**: every numeric flows through a config
+  struct or module-level `const` / `Final[…]` annotation.
+  Cross-language constants pinned by xlang fixture-hash tests.
+- **Backwards-compatible**: existing `--dry-run`, `train` fixed-
+  iters mode, `bootstrap`, default `mc_run.sh` callers all
+  continue to work unchanged. New `RunnerConfig` fields are
+  `#[serde(default)]`; new trainer fields are dataclass defaults;
+  new compose services are profile-gated.
+- **TDD on every track**: each commit adds tests pinning the
+  contract before / alongside the implementation.
+
+**Validation gates** (full, post-T8):
+
+- `cargo test -p forge-mc-runner --lib` → 81/81 pass.
+- `cargo test -p forge-replay --lib` → 85/85 pass.
+- `pytest tests/python/` → 1,434 passed, 42 skipped; coverage
+  90.80% (above 85% gate).
+- `mypy python/ scripts/ --config-file pyproject.toml` → 0 issues
+  across 102 source files.
+- `ruff check python/ tests/python/ scripts/` → clean.
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean.
+- `cargo fmt --all --check` → clean.
+- `bash scripts/mc_self_play.sh --dry-run --gpu --detach` → exits 0
+  with the expected docker-compose argv chain.
+
+---
+
 ### Added — Minecraft RL Integration: v0.3-pre completion — ONNX reload + metrics + gzip + trainer + TS toolchain + opt-in E2E (2026-05-20)
 
 Closes the five `## Deferred to follow-up PRs` items from PR #57.
