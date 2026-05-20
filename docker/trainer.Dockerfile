@@ -39,20 +39,29 @@ COPY python /app/python
 # Install the right torch wheel via index-url based on TORCH_VARIANT.
 # Default is CPU-only; pass `--build-arg TORCH_VARIANT=cu121` to get
 # CUDA-enabled wheels. Numpy pinned <2.0 per the CI gate.
+# Pinned minor versions so a rebuild on a different day pulls the
+# SAME wheels. Wide-open `>=2.0,<3.0` ranges produce drift across
+# operator hosts; pinning a single minor track gives reproducibility
+# without sacrificing security patches (still picks the latest
+# 2.4.x). Bump together with the workspace's `numpy<2.0` gate.
 ARG TORCH_VARIANT
+ARG TORCH_VERSION=2.4.1
+ARG TORCHVISION_VERSION=0.19.1
+ARG ONNX_VERSION=1.17.0
+ARG ONNXRUNTIME_VERSION=1.20.0
 RUN pip install --upgrade pip \
     && if [ "${TORCH_VARIANT}" = "cu121" ]; then \
          pip install --no-cache-dir \
            --index-url https://download.pytorch.org/whl/cu121 \
-           "torch>=2.0,<3.0" "torchvision>=0.15,<0.20"; \
+           "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}"; \
        else \
          pip install --no-cache-dir \
            --index-url https://download.pytorch.org/whl/cpu \
-           "torch>=2.0,<3.0" "torchvision>=0.15,<0.20"; \
+           "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}"; \
        fi \
     && pip install --no-cache-dir \
-         "onnx>=1.16" \
-         "onnxruntime>=1.17" \
+         "onnx==${ONNX_VERSION}" \
+         "onnxruntime==${ONNXRUNTIME_VERSION}" \
          "numpy>=1.26,<2.0" \
          "tomli; python_version < '3.11'"
 

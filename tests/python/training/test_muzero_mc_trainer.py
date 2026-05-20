@@ -523,15 +523,21 @@ def test_export_bundle_writes_versioned_subdir(tmp_path: Path) -> None:
     """
     pytest.importorskip("torch")
     pytest.importorskip("onnx")
-    from forge.models.muzero_config import MuZeroConfig
-    from forge.models.muzero_world_model import MuZeroWorldModel
+    # `torch.onnx.export` (torch >= 2.4) imports `onnxscript` lazily.
+    # Skip cleanly if absent rather than surfacing a confusing
+    # ModuleNotFoundError mid-test.
+    pytest.importorskip("onnxscript")
     from forge.training.muzero_mc.replay import TrajectoryReader
     from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
 
     traj_dir = tmp_path / "trajectories"
     traj_dir.mkdir()
     out_dir = tmp_path / "models"
-    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    # Reuses `_make_tiny_model()` so the CNN shape requirement
+    # (`obs_dim == grid_h * grid_w * grid_channels + vector_dim`)
+    # is satisfied. Plain `obs_dim=4` would fail the reshape in
+    # the representation network.
+    model = _make_tiny_model()
     reader = TrajectoryReader(traj_dir, batch_size=2)
     cfg = MuZeroMcTrainerConfig(
         schema_id="x", output_dir=out_dir, device="cpu", max_bundle_versions=0
@@ -558,15 +564,14 @@ def test_export_bundle_subsequent_versions_dont_overwrite(tmp_path: Path) -> Non
     """
     pytest.importorskip("torch")
     pytest.importorskip("onnx")
-    from forge.models.muzero_config import MuZeroConfig
-    from forge.models.muzero_world_model import MuZeroWorldModel
+    pytest.importorskip("onnxscript")
     from forge.training.muzero_mc.replay import TrajectoryReader
     from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
 
     traj_dir = tmp_path / "trajectories"
     traj_dir.mkdir()
     out_dir = tmp_path / "models"
-    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    model = _make_tiny_model()
     reader = TrajectoryReader(traj_dir, batch_size=2)
     cfg = MuZeroMcTrainerConfig(
         schema_id="x", output_dir=out_dir, device="cpu", max_bundle_versions=0
@@ -590,15 +595,14 @@ def test_export_bundle_gc_removes_old_versions(tmp_path: Path) -> None:
     """
     pytest.importorskip("torch")
     pytest.importorskip("onnx")
-    from forge.models.muzero_config import MuZeroConfig
-    from forge.models.muzero_world_model import MuZeroWorldModel
+    pytest.importorskip("onnxscript")
     from forge.training.muzero_mc.replay import TrajectoryReader
     from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
 
     traj_dir = tmp_path / "trajectories"
     traj_dir.mkdir()
     out_dir = tmp_path / "models"
-    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    model = _make_tiny_model()
     reader = TrajectoryReader(traj_dir, batch_size=2)
     cfg = MuZeroMcTrainerConfig(
         schema_id="x", output_dir=out_dir, device="cpu", max_bundle_versions=2

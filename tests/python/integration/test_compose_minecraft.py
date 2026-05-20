@@ -64,8 +64,9 @@ def test_compose_has_v04_trainer_services(compose_data: dict) -> None:
 
 def test_trainer_service_mounts_models_and_trajectories(compose_data: dict) -> None:
     """The trainer MUST be able to read trajectories + read/write
-    the models dir. Order-independent assert via substring match
-    (compose `volumes:` entries are `host:container[:ro]` strings)."""
+    the models dir AND delete old trajectory files (T4 replay-buffer
+    trimmer). Order-independent assert via substring match (compose
+    `volumes:` entries are `host:container[:ro]` strings)."""
     volumes = compose_data["services"]["trainer"]["volumes"]
     assert any(":/app/models" in v for v in volumes), (
         "trainer must mount the models dir (rw) to write ONNX bundles + manifest"
@@ -73,11 +74,15 @@ def test_trainer_service_mounts_models_and_trajectories(compose_data: dict) -> N
     assert any(":/app/trajectories" in v for v in volumes), (
         "trainer must mount the trajectories dir to read runner output"
     )
-    # Trajectories MUST be read-only on the trainer side — the
-    # runner owns writes; the trimmer's `unlink` requires rw so
-    # this is a deliberate read-only mount on the consumer side.
+    # Trajectories mount MUST be rw — the trimmer's `unlink` would
+    # silently fail on a read-only mount and the disk would grow
+    # unboundedly despite `--max-trajectories N`. Peer-review BLOCKER
+    # caught + fixed: prior `:ro` annotation was wrong.
     traj_mount = next(v for v in volumes if ":/app/trajectories" in v)
-    assert traj_mount.endswith(":ro"), f"trajectories mount must be read-only: {traj_mount}"
+    assert not traj_mount.endswith(":ro"), (
+        f"trajectories mount must NOT be read-only — `_trim_replay_buffer` "
+        f"requires unlink permission. Got: {traj_mount}"
+    )
 
 
 def test_trainer_command_carries_continuous_flag(compose_data: dict) -> None:

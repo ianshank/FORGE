@@ -203,7 +203,26 @@ else
   log "manifest already present; skipping bootstrap"
 fi
 
-# ---------- step 4: bring the stack up via mc_run.sh ----------
+# ---------- step 4: install SIGINT trap (foreground only) ----------
+# Foreground path: install a trap that runs `mc_run.sh --down
+# --profile self-play [--gpu]` on SIGINT / EXIT. This is belt-and-
+# braces on top of `mc_run.sh`'s own foreground trap — if the
+# operator hits Ctrl-C between `mc_run.sh up` returning and this
+# script exiting, we still tear down cleanly.
+#
+# Detach path: NO trap. `mc_run.sh --detach` returns immediately;
+# the operator runs `mc_self_play.sh --down` separately to tear
+# down. The earlier docstring promised a trap in the detach path
+# too — that was wrong (would tear down immediately after up).
+if ! (( DETACH )); then
+  down_trap_args=("--down" "--profile" "self-play" "--env-file" "${ENV_FILE}")
+  (( USE_GPU )) && down_trap_args+=("--gpu")
+  # shellcheck disable=SC2064 — variable expansion at trap-set time
+  # is intentional so the trap command captures the resolved args.
+  trap "$(printf '%q ' "${MC_RUN_SH}" "${down_trap_args[@]}")" INT TERM
+fi
+
+# ---------- step 5: bring the stack up via mc_run.sh ----------
 log "starting the self-play stack"
 up_args=("--profile" "self-play" "--env-file" "${ENV_FILE}")
 (( USE_GPU )) && up_args+=("--gpu")
@@ -212,10 +231,4 @@ up_args=("--profile" "self-play" "--env-file" "${ENV_FILE}")
 # compose invocation picks it up via env-file interpolation.
 run_or_echo env "FORGE_MC_SCHEMA_ID=${SCHEMA_ID}" "${MC_RUN_SH}" "${up_args[@]}"
 
-# ---------- step 5: trap teardown on SIGINT / EXIT ----------
-# When --detach is set, `mc_run.sh` returns immediately and the
-# stack keeps running until the operator runs
-# `mc_self_play.sh --down`. In foreground mode the parent
-# `mc_run.sh` already installs a SIGINT trap that brings the
-# stack down.
 log "mc_self_play complete"

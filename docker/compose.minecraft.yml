@@ -151,7 +151,13 @@ services:
     volumes:
       - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
       - ${MODELS_DIR:-../models}:/app/models
-      - ${TRAJECTORIES_DIR:-../trajectories}:/app/trajectories:ro
+      # Trajectory mount is rw because the trainer's
+      # `_trim_replay_buffer` (T4) unlinks oldest-by-mtime files
+      # when `max_trajectories` is set. The runner is the SOLE
+      # writer of new files; the trainer is the SOLE deleter of
+      # old files; the in-process newest-N floor guards against
+      # the trainer racing the runner's in-flight write.
+      - ${TRAJECTORIES_DIR:-../trajectories}:/app/trajectories
     command:
       - "python"
       - "-u"

@@ -14,11 +14,20 @@ trajectory directory + verifies that:
 
 Runs on every PR CI under the `minecraft_e2e_smoke` marker (NOT
 behind `minecraft_e2e` — that's docker-gated). Skips on hosts
-missing `torch` / `onnx` extras.
+missing `torch` / `onnx` / `onnxscript` extras (`torch.onnx.export`
+requires `onnxscript` ≥ torch 2.4).
+
+**Network shape pin**: `MuZeroConfig` requires
+``obs_dim == grid_h * grid_w * grid_channels + vector_dim``. The
+default is ``11 * 11 * 7 + 73 = 920``. We use that value verbatim
+with a tiny CNN override (`cnn_channels=(8,)`) so the network
+trains in ~1s on CPU. The production runner would override
+`grid_*` / `vector_dim` to match the mc-bot's observation layout;
+the smoke validates the LOOP, not the production network shape.
 
 Sized to fit comfortably in CI's 2-minute time-box: `round_iters=2`,
 `export_every_n_iters=1`, `max_bundle_versions=3`, two rounds total
-→ ~6-10s wall time on CPU.
+→ ~10-15s wall time on CPU.
 """
 
 from __future__ import annotations
@@ -26,10 +35,19 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path  # noqa: TC003 — runtime use in _populate_trajectory
+from typing import Any
 
 import pytest
 
 pytestmark = pytest.mark.minecraft_e2e_smoke
+
+# CNN-required obs dimensionality — must match
+# `grid_h * grid_w * grid_channels + vector_dim` from
+# `MuZeroConfig.__post_init__`. The smoke uses the default values
+# (11 * 11 * 7 + 73 = 920) so the existing tiny-network CNN config
+# applies without further overrides.
+_SMOKE_OBS_DIM = 11 * 11 * 7 + 73
+_SMOKE_ACTION_DIM = 5
 
 
 def _populate_trajectory(path: Path, *, obs_dim: int, action_count: int, steps: int) -> None:
@@ -60,6 +78,32 @@ def _populate_trajectory(path: Path, *, obs_dim: int, action_count: int, steps: 
     path.write_text(json.dumps(trajectory), encoding="utf-8")
 
 
+def _make_smoke_model() -> Any:
+    """Build a tiny MuZero model sized for the smoke's CPU budget.
+    Mirrors `_make_tiny_model` in `test_muzero_mc_trainer.py` so both
+    tests exercise the same network shape that
+    `train_with_gradients` was validated against.
+    """
+    from forge.models.muzero_config import MuZeroConfig
+    from forge.models.muzero_world_model import MuZeroWorldModel
+
+    return MuZeroWorldModel(
+        MuZeroConfig(
+            obs_dim=_SMOKE_OBS_DIM,
+            action_dim=_SMOKE_ACTION_DIM,
+            latent_dim=16,
+            hidden_dim=16,
+            num_blocks=1,
+            num_unroll_steps=2,
+            reward_support_size=11,
+            value_support_size=11,
+            cnn_channels=(8,),
+            cnn_kernel_sizes=(3,),
+            cnn_strides=(1,),
+        )
+    )
+
+
 def test_trainer_continuous_bumps_manifest_with_atomic_bundles(tmp_path: Path) -> None:
     """End-to-end smoke for the v0.4 self-improvement loop (minus the
     Rust runner, which needs Docker / ONNX Runtime).
@@ -74,13 +118,13 @@ def test_trainer_continuous_bumps_manifest_with_atomic_bundles(tmp_path: Path) -
     """
     pytest.importorskip("torch")
     pytest.importorskip("onnx")
-    from forge.models.muzero_config import MuZeroConfig
-    from forge.models.muzero_world_model import MuZeroWorldModel
+    # `torch.onnx.export` requires `onnxscript` from torch >= 2.4. If
+    # the host's CI install lacks it, skip — covered by the CI fix
+    # in commit `c4e73dd` once ONNX wheels are installed.
+    pytest.importorskip("onnxscript")
     from forge.training.muzero_mc.replay import TrajectoryReader
     from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
 
-    obs_dim = 4
-    action_count = 3
     traj_dir = tmp_path / "trajectories"
     out_dir = tmp_path / "models"
 
@@ -89,12 +133,12 @@ def test_trainer_continuous_bumps_manifest_with_atomic_bundles(tmp_path: Path) -
     for i in range(3):
         _populate_trajectory(
             traj_dir / f"ep-{i:06d}.json",
-            obs_dim=obs_dim,
-            action_count=action_count,
+            obs_dim=_SMOKE_OBS_DIM,
+            action_count=_SMOKE_ACTION_DIM,
             steps=5,
         )
 
-    model = MuZeroWorldModel(MuZeroConfig(obs_dim=obs_dim, action_dim=action_count))
+    model = _make_smoke_model()
     reader = TrajectoryReader(traj_dir, batch_size=2)
     cfg = MuZeroMcTrainerConfig(
         schema_id="smoke-test",
@@ -158,23 +202,20 @@ def test_trainer_continuous_respects_max_bundle_versions_floor(tmp_path: Path) -
     """
     pytest.importorskip("torch")
     pytest.importorskip("onnx")
-    from forge.models.muzero_config import MuZeroConfig
-    from forge.models.muzero_world_model import MuZeroWorldModel
+    pytest.importorskip("onnxscript")
     from forge.training.muzero_mc.replay import TrajectoryReader
     from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
 
-    obs_dim = 4
-    action_count = 3
     traj_dir = tmp_path / "trajectories"
     out_dir = tmp_path / "models"
     _populate_trajectory(
         traj_dir / "ep-000001.json",
-        obs_dim=obs_dim,
-        action_count=action_count,
+        obs_dim=_SMOKE_OBS_DIM,
+        action_count=_SMOKE_ACTION_DIM,
         steps=5,
     )
 
-    model = MuZeroWorldModel(MuZeroConfig(obs_dim=obs_dim, action_dim=action_count))
+    model = _make_smoke_model()
     reader = TrajectoryReader(traj_dir, batch_size=2)
     cfg = MuZeroMcTrainerConfig(
         schema_id="smoke-test",
