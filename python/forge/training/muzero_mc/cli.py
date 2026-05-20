@@ -281,7 +281,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="RNG seed (default: 0). Determinism gate for tests.",
     )
-    from forge.training.muzero_mc.trainer import DEFAULT_DEVICE
+    from forge.training.muzero_mc.trainer import (
+        DEFAULT_DEVICE,
+        DEFAULT_ROUND_POLL_SLEEP_S,
+    )
 
     p_train.add_argument(
         "--device",
@@ -291,6 +294,47 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             f"Torch device for training (default: {DEFAULT_DEVICE!r}). "
             "'auto' picks CUDA if torch.cuda.is_available() else CPU."
+        ),
+    )
+    p_train.add_argument(
+        "--continuous",
+        action="store_true",
+        help=(
+            "Run the trainer forever (or until SIGINT). Each round runs "
+            "`--round-iters` gradient steps and exports an ONNX bundle. "
+            "Backwards-compat: omitted → fixed-iters mode (the v0.3-pre "
+            "behaviour driven by `--iters`)."
+        ),
+    )
+    p_train.add_argument(
+        "--round-iters",
+        type=int,
+        default=10,
+        help=(
+            "Gradient steps per continuous-mode round (default: 10). "
+            "Only consumed when `--continuous` is set."
+        ),
+    )
+    p_train.add_argument(
+        "--round-poll-sleep",
+        type=float,
+        default=DEFAULT_ROUND_POLL_SLEEP_S,
+        help=(
+            "Cold-start poll sleep when the trajectory dir is empty "
+            f"(default: {DEFAULT_ROUND_POLL_SLEEP_S}s). Only consumed "
+            "with `--continuous`."
+        ),
+    )
+    p_train.add_argument(
+        "--max-trajectories",
+        type=int,
+        default=None,
+        help=(
+            "Cap the number of trajectory files on disk. Default "
+            "(unset) keeps the disk unbounded for backwards-compat. "
+            "When set, the trainer trims oldest-by-mtime after each "
+            "continuous-mode round (the newest few files are always "
+            "kept — they may be a runner in-flight write)."
         ),
     )
 
@@ -475,9 +519,15 @@ def _run_train(args: argparse.Namespace) -> int:
             batch_size=args.batch_size,
             seed=args.seed,
             device=args.device,
+            round_poll_sleep_s=args.round_poll_sleep,
+            max_trajectories=args.max_trajectories,
         )
         trainer = MuzeroMcTrainer(model, reader, trainer_cfg)
-        outcome = trainer.train()
+        outcome = (
+            _drive_continuous_loop(trainer, round_iters=args.round_iters)
+            if args.continuous
+            else trainer.train()
+        )
     except ValueError as e:
         logger.error("invalid train config: %s", e)
         return EXIT_USAGE
@@ -485,13 +535,67 @@ def _run_train(args: argparse.Namespace) -> int:
         logger.error("train failed: %s", e)
         return EXIT_IO
 
-    logger.info(
-        "train complete: iters=%d, exports=%d, manifest_version=%d",
-        outcome["iters_completed"],
-        outcome["exports"],
-        outcome["last_manifest_version"],
-    )
+    if args.continuous:
+        logger.info(
+            "train --continuous complete: rounds=%d, iters=%d, exports=%d, manifest_version=%d",
+            outcome["rounds"],
+            outcome["iters_completed"],
+            outcome["exports"],
+            outcome["last_manifest_version"],
+        )
+    else:
+        logger.info(
+            "train complete: iters=%d, exports=%d, manifest_version=%d",
+            outcome["iters_completed"],
+            outcome["exports"],
+            outcome["last_manifest_version"],
+        )
     return EXIT_OK
+
+
+def _drive_continuous_loop(trainer: Any, *, round_iters: int) -> dict[str, Any]:
+    """Drive `trainer.train_continuous(...)` to completion with SIGINT
+    handling. Extracted from `_run_train` to keep that function under
+    ruff's branch-count + statement-count caps.
+
+    Installs a temporary SIGINT handler that flips a stop flag; the
+    trainer polls the flag and breaks cleanly out of its inner loop.
+    The previous handler is restored on exit (try/finally).
+    """
+    import signal
+
+    stop_flag = {"stop": False}
+
+    def _on_sigint(_signum: int, _frame: Any) -> None:
+        stop_flag["stop"] = True
+        logger.info("SIGINT received; trainer will stop after current round")
+
+    old_handler = signal.signal(signal.SIGINT, _on_sigint)
+    outcome: dict[str, Any] = {
+        "rounds": 0,
+        "iters_completed": 0,
+        "exports": 0,
+        "last_manifest_version": 0,
+    }
+    try:
+        for round_summary in trainer.train_continuous(
+            round_iters=round_iters,
+            stop=lambda: stop_flag["stop"],
+        ):
+            outcome["rounds"] += 1
+            outcome["iters_completed"] = round_summary["iters_completed"]
+            outcome["exports"] += round_summary["exports"]
+            outcome["last_manifest_version"] = round_summary["last_manifest_version"]
+            logger.info(
+                "round %d: iter=%d exports_this_round=%d manifest_version=%d",
+                round_summary["round"],
+                round_summary["iters_completed"],
+                round_summary["exports"],
+                round_summary["last_manifest_version"],
+            )
+    finally:
+        signal.signal(signal.SIGINT, old_handler)
+    return outcome
 
 
 if __name__ == "__main__":  # pragma: no cover — module-as-script.

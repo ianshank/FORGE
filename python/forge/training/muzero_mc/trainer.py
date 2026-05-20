@@ -51,6 +51,8 @@ from forge.training.muzero_mc.manifest import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
     from forge.models.muzero_world_model import MuZeroWorldModel
     from forge.training.muzero_mc.replay import TrajectoryReader
 
@@ -79,6 +81,42 @@ DEFAULT_DEVICE: Final[str] = "cpu"
 #: tuple-literal so a typo at config-time surfaces in ``__post_init__``
 #: validation rather than as a confusing torch error later.
 _ALLOWED_DEVICES: Final[tuple[str, ...]] = ("cpu", "cuda", "auto")
+
+#: Default poll-sleep between continuous-mode rounds when the
+#: trajectory dir is still empty (runner cold-start). 5s is short
+#: enough that the trainer doesn't lag the first runner trajectory
+#: by more than ~10s in practice, and long enough that we don't
+#: tight-loop on `episode_paths()` while waiting.
+DEFAULT_ROUND_POLL_SLEEP_S: Final[float] = 5.0
+
+#: Default minimum number of newest trajectories to keep when
+#: trimming the replay buffer. The currently-being-loaded round
+#: lives in this window. Higher = more safety margin against
+#: deleting an in-flight write, lower = less disk usage.
+DEFAULT_TRIM_KEEP_NEWEST: Final[int] = 4
+
+
+def _safe_unlink_all(paths: list[Path]) -> int:
+    """Best-effort `unlink` over a list of paths. Returns the count of
+    successful deletes. A failed unlink (e.g. file held open by a
+    runner mid-write on Windows) is logged at WARNING and skipped —
+    crashing the training loop on a stale file would be worse than
+    leaving the file behind, since the next round retries.
+
+    Lifted out of `_trim_replay_buffer` so the per-file try/except
+    is isolated to one tiny function. PERF203 is suppressed via
+    per-file ignore in `pyproject.toml`; the alternative (collect
+    failures then re-raise) loses the resilience we want here.
+    """
+    deleted = 0
+    for path in paths:
+        try:
+            path.unlink()
+        except OSError as e:  # noqa: PERF203 — see function docstring
+            logger.warning("failed to unlink %s: %s", path, e)
+        else:
+            deleted += 1
+    return deleted
 
 
 def _resolve_device(device: str) -> Any:  # actually torch.device, but kept Any to avoid the runtime torch import here
@@ -144,6 +182,17 @@ class MuZeroMcTrainerConfig:
     gradient_scale: float = 0.5
     #: ``"cpu"`` / ``"cuda"`` / ``"auto"``. See :data:`DEFAULT_DEVICE`.
     device: str = DEFAULT_DEVICE
+    #: Per-iteration sleep when ``train_continuous`` polls an empty
+    #: trajectory dir. Used at cold start before the runner has
+    #: emitted any episodes yet. See :data:`DEFAULT_ROUND_POLL_SLEEP_S`.
+    round_poll_sleep_s: float = DEFAULT_ROUND_POLL_SLEEP_S
+    #: Cap on the number of trajectory files on disk. ``None`` keeps
+    #: the disk unbounded (backwards-compat with v0.3-pre). Set to a
+    #: positive integer to enable the post-round cleanup pass that
+    #: deletes the oldest files (by mtime) when the count exceeds
+    #: the cap. The newest ``DEFAULT_TRIM_KEEP_NEWEST`` files are
+    #: ALWAYS kept to avoid deleting an in-flight runner write.
+    max_trajectories: int | None = None
 
     def __post_init__(self) -> None:
         if self.train_iters < 0:
@@ -159,6 +208,14 @@ class MuZeroMcTrainerConfig:
         if self.device not in _ALLOWED_DEVICES:
             raise ValueError(
                 f"device must be one of {_ALLOWED_DEVICES!r}, got {self.device!r}"
+            )
+        if self.round_poll_sleep_s <= 0:
+            raise ValueError(
+                f"round_poll_sleep_s must be > 0, got {self.round_poll_sleep_s}"
+            )
+        if self.max_trajectories is not None and self.max_trajectories <= 0:
+            raise ValueError(
+                f"max_trajectories must be > 0 when set, got {self.max_trajectories}"
             )
 
 
@@ -413,6 +470,133 @@ class MuzeroMcTrainer:
         )
         self._iter += 1
         return metrics.to_dict()
+
+    def train_continuous(
+        self,
+        *,
+        round_iters: int,
+        stop: Callable[[], bool] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Continuous-mode training. Yields one summary dict per round.
+
+        Each round:
+
+        1. Polls :meth:`TrajectoryReader.episode_paths` until non-empty
+           or ``stop()`` flips True (cold-start guard — the runner may
+           not have emitted any episodes yet).
+        2. Runs ``round_iters`` gradient steps via :meth:`train_step`.
+        3. Exports an ONNX bundle (if ``export_every_n_iters > 0``).
+        4. Trims the replay buffer if ``max_trajectories`` is set.
+
+        Args:
+            round_iters: Gradient steps per round. Must be > 0.
+            stop: Optional callable that returns True to break out of
+                the outer loop. The CLI passes a callable backed by a
+                SIGINT-bound flag.
+
+        Yields:
+            One ``dict`` per completed round: ``{"round": int,
+            "iters_completed": int, "exports": int, "last_metrics":
+            ..., "last_manifest_version": int}``.
+
+        Backwards-compat: the existing :meth:`train` method is
+        unchanged — fixed-iters mode continues to work for callers
+        that don't want a continuous loop.
+        """
+        import time
+
+        if round_iters <= 0:
+            raise ValueError(f"round_iters must be > 0, got {round_iters}")
+
+        round_n = 0
+        sleep_s = self._config.round_poll_sleep_s
+        check_stop = stop or (lambda: False)
+        while not check_stop():
+            # Cold-start guard: wait until the runner has emitted at
+            # least one trajectory. Polls cheaply (a glob), sleeps
+            # `round_poll_sleep_s` between checks.
+            while not self._reader.episode_paths() and not check_stop():
+                logger.info(
+                    "train_continuous: waiting for first trajectory in %s "
+                    "(sleeping %.2fs)",
+                    self._reader.directory,
+                    sleep_s,
+                )
+                time.sleep(sleep_s)
+            if check_stop():
+                return
+
+            round_n += 1
+            exports_this_round = 0
+            last_metrics: dict[str, float] = {}
+            for _ in range(round_iters):
+                if check_stop():
+                    break
+                last_metrics = self.train_step()
+                if (
+                    self._config.export_every_n_iters > 0
+                    and self._iter % self._config.export_every_n_iters == 0
+                ):
+                    self._export_bundle()
+                    exports_this_round += 1
+            # End-of-round export if the in-round cadence didn't catch
+            # the boundary. Matches `train()`'s end-of-loop discipline.
+            if self._config.export_every_n_iters > 0 and exports_this_round == 0:
+                self._export_bundle()
+                exports_this_round += 1
+
+            self._trim_replay_buffer(self._config.max_trajectories)
+
+            yield {
+                "round": round_n,
+                "iters_completed": self._iter,
+                "exports": exports_this_round,
+                "last_metrics": last_metrics,
+                "last_manifest_version": self._last_manifest_version,
+            }
+
+    def _trim_replay_buffer(self, max_trajectories: int | None) -> int:
+        """Delete oldest-by-mtime trajectory files until the count
+        is at or below ``max_trajectories``. Returns the count of
+        files deleted.
+
+        Never touches the newest :data:`DEFAULT_TRIM_KEEP_NEWEST`
+        files even if they'd push the count over the cap — this
+        guards against unlinking a file the runner is currently
+        writing (Windows: ``os.replace``-while-open fails).
+
+        Args:
+            max_trajectories: When ``None``, no-op (returns 0). When
+                set, deletes files until at most ``max_trajectories``
+                remain on disk (or
+                ``DEFAULT_TRIM_KEEP_NEWEST``, whichever is larger).
+        """
+        if max_trajectories is None:
+            return 0
+        paths = self._reader.episode_paths()
+        if len(paths) <= max_trajectories:
+            return 0
+        # Sort by mtime ascending so the oldest are at the front.
+        paths_with_mtime = sorted(
+            paths,
+            key=lambda p: p.stat().st_mtime,
+        )
+        keep_floor = max(max_trajectories, DEFAULT_TRIM_KEEP_NEWEST)
+        to_delete = paths_with_mtime[: max(0, len(paths_with_mtime) - keep_floor)]
+        # PERF203 (try/except inside loop) is suppressed at the
+        # function level via the per-file ignore in `pyproject.toml`'s
+        # `[tool.ruff.lint.per-file-ignores]` because the alternative
+        # (collect failures into a list, then raise) would crash the
+        # whole training loop on any unlink failure — exactly what
+        # we want to AVOID. Deletes are also rare (≤ N per round).
+        deleted = _safe_unlink_all(to_delete)
+        if deleted:
+            logger.info(
+                "trimmed replay buffer: deleted %d files (kept %d newest)",
+                deleted,
+                len(paths) - deleted,
+            )
+        return deleted
 
     def train(self) -> dict[str, Any]:
         """Run ``train_iters`` gradient steps, exporting on the

@@ -379,3 +379,159 @@ def test_trainer_moves_model_to_configured_device(tmp_path: Path) -> None:
     assert params[0].device.type == "cpu"
     # Silence the unused-import warning the unused torch reference triggers.
     _ = torch
+
+
+# --- T4: continuous-mode + replay-buffer hygiene ----------------------
+
+
+def test_trainer_config_rejects_invalid_round_poll_sleep(tmp_path: Path) -> None:
+    from forge.training.muzero_mc.trainer import MuZeroMcTrainerConfig
+
+    with pytest.raises(ValueError, match="round_poll_sleep_s"):
+        MuZeroMcTrainerConfig(
+            round_poll_sleep_s=0.0, schema_id="x", output_dir=tmp_path
+        )
+    with pytest.raises(ValueError, match="round_poll_sleep_s"):
+        MuZeroMcTrainerConfig(
+            round_poll_sleep_s=-1.0, schema_id="x", output_dir=tmp_path
+        )
+
+
+def test_trainer_config_rejects_zero_max_trajectories(tmp_path: Path) -> None:
+    from forge.training.muzero_mc.trainer import MuZeroMcTrainerConfig
+
+    with pytest.raises(ValueError, match="max_trajectories"):
+        MuZeroMcTrainerConfig(
+            max_trajectories=0, schema_id="x", output_dir=tmp_path
+        )
+
+
+def test_trainer_config_max_trajectories_default_is_none(tmp_path: Path) -> None:
+    """v0.3-pre callers MUST see no disk-cleanup behaviour by default
+    (backwards-compat). Explicit pin against the default value.
+    """
+    from forge.training.muzero_mc.trainer import MuZeroMcTrainerConfig
+
+    cfg = MuZeroMcTrainerConfig(schema_id="x", output_dir=tmp_path)
+    assert cfg.max_trajectories is None
+
+
+def test_trim_replay_buffer_none_is_noop(tmp_path: Path) -> None:
+    """When `max_trajectories=None`, `_trim_replay_buffer` MUST NOT
+    touch the disk regardless of how many files are present.
+    """
+    pytest.importorskip("torch")
+    pytest.importorskip("onnx")
+    from forge.models.muzero_config import MuZeroConfig
+    from forge.models.muzero_world_model import MuZeroWorldModel
+    from forge.training.muzero_mc.replay import TrajectoryReader
+    from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
+
+    traj_dir = tmp_path / "trajectories"
+    traj_dir.mkdir()
+    # Plant 5 dummy trajectory files.
+    for i in range(5):
+        (traj_dir / f"ep-{i:06d}.json").write_text("{}", encoding="utf-8")
+
+    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    reader = TrajectoryReader(traj_dir, batch_size=2)
+    cfg = MuZeroMcTrainerConfig(
+        schema_id="x", output_dir=tmp_path / "out", device="cpu"
+    )
+    trainer = MuzeroMcTrainer(model, reader, cfg)
+    deleted = trainer._trim_replay_buffer(None)
+    assert deleted == 0
+    assert len(list(traj_dir.glob("ep-*.json"))) == 5
+
+
+def test_trim_replay_buffer_keeps_newest_when_cap_below_floor(tmp_path: Path) -> None:
+    """The trimmer MUST keep at least
+    `DEFAULT_TRIM_KEEP_NEWEST` files even when the cap would otherwise
+    require deleting more. Guards against unlinking an in-flight
+    runner write.
+    """
+    import time
+
+    pytest.importorskip("torch")
+    pytest.importorskip("onnx")
+    from forge.models.muzero_config import MuZeroConfig
+    from forge.models.muzero_world_model import MuZeroWorldModel
+    from forge.training.muzero_mc.replay import TrajectoryReader
+    from forge.training.muzero_mc.trainer import (
+        DEFAULT_TRIM_KEEP_NEWEST,
+        MuzeroMcTrainer,
+        MuZeroMcTrainerConfig,
+    )
+
+    traj_dir = tmp_path / "trajectories"
+    traj_dir.mkdir()
+    # Plant 8 trajectory files with staggered mtimes so the trimmer
+    # can sort them.
+    for i in range(8):
+        p = traj_dir / f"ep-{i:06d}.json"
+        p.write_text("{}", encoding="utf-8")
+        # Touch the older files to set their mtime — Windows-safe.
+        old_time = time.time() - (10 - i)  # i=0 oldest, i=7 newest
+        import os
+
+        os.utime(p, (old_time, old_time))
+
+    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    reader = TrajectoryReader(traj_dir, batch_size=2)
+    cfg = MuZeroMcTrainerConfig(
+        schema_id="x",
+        output_dir=tmp_path / "out",
+        device="cpu",
+        max_trajectories=1,  # Below the floor.
+    )
+    trainer = MuzeroMcTrainer(model, reader, cfg)
+    deleted = trainer._trim_replay_buffer(1)
+    remaining = sorted(traj_dir.glob("ep-*.json"))
+    assert len(remaining) == DEFAULT_TRIM_KEEP_NEWEST
+    assert deleted == 8 - DEFAULT_TRIM_KEEP_NEWEST
+    # The newest N files MUST be the survivors (highest indices).
+    surviving_indices = sorted(int(p.stem.removeprefix("ep-")) for p in remaining)
+    expected_indices = list(range(8 - DEFAULT_TRIM_KEEP_NEWEST, 8))
+    assert surviving_indices == expected_indices
+
+
+def test_train_continuous_stops_on_flag(tmp_path: Path) -> None:
+    """`train_continuous` yields summaries until `stop()` returns True.
+    Cold-start phase: empty trajectory dir → trainer sleeps in the
+    poll loop, then the stop flag interrupts.
+    """
+    pytest.importorskip("torch")
+    pytest.importorskip("onnx")
+    from forge.models.muzero_config import MuZeroConfig
+    from forge.models.muzero_world_model import MuZeroWorldModel
+    from forge.training.muzero_mc.replay import TrajectoryReader
+    from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
+
+    traj_dir = tmp_path / "trajectories"
+    traj_dir.mkdir()  # Empty — cold-start.
+
+    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    reader = TrajectoryReader(traj_dir, batch_size=2)
+    cfg = MuZeroMcTrainerConfig(
+        schema_id="x",
+        output_dir=tmp_path / "out",
+        device="cpu",
+        round_poll_sleep_s=0.01,  # Short sleep so the test runs fast.
+    )
+    trainer = MuzeroMcTrainer(model, reader, cfg)
+
+    # Stop flag: True after first call, but the trainer never runs
+    # `train_step` because the trajectory dir stays empty.
+    call_count = {"n": 0}
+
+    def stop_now() -> bool:
+        call_count["n"] += 1
+        # First few calls return False so we hit the cold-start sleep,
+        # then return True to break out cleanly.
+        return call_count["n"] >= 3
+
+    summaries = list(trainer.train_continuous(round_iters=1, stop=stop_now))
+    # Should yield 0 summaries because we never had a trajectory.
+    assert summaries == []
+    # Trainer's gradient counter must NOT have advanced.
+    assert trainer.iter == 0
