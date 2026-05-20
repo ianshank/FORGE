@@ -320,6 +320,13 @@ jobs:
           else
             npm install --no-audit --no-fund
           fi
+      - name: TypeScript typecheck
+        working-directory: mc-bot
+        # `tsc --noEmit` against tsconfig.json with allowJs+checkJs
+        # validates the JSDoc-typed source surface. A follow-up
+        # commit renames .js → .ts; the typecheck step works either
+        # way.
+        run: npm run typecheck
       - name: Lint with Biome
         working-directory: mc-bot
         run: npm run lint

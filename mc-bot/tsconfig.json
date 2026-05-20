@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    // Lock to a Node 22-compatible target so `tsc --noEmit` matches
+    // the runtime mc-bot's package.json `engines.node` field.
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+
+    // Pure typecheck mode for this stage of the migration. The
+    // existing JS files stay on disk; `tsc` only validates JSDoc
+    // types. A follow-up PR renames `.js` → `.ts` and flips
+    // `emitDeclarationOnly` to enable real declarations.
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+
+    // Strict-ish — enables nullability + implicit-any checks but
+    // tolerates the JSDoc-typed surface that already exists.
+    "strict": true,
+    "noImplicitAny": false,
+    "strictNullChecks": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+
+    // Match Node's ESM + .js-extension import resolution.
+    "allowImportingTsExtensions": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+
+    // Pin the build's tsbuildinfo location so a future incremental
+    // build (when we flip noEmit off) lands in a predictable spot.
+    "incremental": true,
+    "tsBuildInfoFile": "./.tsbuildinfo"
+  },
+  "include": ["src/**/*.js", "src/**/*.ts", "test/**/*.js", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
