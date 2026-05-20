@@ -11,20 +11,51 @@ Protocol v1 — JSON-only WebSocket. Wire format defined in
 ```
 mc-bot/
   src/
-    protocol.js     - ClientMsg parser + ServerMsg builders
-    action_map.js   - loads + validates action_map.toml; canonicalises
-    schema_id.js    - SHA256 over canonical action map (xlang-pinned)
+    protocol.js          - ClientMsg parser + ServerMsg builders
+                           (Hello may carry optional `grid_shape` since v0.5)
+    action_map.js        - loads + validates action_map.toml; canonicalises
+    schema_id.js         - SHA256 over canonical action map (xlang-pinned)
+    hash.js              - shared FNV-1a `stableStringHash` + `finiteNumber`
+    observation.js       - flat scalar observation vector + `flat_vector_dim` pad
+    observation_grid.js  - v0.5 ego-centric block-grid encoder
+                           (xlang-pinned `BLOCK_FEATURE_CHANNELS`)
     reward/
-      index.js      - composer over named built-ins
+      index.js           - composer over named built-ins
       builtins/
         survival.js
         inventory_acquired.js
         distance_to_goal.js
         health_delta.js
         composite.js
-    reset.js        - teleport-based episode reset (v1 strategy)
-  test/             - node:test suites (no install needed for these)
+    reset.js             - teleport-based episode reset (v1 strategy)
+  test/                  - node:test suites (no install needed for these)
 ```
+
+## v0.5 `[observation]` config knobs
+
+Every value below is read from the bot's TOML config (defaults at the
+right). No hard-coded literals at any call site.
+
+| Key | Default | Purpose |
+|---|---|---|
+| `include_block_grid` | `false` (JS) / `true` (env.toml) | Toggle the v0.5 block-grid prefix on the observation vector |
+| `grid_radius` | `5` | X/Z half-extent → 11 tiles per side |
+| `grid_height_radius` | `0` | Y half-extent (0 = single eye-level slice; matches MuZero 2D CNN) |
+| `grid_channels` | `7` | Per-tile feature count; MUST match `BLOCK_FEATURE_CHANNELS.length` |
+| `block_id_hash_mod` | `4096` | Modulus for `block_type_hash` channel |
+| `biome_id_hash_mod` | `256` | Modulus for `biome_id_hash` channel |
+| `grid_hardness_scale` | `10` | Normaliser for the `hardness` channel |
+| `dangerous_block_names` | `["lava", "fire", "magma_block", ...]` | Names the `is_dangerous` channel matches |
+| `flat_vector_dim` | unset (env.toml: `73`) | Zero-pad the flat suffix up to this length |
+| `expected_dim` | unset (env.toml: `920`) | Runner-side cross-check; reject Hello on mismatch |
+
+The bot's `Hello` handshake includes a `grid_shape` payload whenever
+`include_block_grid = true`, and the runner cross-checks it against
+`[observation.expected_grid_shape]` in `configs/minecraft/env.toml`.
+Reorder either side without coordinating the other and both the JS
+`BLOCK_FEATURE_CHANNELS` test and the Rust
+`xlang_block_feature_channels_pinned_to_known_good` test fail
+simultaneously.
 
 ## Tests
 

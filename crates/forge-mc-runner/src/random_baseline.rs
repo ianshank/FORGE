@@ -143,6 +143,30 @@ mod tests {
     }
 
     #[test]
+    fn random_latent_model_recurrent_inference_matches_initial_invariant() {
+        // The model is a type-stub; the runner's planning branch
+        // short-circuits before either inference method is called.
+        // But if a future refactor accidentally invokes
+        // `recurrent_inference`, it must still satisfy the same
+        // uniform-prior / zero-init contract as `initial_inference` so
+        // downstream code isn't poisoned by NaN values.
+        let model = RandomLatentModel::new(7, 16);
+        let state = LatentState::zeros(16);
+        let out = model
+            .recurrent_inference(&state, 3)
+            .expect("recurrent inference must not error on the stub model");
+        assert_eq!(out.latent_state.dim(), 16);
+        assert_eq!(out.policy_logits.len(), 7);
+        assert!((out.reward - 0.0).abs() < f32::EPSILON);
+        assert!((out.value - 0.0).abs() < f32::EPSILON);
+        let sum: f32 = out.policy_logits.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-5,
+            "recurrent uniform priors must sum to 1.0, got {sum}"
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "action_count must be >= 1")]
     fn sample_random_action_panics_on_zero_action_count() {
         let mut rng = Pcg64Mcg::new(0);

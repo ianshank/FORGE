@@ -356,6 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     from forge.training.muzero_mc.capture_baseline import (
         ALL_VARIANTS,
         DEFAULT_METRICS_URL,
+        DEFAULT_POLL_INTERVAL_SECS,
         DEFAULT_RUNNER_CONTAINER,
         DEFAULT_TIMEOUT_SECS,
     )
@@ -393,8 +394,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "Snapshot output path (default: baseline_<variant>.json in "
-            "the working dir)."
+            "Snapshot output path. Default `baseline_<variant>.json` "
+            "resolves relative to the current working directory — be "
+            "explicit when running inside docker so the host can see "
+            "the output."
         ),
     )
     p_cap.add_argument(
@@ -422,8 +425,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_cap.add_argument(
         "--poll-interval-secs",
         type=float,
-        default=5.0,
-        help="Seconds between Prometheus scrape polls (default: 5.0).",
+        default=DEFAULT_POLL_INTERVAL_SECS,
+        help=f"Seconds between Prometheus scrape polls (default: {DEFAULT_POLL_INTERVAL_SECS}).",
     )
     p_cap.add_argument(
         "--dry-run",

@@ -90,11 +90,22 @@ impl MinecraftEnv {
         // (silent absence would mean the bot ran with the legacy
         // flat-only encoder against a trainer expecting spatial input).
         if let Some(expected) = config.observation.expected_grid_shape {
-            let server = grid_shape.ok_or_else(|| McEnvError::HandshakeMismatch {
-                client: format!("grid_shape={expected:?}"),
-                server: "grid_shape=None".to_string(),
-            })?;
+            let Some(server) = grid_shape else {
+                warn!(
+                    expected = ?expected,
+                    "grid_shape mismatch: client expected Some(_), server reported None"
+                );
+                return Err(McEnvError::HandshakeMismatch {
+                    client: format!("grid_shape={expected:?}"),
+                    server: "grid_shape=None".to_string(),
+                });
+            };
             if !grid_shape_matches(&expected, &server) {
+                warn!(
+                    expected = ?expected,
+                    server = ?server,
+                    "grid_shape mismatch: field-wise comparison failed"
+                );
                 return Err(McEnvError::HandshakeMismatch {
                     client: format!("grid_shape={expected:?}"),
                     server: format!("grid_shape={server:?}"),
@@ -107,6 +118,12 @@ impl MinecraftEnv {
                 * (server.channels as usize)
                 + (server.vector_dim as usize);
             if derived != obs_dim {
+                warn!(
+                    derived,
+                    obs_dim,
+                    server = ?server,
+                    "grid_shape derived obs_dim != advertised obs_dim — bot is lying about its shape"
+                );
                 return Err(McEnvError::HandshakeMismatch {
                     client: format!("derived_obs_dim={derived}"),
                     server: format!("obs_dim={obs_dim}"),

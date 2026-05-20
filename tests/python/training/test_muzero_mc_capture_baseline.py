@@ -428,6 +428,106 @@ def test_known_variant_constants_present() -> None:
     assert VARIANT_TRAINED == "trained"
 
 
+def test_cli_handles_timeout_with_exit_io(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When `capture_baseline` raises `TimeoutError`, the CLI must
+    return `EXIT_IO` (not propagate the exception) so docker
+    orchestrations can keep tearing the stack down.
+    """
+    from forge.training.muzero_mc import capture_baseline as cb_module
+    from forge.training.muzero_mc.cli import EXIT_IO
+
+    def raise_timeout(_cfg: Any) -> None:
+        raise TimeoutError("synthetic")
+
+    monkeypatch.setattr(cb_module, "capture_baseline", raise_timeout)
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(
+        [
+            "capture-baseline",
+            "--variant",
+            VARIANT_TRAINED,
+            "--episodes",
+            "5",
+            "--out",
+            str(tmp_path / "baseline_trained.json"),
+            "--trajectory-dir",
+            str(tmp_path),
+        ]
+    )
+    assert rc == EXIT_IO
+
+
+def test_cli_handles_runtime_error_with_exit_io(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OSError / RuntimeError from the capture orchestration also
+    maps to EXIT_IO rather than propagating.
+    """
+    from forge.training.muzero_mc import capture_baseline as cb_module
+    from forge.training.muzero_mc.cli import EXIT_IO
+
+    def raise_runtime(_cfg: Any) -> None:
+        raise RuntimeError("synthetic")
+
+    monkeypatch.setattr(cb_module, "capture_baseline", raise_runtime)
+    monkeypatch.chdir(tmp_path)
+    rc = main(
+        [
+            "capture-baseline",
+            "--variant",
+            VARIANT_RANDOM,
+            "--episodes",
+            "1",
+            "--out",
+            str(tmp_path / "baseline_random.json"),
+            "--trajectory-dir",
+            str(tmp_path),
+        ]
+    )
+    assert rc == EXIT_IO
+
+
+def test_capture_baseline_end_of_run_summary_logged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """End-of-run INFO summary must contain mean_reward + episodes_observed
+    so operators can grep multi-hour log volumes.
+    """
+    out_path = tmp_path / "baseline_random.json"
+    trajectory_dir = tmp_path / "trajectories.random"
+    trajectory_dir.mkdir()
+    _write_trajectory(trajectory_dir / "ep-000001.json", episode_id="ep-000001")
+
+    cfg = CaptureConfig(
+        variant=VARIANT_RANDOM,
+        episodes=1,
+        out_path=out_path,
+        trajectory_dir=trajectory_dir,
+        poll_interval_secs=0.01,
+        timeout_secs=10,
+    )
+    caplog.set_level(logging.INFO, logger="forge.training.muzero_mc.capture_baseline")
+    clock = _StubClock()
+    sleeper = _StubSleeper(clock)
+    capture_baseline(
+        cfg,
+        metrics_fetcher=lambda _url: "forge_mc_episode_total 1\n",
+        trajectory_loader=lambda: load_episode_records(trajectory_dir),
+        docker_log_reader=lambda: "",
+        sleeper=sleeper,
+        clock=clock,
+    )
+    summary = [r.getMessage() for r in caplog.records if "capture-baseline done" in r.getMessage()]
+    assert summary, "expected an INFO summary line tagged 'capture-baseline done'"
+    msg = summary[0]
+    assert "mean_reward=" in msg
+    assert "episodes_observed=" in msg
+    assert "manifest_versions_seen=" in msg
+
+
 def test_capture_baseline_uses_injected_fixtures(tmp_path: Path) -> None:
     """Sanity check that every injection point is honoured (regression
     guard against future inversions where the orchestration function

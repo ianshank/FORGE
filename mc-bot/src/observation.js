@@ -1,4 +1,4 @@
-import { DEFAULT_HASH_MOD, stableStringHash } from './hash.js';
+import { DEFAULT_HASH_MOD, finiteNumber, stableStringHash } from './hash.js';
 import { encodeBlockGrid, gridFlatDim } from './observation_grid.js';
 
 const DEFAULT_POSITION_SCALE = 1024;
@@ -7,14 +7,10 @@ const DEFAULT_HOTBAR_SLOTS = 9;
 const DEFAULT_SLOT_FEATURES = 2;
 const HOTBAR_SLOT_OFFSET = 36;
 
-// Re-export for any downstream module that still imports
-// `stableStringHash` from `observation.js`.
+// Re-export for any downstream module that still imports these from
+// observation.js (the canonical home is hash.js, but a deep refactor
+// of every caller would expand the diff for zero gain).
 export { stableStringHash };
-
-function finiteNumber(value, fallback = 0) {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : fallback;
-}
 
 function boolDefault(value, fallback) {
   return typeof value === 'boolean' ? value : fallback;

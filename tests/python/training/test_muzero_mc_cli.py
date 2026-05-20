@@ -80,7 +80,7 @@ def test_validate_manifest_schema_drift_returns_validation_error(tmp_path: Path)
     assert rc == EXIT_VALIDATION
 
 
-def test_build_parser_has_all_four_subcommands() -> None:
+def test_build_parser_has_all_subcommands() -> None:
     from forge.training.muzero_mc.cli import build_parser
 
     parser = build_parser()
@@ -100,6 +100,7 @@ def test_build_parser_has_all_four_subcommands() -> None:
         "validate-manifest",
         "train",
         "compute-schema-id",
+        "capture-baseline",
     }
 
 

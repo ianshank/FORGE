@@ -513,6 +513,36 @@ fn handshake_rejects_missing_grid_shape_when_expected_set() {
 }
 
 #[test]
+fn handshake_accepts_any_grid_shape_when_expected_is_none() {
+    // Backwards-compat pin (peer-review S5): when the runner config
+    // does NOT pin `expected_grid_shape`, the bot's `Hello` may
+    // advertise any grid_shape (or none) and the handshake must
+    // accept it.  Catches a regression where the v0.5 grid_shape
+    // gate accidentally becomes mandatory.
+    let port = pick_port();
+    let url = format!("ws://127.0.0.1:{port}");
+    let addr = format!("127.0.0.1:{port}");
+    let map = sample_map();
+    let server_grid = GridShape {
+        height: 3,
+        width: 3,
+        depth: 1,
+        channels: 7,
+        vector_dim: 0,
+    };
+    let obs_dim = 3 * 3 * 1 * 7;
+    let hello = hello_with_grid(map.action_count(), obs_dim, map.canonical_sha256(), server_grid);
+    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let mut cfg = cfg_with_url(url);
+    cfg.observation.expected_dim = Some(obs_dim);
+    cfg.observation.expected_grid_shape = None;
+    let env = MinecraftEnv::connect(cfg, map).expect("connect (no expected grid_shape)");
+    assert_eq!(env.obs_dim(), obs_dim);
+    drop(env);
+    let _ = server.join();
+}
+
+#[test]
 fn handshake_rejects_grid_dims_that_dont_sum_to_obs_dim() {
     let port = pick_port();
     let url = format!("ws://127.0.0.1:{port}");

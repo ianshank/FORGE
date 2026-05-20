@@ -56,6 +56,11 @@ DEFAULT_TIMEOUT_SECS: Final[int] = 3600
 DEFAULT_TRAJECTORY_GLOB_PATTERN: Final[str] = "ep-*.json*"
 DEFAULT_DOCKER_LOGS_TAIL: Final[int] = 50
 DEFAULT_POLL_INTERVAL_SECS: Final[float] = 5.0
+#: Subprocess timeout for `docker logs --tail=N`. Higher than the
+#: default introspect timeout because docker may stream from a
+#: remote engine. Aligned with the same constant in
+#: ``tests/python/integration/_helpers.py::DOCKER_LOGS_TIMEOUT_SECS``.
+DEFAULT_DOCKER_LOGS_TIMEOUT_SECS: Final[int] = 30
 
 # Gauges the snapshot pulls out of the Prometheus scrape for the
 # summary header. Kept in one tuple so the JSON output stays in sync
@@ -350,6 +355,23 @@ def capture_baseline(
     with cfg.out_path.open("w", encoding="utf-8") as fh:
         json.dump(snapshot, fh, indent=2, sort_keys=True)
     logger.info("capture-baseline wrote %s", cfg.out_path)
+
+    # End-of-run summary — single high-signal INFO line operators can
+    # grep with `grep "capture-baseline done"` across multi-hour
+    # captures to confirm success + check the manifest-version trace.
+    rewards = [float(rec["total_reward"]) for rec in snapshot["per_episode"]]
+    mean_reward = sum(rewards) / len(rewards) if rewards else 0.0
+    logger.info(
+        "capture-baseline done: variant=%s episodes_target=%d "
+        "episodes_observed=%d per_episode_records=%d mean_reward=%.4f "
+        "manifest_versions_seen=%s",
+        cfg.variant,
+        cfg.episodes,
+        progress.last_episode_count,
+        len(snapshot["per_episode"]),
+        mean_reward,
+        snapshot["manifest_versions_seen"],
+    )
     return snapshot
 
 
@@ -382,7 +404,7 @@ def _default_docker_log_reader(container: str, tail: int) -> str:
             check=False,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=DEFAULT_DOCKER_LOGS_TIMEOUT_SECS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"<docker logs failed: {exc}>"

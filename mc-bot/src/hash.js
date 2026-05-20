@@ -5,6 +5,21 @@
 const DEFAULT_HASH_MOD = 4096;
 
 /**
+ * Coerce a value to a finite number, returning `fallback` when the
+ * input is non-finite (NaN, ±Infinity, or non-numeric). Used at every
+ * field-read boundary in the observation pipeline so a corrupt
+ * mineflayer payload doesn't NaN-propagate through to the trainer.
+ *
+ * @param {unknown} value
+ * @param {number} [fallback=0]
+ * @returns {number}
+ */
+export function finiteNumber(value, fallback = 0) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+/**
  * Deterministic 32-bit hash of an arbitrary stringifiable value, then
  * reduced modulo `modulus` (defaults to {@link DEFAULT_HASH_MOD}).
  *

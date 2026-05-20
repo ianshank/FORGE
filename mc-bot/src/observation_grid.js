@@ -7,7 +7,7 @@
 // tests in mc-bot/test/observation_grid.test.js and
 // crates/forge-env-mc/tests/block_grid_channel_order.rs.
 
-import { stableStringHash } from './hash.js';
+import { finiteNumber, stableStringHash } from './hash.js';
 
 // prismarine-world's `getBlock(pos)` only reads `pos.{x,y,z}` at
 // runtime, so a plain object literal is the minimal surface that
@@ -29,6 +29,14 @@ export const DEFAULT_GRID_HEIGHT_RADIUS = 0;
 export const DEFAULT_GRID_CHANNELS = 7;
 export const DEFAULT_BLOCK_ID_HASH_MOD = 4096;
 export const DEFAULT_BIOME_ID_HASH_MOD = 256;
+// Hardness normalisation divisor. Most mineable blocks have hardness
+// 0..5; dividing by 10 keeps the normalised value in [0, 1) for the
+// common case and saturates near 1.0 for bedrock-style indestructibles.
+export const DEFAULT_GRID_HARDNESS_SCALE = 10;
+// Number of top-N block names to include in the per-episode INFO
+// histogram. 5 is enough to give the operator a quick read on the
+// surrounding biome without flooding the log line.
+export const DEFAULT_TOP_BLOCK_TYPES_COUNT = 5;
 
 // Frozen channel order. The Python trainer reads the flattened grid
 // as (channels, height, width) — reordering any entry here silently
@@ -59,11 +67,6 @@ const DEFAULT_DANGEROUS_NAMES = Object.freeze([
   'sweet_berry_bush',
   'wither_rose',
 ]);
-
-function finiteNumber(value, fallback = 0) {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : fallback;
-}
 
 function positiveIntOr(value, fallback) {
   return Number.isInteger(value) && value > 0 ? value : fallback;
@@ -221,7 +224,9 @@ export function encodeBlockGrid(bot, config = {}) {
   const channels = shape.channels;
   const blockIdHashMod = positiveIntOr(config.block_id_hash_mod, DEFAULT_BLOCK_ID_HASH_MOD);
   const biomeIdHashMod = positiveIntOr(config.biome_id_hash_mod, DEFAULT_BIOME_ID_HASH_MOD);
-  const hardnessScale = finiteNumber(config.grid_hardness_scale, 10) || 10;
+  const hardnessScale =
+    finiteNumber(config.grid_hardness_scale, DEFAULT_GRID_HARDNESS_SCALE) ||
+    DEFAULT_GRID_HARDNESS_SCALE;
   const dangerousSet = buildDangerousSet(config);
   const blockHistogram = new Map();
   const missedTilesRef = { count: 0 };
@@ -275,7 +280,7 @@ export function encodeBlockGrid(bot, config = {}) {
 
   const topBlockTypes = [...blockHistogram.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
+    .slice(0, DEFAULT_TOP_BLOCK_TYPES_COUNT);
 
   return {
     floats,

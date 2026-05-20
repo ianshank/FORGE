@@ -46,8 +46,13 @@ EXIT_IO = 4
 # Plot filenames — single source of truth so the Markdown template
 # can reference them via relative path without string drift.
 REWARD_CURVE_FILENAME = "v0.5-reward-curve.png"
-PLANNING_LATENCY_FILENAME = "v0.5-planning-latency.png"
+REWARD_HISTOGRAM_FILENAME = "v0.5-reward-histogram.png"
 EPISODE_LENGTH_FILENAME = "v0.5-episode-length.png"
+# Backwards-compat alias for the misnamed v0.5-Phase-1-pre-review
+# filename. Kept so a future Prometheus-sourced planning-latency
+# plot can re-use the symbol; the actual file written today is the
+# reward histogram (see write_plots()).
+PLANNING_LATENCY_FILENAME = REWARD_HISTOGRAM_FILENAME
 
 DEFAULT_REWARD_SMOOTH_WINDOW = 5
 
@@ -182,7 +187,10 @@ def write_plots(
     plt.close(fig)
     paths["episode_length"] = p
 
-    # 3. planning latency (best-effort — pulled from prometheus snapshot if present)
+    # 3. reward histogram (planner-latency extraction from the
+    # Prometheus snapshot is a Phase 2 follow-up; for now we plot the
+    # reward distribution which is the most useful operator signal we
+    # have from the in-snapshot per_episode block).
     fig, ax = plt.subplots()
     ax.hist(_rewards(random_snapshot), bins=20, alpha=0.5, label="random")
     ax.hist(_rewards(trained_snapshot), bins=20, alpha=0.5, label="trained")
@@ -190,7 +198,7 @@ def write_plots(
     ax.set_ylabel("Count")
     ax.set_title("Total-reward distribution")
     ax.legend()
-    p = out_dir / PLANNING_LATENCY_FILENAME
+    p = out_dir / REWARD_HISTOGRAM_FILENAME
     fig.savefig(p)
     plt.close(fig)
     paths["reward_histogram"] = p
