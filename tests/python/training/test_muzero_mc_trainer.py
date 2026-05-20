@@ -284,3 +284,98 @@ def test_trainer_config_rejects_invalid_values(tmp_path: Path) -> None:
         MuZeroMcTrainerConfig(batch_size=0, schema_id="x", output_dir=tmp_path)
     with pytest.raises(ValueError, match="schema_id"):
         MuZeroMcTrainerConfig(schema_id="", output_dir=tmp_path)
+
+
+def test_trainer_config_device_default_is_cpu(tmp_path: Path) -> None:
+    """The default `MuZeroMcTrainerConfig.device` MUST be `'cpu'` for
+    backwards-compat with v0.3-pre (which had no device knob). Operators
+    must opt into GPU explicitly via `--device cuda` or `--device auto`.
+    """
+    from forge.training.muzero_mc.trainer import DEFAULT_DEVICE, MuZeroMcTrainerConfig
+
+    cfg = MuZeroMcTrainerConfig(schema_id="x", output_dir=tmp_path)
+    assert DEFAULT_DEVICE == "cpu"
+    assert cfg.device == "cpu"
+
+
+def test_trainer_config_rejects_invalid_device(tmp_path: Path) -> None:
+    """Typos at config-time MUST surface in `__post_init__` validation
+    rather than as a confusing torch error later."""
+    from forge.training.muzero_mc.trainer import MuZeroMcTrainerConfig
+
+    with pytest.raises(ValueError, match="device"):
+        MuZeroMcTrainerConfig(device="mps", schema_id="x", output_dir=tmp_path)
+    with pytest.raises(ValueError, match="device"):
+        MuZeroMcTrainerConfig(device="CUDA", schema_id="x", output_dir=tmp_path)
+
+
+def test_resolve_device_auto_picks_cuda_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`device='auto'` resolves to `cuda` when `torch.cuda.is_available()`
+    returns True. Monkeypatched to make the test runnable on CPU-only
+    CI hosts."""
+    torch = pytest.importorskip("torch")
+    from forge.training.muzero_mc.trainer import _resolve_device
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    resolved = _resolve_device("auto")
+    assert resolved.type == "cuda"
+
+
+def test_resolve_device_auto_falls_back_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`device='auto'` falls back to `cpu` when CUDA is unavailable."""
+    torch = pytest.importorskip("torch")
+    from forge.training.muzero_mc.trainer import _resolve_device
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    resolved = _resolve_device("auto")
+    assert resolved.type == "cpu"
+
+
+def test_resolve_device_explicit_cpu_does_not_query_cuda(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit `device='cpu'` MUST NOT call `torch.cuda.is_available()`.
+    Pins the lazy-resolve discipline so a hostile CUDA driver can't
+    affect a CPU-only training run."""
+    torch = pytest.importorskip("torch")
+    from forge.training.muzero_mc.trainer import _resolve_device
+
+    queried = {"n": 0}
+
+    def fake_is_available() -> bool:
+        queried["n"] += 1
+        return True
+
+    monkeypatch.setattr(torch.cuda, "is_available", fake_is_available)
+    resolved = _resolve_device("cpu")
+    assert resolved.type == "cpu"
+    assert queried["n"] == 0
+
+
+def test_trainer_moves_model_to_configured_device(tmp_path: Path) -> None:
+    """End-to-end: `MuzeroMcTrainer.__init__` should move the model
+    to the resolved device. Asserts via the `trainer.device` property
+    + a model parameter's `.device.type`. CPU-only assertion (skip if
+    we ever extend this to assert against CUDA)."""
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("onnx")
+    from forge.models.muzero_config import MuZeroConfig
+    from forge.models.muzero_world_model import MuZeroWorldModel
+    from forge.training.muzero_mc.replay import TrajectoryReader
+    from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
+
+    # Empty dir is fine — we never call train_step in this test.
+    traj_dir = tmp_path / "trajectories"
+    traj_dir.mkdir()
+    model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
+    reader = TrajectoryReader(traj_dir, batch_size=2)
+    cfg = MuZeroMcTrainerConfig(
+        schema_id="x", output_dir=tmp_path / "out", device="cpu"
+    )
+    trainer = MuzeroMcTrainer(model, reader, cfg)
+    assert trainer.device.type == "cpu"
+    params = trainer._model.all_parameters()
+    assert params, "model has no parameters"
+    assert params[0].device.type == "cpu"
+    # Silence the unused-import warning the unused torch reference triggers.
+    _ = torch

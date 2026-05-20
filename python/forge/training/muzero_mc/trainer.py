@@ -39,7 +39,7 @@ import logging
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from forge.training._targets import compute_n_step_return
 from forge.training.muzero_mc.manifest import (
@@ -68,6 +68,38 @@ DEFAULT_LOG_EVERY_N_ITERS: int = 10
 #: Default batch size for training. Mirrors the existing
 #: ``MuZeroTrainerConfig`` default for symmetry.
 DEFAULT_BATCH_SIZE: int = 32
+
+#: Default torch device the trainer constructs the model on. ``"cpu"``
+#: is the lowest-common-denominator that runs on every host (laptop +
+#: CI). Override to ``"cuda"`` for GPU training or ``"auto"`` to let
+#: the trainer pick ``cuda`` if ``torch.cuda.is_available()``.
+DEFAULT_DEVICE: Final[str] = "cpu"
+
+#: Allowed values for ``MuZeroMcTrainerConfig.device``. Pinned as a
+#: tuple-literal so a typo at config-time surfaces in ``__post_init__``
+#: validation rather than as a confusing torch error later.
+_ALLOWED_DEVICES: Final[tuple[str, ...]] = ("cpu", "cuda", "auto")
+
+
+def _resolve_device(device: str) -> Any:  # actually torch.device, but kept Any to avoid the runtime torch import here
+    """Resolve a config-level device string to a concrete
+    ``torch.device``.
+
+    - ``"cpu"`` / ``"cuda"`` map to the corresponding device.
+    - ``"auto"`` picks ``cuda`` if ``torch.cuda.is_available()`` else
+      ``cpu``. Logged at INFO so the operator sees which path was
+      chosen.
+
+    Lazy-imports torch so callers that just want to validate a config
+    (e.g. CLI ``--help``) don't pay the import cost.
+    """
+    import torch
+
+    if device == "auto":
+        resolved = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info("device=auto resolved to %s", resolved)
+        return torch.device(resolved)
+    return torch.device(device)
 
 
 @dataclass
@@ -110,6 +142,8 @@ class MuZeroMcTrainerConfig:
     seed: int | None = 0
     max_grad_norm: float = 1.0
     gradient_scale: float = 0.5
+    #: ``"cpu"`` / ``"cuda"`` / ``"auto"``. See :data:`DEFAULT_DEVICE`.
+    device: str = DEFAULT_DEVICE
 
     def __post_init__(self) -> None:
         if self.train_iters < 0:
@@ -122,6 +156,10 @@ class MuZeroMcTrainerConfig:
             raise ValueError(f"batch_size must be > 0, got {self.batch_size}")
         if not self.schema_id:
             raise ValueError("schema_id must be non-empty")
+        if self.device not in _ALLOWED_DEVICES:
+            raise ValueError(
+                f"device must be one of {_ALLOWED_DEVICES!r}, got {self.device!r}"
+            )
 
 
 def build_batch_from_trajectory(
@@ -278,6 +316,12 @@ class MuzeroMcTrainer:
         self._reader = reader
         self._config = config
         self._rng = random.Random(config.seed if config.seed is not None else None)
+        # Resolve `auto` → `cuda` / `cpu` once at construction; subsequent
+        # `train_step` calls operate against the locked device. The
+        # config's validated literal (`cpu` / `cuda` / `auto`) means
+        # `_resolve_device` never sees an unknown value.
+        self._device = _resolve_device(config.device)
+        self._model.to(self._device)
         self._optimizer = torch.optim.Adam(
             model.all_parameters(),
             lr=model.config.learning_rate,
@@ -314,6 +358,13 @@ class MuzeroMcTrainer:
         """Last manifest version the trainer exported (or loaded
         from disk at init time)."""
         return self._last_manifest_version
+
+    @property
+    def device(self) -> Any:
+        """Resolved ``torch.device`` the model + optimiser run on. For
+        ``config.device == "auto"`` this is whichever CUDA / CPU
+        device :func:`_resolve_device` picked at construction."""
+        return self._device
 
     def train_step(self) -> dict[str, float]:
         """One gradient step. Returns the same dict shape the

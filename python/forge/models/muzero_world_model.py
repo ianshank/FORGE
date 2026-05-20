@@ -362,3 +362,24 @@ class MuZeroWorldModel(WorldModel):
     def all_parameters(self) -> list[torch.nn.Parameter]:
         """Return all trainable parameters across all networks."""
         return list(self._all_params)
+
+    def to(self, device: "torch.device | str") -> "MuZeroWorldModel":
+        """Move every sub-network's parameters to ``device``. Mirrors
+        :meth:`torch.nn.Module.to` so a caller can write
+        ``model.to(trainer.device)`` regardless of whether ``model`` is
+        a ``nn.Module`` or this wrapper.
+
+        Updates the cached ``self._device`` so future
+        ``.config.device``-aware paths stay consistent.
+
+        Returns ``self`` for chainability (matches
+        ``nn.Module.to``'s contract).
+        """
+        import torch  # noqa: PLC0415
+
+        resolved = torch.device(device) if not isinstance(device, torch.device) else device
+        self.representation.modules_list.to(resolved)
+        self.dynamics.modules_list.to(resolved)
+        self.prediction.modules_list.to(resolved)
+        self._device = resolved
+        return self

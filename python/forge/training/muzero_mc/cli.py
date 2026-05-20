@@ -281,6 +281,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="RNG seed (default: 0). Determinism gate for tests.",
     )
+    from forge.training.muzero_mc.trainer import DEFAULT_DEVICE
+
+    p_train.add_argument(
+        "--device",
+        type=str,
+        default=DEFAULT_DEVICE,
+        choices=["cpu", "cuda", "auto"],
+        help=(
+            f"Torch device for training (default: {DEFAULT_DEVICE!r}). "
+            "'auto' picks CUDA if torch.cuda.is_available() else CPU."
+        ),
+    )
 
     return parser
 
@@ -462,6 +474,7 @@ def _run_train(args: argparse.Namespace) -> int:
             schema_id=args.schema_id,
             batch_size=args.batch_size,
             seed=args.seed,
+            device=args.device,
         )
         trainer = MuzeroMcTrainer(model, reader, trainer_cfg)
         outcome = trainer.train()
