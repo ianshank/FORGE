@@ -1,0 +1,108 @@
+# docker compose -f docker/compose.minecraft.yml up
+#
+# End-to-end Minecraft RL stack:
+#   - `minecraft` — vanilla Minecraft server (itzg image; EULA via env)
+#   - `mc-bot`    — Node.js mineflayer bridge (WS + prismarine-viewer)
+#   - `runner`    — Rust forge-mc-runner driving the episode loop
+#
+# All ports, image tags, volumes, and the Minecraft version come from
+# the .env file alongside this compose file (`docker/compose.minecraft.env`)
+# OR shell env vars. No literals are baked in; every value below is a
+# `${VAR:-default}` reference, so a CI workflow or developer can swap
+# the MC version, ports, or image tags without editing this file.
+#
+# The trainer container is intentionally omitted from this compose;
+# trainers run on GPU hosts (or in CI jobs) and write into the same
+# `models/` volume the runner reads from.
+
+services:
+  minecraft:
+    image: ${MC_SERVER_IMAGE:-itzg/minecraft-server:latest}
+    container_name: forge-mc-server
+    restart: ${MC_RESTART_POLICY:-unless-stopped}
+    ports:
+      - "${MC_SERVER_PORT:-25565}:25565"
+    environment:
+      # EULA acceptance MUST be set explicitly by the operator. We do
+      # not embed `EULA=TRUE` here — that would be agreeing to
+      # Mojang's terms on behalf of every downstream user.
+      EULA: ${MC_EULA:-FALSE}
+      VERSION: ${MC_VERSION:-1.20.4}
+      TYPE: ${MC_TYPE:-VANILLA}
+      MEMORY: ${MC_MEMORY:-2G}
+      ONLINE_MODE: ${MC_ONLINE_MODE:-FALSE}
+      DIFFICULTY: ${MC_DIFFICULTY:-easy}
+      GAMEMODE: ${MC_GAMEMODE:-survival}
+      VIEW_DISTANCE: ${MC_VIEW_DISTANCE:-10}
+      MAX_PLAYERS: ${MC_MAX_PLAYERS:-4}
+    volumes:
+      - ${MC_SERVER_DATA_DIR:-./minecraft-server-data}:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mc-monitor status --host localhost --port 25565 || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  mc-bot:
+    build:
+      context: ../mc-bot
+      dockerfile: ../docker/mc-bot.Dockerfile
+      args:
+        WS_PORT: ${MC_BOT_WS_PORT:-8765}
+        VIEWER_PORT: ${MC_BOT_VIEWER_PORT:-3007}
+    image: ${MC_BOT_IMAGE:-forge-mc-bot:dev}
+    container_name: forge-mc-bot
+    restart: ${MC_BOT_RESTART_POLICY:-on-failure}
+    depends_on:
+      minecraft:
+        condition: service_healthy
+    environment:
+      MC_BOT_HOST: ${MC_BOT_HOST:-0.0.0.0}
+      MC_BOT_WS_PORT: ${MC_BOT_WS_PORT:-8765}
+      MC_BOT_VIEWER_PORT: ${MC_BOT_VIEWER_PORT:-3007}
+      MC_BOT_TARGET_HOST: ${MC_BOT_TARGET_HOST:-minecraft}
+      MC_BOT_TARGET_PORT: ${MC_BOT_TARGET_PORT:-25565}
+      MC_BOT_USERNAME: ${MC_BOT_USERNAME:-forge_bot}
+      MC_BOT_AUTH: ${MC_BOT_AUTH:-offline}
+    ports:
+      - "${MC_BOT_WS_PORT:-8765}:${MC_BOT_WS_PORT:-8765}"
+      - "${MC_BOT_VIEWER_PORT:-3007}:${MC_BOT_VIEWER_PORT:-3007}"
+    volumes:
+      - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"require('net').connect(${MC_BOT_WS_PORT:-8765}, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  runner:
+    image: ${FORGE_MC_RUNNER_IMAGE:-ghcr.io/ianshank/forge-mc-runner:dev}
+    container_name: forge-mc-runner
+    restart: ${RUNNER_RESTART_POLICY:-on-failure}
+    depends_on:
+      mc-bot:
+        condition: service_healthy
+    environment:
+      FORGE_MC_BOT_URL: ws://mc-bot:${MC_BOT_WS_PORT:-8765}
+      FORGE_MC_RUNNER_EPISODES: ${RUNNER_EPISODES:-10}
+      FORGE_MC_RUNNER_CONFIG: /app/configs/runner.toml
+      RUST_LOG: ${RUST_LOG:-forge_mc_runner=info,forge_env_mc=info,forge_agent=info}
+    volumes:
+      - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
+      - ${MODELS_DIR:-../models}:/app/models
+      - ${TRAJECTORIES_DIR:-../trajectories}:/app/trajectories
+    command:
+      - "--config"
+      - "/app/configs/runner.toml"
+
+volumes: {}

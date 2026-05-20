@@ -297,6 +297,56 @@ jobs:
         run: |
           pytest tests/python/test_mangomas_smoke.py -v --no-cov
 
+  mc-bot-test:
+    name: mc-bot Node Tests + Biome Lint
+    runs-on: ubuntu-latest
+    # Phase 6: mc-bot ships 116 native node:test unit tests that were
+    # previously not run in CI, plus a Biome config that lints the JS
+    # surface. Both run here on every push touching the bot.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned to the same major version mc-bot/package.json's
+          # `engines.node` advertises.
+          node-version: "22"
+      - name: Install mc-bot dependencies
+        working-directory: mc-bot
+        # `npm ci` when a lockfile exists, otherwise `npm install`.
+        # Lockfile commitment is tracked as a separate follow-up.
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+      - name: Lint with Biome
+        working-directory: mc-bot
+        run: npm run lint
+      - name: Run node:test suite
+        working-directory: mc-bot
+        run: npm test
+
+  forge-mc-runner-bin:
+    name: forge-mc-runner Binary Smoke
+    runs-on: ubuntu-latest
+    # Phase 4 wire-up sanity: ensure the runner binary builds and the
+    # --dry-run smoke path remains green. Cheap, catches regressions in
+    # the env+search+writer composition without requiring docker.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: forge-mc-runner-bin
+      - name: Build forge-mc-runner binary
+        run: cargo build -p forge-mc-runner --bin forge-mc-runner
+      - name: Run dry-run smoke
+        run: |
+          mkdir -p ./_smoke_traj
+          ./target/debug/forge-mc-runner --dry-run --episodes 1 \
+            || (echo "::error::forge-mc-runner --dry-run failed"; exit 1)
+
   demo-ui:
     name: Demo UI Tests
     runs-on: ubuntu-latest
