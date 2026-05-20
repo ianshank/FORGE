@@ -525,17 +525,65 @@ and 6:
 - **`mc-bot/biome.json`** — Biome 1.9.4 replaces ESLint for JS lint +
   formatting.
 
-### What's still out of scope (follow-up PRs)
+### What landed on `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip`
 
-- Additive `OnnxMuZeroModel::reload()` impl on
-  `crates/forge-agent/src/latent_mcts/onnx_model.rs` (fixed mutex
-  acquisition order: representation → dynamics → prediction).
-- Full MuZero training loop (`trainer.py`, `exporter.py` integration
-  with `bootstrap.py` for incremental version bumps).
-- Prometheus `/metrics` endpoint on the runner binary.
-- Opt-in `tests/python/integration/test_minecraft_e2e.py` driving the
-  full compose stack from pytest.
-- `mc-bot/` TypeScript migration; replay storage compression.
+The five follow-ups above all landed:
+
+- **`OnnxMuZeroModel::reload(&mut self, new_config)`** in
+  `crates/forge-agent/src/latent_mcts/onnx_model.rs` — build-first-then-
+  swap atomicity (three new `Session` handles are constructed in stack
+  locals before any mutex is acquired) plus
+  `crates/forge-mc-runner/src/onnx_reload.rs::into_reload_fn` (behind
+  the `onnx-reload` feature) wires it into the existing `ReloadFn`
+  builder hook.
+- **`python/forge/training/muzero_mc/trainer.py`** + a `train` CLI
+  subcommand — reuses the extracted `train_with_gradients` /
+  `compute_n_step_return` primitives so the new loop and the existing
+  `MuZeroTrainer` / `MuZeroReplayBuffer` share a single source of
+  truth. Periodically exports an ONNX bundle and bumps the manifest
+  the runner's `HotReloadWatcher` picks up.
+- **`crates/forge-mc-runner/src/metrics.rs`** — axum + prometheus
+  server on `cfg.metrics_bind:cfg.metrics_port` exposing the five
+  v2-plan §3.6 signals. `metrics_port = 0` disables the server (the
+  existing `RunnerConfig::metrics_disabled` helper). The runner
+  binary is now `#[tokio::main]` with `tokio::select!` SIGINT
+  shutdown that joins the runner loop + metrics task.
+- **`tests/python/integration/test_minecraft_e2e.py`** — opt-in
+  pytest suite (marker `minecraft_e2e`) driving the compose stack
+  through two episodes; runs only via the `python-test-minecraft-e2e`
+  workflow_dispatch job (with EULA acceptance scoped to the job's
+  lifetime).
+- **mc-bot TypeScript toolchain** — `tsconfig.json` + `typescript` /
+  `@types/node` / `@types/ws` / `tsx` devDeps + a `tsc --noEmit`
+  CI gate. The file-by-file `.js → .ts` rewrite is the remaining
+  v0.4 follow-up; the toolchain is in place.
+- **Opt-in `TrajectoryV2` gzip compression** — additive
+  `save_json_gz` + extension-based `load_json` auto-detect, with a
+  `MAX_DECOMPRESSED_TRAJECTORY_BYTES = 512 MiB` cap defusing gzip
+  bombs. Opt-in via `RunnerConfig.trajectory_compression = "gzip"`
+  + `trajectory_gzip_level` (typed enum accepting `"fastest"` /
+  `"default"` / `"best"` or `0..=9`).
+
+Example post-`v0.3-pre` runner config (everything additive, defaults
+match pre-`v0.3` behaviour):
+
+```toml
+# configs/minecraft/runner.toml
+metrics_port = 9090            # 0 disables the endpoint
+metrics_bind = "127.0.0.1"     # bind interface
+trajectory_compression = "gzip"
+trajectory_gzip_level = "default"
+```
+
+### What's still out of scope (deferred to v0.4)
+
+- mc-bot `.js → .ts` file rewrite (toolchain landed; pure source
+  rename + cross-language schema-id pin against the Rust constant).
+- Multi-threaded shared `Arc<OnnxMuZeroModel>` reload via
+  `ArcSwap<Sessions>` (today's `reload(&mut self)` is borrow-checker
+  safe for the single-owner runner).
+- DPO / preference trainer consuming teacher decision traces.
+- Replay-compression level tuning sweep.
 
 See [`docs/next_steps.md`](docs/next_steps.md) for the status table.
 

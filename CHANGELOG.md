@@ -9,6 +9,162 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Minecraft RL Integration: v0.3-pre completion — ONNX reload + metrics + gzip + trainer + TS toolchain + opt-in E2E (2026-05-20)
+
+Closes the five `## Deferred to follow-up PRs` items from PR #57.
+Branch `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip`.
+
+Refactor (Track 0 — extracted before consumers landed so both old and
+new call-sites share the same primitives):
+
+- **`python/forge/training/_targets.py`** — `compute_n_step_return` lifted
+  out of `MuZeroReplayBuffer._compute_n_step_return`. The original
+  method is now a thin delegate; existing buffer test suite gates
+  byte-stable behaviour.
+- **`python/forge/training/_muzero_step.py`** — `train_with_gradients` +
+  `TrainStepMetrics` + `MuZeroStepConfig` lifted out of
+  `MuZeroTrainer._train_with_gradients`. Both the original trainer and
+  the new `MuzeroMcTrainer` (Track 4) call into it; no duplication.
+- Pin tests at `tests/python/test_targets.py` and
+  `tests/python/test_muzero_step.py` lock the extracted formulas
+  against hand-computed expected values.
+
+ONNX hot-reload (Track 1):
+
+- **`crates/forge-agent/src/latent_mcts/onnx_model.rs`** — adds
+  `OnnxReloadError` (`MissingFile { path }` / `Ort(ort::Error)`),
+  `validate_reload_paths`, and `OnnxMuZeroModel::reload(&mut self,
+  new_config) -> Result<(), OnnxReloadError>`. Implementation is
+  build-first-then-swap: all three new `Session` handles are
+  constructed in stack locals BEFORE any mutex is acquired, so a
+  partially-published bundle on disk never half-swaps the model. The
+  `&mut self` receiver makes the borrow checker enforce sequencing
+  against concurrent `&self` inference — a multi-threaded shared
+  `Arc<OnnxMuZeroModel>` caller is explicitly out of scope and
+  documented (would need an `ArcSwap<Sessions>` follow-up).
+- **`crates/forge-mc-runner/src/onnx_reload.rs`** (new, behind
+  `onnx-reload` feature) — `config_from_manifest(manifest, bundle_dir)
+  -> OnnxModelConfig` + `into_reload_fn(model) -> ReloadFn<…>` wrappers
+  bridge the new method to the existing `Runner::with_reload_fn`
+  builder hook.
+- **`crates/forge-mc-runner/Cargo.toml`** — declares the
+  `onnx-reload = ["forge-agent/onnx"]` feature so the runner stays
+  buildable on machines without ONNX Runtime.
+
+Tokio + Prometheus metrics endpoint (Track 2):
+
+- **`crates/forge-mc-runner/Cargo.toml`** — adds `prometheus = "0.13"`,
+  `axum = { workspace = true }`, `tokio = { workspace = true,
+  features = ["rt-multi-thread", "macros", "signal"] }`.
+- **`crates/forge-mc-runner/src/metrics.rs`** (new) — `MetricsRecorder`
+  exposing the v2-plan §3.6 five signals
+  (`forge_mc_episode_total`, `forge_mc_episode_reward_sum`,
+  `forge_mc_planning_latency_seconds`, `forge_mc_model_version`,
+  `forge_mc_protocol_error_total`). Metric names live as `const &str`
+  at the top of the module (single source of truth). `serve_metrics`
+  binds an axum router on `{cfg.metrics_bind}:{cfg.metrics_port}` and
+  returns the prometheus text-format body.
+- **`crates/forge-mc-runner/src/runner.rs`** — adds
+  `Runner::with_metrics(recorder)` builder. Per-step planning latency
+  and per-episode reward sums are pushed into the recorder; if no
+  recorder is installed, all calls are no-ops (zero-dep story
+  preserved).
+- **`crates/forge-mc-runner/src/main.rs`** — promoted to
+  `#[tokio::main]` with a `tokio::select!` SIGINT shutdown that joins
+  the runner loop (on `tokio::task::spawn_blocking`) and the metrics
+  server (on `tokio::spawn`) on a single ctrl-c. `metrics_port = 0`
+  in the config disables the server entirely (matches the existing
+  `RunnerConfig::metrics_disabled` helper).
+- **`crates/forge-mc-runner/src/config.rs`** — `metrics_bind: String`
+  (default `127.0.0.1`) and `metrics_histogram_buckets: Vec<f64>`
+  (default Prometheus latency buckets) added as `#[serde(default)]`
+  fields. Existing configs continue to deserialise unchanged.
+
+Opt-in trajectory gzip compression (Track 3):
+
+- **`crates/forge-replay/Cargo.toml`** — adds `flate2 = "1"`.
+- **`crates/forge-replay/src/v2.rs`** — adds `save_json_gz(path, level)`,
+  extends `load_json` to auto-detect gzip by `.gz` extension, adds
+  `TrajectoryGzipLevel` enum (`Named(Fastest|Default|Best)` /
+  `Custom(0..=9)`) with validation, and clamps decompression at
+  `MAX_DECOMPRESSED_TRAJECTORY_BYTES = 512 * 1024 * 1024` via
+  `Read::take(...)` to defuse gzip bombs (a 1 KiB compressed bomb
+  decompressing to 10 GiB now surfaces a clean `serde_json` EOF
+  rather than an OOM).
+- **`crates/forge-mc-runner/src/config.rs`** — adds
+  `TrajectoryCompression { None, Gzip }` enum (default `None`) and
+  `trajectory_gzip_level: TrajectoryGzipLevel` (default `Default`).
+- **`crates/forge-mc-runner/src/trajectory.rs`** —
+  `TrajectoryWriter::with_compression(codec, level)` builder; the
+  finalize path emits either `<id>.json` or `<id>.json.gz` and the
+  file extension is derived from the enum, not hard-coded at the
+  call site.
+- **`python/forge/training/muzero_mc/replay.py`** — mirrors the auto-
+  detect + bomb-cap (`f.read(MAX + 1)` size-check) on the Python side,
+  exposes `MAX_DECOMPRESSED_TRAJECTORY_BYTES` as a `Final[int]` (pinned
+  to the Rust value by a cross-language test), and globs both
+  `ep-*.json` and `ep-*.json.gz` in `TrajectoryReader`.
+
+MuZero training loop (Track 4):
+
+- **`python/forge/training/muzero_mc/trainer.py`** (new) —
+  `MuzeroMcTrainer` consumes `TrajectoryReader` (which now handles
+  `.json.gz` thanks to Track 3), calls `train_with_gradients` (from
+  Track 0), and periodically exports the model + bumps the manifest
+  the runner's reload (Track 1) picks up. `MuZeroMcTrainerConfig`
+  carries trainer-only knobs (`train_iters`, `export_every_n_iters`,
+  `log_every_n_iters`, `output_dir`); model hyperparameters flow
+  through `MuZeroConfig`.
+- **`python/forge/training/muzero_mc/cli.py`** — `train` subcommand
+  added next to `bootstrap` / `validate-manifest`. Defaults from the
+  config dataclass; exit codes (0/2/3/4) mirror the existing
+  subcommands.
+
+mc-bot TypeScript toolchain (Track 5 — hybrid):
+
+- **`mc-bot/tsconfig.json`** (new) — ES2022 target with
+  `allowJs: true`, `checkJs: true`, `strict: true`, `noEmit: true`.
+  The toolchain typechecks the existing `.js` files in place so the
+  full file-rename to `.ts` can land as a follow-up without breaking
+  CI.
+- **`mc-bot/package.json`** — adds `typescript`, `@types/node`,
+  `@types/ws`, `tsx` devDeps + a `typecheck` npm script.
+- **`.github/workflows/ci.yml`** — `mc-bot-test` job now runs
+  `npm run typecheck` between `npm ci` and `npm test`, gating the
+  build on `tsc --noEmit` success.
+
+Opt-in pytest E2E (Track 6):
+
+- **`tests/python/integration/`** (new package) — `_helpers.py`
+  (polling helpers + container-state shims), `conftest.py` (the
+  `compose_up_minecraft_stack` session fixture + a runner-health
+  callback that surfaces a crashed container as `pytest.fail` with
+  the last 50 log lines), `test_minecraft_e2e.py` (three tests
+  covering the two-episode loop, the five §3.6 metrics signals, and
+  `mc_run.sh --down` idempotency).
+- **`pyproject.toml`** — registers the `minecraft_e2e` marker and
+  extends `addopts` to deselect it by default.
+- **`.github/workflows/ci.yml`** — `python-test-minecraft-e2e`
+  workflow_dispatch-gated job + new `run_minecraft_e2e` boolean
+  input that accepts Mojang's EULA on the runner only for the job's
+  lifetime, runs the marker'd pytest, dumps each compose service's
+  logs on failure, and tears the stack down with `mc_run.sh --down`.
+
+Cross-cutting:
+
+- All new constants flow through config structs / `Final[…]`
+  annotations / module-level `const`s — no magic numbers at call
+  sites.
+- All new public APIs are additive — existing `OnnxMuZeroModel::load`,
+  `TrajectoryV2::save_json`, `MuZeroReplayBuffer.sample_batch`,
+  `RunnerConfig` parsers, and `TrajectoryReader.expected_obs_dim` all
+  continue to work unchanged.
+- mypy strict + ruff clean on every new Python file; zero new
+  `# type: ignore` / `# noqa` lines added beyond the minimum for
+  `from __future__ import annotations` typing.
+
+---
+
 ### Added — Minecraft RL Integration: Phase 6 — Compose stack + mc-bot CI + Biome lint + quickstart (2026-05-20)
 
 Lands the end-to-end orchestration layer for the Minecraft RL integration.

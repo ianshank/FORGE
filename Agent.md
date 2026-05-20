@@ -135,19 +135,38 @@ Added on the `claude/minecraft-rl-agent-integration-xnJjt` branch.
   a clap CLI binary (`--dry-run`, `--config`, `--episodes`). 55 unit
   + 3 integration + 2 foundation-integration tests; the
   `forge-mc-runner-bin` CI job runs `--dry-run --episodes 1` on
-  every push.
+  every push. The `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip`
+  branch promotes the binary to `#[tokio::main]` with a graceful
+  `tokio::select!` SIGINT shutdown, joins a Prometheus `/metrics`
+  axum task running on `cfg.metrics_bind:cfg.metrics_port` (five
+  v2-plan §3.6 signals; `metrics_port = 0` disables it), and adds
+  the `onnx-reload` feature wrapping
+  `OnnxMuZeroModel::reload(&mut self, new_config)` (build-first-then-
+  swap atomicity; `&mut self` makes the borrow checker enforce
+  sequencing against concurrent inference).
+  `RunnerConfig.trajectory_compression = "gzip"` +
+  `trajectory_gzip_level` opt into `.json.gz` trajectories with a
+  512 MiB gzip-bomb cap on the reader.
 - **`python/forge/training/muzero_mc/`** — Python side of the Phase-4
-  hot-reload loop and Phase-5 bootstrap. `manifest.py` mirrors the
+  hot-reload loop, Phase-5 bootstrap, and the v0.3-pre training
+  loop. `manifest.py` mirrors the
   Rust `ModelManifest` byte-for-byte (atomic `.tmp-*.manifest` +
   `os.replace`); `replay.py` streams `TrajectoryV2` JSONL into
   `StepBatch` minibatches with lazy `torch.tensor` conversion;
   `bootstrap.py` reuses the existing `MuZeroExporter` /
   `MuZeroWorldModel` to write a random-init ONNX bundle plus
   versioned manifest the runner picks up cold. `cli.py` exposes
-  `bootstrap` + `validate-manifest` subcommands. Optional deps
-  (`torch`, `onnx`, `onnxruntime`) live under
-  `[project.optional-dependencies] minecraft`. 38 tests, mypy strict
-  clean, ruff clean.
+  `bootstrap` + `validate-manifest` + `train` subcommands. Optional
+  deps (`torch`, `onnx`, `onnxruntime`) live under
+  `[project.optional-dependencies] minecraft`. The
+  `feat/mc-completion-onnx-trainer-metrics-e2e-ts-gzip` branch adds
+  `trainer.py` (`MuzeroMcTrainer` + `MuZeroMcTrainerConfig`) that
+  reuses the extracted `_targets.compute_n_step_return` and
+  `_muzero_step.train_with_gradients` primitives (both shared with
+  the existing `MuZeroTrainer` / `MuZeroReplayBuffer`), supports
+  `.json.gz` trajectories on input, and periodically exports an
+  ONNX bundle + bumps the manifest the runner's `HotReloadWatcher`
+  picks up. mypy strict clean, ruff clean.
 - **`docker/compose.minecraft.yml`** + **`docker/mc-bot.Dockerfile`** +
   **`scripts/mc_run.sh`** — Phase-6 end-to-end orchestration. Three
   services (Minecraft / mc-bot / runner) wired together by an
