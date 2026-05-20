@@ -54,11 +54,22 @@ export function createConnectionHandler({ bot, bundle, logger = console }) {
       return;
     }
     activeSocket = socket;
+    const gridShape = gridShapePayload(envConfig.observation);
+    if (gridShape !== null) {
+      logger.info?.(
+        `[mc-bot] block-grid encoder enabled: ` +
+          `h=${gridShape.height} w=${gridShape.width} ` +
+          `d=${gridShape.depth} ch=${gridShape.channels} ` +
+          `vector_dim=${gridShape.vector_dim} total=${obsDim}`,
+      );
+    } else {
+      logger.info?.(`[mc-bot] flat observation: obs_dim=${obsDim}`);
+    }
     sendJson(socket, helloMsg({
       actionCount: bundle.actionMap.actionCount,
       obsDim,
       schemaId: bundle.schemaId,
-      gridShape: gridShapePayload(envConfig.observation),
+      gridShape,
     }));
 
     let queue = Promise.resolve();

@@ -9,6 +9,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Minecraft RL Integration: v0.5 Phase 1 — first real-end-to-end run readiness (block-grid obs + baseline capture)
+
+Closes the v0.4 → real-run gap. Every test in PR #59 passed against
+**stubs and mocks** — no one had actually brought the stack up against
+a real `itzg/minecraft-server`. v0.5 Phase 1 closes the hidden
+contract violation (mc-bot emitted 31 floats, MuZeroConfig required
+920) and ships the operator-facing tooling needed to capture a
+calibrated random-vs-trained baseline.
+
+Branch `feat/mc-v05-phase1-first-real-run`.
+
+9 tracks:
+
+- **T1 (BLOCKER) — mc-bot block-grid encoder + `Hello.grid_shape`
+  cross-check**: new `mc-bot/src/observation_grid.js` emits an
+  11×11×1×7 ego-centric block grid (847 floats) + 73 flat features
+  = 920 total, matching `MuZeroConfig`'s `grid + vector_dim` split.
+  `BLOCK_FEATURE_CHANNELS` frozen const with a coordinated Rust-side
+  pin (`crates/forge-env-mc/src/protocol.rs::BLOCK_FEATURE_CHANNELS`)
+  + xlang test catches reorder regressions. `Hello` payload extended
+  with `grid_shape: {h, w, depth, channels, vector_dim}`; the runner
+  cross-checks against `config.observation.expected_grid_shape` and
+  refuses to start on mismatch. Legacy 31-float path stays valid via
+  `include_block_grid = false`.
+- **T2 — `expected_dim = 920` flip across orchestration surfaces**:
+  `configs/minecraft/env.toml` adds `expected_dim = 920` and the
+  `[observation.expected_grid_shape]` sub-table; `mc_self_play.sh`
+  and `docker/compose.minecraft.env.example` flip `OBS_DIM`/
+  `TRAINER_OBS_DIM` defaults from 31 → 920. Bootstrap logs the
+  resolved (obs_dim, grid_flat_dim, vector_dim, schema_id) tuple at
+  INFO on entry. New `test_muzero_config_legacy_31_float_obs_validates`
+  test pins backwards-compat for the `include_block_grid=false` path.
+- **T3 — `--random-actions` runtime switch + `RandomLatentModel`
+  baseline adapter**: new `crates/forge-mc-runner/src/random_baseline.rs`
+  with `sample_random_action` + `RandomLatentModel` (no-op
+  `LatentForwardModel` stub). Runner's planning step branches on
+  `cfg.random_actions` to skip MCTS entirely (uniform-prior MCTS
+  doesn't produce uniform action selection — peer-review noted). In
+  live runs the random path also skips the ONNX bundle load entirely.
+  χ²-test pins uniformity within α≈0.001.
+- **T4 — `capture-baseline` CLI subcommand + Prometheus helper
+  hoist**: `python -m forge.training.muzero_mc.cli capture-baseline
+  --variant random|trained --episodes N --out PATH ...` drives N
+  episodes against a running stack and writes a snapshot JSON.
+  `scripts/mc_capture_baseline.py` is a 3-line shim. Metrics helpers
+  (`fetch_prometheus_metrics`, `scrape_counter`, `scrape_gauge`)
+  hoisted from `tests/python/integration/test_minecraft_e2e.py`
+  into `forge.utils.metrics` so both the test and the subcommand
+  consume one canonical impl. Per-variant trajectory dirs
+  (`trajectories.<variant>/`) so the trainer's `_trim_replay_buffer`
+  can't evict baseline files mid-capture.
+- **T5 — `scripts/mc_plot_baseline.py` + Markdown report**:
+  consumes the two snapshot JSONs and renders
+  `docs/results/v0.5-first-real-run.md` with three matplotlib PNGs
+  (reward curve, episode length histogram, reward histogram) and a
+  per-variant summary table (mean / median / std / p95). Sources
+  per-episode rewards from the trajectory JSON projection inside
+  each snapshot (NOT from Prometheus, which only exposes
+  aggregates — peer-review #14). `--no-plots` skips matplotlib for
+  hosts without it; pytest tests use `importorskip` gracefully.
+- **T6 — opt-in `python-test-minecraft-real-run` CI job**: new
+  `workflow_dispatch` input + job that mirrors
+  `python-test-minecraft-e2e`'s shape but exercises the full
+  capture-baseline + plot flow with 5 episodes per variant.
+- **T7 — cross-cutting logging + Rust-side channel-order pin**:
+  mc-bot logs the resolved grid shape on every client connect;
+  Rust runner logs `runner mode: trained|random` at startup;
+  trainer rounds log version + iters + exports; capture subcommand
+  logs per-episode + per-batch progress. Coordinated
+  cross-language pins on `BLOCK_FEATURE_CHANNELS` (Rust + JS + the
+  Python-side test in `test_muzero_mc_replay.py`).
+- **T8 — `docs/results/v0.5-first-real-run.md` skeleton**:
+  pre-shipped template with `{{TODO}}` placeholders the plotter
+  auto-fills (summary table + PNGs) and operator-fill sections for
+  the first-hour observations, anomalies, and Phase 2 outlook.
+- **T9 — docs sweep**: CHANGELOG entry (this section), README +
+  CLAUDE.md + Agent.md gain the new build commands,
+  `examples/minecraft/quickstart.md` documents the baseline-capture
+  flow, `mc-bot/README.md` documents the new `[observation]` knobs.
+
+Known pre-existing infrastructure issue (NOT introduced by v0.5):
+the `--features mc-live` build is broken on the v0.4 base branch
+due to an `ort` 2.0.0-rc.9 → rc.12 API drift
+(`commit_from_file` → `commit_from_memory`). Reproduces on the v0.4
+worktree; tracked as a follow-up. The runner lib + binary builds
+without the feature pass cleanly (85/85 unit tests).
+
+Peer-review revisions folded in: gaps #1 (vec3 plumbing, dropped in
+favor of plain `{x,y,z}` objects so `test:no-deps` still passes),
+#2 (OBS_DIM=31 defaults), #3 (Hello.grid_shape), #4
+(`radius` → `grid_radius` rename), #5 (per-variant trajectory dirs
+to avoid eviction), #7 (`finiteNumber` coercion), #8 (no Cargo
+feature gate on random-baseline), #9 (drop `RandomAgent` reuse
+claim), #10 (metrics helpers → `forge.utils.metrics`), #11
+(capture-baseline as CLI subcommand, not standalone script), #12
+(drop `--variant` shell flag in favor of env-var ladder), #13
+(tests live flat under `tests/python/`), #14 (plot script sources
+per-episode rewards from trajectory JSON), #15 (Rust-side
+channel-order pin), #16 (legacy 31-float `MuZeroConfig` smoke).
+
 ### Added — Minecraft RL Integration: v0.4 self-improving training loop — live runner + continuous trainer + atomic versioned bundles (2026-05-20)
 
 Closes the v0.3-pre BLOCKER (`ExitCode 64` "live runner wiring not

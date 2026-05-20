@@ -26,6 +26,9 @@
 - `scripts/mc_self_play.sh [--gpu] [--detach]` — v0.4 one-command orchestrator: preflights compose v2, computes schema_id via `trainer-bootstrap` one-shot, exports `FORGE_MC_SCHEMA_ID`, runs `bootstrap` if needed, brings up self-play profile. `--gpu` layers `compose.minecraft.gpu.yml`
 - `scripts/mc_self_play.sh --dry-run` — Print every step's resolved docker-compose argv to STDERR + exit 0 (used by `tests/python/integration/test_mc_self_play_unit.py`)
 - `pytest tests/python/integration/test_minecraft_self_improvement_smoke.py -v` — v0.4 self-improvement smoke (PR-CI gate; runs by default, skips if torch+onnx extras missing)
+- `python -m forge.training.muzero_mc.cli capture-baseline --variant random|trained --episodes 100 --out baseline_<variant>.json [--metrics-url URL] [--trajectory-dir PATH] [--timeout-secs N] [--dry-run]` — v0.5 first-real-run baseline capture. Drives N episodes against a running stack, dumps snapshot JSON the plotter consumes. `scripts/mc_capture_baseline.py` is a thin shim
+- `python scripts/mc_plot_baseline.py --random baseline_random.json --trained baseline_trained.json --out docs/results/v0.5-first-real-run.md [--no-plots]` — v0.5 Markdown report + matplotlib PNGs. Sources per-episode rewards from trajectory JSON (NOT Prometheus aggregates). `--no-plots` runs table-only on hosts without matplotlib
+- `cargo run -p forge-mc-runner -- --random-actions --mc-config configs/minecraft/env.toml` — v0.5 random-actions runtime switch. Bypasses MCTS entirely; live.rs skips the ONNX bundle load. Used by `capture-baseline --variant random` via the env-var ladder
 
 ## Architecture
 - **Workspace**: Multi-crate Rust workspace under `crates/`
