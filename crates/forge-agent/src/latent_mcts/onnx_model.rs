@@ -258,13 +258,20 @@ impl OnnxMuZeroModel {
         Ok(slice.iter().copied().collect())
     }
 
+    /// Build the standard "<name> lock poisoned" error. Factored out so
+    /// the three session-lock sites below quote the same wording and a
+    /// future grep finds them as a single class.
+    fn poisoned(name: &str) -> anyhow::Error {
+        anyhow::anyhow!("{name} lock poisoned")
+    }
+
     /// Run representation network and return latent data.
     fn run_representation(&self, observation: &[f32]) -> Result<Vec<f32>> {
         let obs_value = Self::make_input(observation.to_vec(), observation.len())?;
         let mut session = self
             .representation
             .lock()
-            .map_err(|_| anyhow::anyhow!("representation lock poisoned"))?;
+            .map_err(|_| Self::poisoned("representation"))?;
         let outputs = session
             .run(ort::inputs![obs_value])
             .context("Representation inference failed")?;
@@ -277,13 +284,18 @@ impl OnnxMuZeroModel {
         let mut session = self
             .prediction
             .lock()
-            .map_err(|_| anyhow::anyhow!("prediction lock poisoned"))?;
+            .map_err(|_| Self::poisoned("prediction"))?;
         let outputs = session
             .run(ort::inputs![latent_value])
             .context("Prediction inference failed")?;
         let policy_logits = Self::extract_f32(&outputs[0])?;
         let value = Self::extract_f32(&outputs[1])?;
-        Ok((policy_logits, value.first().copied().unwrap_or(0.0)))
+        let value_scalar = value.first().copied().ok_or_else(|| {
+            anyhow::anyhow!(
+                "prediction network produced an empty value output (expected at least 1 scalar)"
+            )
+        })?;
+        Ok((policy_logits, value_scalar))
     }
 
     /// Run dynamics network and return (next_latent_data, reward).
@@ -292,13 +304,18 @@ impl OnnxMuZeroModel {
         let mut session = self
             .dynamics
             .lock()
-            .map_err(|_| anyhow::anyhow!("dynamics lock poisoned"))?;
+            .map_err(|_| Self::poisoned("dynamics"))?;
         let outputs = session
             .run(ort::inputs![dyn_value])
             .context("Dynamics inference failed")?;
         let next_latent = Self::extract_f32(&outputs[0])?;
         let reward = Self::extract_f32(&outputs[1])?;
-        Ok((next_latent, reward.first().copied().unwrap_or(0.0)))
+        let reward_scalar = reward.first().copied().ok_or_else(|| {
+            anyhow::anyhow!(
+                "dynamics network produced an empty reward output (expected at least 1 scalar)"
+            )
+        })?;
+        Ok((next_latent, reward_scalar))
     }
 }
 

@@ -35,6 +35,30 @@ POLL_INTERVAL_SECS: float = 2.0
 #: name (`docker compose -p foo up`) still works.
 DEFAULT_RUNNER_CONTAINER: str = "forge-mc-runner"
 
+#: Subprocess timeout for `docker compose version` / `docker inspect`
+#: introspection calls. These calls are local and should return
+#: within a couple of seconds; ten is generous.
+DOCKER_INTROSPECT_TIMEOUT_SECS: int = 10
+
+#: Subprocess timeout for `docker logs --tail=N`. Higher than the
+#: introspection timeout because docker may stream from a remote
+#: engine.
+DOCKER_LOGS_TIMEOUT_SECS: int = 30
+
+#: Subprocess timeout for the `scripts/mc_run.sh --build --detach`
+#: stack bring-up. The realistic worst case (cold image pull +
+#: Minecraft world-gen + runner build) lands well under 5 minutes;
+#: ten is the safety ceiling.
+COMPOSE_UP_TIMEOUT_SECS: int = 600
+
+#: Subprocess timeout for `scripts/mc_run.sh --down` stack teardown.
+COMPOSE_DOWN_TIMEOUT_SECS: int = 120
+
+#: Default tail length for :func:`docker_logs` and the failure paths
+#: in :mod:`conftest`. Pinned so all error messages quote the same
+#: log volume.
+DEFAULT_DOCKER_LOGS_TAIL: int = 50
+
 
 def docker_compose_available() -> bool:
     """True iff ``docker compose version`` returns 0."""
@@ -45,7 +69,7 @@ def docker_compose_available() -> bool:
             ["docker", "compose", "version"],
             check=False,
             capture_output=True,
-            timeout=10,
+            timeout=DOCKER_INTROSPECT_TIMEOUT_SECS,
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -64,7 +88,7 @@ def runner_container_state(container: str) -> str | None:
             check=False,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=DOCKER_INTROSPECT_TIMEOUT_SECS,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -73,7 +97,7 @@ def runner_container_state(container: str) -> str | None:
     return completed.stdout.strip() or None
 
 
-def docker_logs(container: str, tail: int = 50) -> str:
+def docker_logs(container: str, tail: int = DEFAULT_DOCKER_LOGS_TAIL) -> str:
     """Best-effort tail of the runner container logs for failure
     messages.
     """
@@ -85,7 +109,7 @@ def docker_logs(container: str, tail: int = 50) -> str:
             check=False,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=DOCKER_LOGS_TIMEOUT_SECS,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         return f"<docker logs failed: {e}>"

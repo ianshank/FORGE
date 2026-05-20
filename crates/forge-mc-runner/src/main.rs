@@ -19,6 +19,7 @@ use clap::Parser;
 use forge_mc_runner::{
     serve_metrics, HotReloadWatcher, MetricsRecorder, Runner, RunnerConfig, TrajectoryWriter,
 };
+use tokio::runtime::Builder as TokioBuilder;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -44,8 +45,7 @@ struct Cli {
     dry_run: bool,
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
@@ -79,6 +79,26 @@ async fn main() -> ExitCode {
 
     info!(?config, "runner configuration");
 
+    // The tokio worker count flows through config — no hard-coded
+    // literal in the binary. Production deployments override via TOML
+    // when the metrics endpoint + heavier hot-reload work warrants
+    // more threads.
+    let runtime = match TokioBuilder::new_multi_thread()
+        .worker_threads(config.tokio_worker_threads)
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            error!("failed to build tokio runtime: {e}");
+            return ExitCode::from(2);
+        }
+    };
+
+    runtime.block_on(async_main(cli, config))
+}
+
+async fn async_main(cli: Cli, config: RunnerConfig) -> ExitCode {
     let (metrics_recorder, metrics_handle, metrics_shutdown_tx) =
         match maybe_spawn_metrics_server(&config).await {
             Ok(parts) => parts,
@@ -197,15 +217,26 @@ fn run_dry(
     use forge_agent::latent_mcts::model::StubLatentModel;
     use forge_agent::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch};
 
-    // Construct an in-process stub env that mirrors the writer's dims.
-    let obs_dim: usize = 8;
-    let action_count: u32 = 4;
-    let env = dry_run::StubEnv::new(obs_dim, action_count, Some(8));
+    // Dry-run dims flow through config (no hard-coded values at the
+    // call site). Defaults match the historical literal values
+    // (`obs_dim = 8`, `action_count = 4`, `latent_dim = 16`,
+    // `max_episode_len = 8`) so existing `--dry-run` smoke tests
+    // behave identically.
+    let obs_dim = config.dry_run.obs_dim;
+    let action_count = config.dry_run.action_count;
+    let env = dry_run::StubEnv::new(
+        obs_dim,
+        action_count,
+        Some(config.dry_run.max_episode_len),
+    );
 
     let mut mcts_cfg = LatentMctsConfig::default();
     mcts_cfg.base.num_simulations = config.planning_sims;
     mcts_cfg.add_exploration_noise = false;
-    let search = LatentMctsSearch::new(StubLatentModel::new(action_count, 16), mcts_cfg);
+    let search = LatentMctsSearch::new(
+        StubLatentModel::new(action_count, config.dry_run.latent_dim),
+        mcts_cfg,
+    );
 
     let writer = TrajectoryWriter::new(
         &config.trajectory_dir,

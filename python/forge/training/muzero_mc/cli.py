@@ -333,6 +333,17 @@ def _run_validate(args: argparse.Namespace) -> int:
 
 
 def _run_train(args: argparse.Namespace) -> int:
+    # Fail fast on a missing input directory BEFORE the heavy torch
+    # import — this lets the CLI surface clean diagnostics in
+    # environments where torch isn't installed (e.g. lint-only CI).
+    input_dir = Path(args.input)
+    if not input_dir.exists():
+        logger.error("train --input directory does not exist: %s", input_dir)
+        return EXIT_IO
+    if not input_dir.is_dir():
+        logger.error("train --input path is not a directory: %s", input_dir)
+        return EXIT_IO
+
     try:
         # Local imports: torch is an optional dep + trainer.py is only
         # importable when `pip install -e .[minecraft]` has been run.

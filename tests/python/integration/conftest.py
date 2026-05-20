@@ -27,6 +27,9 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from ._helpers import (
+    COMPOSE_DOWN_TIMEOUT_SECS,
+    COMPOSE_UP_TIMEOUT_SECS,
+    DEFAULT_DOCKER_LOGS_TAIL,
     DEFAULT_RUNNER_CONTAINER,
     docker_compose_available,
     docker_logs,
@@ -75,7 +78,7 @@ def compose_up_minecraft_stack() -> Iterator[dict[str, Any]]:
         check=False,
         capture_output=True,
         text=True,
-        timeout=600,
+        timeout=COMPOSE_UP_TIMEOUT_SECS,
     )
     if up.returncode != 0:
         pytest.skip(
@@ -101,7 +104,7 @@ def compose_up_minecraft_stack() -> Iterator[dict[str, Any]]:
             env=env,
             check=False,
             capture_output=True,
-            timeout=120,
+            timeout=COMPOSE_DOWN_TIMEOUT_SECS,
         )
 
 
@@ -124,10 +127,11 @@ def runner_health_check(compose_up_minecraft_stack: dict[str, Any]) -> Callable[
                 f"compose stack may have failed to start."
             )
         if status != "running":
-            logs = docker_logs(container)
+            logs = docker_logs(container, tail=DEFAULT_DOCKER_LOGS_TAIL)
             pytest.fail(
                 f"runner container {container!r} state = {status!r} "
-                f"(expected 'running'). Last 50 log lines:\n{logs}"
+                f"(expected 'running'). "
+                f"Last {DEFAULT_DOCKER_LOGS_TAIL} log lines:\n{logs}"
             )
 
     return _check

@@ -266,6 +266,29 @@ def test_load_trajectory_rejects_gzip_bomb(tmp_path: Path) -> None:
         load_trajectory(p)
 
 
+def test_format_episode_id_matches_rust_runner() -> None:
+    """Cross-language pin against ``forge_mc_runner::format_episode_id``
+    and ``EPISODE_ID_{PREFIX,PAD_WIDTH}``. Drift on either side fails
+    both this test and the Rust-side
+    ``episode_id_constants_match_python_side`` test.
+    """
+    from forge.training.muzero_mc.replay import (
+        EPISODE_ID_PAD_WIDTH,
+        EPISODE_ID_PREFIX,
+        format_episode_id,
+    )
+
+    # Constant values pinned to the Rust side.
+    assert EPISODE_ID_PREFIX == "ep-"
+    assert EPISODE_ID_PAD_WIDTH == 6
+    # Functional pins.
+    assert format_episode_id(1) == "ep-000001"
+    assert format_episode_id(42) == "ep-000042"
+    assert format_episode_id(999_999) == "ep-999999"
+    # Pad-width is a minimum, not a max — overflow grows the field.
+    assert format_episode_id(1_000_000) == "ep-1000000"
+
+
 def test_load_trajectory_ignores_non_json_gzip_extensions(tmp_path: Path) -> None:
     """A stray ``.tar.gz`` (or any other ``*.gz`` that isn't
     ``.json.gz``) must NOT be auto-decompressed. The loader falls

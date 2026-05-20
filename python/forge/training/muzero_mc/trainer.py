@@ -34,8 +34,8 @@ __all__ = [
     "build_batch_from_trajectory",
 ]
 
+import json
 import logging
-import math
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Any
 from forge.training._targets import compute_n_step_return
 from forge.training.muzero_mc.manifest import (
     DEFAULT_BUNDLE_FILENAMES,
+    ManifestError,
     build_manifest,
     load_manifest,
     save_manifest,
@@ -295,9 +296,12 @@ class MuzeroMcTrainer:
                     config.manifest_path,
                     self._last_manifest_version,
                 )
-            except Exception as e:
+            except (ManifestError, OSError, ValueError, json.JSONDecodeError) as e:
                 # Corrupt manifest on disk shouldn't block training —
-                # log and start versioning at 1.
+                # log and start versioning at 1. Narrowed from a bare
+                # `except Exception` so an unexpected error type
+                # (e.g. a bug in `load_manifest`) propagates rather
+                # than getting swallowed as "unreadable manifest".
                 logger.warning("ignoring unreadable manifest %s: %s", config.manifest_path, e)
 
     @property
@@ -447,8 +451,3 @@ class MuzeroMcTrainer:
             self._last_manifest_version,
             self._config.schema_id,
         )
-
-
-def _is_finite(x: float) -> bool:
-    """Predicate used by the trainer test surface."""
-    return math.isfinite(x)

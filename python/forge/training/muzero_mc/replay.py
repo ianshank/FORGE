@@ -35,12 +35,15 @@ from __future__ import annotations
 
 __all__ = [
     "DEFAULT_TRAJECTORY_GLOB",
+    "EPISODE_ID_PAD_WIDTH",
+    "EPISODE_ID_PREFIX",
     "GZIP_TRAJECTORY_GLOB",
     "MAX_DECOMPRESSED_TRAJECTORY_BYTES",
     "TRAJECTORY_FORMAT_VERSION",
     "StepBatch",
     "TrajectoryError",
     "TrajectoryReader",
+    "format_episode_id",
     "load_trajectory",
 ]
 
@@ -63,14 +66,37 @@ logger = logging.getLogger(__name__)
 #: breaking change.
 TRAJECTORY_FORMAT_VERSION: int = 2
 
+#: Episode-id prefix on the runner side. Mirrors the Rust constant
+#: ``forge_mc_runner::EPISODE_ID_PREFIX``. Pinned by a cross-language
+#: test in ``tests/python/training/test_muzero_mc_replay.py``.
+EPISODE_ID_PREFIX: str = "ep-"
+
+#: Zero-pad width for the episode sequence number. Mirrors the Rust
+#: constant ``forge_mc_runner::EPISODE_ID_PAD_WIDTH``. The Python
+#: globs (`DEFAULT_TRAJECTORY_GLOB` / `GZIP_TRAJECTORY_GLOB`) use
+#: ``*`` so the actual pad width doesn't need to match, but the
+#: constants are pinned together as a single source of truth.
+EPISODE_ID_PAD_WIDTH: int = 6
+
 #: Default glob the reader uses to discover episode files inside the
-#: trajectory directory.
-DEFAULT_TRAJECTORY_GLOB: str = "ep-*.json"
+#: trajectory directory. Derived from :data:`EPISODE_ID_PREFIX` so
+#: the glob and the runner's emit pattern share one source of truth.
+DEFAULT_TRAJECTORY_GLOB: str = f"{EPISODE_ID_PREFIX}*.json"
 
 #: Gzip-compressed sibling of :data:`DEFAULT_TRAJECTORY_GLOB`. The
 #: reader picks up both by default so a directory containing a mix
 #: of compressed and plain trajectories iterates cleanly.
-GZIP_TRAJECTORY_GLOB: str = "ep-*.json.gz"
+GZIP_TRAJECTORY_GLOB: str = f"{EPISODE_ID_PREFIX}*.json.gz"
+
+
+def format_episode_id(seq: int) -> str:
+    """Format a 1-based episode sequence number into the canonical
+    ``ep-NNNNNN`` trajectory id. Mirrors the Rust
+    ``forge_mc_runner::format_episode_id`` function exactly — both
+    sides are pinned by the cross-language test
+    ``test_format_episode_id_matches_rust_runner``.
+    """
+    return f"{EPISODE_ID_PREFIX}{seq:0{EPISODE_ID_PAD_WIDTH}d}"
 
 #: Hard cap on decompressed bytes accepted by :func:`load_trajectory`
 #: when the file extension is ``.gz``. Mirrors the Rust constant

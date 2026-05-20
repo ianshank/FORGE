@@ -9,6 +9,42 @@ use std::path::PathBuf;
 use forge_replay::v2::TrajectoryGzipLevel;
 use serde::{Deserialize, Serialize};
 
+/// Knobs used by the `--dry-run` smoke mode in the runner binary.
+///
+/// Lifted into a struct (rather than inlined as literals at the call
+/// site) so the CLI binary carries zero hard-coded values. Every
+/// default below is overridable through TOML under the
+/// `[dry_run]` table. The defaults match the shape of the
+/// pre-extraction binary literals (`obs_dim = 8`, `action_count = 4`,
+/// `latent_dim = 16`, `max_episode_len = 8`) so existing
+/// `cargo run -- --dry-run` invocations behave identically.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct DryRunConfig {
+    /// Observation dimensionality the stub env exposes.
+    pub obs_dim: usize,
+    /// Action space size the stub env exposes.
+    pub action_count: u32,
+    /// Latent dim of the stub model (must match the agent's
+    /// `LatentMctsConfig::latent_dim` for non-stub deployments).
+    pub latent_dim: usize,
+    /// Hard cap on env steps per dry-run episode. The runner's own
+    /// `max_steps_per_episode` is checked too; this field is the
+    /// stub-env's internal `Some(max)` truncation parameter.
+    pub max_episode_len: u64,
+}
+
+impl Default for DryRunConfig {
+    fn default() -> Self {
+        Self {
+            obs_dim: 8,
+            action_count: 4,
+            latent_dim: 16,
+            max_episode_len: 8,
+        }
+    }
+}
+
 /// Compression codec for trajectory files written by
 /// [`crate::TrajectoryWriter`].
 ///
@@ -108,7 +144,26 @@ pub struct RunnerConfig {
     /// Defaults to `flate2::Compression::default()` (level 6).
     /// Ignored when compression is `None`.
     pub trajectory_gzip_level: TrajectoryGzipLevel,
+
+    /// Number of multi-thread tokio worker threads to use for the
+    /// runner binary's async runtime (metrics endpoint + shutdown
+    /// signal). The runner loop itself runs on
+    /// `tokio::task::spawn_blocking`, so a small thread count is
+    /// usually enough; defaults to [`DEFAULT_TOKIO_WORKER_THREADS`].
+    pub tokio_worker_threads: usize,
+
+    /// Stub-env / stub-model knobs consumed only by `--dry-run`. The
+    /// `serde(default)` means production TOMLs can omit the table
+    /// entirely. See [`DryRunConfig`].
+    pub dry_run: DryRunConfig,
 }
+
+/// Default number of multi-thread tokio worker threads for the
+/// runner binary. The metrics endpoint and the SIGINT handler don't
+/// need more than a couple of threads; the runner loop itself runs
+/// on `tokio::task::spawn_blocking` so it doesn't consume a worker
+/// slot.
+pub const DEFAULT_TOKIO_WORKER_THREADS: usize = 2;
 
 /// Prometheus standard latency buckets (in seconds), used as the
 /// default for `RunnerConfig::metrics_histogram_buckets`. Each MCTS
@@ -140,6 +195,8 @@ impl Default for RunnerConfig {
             metrics_histogram_buckets: DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS.to_vec(),
             trajectory_compression: TrajectoryCompression::default(),
             trajectory_gzip_level: TrajectoryGzipLevel::default(),
+            tokio_worker_threads: DEFAULT_TOKIO_WORKER_THREADS,
+            dry_run: DryRunConfig::default(),
         }
     }
 }
@@ -160,6 +217,21 @@ impl RunnerConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.action_repeat == 0 {
             return Err("action_repeat must be >= 1".into());
+        }
+        if self.tokio_worker_threads == 0 {
+            return Err("tokio_worker_threads must be >= 1".into());
+        }
+        if self.dry_run.obs_dim == 0 {
+            return Err("dry_run.obs_dim must be >= 1".into());
+        }
+        if self.dry_run.action_count == 0 {
+            return Err("dry_run.action_count must be >= 1".into());
+        }
+        if self.dry_run.latent_dim == 0 {
+            return Err("dry_run.latent_dim must be >= 1".into());
+        }
+        if self.dry_run.max_episode_len == 0 {
+            return Err("dry_run.max_episode_len must be >= 1".into());
         }
         if self.env_id.is_empty() {
             return Err("env_id must be non-empty".into());
@@ -319,5 +391,105 @@ mod tests {
         let json = serde_json::to_string(&cfg).unwrap();
         let back: RunnerConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(cfg, back);
+    }
+
+    #[test]
+    fn dry_run_default_matches_pre_extraction_literals() {
+        // Pins the dry-run defaults to the literal values the
+        // pre-extraction `run_dry` carried inline. If a TOML override
+        // is later introduced the defaults stay backwards-compat.
+        let dr = DryRunConfig::default();
+        assert_eq!(dr.obs_dim, 8);
+        assert_eq!(dr.action_count, 4);
+        assert_eq!(dr.latent_dim, 16);
+        assert_eq!(dr.max_episode_len, 8);
+    }
+
+    #[test]
+    fn validate_rejects_zero_dry_run_obs_dim() {
+        let cfg = RunnerConfig {
+            dry_run: DryRunConfig {
+                obs_dim: 0,
+                ..DryRunConfig::default()
+            },
+            ..RunnerConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("dry_run.obs_dim"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_dry_run_action_count() {
+        let cfg = RunnerConfig {
+            dry_run: DryRunConfig {
+                action_count: 0,
+                ..DryRunConfig::default()
+            },
+            ..RunnerConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("dry_run.action_count"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_dry_run_latent_dim() {
+        let cfg = RunnerConfig {
+            dry_run: DryRunConfig {
+                latent_dim: 0,
+                ..DryRunConfig::default()
+            },
+            ..RunnerConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("dry_run.latent_dim"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_dry_run_max_episode_len() {
+        let cfg = RunnerConfig {
+            dry_run: DryRunConfig {
+                max_episode_len: 0,
+                ..DryRunConfig::default()
+            },
+            ..RunnerConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("dry_run.max_episode_len"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_tokio_worker_threads() {
+        let cfg = RunnerConfig {
+            tokio_worker_threads: 0,
+            ..RunnerConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("tokio_worker_threads"));
+    }
+
+    #[test]
+    fn tokio_worker_threads_default_matches_const() {
+        assert_eq!(
+            RunnerConfig::default().tokio_worker_threads,
+            DEFAULT_TOKIO_WORKER_THREADS,
+        );
+    }
+
+    /// Confirms the new `[dry_run]` TOML table parses correctly with
+    /// the `#[serde(default)]` discipline — partial tables fall back
+    /// to defaults for unspecified fields.
+    #[test]
+    fn dry_run_table_partial_toml_uses_defaults() {
+        let toml_src = r#"
+            env_id = "minecraft"
+            schema_id = "abc"
+            [dry_run]
+            obs_dim = 32
+        "#;
+        let cfg: RunnerConfig = toml::from_str(toml_src).unwrap();
+        assert_eq!(cfg.dry_run.obs_dim, 32);
+        // Other dry_run fields fall back to defaults.
+        assert_eq!(cfg.dry_run.action_count, 4);
+        assert_eq!(cfg.dry_run.latent_dim, 16);
     }
 }

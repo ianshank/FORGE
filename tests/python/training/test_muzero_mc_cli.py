@@ -76,21 +76,59 @@ def test_validate_manifest_schema_drift_returns_validation_error(tmp_path: Path)
     assert rc == EXIT_VALIDATION
 
 
-def test_build_parser_has_two_subcommands() -> None:
+def test_build_parser_has_all_three_subcommands() -> None:
     from forge.training.muzero_mc.cli import build_parser
 
     parser = build_parser()
     # argparse's sub-parser registry lives under _subparsers (private
-    # but stable since Python 3.0). Reach into it to assert both
-    # subcommands are registered without invoking them.
+    # but stable since Python 3.0). Reach into it to assert every
+    # subcommand is registered without invoking them. Uses an equality
+    # comparison (not `<=`) so a future deletion of `train` fails
+    # this test rather than silently passing.
     sub_actions = [
         a for a in parser._actions if hasattr(a, "choices") and a.choices and "bootstrap" in a.choices
     ]
     assert sub_actions, "no subparser action found"
     raw_choices = sub_actions[0].choices
     assert raw_choices is not None
-    choices = set(raw_choices)
-    assert {"bootstrap", "validate-manifest"} <= choices
+    assert set(raw_choices) == {"bootstrap", "validate-manifest", "train"}
+
+
+def test_train_subcommand_requires_input_dir(tmp_path: Path) -> None:
+    """argparse rejects `train` invocations missing the mandatory
+    `--input` flag. Confirms the subcommand is registered and exposes
+    the documented surface, without running torch."""
+    import pytest
+
+    with pytest.raises(SystemExit):
+        main(["train", "--out", str(tmp_path), "--manifest", str(tmp_path / "m.json")])
+
+
+def test_train_subcommand_returns_io_when_input_dir_missing(tmp_path: Path) -> None:
+    """`--input` points at a non-existent directory → exit code
+    `EXIT_IO`. Doesn't need torch because the dispatch path validates
+    the input path before importing the trainer module."""
+    missing = tmp_path / "does-not-exist"
+    rc = main(
+        [
+            "train",
+            "--input",
+            str(missing),
+            "--out",
+            str(tmp_path / "out"),
+            "--manifest",
+            str(tmp_path / "m.json"),
+            "--schema-id",
+            "x",
+            "--obs-dim",
+            "4",
+            "--action-dim",
+            "3",
+            "--iters",
+            "1",
+        ]
+    )
+    assert rc == EXIT_IO
 
 
 def test_bootstrap_rejects_invalid_obs_dim(tmp_path: Path) -> None:

@@ -52,6 +52,31 @@ use crate::manifest::ModelManifest;
 use crate::metrics::MetricsRecorder;
 use crate::trajectory::TrajectoryWriter;
 
+/// Prefix used for the trajectory-file episode identifier (e.g.
+/// `ep-000001.json`). The Python-side `TrajectoryReader` (in
+/// `python/forge/training/muzero_mc/replay.py`) globs files using
+/// this prefix, so any change MUST be mirrored there and version-
+/// pinned by a cross-language test.
+pub const EPISODE_ID_PREFIX: &str = "ep-";
+
+/// Zero-pad width for the episode sequence number in the formatted
+/// episode id (e.g. `ep-000001`). Matches the Python-side
+/// `TrajectoryReader` glob and trajectory naming convention.
+pub const EPISODE_ID_PAD_WIDTH: usize = 6;
+
+/// Format a 1-based episode sequence number into the canonical
+/// trajectory-id string (`ep-NNNNNN`). Pinned through
+/// [`EPISODE_ID_PREFIX`] and [`EPISODE_ID_PAD_WIDTH`] so no caller
+/// has to know the layout.
+pub fn format_episode_id(seq: u64) -> String {
+    format!(
+        "{prefix}{seq:0width$}",
+        prefix = EPISODE_ID_PREFIX,
+        seq = seq,
+        width = EPISODE_ID_PAD_WIDTH,
+    )
+}
+
 /// Signature for the model hot-reload callback.
 ///
 /// Invoked by [`Runner`] between episodes whenever
@@ -265,7 +290,7 @@ where
     #[instrument(skip(self), fields(episode_seq = self.episode_seq + 1))]
     pub fn run_episode(&mut self) -> Result<EpisodeOutcome, RunnerError> {
         self.episode_seq += 1;
-        let episode_id = format!("ep-{:06}", self.episode_seq);
+        let episode_id = format_episode_id(self.episode_seq);
         let seed = self
             .config
             .base_seed
@@ -631,6 +656,29 @@ mod tests {
     }
 
     // ----------------- tests -----------------
+
+    #[test]
+    fn format_episode_id_uses_zero_padded_prefix() {
+        assert_eq!(format_episode_id(1), "ep-000001");
+        assert_eq!(format_episode_id(42), "ep-000042");
+        assert_eq!(format_episode_id(999_999), "ep-999999");
+        // Values beyond the pad width grow the field — they don't
+        // truncate. Mirrors the Python-side glob behaviour
+        // (`ep-*.json` matches any number of digits).
+        assert_eq!(format_episode_id(1_000_000), "ep-1000000");
+    }
+
+    #[test]
+    fn episode_id_constants_match_python_side() {
+        // Cross-language pin: Python side hard-codes the same
+        // values in `python/forge/training/muzero_mc/replay.py`.
+        // If you change EPISODE_ID_PREFIX or EPISODE_ID_PAD_WIDTH
+        // here, bump them on the Python side too AND update the
+        // pinned test value in
+        // `tests/python/training/test_muzero_mc_replay.py`.
+        assert_eq!(EPISODE_ID_PREFIX, "ep-");
+        assert_eq!(EPISODE_ID_PAD_WIDTH, 6);
+    }
 
     #[test]
     fn normalize_visits_uniform_when_all_zero() {
