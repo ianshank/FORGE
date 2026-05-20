@@ -203,6 +203,51 @@ mod tests {
     }
 
     #[test]
+    fn ships_default_env_toml_parses_with_expected_grid_shape() {
+        // The shipped `configs/minecraft/env.toml` carries the v0.5
+        // Phase 1 block-grid expectations. Loading it from disk and
+        // checking the cross-checked fields pins the wire contract:
+        // any future drift in the TOML field names or layout will
+        // fail this test before it can ship.
+        //
+        // CARGO_MANIFEST_DIR == .../crates/forge-env-mc; the workspace
+        // root is two directories up.
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("workspace root");
+        let env_toml = workspace_root.join("configs/minecraft/env.toml");
+        let raw = std::fs::read_to_string(&env_toml)
+            .unwrap_or_else(|e| panic!("read {}: {e}", env_toml.display()));
+        let cfg: MinecraftEnvConfig = toml::from_str(&raw).expect("parse env.toml");
+
+        assert_eq!(cfg.observation.include_block_grid, true);
+        assert_eq!(cfg.observation.grid_radius, 5);
+        assert_eq!(cfg.observation.grid_height_radius, 0);
+        assert_eq!(cfg.observation.grid_channels, 7);
+        assert_eq!(cfg.observation.flat_vector_dim, Some(73));
+        assert_eq!(cfg.observation.expected_dim, Some(920));
+        let expected = cfg
+            .observation
+            .expected_grid_shape
+            .expect("expected_grid_shape must be set in shipped env.toml");
+        assert_eq!(expected.height, 11);
+        assert_eq!(expected.width, 11);
+        assert_eq!(expected.depth, 1);
+        assert_eq!(expected.channels, 7);
+        assert_eq!(expected.vector_dim, 73);
+        // The advertised dims must add up to expected_dim — the
+        // mc_env handshake derives + compares this directly.
+        let derived = (expected.height as usize)
+            * (expected.width as usize)
+            * (expected.depth as usize)
+            * (expected.channels as usize)
+            + (expected.vector_dim as usize);
+        assert_eq!(derived, 920);
+    }
+
+    #[test]
     fn observation_table_roundtrip_with_grid_shape() {
         let mut c = MinecraftEnvConfig::default();
         c.observation.include_block_grid = true;

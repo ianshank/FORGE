@@ -142,6 +142,19 @@ def bootstrap(cfg: BootstrapConfig) -> BootstrapResult:
     if cfg.seed is not None:
         torch.manual_seed(cfg.seed)
 
+    # Surface the cold-start shape contract so a real-run operator can
+    # diagnose handshake mismatches from the bootstrap-container logs
+    # alone (no need to also grep the runner/trainer log streams).
+    _peek_cfg = MuZeroConfig(obs_dim=cfg.obs_dim, action_dim=cfg.action_dim)
+    logger.info(
+        "bootstrap start: obs_dim=%d, action_dim=%d, grid=%d, vector_dim=%d, schema_id=%s",
+        cfg.obs_dim,
+        cfg.action_dim,
+        _peek_cfg.grid_flat_dim,
+        _peek_cfg.vector_dim,
+        cfg.schema_id,
+    )
+
     # MuZeroConfig has fields of mixed types (ints + tuples + str); use
     # ``Any`` here so mypy doesn't conflate the kwargs dict's value type
     # with the most-restrictive field type.
