@@ -14,19 +14,19 @@ it once the operator pivots to the proper runner-driven flow.
 from __future__ import annotations
 
 import argparse
-import base64
+import contextlib
 import json
 import logging
-import os
 import random
-import socket
-import struct
+import socket  # noqa: TC003 — runtime use in drive_episode signature
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator  # noqa: TC003 — runtime use in iter_episodes
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Final
+
+from _ws_client import open_ws, recv_text, send_text
 
 logger = logging.getLogger("v05_manual_baseline")
 
@@ -36,89 +36,6 @@ DEFAULT_EPISODES: Final[int] = 10
 DEFAULT_MAX_STEPS_PER_EPISODE: Final[int] = 100
 DEFAULT_BASE_SEED: Final[int] = 0xCAFEF00D
 DEFAULT_OUT_PATH: Final[str] = "baseline_random_manual.json"
-
-
-def open_ws(host: str, port: int, timeout_secs: float = 10.0) -> socket.socket:
-    sock = socket.create_connection((host, port), timeout=timeout_secs)
-    key = base64.b64encode(os.urandom(16)).decode("ascii")
-    request = (
-        f"GET / HTTP/1.1\r\n"
-        f"Host: {host}:{port}\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Key: {key}\r\n"
-        "Sec-WebSocket-Version: 13\r\n"
-        "\r\n"
-    ).encode("ascii")
-    sock.sendall(request)
-    response = b""
-    while b"\r\n\r\n" not in response:
-        chunk = sock.recv(4096)
-        if not chunk:
-            msg = "ws upgrade closed prematurely"
-            raise RuntimeError(msg)
-        response += chunk
-    return sock
-
-
-def send_text(sock: socket.socket, payload: dict[str, Any]) -> None:
-    body = json.dumps(payload).encode("utf-8")
-    mask = os.urandom(4)
-    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(body))
-    header = bytearray()
-    header.append(0x81)  # FIN + text opcode
-    length = len(body)
-    if length < 126:
-        header.append(0x80 | length)
-    elif length < 1 << 16:
-        header.append(0x80 | 126)
-        header.extend(struct.pack(">H", length))
-    else:
-        header.append(0x80 | 127)
-        header.extend(struct.pack(">Q", length))
-    header.extend(mask)
-    sock.sendall(bytes(header) + masked)
-
-
-def recv_text(sock: socket.socket, buf: bytearray) -> dict[str, Any]:
-    while len(buf) < 2:
-        chunk = sock.recv(65536)
-        if not chunk:
-            msg = "ws closed mid-frame"
-            raise RuntimeError(msg)
-        buf.extend(chunk)
-    first, second = buf[0], buf[1]
-    opcode = first & 0x0F
-    if opcode == 0x8:  # close
-        msg = "server sent close frame"
-        raise RuntimeError(msg)
-    masked = bool(second & 0x80)
-    payload_len = second & 0x7F
-    cursor = 2
-    if payload_len == 126:
-        while len(buf) < cursor + 2:
-            buf.extend(sock.recv(65536))
-        payload_len = struct.unpack(">H", bytes(buf[cursor : cursor + 2]))[0]
-        cursor += 2
-    elif payload_len == 127:
-        while len(buf) < cursor + 8:
-            buf.extend(sock.recv(65536))
-        payload_len = struct.unpack(">Q", bytes(buf[cursor : cursor + 8]))[0]
-        cursor += 8
-    mask = bytes(buf[cursor : cursor + 4]) if masked else None
-    if masked:
-        cursor += 4
-    while len(buf) < cursor + payload_len:
-        chunk = sock.recv(65536)
-        if not chunk:
-            msg = "ws closed mid-payload"
-            raise RuntimeError(msg)
-        buf.extend(chunk)
-    payload = bytes(buf[cursor : cursor + payload_len])
-    if mask:
-        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
-    del buf[: cursor + payload_len]
-    return json.loads(payload.decode("utf-8"))
 
 
 def drive_episode(
@@ -262,13 +179,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             records.append(record)
     finally:
-        try:
+        with contextlib.suppress(OSError):
             send_text(sock, {"type": "close"})
-        except OSError:
-            pass
         sock.close()
 
     ended = datetime.now(tz=timezone.utc).isoformat()
+    # Schema-compat with `forge.training.muzero_mc.capture_baseline`'s
+    # snapshot — empty defaults for the gauge/counter blocks so
+    # `scripts/mc_plot_baseline.py` can consume the file without
+    # `KeyError`. Reviewer S4.
     snapshot = {
         "variant": "random",
         "source": "v05_manual_baseline.py",
@@ -278,6 +197,17 @@ def main(argv: list[str] | None = None) -> int:
         "hello": hello,
         "episodes_target": args.episodes,
         "episodes_observed": len(records),
+        "trajectory_dir": str(args.out.parent),
+        "manifest_versions_seen": [],
+        "summary_counters": {
+            "forge_mc_episode_total": float(len(records)),
+            "forge_mc_steps_total": float(sum(r.get("steps", 0) for r in records)),
+            "forge_mc_protocol_errors_total": float(
+                sum(r.get("protocol_errors", 0) for r in records)
+            ),
+        },
+        "summary_gauges": {"forge_mc_model_version": None},
+        "prometheus_snapshot": "",
         "per_episode": records,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)

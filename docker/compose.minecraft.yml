@@ -84,6 +84,12 @@ services:
       # at that absolute path so the bot finds env.toml without
       # needing an envPath CLI arg.
       - ${MC_CONFIG_DIR:-../configs/minecraft}:/configs/minecraft:ro
+      # Docker-networking overlay: the checked-in env.toml is local-
+      # dev (127.0.0.1); this single-file mount replaces it with the
+      # docker version (mc-bot:8766, minecraft:25565). Keeps local-
+      # dev workflows unbroken (no docker DNS in env.toml when run
+      # natively).
+      - ${MC_CONFIG_DIR:-../configs/minecraft}/env.docker.toml:/configs/minecraft/env.toml:ro
     # NOTE on the healthcheck: `net.connect` is asynchronous, so a
     # plain `.on('connect', () => process.exit(0))` form would race the
     # node process exiting before the connect callback ever fires when
@@ -123,6 +129,11 @@ services:
       RUST_LOG: ${RUST_LOG:-forge_mc_runner=info,forge_env_mc=info,forge_agent=info}
     volumes:
       - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
+      # Docker-networking overlay (same rationale as the mc-bot mount
+      # above): the runner reads env.toml via cfg.mc_env_config_path,
+      # and the docker version points at `ws://mc-bot:8766` instead
+      # of the local-dev `127.0.0.1` default.
+      - ${MC_CONFIG_DIR:-../configs/minecraft}/env.docker.toml:/app/configs/env.toml:ro
       - ${MODELS_DIR:-../models}:/app/models
       - ${TRAJECTORIES_DIR:-../trajectories}:/app/trajectories
     command:

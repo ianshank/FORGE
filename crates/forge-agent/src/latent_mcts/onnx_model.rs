@@ -150,13 +150,29 @@ pub struct OnnxMuZeroModel {
 /// favor of `commit_from_memory(&[u8])`. We read the bytes here and
 /// surface any I/O error as an `ort::Error` so the call sites stay
 /// a single `?` (the rc.9 ergonomics).
+///
+/// Emits a `tracing::error!` event with the resolved path before
+/// returning so operators see the structured failure in the runner
+/// log stream (per CLAUDE.md's structured-logging convention).
 fn build_session_from_path<P: AsRef<Path>>(
     num_threads: usize,
     path: P,
 ) -> Result<Session, ort::Error> {
     let path_ref = path.as_ref();
-    let bytes = std::fs::read(path_ref)
-        .map_err(|e| ort::Error::new(format!("read ONNX file {}: {e}", path_ref.display())))?;
+    let bytes = match std::fs::read(path_ref) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!(
+                path = %path_ref.display(),
+                err = %e,
+                "failed to read ONNX file"
+            );
+            return Err(ort::Error::new(format!(
+                "read ONNX file {}: {e}",
+                path_ref.display()
+            )));
+        }
+    };
     Session::builder()?
         .with_intra_threads(num_threads)?
         .commit_from_memory(&bytes)
@@ -280,7 +296,7 @@ impl OnnxMuZeroModel {
         let (_shape, slice) = value
             .try_extract_tensor::<f32>()
             .context("failed to extract f32 tensor")?;
-        Ok(slice.iter().copied().collect())
+        Ok(slice.to_vec())
     }
 
     /// Build the standard "<name> lock poisoned" error. Factored out so

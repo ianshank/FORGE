@@ -129,10 +129,17 @@ pub fn run_live(cfg: RunnerConfig, metrics: Option<MetricsRecorder>) -> Result<(
     #[cfg(not(feature = "onnx-reload"))]
     {
         let _ = (action_count, metrics);
+        tracing::error!(
+            "trained-mode live runner requires the `onnx-reload` Cargo \
+             feature; rebuild with `--features mc-live --features onnx-reload` \
+             (or `--features mc-live-bundled` to also bundle libonnxruntime.so). \
+             Random-baseline mode (`random_actions = true` in runner.toml) \
+             does not need ORT and works in this build."
+        );
         return Err(RunnerError::ConfigLoad(
             "trained-mode live runner requires the `onnx-reload` Cargo \
              feature; rebuild with `--features mc-live --features onnx-reload` \
-             (or `--features mc-live --features mc-live-bundled`)."
+             (or `--features mc-live-bundled`)."
                 .into(),
         ));
     }

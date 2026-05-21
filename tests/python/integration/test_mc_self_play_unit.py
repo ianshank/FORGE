@@ -83,9 +83,12 @@ def test_dry_run_emits_bootstrap_call_when_manifest_missing(script_path: Path) -
     # The bootstrap sub-command lands in argv right after `--rm trainer-bootstrap`.
     assert "trainer-bootstrap" in combined
     assert "bootstrap" in combined
-    # `--obs-dim 31` and `--action-dim 12` are the defaults pinned in
-    # the script's env-var ladder (OBS_DIM / ACTION_DIM).
-    assert "--obs-dim 31" in combined
+    # v0.5 Phase 1: `--obs-dim 920` and `--action-dim 12` are the
+    # defaults pinned in the script's env-var ladder (OBS_DIM /
+    # ACTION_DIM).  T2 flipped OBS_DIM from 31 → 920 to match the
+    # block-grid observation contract; operators can re-set to 31
+    # for the legacy `include_block_grid = false` path.
+    assert "--obs-dim 920" in combined
     assert "--action-dim 12" in combined
 
 
