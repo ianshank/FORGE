@@ -112,9 +112,7 @@ def test_build_batch_shapes_match_muzero_buffer_contract(tmp_path: Path) -> None
     match the shape :func:`forge.training._muzero_step.train_with_gradients`
     consumes — same keys, same per-row dims.
     """
-    p = _write_trajectory(
-        tmp_path, episode_id="ep-1", steps=8, obs_dim=4, action_count=3
-    )
+    p = _write_trajectory(tmp_path, episode_id="ep-1", steps=8, obs_dim=4, action_count=3)
     trajectory = json.loads(p.read_text(encoding="utf-8"))
     batch = build_batch_from_trajectory(
         trajectory,
@@ -143,9 +141,7 @@ def test_build_batch_pads_past_end_of_trajectory(tmp_path: Path) -> None:
     """Starting near the trajectory tail must pad missing rows with
     zero rewards + uniform policies rather than raise IndexError.
     """
-    p = _write_trajectory(
-        tmp_path, episode_id="ep-tail", steps=3, obs_dim=2, action_count=4
-    )
+    p = _write_trajectory(tmp_path, episode_id="ep-tail", steps=3, obs_dim=2, action_count=4)
     trajectory = json.loads(p.read_text(encoding="utf-8"))
     batch = build_batch_from_trajectory(
         trajectory,
@@ -166,9 +162,7 @@ def test_build_batch_pads_past_end_of_trajectory(tmp_path: Path) -> None:
 
 
 def test_build_batch_raises_for_index_past_steps(tmp_path: Path) -> None:
-    p = _write_trajectory(
-        tmp_path, episode_id="ep-1", steps=2, obs_dim=2, action_count=2
-    )
+    p = _write_trajectory(tmp_path, episode_id="ep-1", steps=2, obs_dim=2, action_count=2)
     trajectory = json.loads(p.read_text(encoding="utf-8"))
     with pytest.raises(IndexError):
         build_batch_from_trajectory(
@@ -230,8 +224,7 @@ def test_trainer_decreases_loss_on_fixed_seed(tmp_path: Path) -> None:
         last = trainer.train_step()
 
     assert last["loss"] < initial["loss"] * 0.99, (
-        f"loss did not drop ≥1%; initial={initial['loss']:.4f} "
-        f"final={last['loss']:.4f}"
+        f"loss did not drop ≥1%; initial={initial['loss']:.4f} final={last['loss']:.4f}"
     )
     for k in ("loss", "policy_loss", "value_loss", "reward_loss", "l2_reg"):
         assert math.isfinite(last[k]), f"{k} = {last[k]}"
@@ -277,9 +270,7 @@ def test_trainer_config_rejects_invalid_values(tmp_path: Path) -> None:
     from forge.training.muzero_mc.trainer import MuZeroMcTrainerConfig
 
     with pytest.raises(ValueError, match="train_iters"):
-        MuZeroMcTrainerConfig(
-            train_iters=-1, schema_id="x", output_dir=tmp_path
-        )
+        MuZeroMcTrainerConfig(train_iters=-1, schema_id="x", output_dir=tmp_path)
     with pytest.raises(ValueError, match="batch_size"):
         MuZeroMcTrainerConfig(batch_size=0, schema_id="x", output_dir=tmp_path)
     with pytest.raises(ValueError, match="schema_id"):
@@ -369,9 +360,7 @@ def test_trainer_moves_model_to_configured_device(tmp_path: Path) -> None:
     traj_dir.mkdir()
     model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
     reader = TrajectoryReader(traj_dir, batch_size=2)
-    cfg = MuZeroMcTrainerConfig(
-        schema_id="x", output_dir=tmp_path / "out", device="cpu"
-    )
+    cfg = MuZeroMcTrainerConfig(schema_id="x", output_dir=tmp_path / "out", device="cpu")
     trainer = MuzeroMcTrainer(model, reader, cfg)
     assert trainer.device.type == "cpu"
     params = trainer._model.all_parameters()
@@ -388,22 +377,16 @@ def test_trainer_config_rejects_invalid_round_poll_sleep(tmp_path: Path) -> None
     from forge.training.muzero_mc.trainer import MuZeroMcTrainerConfig
 
     with pytest.raises(ValueError, match="round_poll_sleep_s"):
-        MuZeroMcTrainerConfig(
-            round_poll_sleep_s=0.0, schema_id="x", output_dir=tmp_path
-        )
+        MuZeroMcTrainerConfig(round_poll_sleep_s=0.0, schema_id="x", output_dir=tmp_path)
     with pytest.raises(ValueError, match="round_poll_sleep_s"):
-        MuZeroMcTrainerConfig(
-            round_poll_sleep_s=-1.0, schema_id="x", output_dir=tmp_path
-        )
+        MuZeroMcTrainerConfig(round_poll_sleep_s=-1.0, schema_id="x", output_dir=tmp_path)
 
 
 def test_trainer_config_rejects_zero_max_trajectories(tmp_path: Path) -> None:
     from forge.training.muzero_mc.trainer import MuZeroMcTrainerConfig
 
     with pytest.raises(ValueError, match="max_trajectories"):
-        MuZeroMcTrainerConfig(
-            max_trajectories=0, schema_id="x", output_dir=tmp_path
-        )
+        MuZeroMcTrainerConfig(max_trajectories=0, schema_id="x", output_dir=tmp_path)
 
 
 def test_trainer_config_max_trajectories_default_is_none(tmp_path: Path) -> None:
@@ -435,9 +418,7 @@ def test_trim_replay_buffer_none_is_noop(tmp_path: Path) -> None:
 
     model = MuZeroWorldModel(MuZeroConfig(obs_dim=4, action_dim=3))
     reader = TrajectoryReader(traj_dir, batch_size=2)
-    cfg = MuZeroMcTrainerConfig(
-        schema_id="x", output_dir=tmp_path / "out", device="cpu"
-    )
+    cfg = MuZeroMcTrainerConfig(schema_id="x", output_dir=tmp_path / "out", device="cpu")
     trainer = MuzeroMcTrainer(model, reader, cfg)
     deleted = trainer._trim_replay_buffer(None)
     assert deleted == 0

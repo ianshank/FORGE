@@ -129,7 +129,10 @@ class TestPPOTrainerEvalCallback:
         mock_torch.as_tensor.return_value.unsqueeze.return_value = MagicMock()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             trainer.train(
-                reset_fn, step_fn, num_updates=num_updates, eval_callback=callback,
+                reset_fn,
+                step_fn,
+                num_updates=num_updates,
+                eval_callback=callback,
             )
 
         # eval_interval=2, num_updates=6 => callback at updates 2, 4, 6

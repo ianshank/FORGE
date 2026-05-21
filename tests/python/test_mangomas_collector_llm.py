@@ -66,9 +66,7 @@ class _DeterministicTeacherProvider(CognitiveProvider):
     def name(self) -> str:
         return "fake-teacher"
 
-    def complete(
-        self, prompt: str, config: CompletionConfig
-    ) -> CompletionResponse:
+    def complete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         self.calls.append(prompt)
         text = json.dumps(
             {
@@ -115,15 +113,9 @@ def _teacher_config(tmp_path: Path) -> TeacherConfig:
         enabled=True,
         provider="lmstudio",
         model="qwen",
-        prompt_template_path=str(
-            repo_root / "configs/cognitive/templates/qwen_teacher.txt"
-        ),
-        response_schema_path=str(
-            repo_root / "python/forge/cognitive/schemas/qwen_action.json"
-        ),
-        few_shot_examples_path=str(
-            repo_root / "configs/cognitive/few_shots/qwen_teacher.jsonl"
-        ),
+        prompt_template_path=str(repo_root / "configs/cognitive/templates/qwen_teacher.txt"),
+        response_schema_path=str(repo_root / "python/forge/cognitive/schemas/qwen_action.json"),
+        few_shot_examples_path=str(repo_root / "configs/cognitive/few_shots/qwen_teacher.jsonl"),
         output_root=str(tmp_path / "traces"),
         shard_size=10,
         compress_traces=False,

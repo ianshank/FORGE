@@ -9,6 +9,191 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Minecraft RL Integration: v0.5 Phase 1 - CLI Hardening & Test Coverage Boost
+
+A comprehensive hardening and test coverage boost pass has been completed on the training CLI and trainer subcommands, achieving a package-level test coverage of **89.04%** (well exceeding the 85.0% global floor):
+
+- **CLI Coverage Boost**:
+  - Expanded unit test coverage in `test_muzero_mc_cli.py` to cover all subcommand entrypoints and error conditions.
+  - Plumbed unit tests for `_run_bootstrap` success and error paths (`ValueError`, `OSError`).
+  - Added unit tests for `_run_compute_schema_id` error paths (`ValueError`, `KeyError`).
+  - Covered all execution branches of `_run_capture_baseline` including `--dry-run`, `ValueError`, `TimeoutError`, `OSError`, and successful run scenarios.
+  - Added robust validation tests for `_run_train` path verification, optional dependency import failures (`ImportError` simulations for PyTorch/ONNX/ONNXRuntime), and execution anomalies (`ValueError`, `OSError`).
+  - Plumbed `_drive_continuous_loop` success flow and signal handling, proving that `SIGINT` / `KeyboardInterrupt` triggers graceful shutdown, sets stop flags, and cleanly restores original signal handlers in the `finally` block.
+- **WebSocket RFC 6455 Client Test Integration**:
+  - Registered and tracked `tests/python/test_ws_client.py` validating the stdlib-only frame parser shared by the handshake probe and manual baseline scripts.
+  - Added test coverage for `recv_text` happy paths, masked `send_text` payload frames, extended 16-bit/64-bit frame payload length encodings, socket EOF/close-frame exceptions, and security audit **HIGH-1** DoS mitigation (denying payload sizes exceeding 64 MiB).
+
+### Added — Minecraft RL Integration: v0.5 Phase 1 post-T9 — hardening, docker runner image, first-real-run validation
+
+Four commits landed after the original T1-T9 sweep, all preserved on
+`feat/mc-v05-phase1-first-real-run` (PR #60):
+
+- **Hardening pass 1** (`7d144a6`): folds in 16 peer-review findings —
+  drops the `random-baseline` Cargo feature gate (no extra deps,
+  no benefit); hoists Prometheus helpers to `forge.utils.metrics`;
+  promotes `mc_capture_baseline.py` to the `forge.training.muzero_mc.cli
+  capture-baseline` subcommand; renames `radius` → `grid_radius`
+  with a serde alias for backwards-compat; per-tile `Number.isFinite`
+  coercion against NaN gradients; per-variant `trajectories.<variant>/`
+  dirs so the trainer's `_trim_replay_buffer` can't evict baseline
+  files mid-capture; Rust-side `BLOCK_FEATURE_CHANNELS` xlang pin.
+- **Lint pass** (`1797d71`): `cargo fmt + clippy -D warnings + ruff`
+  sweep; `assert_eq!(x, true)` → `assert!(x)` everywhere; `PERF401`
+  for-loop → comprehension; `PLR0915` build_parser extracted to a
+  helper; TC003 `# noqa` annotations on pytest-fixture imports.
+- **Docker infra** (`cf06bbf`): unblocks the runner image build by
+  forward-porting `forge-agent/onnx_model.rs` from ort rc.9
+  `commit_from_file` → rc.12 `commit_from_memory` API; refactors
+  `live.rs` to split the trained-mode path into `run_live_trained()`
+  feature-gated behind `onnx-reload`; new
+  `docker/mc-runner.Dockerfile` (rust:1.93-bookworm builder, 135 MB
+  debian:bookworm-slim runtime) building the `mc-live` variant
+  cleanly; updates `docker/compose.minecraft.yml` to build the
+  runner from source (the previous `ghcr.io/ianshank/forge-mc-runner:
+  dev` reference was a placeholder that was never actually
+  published); new `scripts/v05_handshake_probe.py` +
+  `scripts/v05_manual_baseline.py` (stdlib-only WS clients) drive
+  the first-ever real v0.5 episodes against a live `itzg/minecraft-
+  server`; preserves the first-real-episode evidence as tracked
+  JSONs in `docs/results/v0.5-first-real-run-baseline*.json`.
+- **Hardening pass 2** (`5acb374`): folds in another peer-review
+  pass against the docker commit — restores `configs/minecraft/
+  env.toml` to local-dev `127.0.0.1` defaults (H1); new
+  `configs/minecraft/env.docker.toml` overlay carries the docker-
+  DNS hostnames (`mc-bot:8766`, `minecraft`) mounted on top of the
+  dir mount in compose so docker runs get the override
+  automatically without breaking local-dev; extracts the shared
+  `scripts/_ws_client.py` (eliminates ~80 lines of duplication
+  between the probe + baseline script; spec-mapped RFC 6455 frame
+  parser); new `ships_default_runner_toml_parses_with_random_actions`
+  Rust integration test (drift in the shipped runner.toml fails
+  CI); `tracing::error!` events added on every error path in
+  `build_session_from_path` + `run_live_trained` guard;
+  `v05_manual_baseline.py` snapshot now schema-compat with
+  `mc_plot_baseline.py`'s consumer (adds `summary_counters`,
+  `summary_gauges`, `manifest_versions_seen`, `prometheus_snapshot`,
+  `trajectory_dir` keys); `Final[...]` annotations in
+  `v05_handshake_probe.py` replace the `920` + `8766` magic
+  literals.
+
+Security-audit follow-ups (one round of `security-auditor` agent
+review against the post-T9 commits):
+
+- **HIGH-1**: `_ws_client.recv_text` now caps inbound frame
+  `payload_len` at `DEFAULT_MAX_FRAME_BYTES = 64 MiB` before any
+  allocation — a hostile bot sending the u64-max payload_len
+  header (~9 EiB) would previously crash the script via heap
+  exhaustion.
+- **MEDIUM-3**: `observation_grid.blockTypeName` now truncates
+  block names to `MAX_BLOCK_NAME_LENGTH = 256` chars before
+  hashing — a hostile MC server returning a megabyte-long block
+  name would previously CPU-DoS the per-tile encoder.
+- **LOW-2** (documented, not changed): `runner.toml`'s
+  `metrics_bind = "0.0.0.0"` is container-internal only (compose
+  doesn't publish the port to the host); the existing inline
+  comment now spells this out.
+
+### Added — Minecraft RL Integration: v0.5 Phase 1 — first real-end-to-end run readiness (block-grid obs + baseline capture)
+
+Closes the v0.4 → real-run gap. Every test in PR #59 passed against
+**stubs and mocks** — no one had actually brought the stack up against
+a real `itzg/minecraft-server`. v0.5 Phase 1 closes the hidden
+contract violation (mc-bot emitted 31 floats, MuZeroConfig required
+920) and ships the operator-facing tooling needed to capture a
+calibrated random-vs-trained baseline.
+
+Branch `feat/mc-v05-phase1-first-real-run`.
+
+9 tracks:
+
+- **T1 (BLOCKER) — mc-bot block-grid encoder + `Hello.grid_shape`
+  cross-check**: new `mc-bot/src/observation_grid.js` emits an
+  11×11×1×7 ego-centric block grid (847 floats) + 73 flat features
+  = 920 total, matching `MuZeroConfig`'s `grid + vector_dim` split.
+  `BLOCK_FEATURE_CHANNELS` frozen const with a coordinated Rust-side
+  pin (`crates/forge-env-mc/src/protocol.rs::BLOCK_FEATURE_CHANNELS`)
+  + xlang test catches reorder regressions. `Hello` payload extended
+  with `grid_shape: {h, w, depth, channels, vector_dim}`; the runner
+  cross-checks against `config.observation.expected_grid_shape` and
+  refuses to start on mismatch. Legacy 31-float path stays valid via
+  `include_block_grid = false`.
+- **T2 — `expected_dim = 920` flip across orchestration surfaces**:
+  `configs/minecraft/env.toml` adds `expected_dim = 920` and the
+  `[observation.expected_grid_shape]` sub-table; `mc_self_play.sh`
+  and `docker/compose.minecraft.env.example` flip `OBS_DIM`/
+  `TRAINER_OBS_DIM` defaults from 31 → 920. Bootstrap logs the
+  resolved (obs_dim, grid_flat_dim, vector_dim, schema_id) tuple at
+  INFO on entry. New `test_muzero_config_legacy_31_float_obs_validates`
+  test pins backwards-compat for the `include_block_grid=false` path.
+- **T3 — `--random-actions` runtime switch + `RandomLatentModel`
+  baseline adapter**: new `crates/forge-mc-runner/src/random_baseline.rs`
+  with `sample_random_action` + `RandomLatentModel` (no-op
+  `LatentForwardModel` stub). Runner's planning step branches on
+  `cfg.random_actions` to skip MCTS entirely (uniform-prior MCTS
+  doesn't produce uniform action selection — peer-review noted). In
+  live runs the random path also skips the ONNX bundle load entirely.
+  χ²-test pins uniformity within α≈0.001.
+- **T4 — `capture-baseline` CLI subcommand + Prometheus helper
+  hoist**: `python -m forge.training.muzero_mc.cli capture-baseline
+  --variant random|trained --episodes N --out PATH ...` drives N
+  episodes against a running stack and writes a snapshot JSON.
+  `scripts/mc_capture_baseline.py` is a 3-line shim. Metrics helpers
+  (`fetch_prometheus_metrics`, `scrape_counter`, `scrape_gauge`)
+  hoisted from `tests/python/integration/test_minecraft_e2e.py`
+  into `forge.utils.metrics` so both the test and the subcommand
+  consume one canonical impl. Per-variant trajectory dirs
+  (`trajectories.<variant>/`) so the trainer's `_trim_replay_buffer`
+  can't evict baseline files mid-capture.
+- **T5 — `scripts/mc_plot_baseline.py` + Markdown report**:
+  consumes the two snapshot JSONs and renders
+  `docs/results/v0.5-first-real-run.md` with three matplotlib PNGs
+  (reward curve, episode length histogram, reward histogram) and a
+  per-variant summary table (mean / median / std / p95). Sources
+  per-episode rewards from the trajectory JSON projection inside
+  each snapshot (NOT from Prometheus, which only exposes
+  aggregates — peer-review #14). `--no-plots` skips matplotlib for
+  hosts without it; pytest tests use `importorskip` gracefully.
+- **T6 — opt-in `python-test-minecraft-real-run` CI job**: new
+  `workflow_dispatch` input + job that mirrors
+  `python-test-minecraft-e2e`'s shape but exercises the full
+  capture-baseline + plot flow with 5 episodes per variant.
+- **T7 — cross-cutting logging + Rust-side channel-order pin**:
+  mc-bot logs the resolved grid shape on every client connect;
+  Rust runner logs `runner mode: trained|random` at startup;
+  trainer rounds log version + iters + exports; capture subcommand
+  logs per-episode + per-batch progress. Coordinated
+  cross-language pins on `BLOCK_FEATURE_CHANNELS` (Rust + JS + the
+  Python-side test in `test_muzero_mc_replay.py`).
+- **T8 — `docs/results/v0.5-first-real-run.md` skeleton**:
+  pre-shipped template with `{{TODO}}` placeholders the plotter
+  auto-fills (summary table + PNGs) and operator-fill sections for
+  the first-hour observations, anomalies, and Phase 2 outlook.
+- **T9 — docs sweep**: CHANGELOG entry (this section), README +
+  CLAUDE.md + Agent.md gain the new build commands,
+  `examples/minecraft/quickstart.md` documents the baseline-capture
+  flow, `mc-bot/README.md` documents the new `[observation]` knobs.
+
+Known pre-existing infrastructure issue (NOT introduced by v0.5):
+the `--features mc-live` build is broken on the v0.4 base branch
+due to an `ort` 2.0.0-rc.9 → rc.12 API drift
+(`commit_from_file` → `commit_from_memory`). Reproduces on the v0.4
+worktree; tracked as a follow-up. The runner lib + binary builds
+without the feature pass cleanly (85/85 unit tests).
+
+Peer-review revisions folded in: gaps #1 (vec3 plumbing, dropped in
+favor of plain `{x,y,z}` objects so `test:no-deps` still passes),
+#2 (OBS_DIM=31 defaults), #3 (Hello.grid_shape), #4
+(`radius` → `grid_radius` rename), #5 (per-variant trajectory dirs
+to avoid eviction), #7 (`finiteNumber` coercion), #8 (no Cargo
+feature gate on random-baseline), #9 (drop `RandomAgent` reuse
+claim), #10 (metrics helpers → `forge.utils.metrics`), #11
+(capture-baseline as CLI subcommand, not standalone script), #12
+(drop `--variant` shell flag in favor of env-var ladder), #13
+(tests live flat under `tests/python/`), #14 (plot script sources
+per-episode rewards from trajectory JSON), #15 (Rust-side
+channel-order pin), #16 (legacy 31-float `MuZeroConfig` smoke).
+
 ### Added — Minecraft RL Integration: v0.4 self-improving training loop — live runner + continuous trainer + atomic versioned bundles (2026-05-20)
 
 Closes the v0.3-pre BLOCKER (`ExitCode 64` "live runner wiring not

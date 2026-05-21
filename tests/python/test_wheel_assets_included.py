@@ -4,6 +4,7 @@ Maturin only auto-packages *.py under python-source. Non-Python assets
 (JSON schemas, TOML configs, prompt templates, few-shots) need an
 explicit include entry or they will not ship in built wheels.
 """
+
 from __future__ import annotations
 
 from typing import Any

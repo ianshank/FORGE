@@ -81,9 +81,7 @@ def test_build_dataset_with_top_k_normalises_rows() -> None:
 def test_numpy_loss_decreases_over_epochs() -> None:
     obs, actions = _synthetic_episodes(8, 20, state_dim=6, num_actions=4)
     dataset = BCTrainer.build_dataset(obs, actions, num_actions=4)
-    trainer = BCTrainer(
-        BCTrainerConfig(num_epochs=20, learning_rate=0.05, batch_size=16, seed=1)
-    )
+    trainer = BCTrainer(BCTrainerConfig(num_epochs=20, learning_rate=0.05, batch_size=16, seed=1))
     result = trainer.train(dataset)
     assert result.epochs_run == 20
     assert result.loss_history[-1] < result.loss_history[0]
@@ -100,9 +98,7 @@ def test_kl_distillation_when_top_k_probs_supplied() -> None:
         for ep in actions
     ]
     dataset = BCTrainer.build_dataset(obs, actions, top_k_probs=top_k, num_actions=3)
-    trainer = BCTrainer(
-        BCTrainerConfig(num_epochs=5, learning_rate=0.05, kl_weight=1.0)
-    )
+    trainer = BCTrainer(BCTrainerConfig(num_epochs=5, learning_rate=0.05, kl_weight=1.0))
     result = trainer.train(dataset)
     assert result.final_loss > 0.0
     assert dataset.teacher_top_k_probs is not None
@@ -158,9 +154,7 @@ def test_torch_path_skipped_when_torch_missing(toy_actor_critic_factory) -> None
     dataset = BCTrainer.build_dataset(obs, actions, num_actions=2)
     net = toy_actor_critic_factory(3, 2)
     before = net.actor.weight.detach().clone()
-    trainer = BCTrainer(
-        BCTrainerConfig(num_epochs=3, learning_rate=0.05, seed=7)
-    )
+    trainer = BCTrainer(BCTrainerConfig(num_epochs=3, learning_rate=0.05, seed=7))
     trainer.train(dataset, actor_critic=net)
     after = net.actor.weight.detach()
     assert not torch.allclose(before, after)
@@ -172,12 +166,8 @@ def test_torch_path_uses_value_loss_when_value_hats_supplied(toy_actor_critic_fa
     import torch
 
     obs, actions = _synthetic_episodes(4, 8, state_dim=3, num_actions=2)
-    teacher_values: list[list[float]] = [
-        [0.0] * int(arr.shape[0]) for arr in actions
-    ]
-    dataset = BCTrainer.build_dataset(
-        obs, actions, num_actions=2, value_hats=teacher_values
-    )
+    teacher_values: list[list[float]] = [[0.0] * int(arr.shape[0]) for arr in actions]
+    dataset = BCTrainer.build_dataset(obs, actions, num_actions=2, value_hats=teacher_values)
     assert dataset.teacher_value_hats is not None
     net = toy_actor_critic_factory(3, 2)
     critic_before = net.critic.weight.detach().clone()

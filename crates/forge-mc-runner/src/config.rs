@@ -169,6 +169,23 @@ pub struct RunnerConfig {
     /// `into_reload_fn`. See [`OnnxRuntimeConfig`].
     #[serde(default)]
     pub onnx: OnnxRuntimeConfig,
+
+    /// When `true`, the runner samples actions uniformly at random
+    /// from `0..action_count` instead of asking the MCTS planner.
+    /// Used by `scripts/mc_capture_baseline.py` to capture the
+    /// untrained-baseline numbers a trained-agent comparison
+    /// hinges on (v0.5 first-real-run plan, T3 + T4).
+    ///
+    /// Bypasses MCTS entirely — see
+    /// [`crate::random_baseline`] for why uniform priors through
+    /// MCTS don't produce uniform action selection.
+    ///
+    /// In live runs, setting this `true` also lets the runner skip
+    /// the ONNX bundle load (the model never runs). The runner
+    /// constructs a [`crate::random_baseline::RandomLatentModel`]
+    /// purely to satisfy the type-generic bound on `Runner<E, M>`.
+    #[serde(default)]
+    pub random_actions: bool,
 }
 
 /// ONNX Runtime invariants the runner carries across reloads. These
@@ -266,6 +283,7 @@ impl Default for RunnerConfig {
             dry_run: DryRunConfig::default(),
             mc_env_config_path: None,
             onnx: OnnxRuntimeConfig::default(),
+            random_actions: false,
         }
     }
 }
@@ -384,6 +402,64 @@ mod tests {
         assert!(!cfg.metrics_disabled());
         assert_eq!(cfg.episodes, 1);
         assert_eq!(cfg.action_repeat, 1);
+    }
+
+    #[test]
+    fn random_actions_default_is_false() {
+        // Backwards-compat pin: existing TOMLs without `random_actions`
+        // must continue to route planning through MCTS.
+        let cfg = RunnerConfig::default();
+        assert!(!cfg.random_actions);
+    }
+
+    #[test]
+    fn ships_default_runner_toml_parses_with_random_actions() {
+        // The v0.5 shipped runner.toml (mounted into the runner
+        // container by docker/compose.minecraft.yml) MUST parse
+        // cleanly + validate, and its `random_actions = true`
+        // default MUST be honoured so a docker compose up runner
+        // produces a baseline-capture run out of the box. Drift in
+        // either the TOML's field names OR the runner's config
+        // schema fails this test before it can ship.
+        //
+        // CARGO_MANIFEST_DIR == .../crates/forge-mc-runner; the
+        // workspace root is two directories up.
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("workspace root");
+        let runner_toml = workspace_root.join("configs/minecraft/runner.toml");
+        let raw = std::fs::read_to_string(&runner_toml)
+            .unwrap_or_else(|e| panic!("read {}: {e}", runner_toml.display()));
+        let cfg: RunnerConfig = toml::from_str(&raw).expect("parse runner.toml");
+        cfg.validate().expect("runner.toml must validate");
+        assert!(
+            cfg.random_actions,
+            "shipped runner.toml MUST default to random_actions=true so the \
+             v0.5 baseline-capture docker variant works out of the box"
+        );
+        // The container mount uses /app/configs/env.toml; runner.toml
+        // must reference that absolute path so the runner can find
+        // the env-config when the workspace isn't its cwd.
+        assert_eq!(
+            cfg.mc_env_config_path
+                .as_deref()
+                .map(|p| p.to_string_lossy().into_owned()),
+            Some("/app/configs/env.toml".to_string()),
+            "shipped runner.toml mc_env_config_path must match the docker mount target"
+        );
+    }
+
+    #[test]
+    fn random_actions_parses_from_partial_toml() {
+        let toml_src = r#"
+            env_id = "minecraft"
+            schema_id = "abc"
+            random_actions = true
+        "#;
+        let cfg: RunnerConfig = toml::from_str(toml_src).unwrap();
+        assert!(cfg.random_actions);
     }
 
     #[test]

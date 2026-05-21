@@ -39,9 +39,7 @@ class _RecordingMockProvider(MockProvider):
         self.max_in_flight = 0
         self._lock = asyncio.Lock()
 
-    async def acomplete(
-        self, prompt: str, config: CompletionConfig
-    ) -> CompletionResponse:
+    async def acomplete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         async with self._lock:
             self.in_flight += 1
             self.max_in_flight = max(self.max_in_flight, self.in_flight)
@@ -63,9 +61,7 @@ def test_acomplete_default_runs_in_thread() -> None:
         def name(self) -> str:
             return "tester"
 
-        def complete(
-            self, prompt: str, config: CompletionConfig
-        ) -> CompletionResponse:
+        def complete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
             return CompletionResponse(text="sync:" + prompt)
 
     provider = _Provider()
@@ -81,9 +77,7 @@ def test_lmstudio_acomplete_uses_async_client(lmstudio_model_id: str) -> None:
     )
     provider._aclient = fake_async_client
 
-    cfg = CompletionConfig(
-        model=lmstudio_model_id, seed=1, response_format={"type": "json_object"}
-    )
+    cfg = CompletionConfig(model=lmstudio_model_id, seed=1, response_format={"type": "json_object"})
     resp = asyncio.run(provider.acomplete("ping", cfg))
     assert resp.text == "pong"
     assert resp.input_tokens == 3
@@ -126,9 +120,7 @@ def test_async_retry_on_transient_error_then_succeeds() -> None:
 def test_async_giveup_after_max_retries() -> None:
     provider = LMStudioProvider(max_retries=1, retry_backoff_secs=0.0)
     fake_async_client = MagicMock()
-    fake_async_client.chat.completions.create = AsyncMock(
-        side_effect=RuntimeError("boom")
-    )
+    fake_async_client.chat.completions.create = AsyncMock(side_effect=RuntimeError("boom"))
     provider._aclient = fake_async_client
     with pytest.raises(RuntimeError, match="boom"):
         asyncio.run(provider.acomplete("p", CompletionConfig(model="m")))

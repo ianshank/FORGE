@@ -592,9 +592,7 @@ def _build_llm_agent(
     factory = provider_factory or _default_provider_factory
     provider = factory(teacher_config)
     response_schema_path = (
-        teacher_config.response_schema_path
-        if teacher_config.response_format_enabled
-        else ""
+        teacher_config.response_schema_path if teacher_config.response_format_enabled else ""
     )
     structured_config = StructuredLLMAgentConfig(
         name="mangomas-llm",
@@ -740,14 +738,10 @@ def _collect_episode_rollout(
             teacher_subgoals.append(list(trace_info.get("subgoals") or []))
             value_hat = trace_info.get("value_hat")
             teacher_value_hats.append(float(value_hat) if value_hat is not None else 0.0)
-            teacher_constraint_critiques.append(
-                dict(trace_info.get("constraint_critique") or {})
-            )
+            teacher_constraint_critiques.append(dict(trace_info.get("constraint_critique") or {}))
             teacher_top_k_probs.append(list(trace_info.get("top_k_probs") or []))
             teacher_prompt_tokens.append(int(trace_info.get("prompt_tokens") or 0))
-            teacher_completion_tokens.append(
-                int(trace_info.get("completion_tokens") or 0)
-            )
+            teacher_completion_tokens.append(int(trace_info.get("completion_tokens") or 0))
             teacher_latency_ms.append(float(trace_info.get("latency_ms") or 0.0))
             teacher_providers.append(str(trace_info.get("provider") or ""))
 
@@ -762,9 +756,7 @@ def _collect_episode_rollout(
                         observation=_extract_raw_observation(enriched_obs),
                         legal_actions=list(range(int(env.action_space.n))),
                         action_id=discrete_action,
-                        intention=teacher_intentions[-1]
-                        if teacher_intentions[-1] >= 0
-                        else None,
+                        intention=teacher_intentions[-1] if teacher_intentions[-1] >= 0 else None,
                         subgoals=teacher_subgoals[-1],
                         rationale=teacher_rationales[-1],
                         value_hat=teacher_value_hats[-1],
@@ -867,9 +859,7 @@ def _collect_scenario_rollouts(
     return scenario_rollouts, scenario_rewards, scenario_successes
 
 
-def _open_trace_writer_if_enabled(
-    teacher_config: Any, scenario_id: str, episode_index: int
-) -> Any:
+def _open_trace_writer_if_enabled(teacher_config: Any, scenario_id: str, episode_index: int) -> Any:
     """Open a TeacherTraceWriter when teacher capture + output_root are enabled."""
     if teacher_config is None or not teacher_config.output_root:
         return None
@@ -995,9 +985,7 @@ def collect_training_data_from_scenarios(
                     teacher_rationales.append(rollout.teacher_rationales or [])
                     teacher_subgoals.append(rollout.teacher_subgoals or [])
                     teacher_value_hats.append(rollout.teacher_value_hats or [])
-                    teacher_constraint_critiques.append(
-                        rollout.teacher_constraint_critiques or []
-                    )
+                    teacher_constraint_critiques.append(rollout.teacher_constraint_critiques or [])
                     teacher_top_k_probs.append(rollout.teacher_top_k_probs or [])
                 if rollout.action_space_size > 0:
                     action_space_sizes.append(int(rollout.action_space_size))
@@ -1125,14 +1113,10 @@ async def _acollect_episode_rollout(
             teacher_subgoals.append(list(trace_info.get("subgoals") or []))
             value_hat = trace_info.get("value_hat")
             teacher_value_hats.append(float(value_hat) if value_hat is not None else 0.0)
-            teacher_constraint_critiques.append(
-                dict(trace_info.get("constraint_critique") or {})
-            )
+            teacher_constraint_critiques.append(dict(trace_info.get("constraint_critique") or {}))
             teacher_top_k_probs.append(list(trace_info.get("top_k_probs") or []))
             teacher_prompt_tokens.append(int(trace_info.get("prompt_tokens") or 0))
-            teacher_completion_tokens.append(
-                int(trace_info.get("completion_tokens") or 0)
-            )
+            teacher_completion_tokens.append(int(trace_info.get("completion_tokens") or 0))
             teacher_latency_ms.append(float(trace_info.get("latency_ms") or 0.0))
             teacher_providers.append(str(trace_info.get("provider") or ""))
 
@@ -1209,9 +1193,7 @@ async def _acollect_scenario_rollouts_concurrent(
         episode_index: int,
     ) -> tuple[int, _EpisodeRollout]:
         async with sem:
-            scenario_seed = derive_seed(
-                base_seed, f"scenario:{scenario.scenario_id}"
-            )
+            scenario_seed = derive_seed(base_seed, f"scenario:{scenario.scenario_id}")
             env_config = _prepare_env_config(
                 base_forge_config, scenario, mangomas_config, scenario_seed
             )
@@ -1227,18 +1209,10 @@ async def _acollect_scenario_rollouts_concurrent(
                 agent_seed,
                 provider_factory=lambda _cfg: shared_provider,
             )
-            comm_vocab_size = int(
-                env_config.get("agents", {}).get("comm_vocab_size", 0)
-            )
+            comm_vocab_size = int(env_config.get("agents", {}).get("comm_vocab_size", 0))
             drone_enabled = bool(env_config.get("drone", {}).get("enabled", False))
-            agri_enabled = (
-                bool(env_config.get("agri", {}).get("enabled", False))
-                and drone_enabled
-            )
-            hex_enabled = (
-                str(env_config.get("world", {}).get("grid_type", "")).lower()
-                == "hex"
-            )
+            agri_enabled = bool(env_config.get("agri", {}).get("enabled", False)) and drone_enabled
+            hex_enabled = str(env_config.get("world", {}).get("grid_type", "")).lower() == "hex"
             max_steps = _resolve_max_steps(env_config, mangomas_config)
             try:
                 rollout = await _acollect_episode_rollout(
@@ -1264,18 +1238,14 @@ async def _acollect_scenario_rollouts_concurrent(
                 env.close()
             return (episode_index, rollout)
 
-    results = await asyncio.gather(
-        *(_run_episode(i) for i in range(scenario_episodes))
-    )
+    results = await asyncio.gather(*(_run_episode(i) for i in range(scenario_episodes)))
     # Deterministic on-disk order: write shards in episode_index order.
     results_sorted = sorted(results, key=lambda pair: pair[0])
     rollouts: list[_EpisodeRollout] = []
     rewards: list[float] = []
     successes: list[bool] = []
     for episode_index, rollout in results_sorted:
-        writer = _open_trace_writer_if_enabled(
-            teacher_config, scenario.scenario_id, episode_index
-        )
+        writer = _open_trace_writer_if_enabled(teacher_config, scenario.scenario_id, episode_index)
         try:
             if writer is not None:
                 _flush_rollout_to_writer(
@@ -1344,9 +1314,7 @@ def _flush_rollout_to_writer(
                 value_hat=(rollout.teacher_value_hats or [])[step_index]
                 if rollout.teacher_value_hats
                 else 0.0,
-                constraint_critique=(rollout.teacher_constraint_critiques or [])[
-                    step_index
-                ]
+                constraint_critique=(rollout.teacher_constraint_critiques or [])[step_index]
                 if rollout.teacher_constraint_critiques
                 else {},
                 top_k_probs=(rollout.teacher_top_k_probs or [])[step_index]
@@ -1354,8 +1322,7 @@ def _flush_rollout_to_writer(
                 else [],
                 provider=(
                     (rollout.teacher_providers or [teacher_config.provider])[step_index]
-                    if rollout.teacher_providers
-                    and step_index < len(rollout.teacher_providers)
+                    if rollout.teacher_providers and step_index < len(rollout.teacher_providers)
                     else teacher_config.provider
                 ),
                 model=teacher_config.model,
@@ -1373,8 +1340,7 @@ def _flush_rollout_to_writer(
                 ),
                 latency_ms=(
                     rollout.teacher_latency_ms[step_index]
-                    if rollout.teacher_latency_ms
-                    and step_index < len(rollout.teacher_latency_ms)
+                    if rollout.teacher_latency_ms and step_index < len(rollout.teacher_latency_ms)
                     else 0.0
                 ),
                 schema_version=teacher_config.trace_schema_version,
@@ -1429,19 +1395,21 @@ async def _acollect_training_data_from_scenarios(
     action_space_sizes: list[int] = []
 
     for scenario, scenario_episodes in zip(scenarios, episode_counts):
-        scenario_rollouts, scenario_rewards, scenario_successes = (
-            await _acollect_scenario_rollouts_concurrent(
-                scenario=scenario,
-                scenario_episodes=scenario_episodes,
-                base_forge_config=base_forge_config,
-                base_seed=base_seed,
-                observation_adapter=observation_adapter,
-                mangomas_config=mangomas_config,
-                teacher_config=teacher_config,
-                provider_factory=provider_factory,
-                env_factory=build_env,
-                concurrency=concurrency,
-            )
+        (
+            scenario_rollouts,
+            scenario_rewards,
+            scenario_successes,
+        ) = await _acollect_scenario_rollouts_concurrent(
+            scenario=scenario,
+            scenario_episodes=scenario_episodes,
+            base_forge_config=base_forge_config,
+            base_seed=base_seed,
+            observation_adapter=observation_adapter,
+            mangomas_config=mangomas_config,
+            teacher_config=teacher_config,
+            provider_factory=provider_factory,
+            env_factory=build_env,
+            concurrency=concurrency,
         )
         for rollout in scenario_rollouts:
             observations.append(rollout.observations)
@@ -1456,9 +1424,7 @@ async def _acollect_training_data_from_scenarios(
                 teacher_rationales.append(rollout.teacher_rationales or [])
                 teacher_subgoals.append(rollout.teacher_subgoals or [])
                 teacher_value_hats.append(rollout.teacher_value_hats or [])
-                teacher_constraint_critiques.append(
-                    rollout.teacher_constraint_critiques or []
-                )
+                teacher_constraint_critiques.append(rollout.teacher_constraint_critiques or [])
                 teacher_top_k_probs.append(rollout.teacher_top_k_probs or [])
             if rollout.action_space_size > 0:
                 action_space_sizes.append(int(rollout.action_space_size))

@@ -210,9 +210,7 @@ class LLMAgent(BaseAgent):
         )
         return rendered
 
-    def _structured_observation(
-        self, observation: np.ndarray
-    ) -> Mapping[str, Any]:
+    def _structured_observation(self, observation: np.ndarray) -> Mapping[str, Any]:
         """Convert a numeric observation vector into a JSON-serialisable dict.
 
         Override this in subclasses to expose richer structured context to
@@ -220,9 +218,7 @@ class LLMAgent(BaseAgent):
         """
         return {"observation": [float(x) for x in observation.tolist()]}
 
-    def _finalise(
-        self, prompt: str, response: CompletionResponse
-    ) -> tuple[int, dict[str, Any]]:
+    def _finalise(self, prompt: str, response: CompletionResponse) -> tuple[int, dict[str, Any]]:
         self._step_count += 1
         if self._structured_config is None or self._prompt_builder is None:
             action_id = self._parse_action(response.text)
@@ -248,9 +244,7 @@ class LLMAgent(BaseAgent):
             "completion_tokens": response.output_tokens,
             "latency_ms": response.latency_ms,
         }
-        if self._structured_config.log_payloads and logger.isEnabledFor(
-            logging.DEBUG
-        ):
+        if self._structured_config.log_payloads and logger.isEnabledFor(logging.DEBUG):
             preview = self._structured_config.payload_preview_chars
             logger.debug(
                 "agent=structured prompt_preview=%s response_preview=%s",
@@ -290,9 +284,7 @@ class LLMAgent(BaseAgent):
             return 0.0
         return max(-clip, min(clip, v))
 
-    def _parse_structured_response(
-        self, text: str
-    ) -> tuple[dict[str, Any], int]:
+    def _parse_structured_response(self, text: str) -> tuple[dict[str, Any], int]:
         """Parse a JSON response and return ``(parsed, action_id)``.
 
         On malformed JSON falls back to the legacy integer extractor so an
@@ -303,14 +295,10 @@ class LLMAgent(BaseAgent):
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:
-            logger.warning(
-                "agent=structured failed to parse JSON; falling back to legacy parser"
-            )
+            logger.warning("agent=structured failed to parse JSON; falling back to legacy parser")
             return ({}, self._parse_action(text))
         if not isinstance(parsed, dict):
-            logger.warning(
-                "agent=structured top-level JSON is not an object; falling back"
-            )
+            logger.warning("agent=structured top-level JSON is not an object; falling back")
             return ({}, self._parse_action(text))
         action_raw: Any = parsed.get("action_id")
         if action_raw is None:
@@ -328,10 +316,7 @@ class LLMAgent(BaseAgent):
             logger.warning(msg)
             return (parsed, 0)
         if cfg.validate_action and cfg.legal_actions and action_id not in cfg.legal_actions:
-            msg = (
-                f"teacher action_id={action_id} not in legal_actions="
-                f"{cfg.legal_actions}"
-            )
+            msg = f"teacher action_id={action_id} not in legal_actions={cfg.legal_actions}"
             raise ValueError(msg)
         return (parsed, action_id)
 
@@ -339,13 +324,9 @@ class LLMAgent(BaseAgent):
         """Build a text prompt from a numerical observation (legacy path)."""
         preview_dim = self.llm_config.obs_preview_dim
         obs_summary = (
-            f"Observation vector (dim={observation.shape}): "
-            f"{observation[:preview_dim]}..."
+            f"Observation vector (dim={observation.shape}): {observation[:preview_dim]}..."
         )
-        return (
-            f"{self.llm_config.system_prompt}\n{obs_summary}\n"
-            "Select an action ID (integer)."
-        )
+        return f"{self.llm_config.system_prompt}\n{obs_summary}\nSelect an action ID (integer)."
 
     def _parse_action(self, text: str) -> int:
         """Parse an action ID from the provider's response (legacy path)."""

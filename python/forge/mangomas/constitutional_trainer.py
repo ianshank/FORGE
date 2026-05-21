@@ -144,9 +144,7 @@ class ConstitutionalPreTrainer:
 
         use_teacher = bool(teacher_constraint_critiques)
         if use_teacher and len(teacher_constraint_critiques or []) != n:
-            msg = (
-                "teacher_constraint_critiques must have the same length as observations"
-            )
+            msg = "teacher_constraint_critiques must have the same length as observations"
             raise ValueError(msg)
         name_to_index = {c["name"]: j for j, c in enumerate(self.constraints)}
 
@@ -171,9 +169,7 @@ class ConstitutionalPreTrainer:
                         teacher_flags += 1
                     violation_matrix[i, idx] = 1.0
                 teacher_penalty = (
-                    self.config.penalty_weight
-                    * teacher_severity_default
-                    * float(teacher_flags)
+                    self.config.penalty_weight * teacher_severity_default * float(teacher_flags)
                 )
                 penalties[i] = max(rule_penalty, teacher_penalty)
             else:

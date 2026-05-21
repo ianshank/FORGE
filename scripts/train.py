@@ -296,7 +296,9 @@ def _maybe_write_mangomas_report(
     )
 
 
-def _collect_mangomas_training_data(config: Any, args: argparse.Namespace) -> tuple[Any, Any, list[str]]:
+def _collect_mangomas_training_data(
+    config: Any, args: argparse.Namespace
+) -> tuple[Any, Any, list[str]]:
     """Collect MangoMAS training data using the configured FORGE scenarios."""
     from forge.mangomas.collector import collect_training_data_from_scenarios
 
@@ -441,7 +443,10 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
 
     logger.info("Starting MAPPO training: %d updates", args.num_updates)
     all_metrics = trainer.train(
-        reset_fn, step_fn, num_updates=args.num_updates, eval_callback=eval_cb,
+        reset_fn,
+        step_fn,
+        num_updates=args.num_updates,
+        eval_callback=eval_cb,
     )
 
     # Post each update's metrics to the dashboard

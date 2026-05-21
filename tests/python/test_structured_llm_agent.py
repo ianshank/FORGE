@@ -59,9 +59,7 @@ class _RecordingProvider(MockProvider):
         self.response_text = response_text
         self.last_config: CompletionConfig | None = None
 
-    def complete(
-        self, prompt: str, config: CompletionConfig
-    ) -> CompletionResponse:
+    def complete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         self.last_config = config
         return CompletionResponse(
             text=self.response_text,
@@ -70,9 +68,7 @@ class _RecordingProvider(MockProvider):
             latency_ms=12.5,
         )
 
-    async def acomplete(
-        self, prompt: str, config: CompletionConfig
-    ) -> CompletionResponse:
+    async def acomplete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         self.last_config = config
         return CompletionResponse(
             text=self.response_text,

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { executeAction } from './actions.js';
 import { loadConfigBundle } from './config.js';
 import { snapshotObservation, computeObsDim } from './observation.js';
+import { gridShapePayload } from './observation_grid.js';
 import { errorMsg, helloMsg, observationMsg, parseClientMsg } from './protocol.js';
 import { applyReset } from './reset.js';
 import { startViewer } from './viewer.js';
@@ -53,10 +54,22 @@ export function createConnectionHandler({ bot, bundle, logger = console }) {
       return;
     }
     activeSocket = socket;
+    const gridShape = gridShapePayload(envConfig.observation);
+    if (gridShape !== null) {
+      logger.info?.(
+        `[mc-bot] block-grid encoder enabled: ` +
+          `h=${gridShape.height} w=${gridShape.width} ` +
+          `d=${gridShape.depth} ch=${gridShape.channels} ` +
+          `vector_dim=${gridShape.vector_dim} total=${obsDim}`,
+      );
+    } else {
+      logger.info?.(`[mc-bot] flat observation: obs_dim=${obsDim}`);
+    }
     sendJson(socket, helloMsg({
       actionCount: bundle.actionMap.actionCount,
       obsDim,
       schemaId: bundle.schemaId,
+      gridShape,
     }));
 
     let queue = Promise.resolve();

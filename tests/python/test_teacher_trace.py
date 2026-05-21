@@ -67,9 +67,7 @@ def test_compressed_roundtrip(tmp_path: Path) -> None:
 
 
 def test_shard_rollover_on_record_count(tmp_path: Path) -> None:
-    with TeacherTraceWriter(
-        tmp_path, "hex_patrol", 0, compress=False, shard_size=2
-    ) as w:
+    with TeacherTraceWriter(tmp_path, "hex_patrol", 0, compress=False, shard_size=2) as w:
         for step in range(5):
             w.log(_make_trace(step))
         assert w.shard_count == 3
@@ -83,9 +81,7 @@ def test_shard_rollover_on_record_count(tmp_path: Path) -> None:
 
 def test_reader_yields_identical_records(tmp_path: Path) -> None:
     written: list[TeacherDecisionTrace] = []
-    with TeacherTraceWriter(
-        tmp_path, "hex_patrol", 0, compress=False, shard_size=2
-    ) as w:
+    with TeacherTraceWriter(tmp_path, "hex_patrol", 0, compress=False, shard_size=2) as w:
         for step in range(3):
             trace = _make_trace(step)
             written.append(trace)
@@ -108,9 +104,7 @@ def test_writer_log_after_close_raises(tmp_path: Path) -> None:
 
 
 def test_writer_shard_naming(tmp_path: Path) -> None:
-    with TeacherTraceWriter(
-        tmp_path, "hex_patrol", 7, compress=True, shard_size=1
-    ) as w:
+    with TeacherTraceWriter(tmp_path, "hex_patrol", 7, compress=True, shard_size=1) as w:
         w.log(_make_trace(0))
         w.log(_make_trace(1))
     files = sorted((tmp_path / "hex_patrol").glob("*.jsonl.gz"))
@@ -162,9 +156,7 @@ def test_writer_rolls_over_when_underlying_logger_skips(
             self.closed = True
 
     monkeypatch.setattr(tt, "TraceLogger", _SkippingLogger)
-    with tt.TeacherTraceWriter(
-        tmp_path, "scenario", 0, compress=False, shard_size=10
-    ) as w:
+    with tt.TeacherTraceWriter(tmp_path, "scenario", 0, compress=False, shard_size=10) as w:
         w.log(_make_trace(0))
         # First write was skipped → writer rolled over. After retry on
         # shard 1 the record is persisted and counters are incremented.

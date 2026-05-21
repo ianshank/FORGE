@@ -256,6 +256,134 @@ The production deployment packages FORGE as three Docker containers orchestrated
 | `docker/nginx.conf` | SPA routing + `/api/` and `/ws` reverse proxy |
 | `.dockerignore` | Excludes `target/`, `node_modules/`, `.git/` |
 
+### 2.2 Minecraft RL Compose Stack (v0.4 + v0.5 Phase 1)
+
+A second compose stack at `docker/compose.minecraft.yml` packages
+the Minecraft RL integration. Independent of §2.1 — runs on its
+own `docker_default` network with its own volumes.
+
+```
+  RL Operator                  Browser (prismarine-viewer)
+       │                              │
+       │ scripts/v05_handshake_probe  │ http://localhost:3007
+       │ scripts/v05_manual_baseline  │ http://localhost:9090/metrics
+       ▼                              ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                       docker_default (bridge)                          │
+│                                                                        │
+│  ┌──────────────────────┐         ┌─────────────────────────────┐    │
+│  │ minecraft            │◄────────│ mc-bot                       │    │
+│  │ itzg/minecraft-server│ tcp:25565│ node:22-slim                 │    │
+│  │ :25565 (host:25565)  │         │                              │    │
+│  │                      │         │ - mineflayer 4.x             │    │
+│  │ Vanilla 1.20.4       │         │ - prismarine-viewer :3007    │    │
+│  │ EULA=TRUE (operator) │         │ - WS server :8765 (host:8765)│    │
+│  │                      │         │                              │    │
+│  │ healthcheck:         │         │ Emits: Hello{schema_id,      │    │
+│  │   mc-status @25565   │         │         grid_shape={11,11,1, │    │
+│  └──────────────────────┘         │                  7,73}}      │    │
+│              ▲                    │ Drives: Reset / Step /       │    │
+│              │ bot.entity         │         Observation{obs:920} │    │
+│              │ logged in          │                              │    │
+│              │                    │ Encoder: observation_grid.js │    │
+│              │ env.docker.toml    │   BLOCK_FEATURE_CHANNELS pin │    │
+│              │ overlay:           └────────────┬─────────────────┘    │
+│              │  bot.host="minecraft"           │ ws://mc-bot:8765     │
+│              │  ws_url="ws://mc-bot:8765"     ▼                       │
+│              │                    ┌──────────────────────────────┐    │
+│              │                    │ runner                       │    │
+│              │                    │ debian:bookworm-slim (135 MB)│    │
+│              │                    │                              │    │
+│              │                    │ - forge-mc-runner            │    │
+│              │                    │   --features mc-live         │    │
+│              │                    │ - random_actions=true        │    │
+│              │                    │   (runner.toml default)      │    │
+│              │                    │                              │    │
+│              │                    │ Metrics :9090 (container)    │    │
+│              │                    │   forge_mc_episode_total     │    │
+│              │                    │   forge_mc_model_version     │    │
+│              │                    │                              │    │
+│              │                    │ Writes: trajectories.<var>/  │    │
+│              │                    │   ep-NNNNNN.json[.gz]        │    │
+│              │                    │ Reads:  models/manifest.json │    │
+│              │                    │   (HotReloadWatcher between  │    │
+│              │                    │    episodes; no-op in random)│    │
+│              │                    └──────────────┬───────────────┘    │
+│              │                                   │                    │
+│              │   ┌──────────────────────────────┘                    │
+│              │   │ (self-play profile only)                          │
+│              │   ▼                                                    │
+│              │ ┌────────────────────────────────┐                    │
+│              │ │ trainer  (profile=self-play)   │                    │
+│              │ │ python:3.11 + torch + onnx     │                    │
+│              │ │                                │                    │
+│              │ │ - muzero_mc.cli train          │                    │
+│              │ │   --continuous                 │                    │
+│              │ │ - polls trajectories/          │                    │
+│              │ │ - exports atomic vNNNNNNNN/    │                    │
+│              │ │ - bumps model_manifest.json    │                    │
+│              │ └────────────────────────────────┘                    │
+│              │                                                       │
+└──────────────┼───────────────────────────────────────────────────────┘
+               │
+               ▼
+        Host volumes (operator workspace):
+          configs/minecraft/         → /app/configs (read-only)
+          configs/minecraft/env.docker.toml → /app/configs/env.toml (overlay)
+          models/                    → /app/models (rw — manifests + bundles)
+          trajectories.random/       → /app/trajectories (rw — runner output)
+          trajectories.trained/      → /app/trajectories (rw — trained variant)
+```
+
+**WS protocol** (v1 with v0.5 grid_shape extension; see
+`crates/forge-env-mc/src/protocol.rs`):
+
+```
+Client (runner) → Server (mc-bot)
+  {"type": "reset", "seed": <u64?>}
+  {"type": "step", "action_id": <u32>}
+  {"type": "close"}
+
+Server (mc-bot) → Client (runner)
+  {"type": "hello", "schema_version": 1, "action_count": 12,
+   "obs_dim": 920, "schema_id": "<64-hex>",
+   "grid_shape": {"height":11,"width":11,"depth":1,"channels":7,
+                  "vector_dim":73}}      ◄── v0.5 extension
+  {"type": "observation", "tick": <u64>, "obs": [<f32>; 920],
+   "reward": <f32>, "terminated": <bool>, "truncated": <bool>,
+   "info": <json>}
+  {"type": "error", "code": "<str>", "message": "<str>"}
+```
+
+**Startup sequence** (health-gated):
+
+1. `minecraft` starts → waits for healthcheck (world-gen, ~90s on first boot)
+2. `mc-bot` starts only after `minecraft` is **healthy**, joins as `ForgeBot`
+3. `runner` starts only after `mc-bot` is **healthy** (WS port 8765 accepting connections)
+4. (self-play profile only) `trainer` starts after `runner` is **started**
+
+**Ports** (all bound to `127.0.0.1` by default):
+
+| Container | Internal | Host | Protocol |
+|---|---|---|---|
+| minecraft | 25565 | 25565 | Java MC TCP |
+| mc-bot | 8765 (WS), 3007 (viewer) | 8765, 3007 | WebSocket, HTTP |
+| runner | 9090 (metrics) | not published by default | HTTP (Prometheus) |
+| trainer | — | — | — (writes to bind-mounted models/) |
+
+**Key files:**
+
+| File | Purpose |
+|---|---|
+| `docker/compose.minecraft.yml` | 4-service orchestration; health gates; `self-play` profile gates trainer |
+| `docker/compose.minecraft.env.example` | Sample env file with `MC_EULA=FALSE` default; operator overrides |
+| `docker/mc-bot.Dockerfile` | Node 22 + mineflayer + prismarine-viewer |
+| `docker/mc-runner.Dockerfile` | rust:1.93-bookworm builder → debian:bookworm-slim runtime (135 MB) |
+| `docker/trainer.Dockerfile` | python:3.11 + torch + onnx + maturin |
+| `configs/minecraft/env.toml` | Local-dev defaults (`127.0.0.1`) |
+| `configs/minecraft/env.docker.toml` | Docker overlay (`bot.host="minecraft"`, `ws_url="ws://mc-bot:8765"`) |
+| `configs/minecraft/runner.toml` | Runner config; `random_actions=true` default for v0.5 baseline-capture |
+
 ---
 
 ## Level 3: Component Diagram
@@ -1773,6 +1901,193 @@ $ scripts/mc_self_play.sh --gpu --detach
   deselected by `addopts`). Drives `train_continuous` against a
   pre-seeded trajectory dir + asserts atomic versioned-bundle layout
   + manifest bump within a 60s budget.
+
+---
+
+### 3.10.12 Block-grid observation pipeline (v0.5 Phase 1, 2026-05-21)
+
+Closes the hidden contract violation v0.4 shipped with: `mc-bot`
+emitted 31 floats, `MuZeroConfig` required 920. v0.5 Phase 1 extends
+the bot to emit an ego-centric `11×11×1×7` block-grid prefix (847
+floats) + 73 flat features = 920 total, matching MuZero's
+`grid_flat_dim + vector_dim` split.
+
+```
+┌───────────── mc-bot Hello (v0.5 extension) ─────────────┐
+│ schema_version │ action_count │ obs_dim │ schema_id     │
+│  1             │  12          │  920    │  sha256(...)  │
+│                                                          │
+│ grid_shape: {                                            │
+│   height: 11, width: 11, depth: 1,                       │
+│   channels: 7, vector_dim: 73                            │
+│ }                                                        │
+└──────────────────────┬───────────────────────────────────┘
+                       │
+                       ▼ runner cross-check (mc_env::connect)
+        config.observation.expected_grid_shape == server.grid_shape
+        AND derived = h*w*d*ch + vector_dim == server.obs_dim
+                       │
+                       ▼ refuses to start if either mismatches
+                  RunnerError::HandshakeMismatch
+```
+
+**Channel order pinning** (`crates/forge-env-mc/src/protocol.rs::
+BLOCK_FEATURE_CHANNELS`):
+
+```rust
+pub const BLOCK_FEATURE_CHANNELS: [&str; 7] = [
+    "block_type_hash", "light_level", "hardness", "is_solid",
+    "is_liquid", "is_dangerous", "biome_id_hash",
+];
+```
+
+Three coordinated cross-language tests pin the order:
+
+- `crates/forge-env-mc/src/protocol.rs::tests::xlang_block_feature_channels_pinned_to_known_good`
+- `mc-bot/test/observation_grid.test.js::feature channel order pin`
+- `tests/python/training/test_muzero_mc_replay.py` (channel-index slicing)
+
+Drift on any side fails the corresponding test simultaneously,
+forcing a coordinated PR. Per-tile features pass through a
+`finiteNumber` coercion against NaN gradient propagation; block-name
+strings are truncated to `MAX_BLOCK_NAME_LENGTH = 256` chars
+(security audit MEDIUM-3) before hashing.
+
+### 3.10.13 Capture-baseline subcommand flow (v0.5 Phase 1, 2026-05-21)
+
+```
+operator
+   │
+   ▼
+python -m forge.training.muzero_mc.cli capture-baseline \
+       --variant random|trained --episodes N --out PATH
+   │
+   ▼ argparse → _run_capture_loop()
+   │
+   ├── _scrape_metrics(metrics_url) ────────► forge_mc_episode_total counter
+   │   (polls /metrics every poll_interval_secs until target hit)
+   │
+   ├── _load_trajectories(trajectory_dir)
+   │   (reads ep-*.json[.gz] from per-variant dir)
+   │
+   ├── _summarize_episodes()
+   │   (per-episode reward/steps + summary counters/gauges
+   │    + manifest_versions_seen)
+   │
+   └── snapshot JSON ► PATH
+          │
+          ▼
+   scripts/mc_plot_baseline.py --random ... --trained ... --out report.md
+          │
+          ▼
+   Markdown report + matplotlib PNGs (reward curve, episode length,
+   reward histogram). `--no-plots` skips matplotlib for hosts without it.
+```
+
+Per-variant trajectory dirs (`trajectories.random/`,
+`trajectories.trained/`) prevent the trainer's `_trim_replay_buffer`
+from evicting baseline files mid-capture (peer-review #5).
+
+### 3.10.14 Docker runner image + env.docker.toml overlay (v0.5 Phase 1, 2026-05-21)
+
+```
+build:
+   docker build -f docker/mc-runner.Dockerfile -t forge-mc-runner:dev .
+        │
+        ▼
+   rust:1.93-bookworm builder
+        │
+        ├── --features mc-live        (random-baseline-only; 135 MB image)
+        └── --features mc-live-bundled (trained-mode; requires re-enabling
+                                        the commented-out ONNX-runtime
+                                        install block in the Dockerfile.
+                                        Deferred — `ort` rc.12 ABI churn.)
+                │
+                ▼
+        debian:bookworm-slim runtime
+                │
+                ▼
+        forge-mc-runner:dev (entrypoint: /usr/local/bin/forge-mc-runner)
+
+run:
+   docker compose -f docker/compose.minecraft.yml --env-file ... up -d runner
+        │
+        ▼ compose mounts:
+        - configs/minecraft/        → /app/configs/        (read-only)
+        - configs/minecraft/        → /configs/minecraft/  (read-only; bot's DEFAULT_CONFIG_DIR)
+        - configs/minecraft/env.docker.toml → /app/configs/env.toml
+                                              /configs/minecraft/env.toml
+                                              (read-only single-file overlay
+                                               with docker DNS hostnames:
+                                               bot.host = "minecraft"
+                                               ws_url = "ws://mc-bot:8765")
+        - models/                   → /app/models           (read-write)
+        - trajectories.<variant>/   → /app/trajectories     (read-write)
+
+Local-dev (no docker):
+   env.toml is the local-dev default — bot.host = "127.0.0.1",
+   ws_url = "ws://127.0.0.1:8765". Operators running the bot natively
+   without docker don't mount env.docker.toml; they get the loopback
+   defaults out of the box.
+```
+
+The Rust runner refactor splits the trained-mode path into
+`live::run_live_trained()` feature-gated behind `onnx-reload`; the
+random-baseline path (`run_live_random()`) compiles cleanly with
+just `--features mc-live` (no ORT dependency). This dodges the
+`ort 2.0.0-rc.12` transitive-dep cascade (ureq 3.x TLS feature,
+onnxruntime ABI drift, rustc 1.93 MSRV chain from `fixed`/`icu_*`).
+
+### 3.10.15 Manual baseline path + handshake probe (v0.5 Phase 1, 2026-05-21)
+
+Stand-in for the (currently mc-live-bundled-blocked) Rust runner.
+Two Python scripts share a stdlib-only RFC 6455 WebSocket client
+(`scripts/_ws_client.py`):
+
+```
+scripts/v05_handshake_probe.py
+    │
+    ▼ open_ws + recv_text (single frame)
+    │
+    ▼ asserts:
+    │   - hello.type == "hello"
+    │   - hello.grid_shape is not None
+    │   - derived_obs_dim == hello.obs_dim
+    │   - hello.obs_dim == EXPECTED_OBS_DIM (920)
+    │
+    ▼ exit codes: 0 / 2 / 3 / 4 (typed for CI gating)
+
+scripts/v05_manual_baseline.py
+    │
+    ▼ open_ws + Hello + drive N episodes via reset / step / close
+    │   - random action sampling per the bot's advertised action_count
+    │   - per-step error tolerance: server-side INTERNAL errors mark
+    │     the episode truncated and continue (the bot's mineflayer
+    │     connection still needs a manual restart between captures —
+    │     Phase-2 auto-reconnect work)
+    │
+    ▼ snapshot JSON schema-compat with `mc_plot_baseline.py` consumer
+      (includes summary_counters/gauges, manifest_versions_seen,
+       prometheus_snapshot=`""`, trajectory_dir, per_episode list)
+```
+
+Security cap (audit HIGH-1): `_ws_client.recv_text` refuses any
+inbound frame whose `payload_len` exceeds
+`DEFAULT_MAX_FRAME_BYTES = 64 MiB` BEFORE the recv-loop allocates
+— a hostile bot sending the u64-max payload_len header (~9 EiB)
+would otherwise crash the script via heap exhaustion.
+
+**First-real-run evidence** lives in:
+
+- `docs/results/v0.5-first-real-run.md` — full writeup
+- `docs/results/v0.5-first-real-run-baseline.json` — long run
+  (4 episodes attempted, 3 completed before bot disconnect)
+- `docs/results/v0.5-first-real-run-baseline-v2.json` — hardened
+  run (10 episodes with error-tolerance, 1 with real rollout)
+
+The v0.5 grid_shape handshake has been verified end-to-end against
+a real `itzg/minecraft-server` — first time anyone has actually
+brought the v0.5 stack up against a real Minecraft server.
 
 ---
 

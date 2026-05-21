@@ -73,8 +73,7 @@ try:
     from forge_env.wrappers import FlattenObservationWrapper, RecordEpisodeStatistics, TimeLimit
 except ImportError as exc:
     logger.error(
-        "forge_env not found: %s\n"
-        "Build with: cd crates/forge-python && maturin develop",
+        "forge_env not found: %s\nBuild with: cd crates/forge-python && maturin develop",
         exc,
     )
     sys.exit(1)
@@ -82,8 +81,10 @@ except ImportError as exc:
 try:
     from forge_env.utils import seed_everything
 except ImportError:
+
     def seed_everything(seed: int) -> None:  # type: ignore[misc]
         import random
+
         random.seed(seed)
         np.random.seed(seed)
 
@@ -115,24 +116,28 @@ def _build_argparser(defaults: dict[str, Any]) -> argparse.ArgumentParser:
         description="CleanRL PPO for FORGE environments",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--config", type=Path, default=_DEFAULT_CONFIG_PATH,
-                   help="Path to training TOML config file.")
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=_DEFAULT_CONFIG_PATH,
+        help="Path to training TOML config file.",
+    )
 
     # Env
     p.add_argument("--env-width", type=int, default=32, help="Grid world width.")
     p.add_argument("--env-height", type=int, default=32, help="Grid world height.")
     p.add_argument("--max-steps", type=int, default=500, help="Max steps per episode.")
-    p.add_argument("--n-envs", type=int, default=hp.get("n_envs", 1),
-                   help="Number of parallel envs.")
+    p.add_argument(
+        "--n-envs", type=int, default=hp.get("n_envs", 1), help="Number of parallel envs."
+    )
     p.add_argument("--seed", type=int, default=0, help="Global random seed.")
 
     # PPO hyperparams
-    p.add_argument("--total-timesteps", type=int,
-                   default=hp.get("total_timesteps", 1_000_000))
-    p.add_argument("--learning-rate", type=float,
-                   default=hp.get("learning_rate", 3e-4))
-    p.add_argument("--n-steps", type=int, default=hp.get("n_steps", 2048),
-                   help="Steps per env per rollout.")
+    p.add_argument("--total-timesteps", type=int, default=hp.get("total_timesteps", 1_000_000))
+    p.add_argument("--learning-rate", type=float, default=hp.get("learning_rate", 3e-4))
+    p.add_argument(
+        "--n-steps", type=int, default=hp.get("n_steps", 2048), help="Steps per env per rollout."
+    )
     p.add_argument("--batch-size", type=int, default=hp.get("batch_size", 64))
     p.add_argument("--n-epochs", type=int, default=hp.get("n_epochs", 10))
     p.add_argument("--gamma", type=float, default=hp.get("gamma", 0.99))
@@ -140,25 +145,32 @@ def _build_argparser(defaults: dict[str, Any]) -> argparse.ArgumentParser:
     p.add_argument("--clip-range", type=float, default=hp.get("clip_range", 0.2))
     p.add_argument("--ent-coef", type=float, default=hp.get("ent_coef", 0.01))
     p.add_argument("--vf-coef", type=float, default=hp.get("vf_coef", 0.5))
-    p.add_argument("--max-grad-norm", type=float,
-                   default=hp.get("max_grad_norm", 0.5))
+    p.add_argument("--max-grad-norm", type=float, default=hp.get("max_grad_norm", 0.5))
 
     # Logging
     p.add_argument("--log-freq", type=int, default=log_cfg.get("log_freq", 1000))
-    p.add_argument("--logger", choices=["none", "wandb", "mlflow", "tensorboard"],
-                   default="none", help="Experiment tracking backend.")
-    p.add_argument("--wandb-project", type=str, default="forge-ppo",
-                   help="W&B project name (only used when --logger=wandb).")
-    p.add_argument("--log-dir", type=str, default="runs/forge_ppo",
-                   help="TensorBoard / MLflow log directory.")
+    p.add_argument(
+        "--logger",
+        choices=["none", "wandb", "mlflow", "tensorboard"],
+        default="none",
+        help="Experiment tracking backend.",
+    )
+    p.add_argument(
+        "--wandb-project",
+        type=str,
+        default="forge-ppo",
+        help="W&B project name (only used when --logger=wandb).",
+    )
+    p.add_argument(
+        "--log-dir", type=str, default="runs/forge_ppo", help="TensorBoard / MLflow log directory."
+    )
 
     # Curriculum
-    p.add_argument("--curriculum", action="store_true",
-                   default=curr_cfg.get("enabled", False))
-    p.add_argument("--curriculum-target", type=float,
-                   default=curr_cfg.get("target_success_rate", 0.7))
-    p.add_argument("--curriculum-window", type=int,
-                   default=curr_cfg.get("window_size", 100))
+    p.add_argument("--curriculum", action="store_true", default=curr_cfg.get("enabled", False))
+    p.add_argument(
+        "--curriculum-target", type=float, default=curr_cfg.get("target_success_rate", 0.7)
+    )
+    p.add_argument("--curriculum-window", type=int, default=curr_cfg.get("window_size", 100))
 
     return p
 
@@ -276,6 +288,7 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
     if args.logger != "none":
         try:
             from forge.training.loggers import make_logger
+
             logger_kwargs: dict[str, Any]
             if args.logger == "wandb":
                 logger_kwargs = {"project": args.wandb_project}
@@ -307,8 +320,10 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
     # Flatten helper that also handles dict obs
     def _flatten(raw_obs: Any) -> torch.Tensor:
         if isinstance(raw_obs, dict):
-            parts = [np.asarray(raw_obs[k], dtype=np.float32).reshape(args.n_envs, -1)
-                     for k in sorted(raw_obs.keys())]
+            parts = [
+                np.asarray(raw_obs[k], dtype=np.float32).reshape(args.n_envs, -1)
+                for k in sorted(raw_obs.keys())
+            ]
             flat = np.concatenate(parts, axis=-1)
         else:
             flat = np.asarray(raw_obs, dtype=np.float32).reshape(args.n_envs, -1)
@@ -331,13 +346,9 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
             actions_buf[step] = action
             log_probs_buf[step] = log_prob
 
-            raw_obs, reward, terminated, truncated, infos = vec_env.step(
-                action.cpu().numpy()
-            )
+            raw_obs, reward, terminated, truncated, infos = vec_env.step(action.cpu().numpy())
             rewards_buf[step] = torch.tensor(reward, device=device)
-            current_done = torch.tensor(
-                (terminated | truncated).astype(np.float32), device=device
-            )
+            current_done = torch.tensor((terminated | truncated).astype(np.float32), device=device)
             current_obs = _flatten(raw_obs)
 
             # Collect episode statistics
@@ -352,15 +363,9 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
         advantages = torch.zeros_like(rewards_buf, device=device)
         last_gae = torch.zeros(args.n_envs, device=device)
         for t in reversed(range(rollout_steps)):
-            next_non_terminal = 1.0 - (
-                current_done if t == rollout_steps - 1 else dones_buf[t + 1]
-            )
+            next_non_terminal = 1.0 - (current_done if t == rollout_steps - 1 else dones_buf[t + 1])
             next_val = next_value if t == rollout_steps - 1 else values_buf[t + 1]
-            delta = (
-                rewards_buf[t]
-                + args.gamma * next_val * next_non_terminal
-                - values_buf[t]
-            )
+            delta = rewards_buf[t] + args.gamma * next_val * next_non_terminal - values_buf[t]
             last_gae = delta + args.gamma * args.gae_lambda * next_non_terminal * last_gae
             advantages[t] = last_gae
         returns = advantages + values_buf
@@ -388,9 +393,7 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
                     mb_advantages.std() + 1e-8
                 )
 
-                _, new_log_prob, entropy, new_value = model.get_action_and_value(
-                    mb_obs, mb_actions
-                )
+                _, new_log_prob, entropy, new_value = model.get_action_and_value(mb_obs, mb_actions)
                 ratio = (new_log_prob - mb_old_log_probs).exp()
 
                 pg_loss1 = -mb_advantages * ratio
@@ -414,7 +417,10 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
             mean_return = np.mean(episode_returns[-100:]) if episode_returns else 0.0
             logger.info(
                 "update=%d global_step=%d fps=%d mean_ep_return=%.3f",
-                update, global_step, fps, mean_return,
+                update,
+                global_step,
+                fps,
+                mean_return,
             )
             if forge_logger is not None:
                 forge_logger.log(

@@ -227,13 +227,27 @@ class TeacherTraceReader:
     def _read_file(self, path: Path) -> Any:
         import gzip
 
-        # gzip.open and the builtin open have different `mode` overload
-        # signatures, but the ternary picks one shape per call so mypy is
-        # happy without an explicit annotation.
-        opener = gzip.open if path.suffix == ".gz" else open
-        with opener(path, "rt", encoding="utf-8") as f:
-            for raw_line in f:
-                line = raw_line.strip()
-                if not line:
-                    continue
-                yield TeacherDecisionTrace(**json.loads(line))
+        # gzip.open and builtin open have different `mode` overload
+        # signatures that mypy can't unify when stored in a single
+        # variable (pre-existing failure surfaced when CI's mypy
+        # gate began scanning `scripts/` in v0.5). Split the open
+        # call by suffix so each branch hits a single overload —
+        # both gzip.open and Path.open accept the same `with` shape.
+        if path.suffix == ".gz":
+            with gzip.open(path, "rt", encoding="utf-8") as f:
+                yield from self._iter_trace_lines(f)
+        else:
+            with path.open(encoding="utf-8") as f:
+                yield from self._iter_trace_lines(f)
+
+    @staticmethod
+    def _iter_trace_lines(handle: Any) -> Any:
+        """Yield `TeacherDecisionTrace` records from a line-oriented
+        text file handle. Extracted so the gzip/plain branches
+        in `_read_file` share one parsing loop.
+        """
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            yield TeacherDecisionTrace(**json.loads(line))

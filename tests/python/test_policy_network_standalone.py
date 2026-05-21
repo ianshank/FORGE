@@ -101,18 +101,14 @@ class TestActorCriticNetworkStandalone:
 
         from forge.models.policy_network import ActorCriticNetwork
 
-        net1 = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net1 = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         obs = torch.randn(1, OBS_DIM)
         logits1, val1 = net1.forward(obs)
 
         path = str(tmp_path / "model.pt")
         net1.save(path)
 
-        net2 = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net2 = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         net2.load(path)
         logits2, val2 = net2.forward(obs)
 
@@ -155,9 +151,7 @@ class TestActorCriticNetworkStandalone:
 
         from forge.models.policy_network import ActorCriticNetwork
 
-        net = ActorCriticNetwork(
-            obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES
-        )
+        net = ActorCriticNetwork(obs_dim=OBS_DIM, action_dim=ACTION_DIM, hidden_sizes=HIDDEN_SIZES)
         params = net.parameters()
         assert isinstance(params, list)
         assert len(params) > 0

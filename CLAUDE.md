@@ -6,7 +6,7 @@
 - `cargo clippy --workspace -- -D warnings` — Lint (must pass with zero warnings)
 - `cargo fmt --check` — Format check
 - `cargo bench -p forge-bench` — Run benchmarks
-- `pytest tests/python/ -v` — Run Python tests (requires `maturin develop` first)
+- `python -m pytest tests/python/ -v` — Run Python tests using the local environment (e.g. Python 3.11.9) to bind core dependencies like `onnx`, `torch` and `onnxruntime` (requires `maturin develop` first)
 - `cd mc-bot && npm test` — Run Node-side mc-bot tests (no install required for the dep-free modules; `npm install` for mineflayer + Biome)
 - `cd mc-bot && npm run lint` — Biome lint + format check on the JS surface
 - `cargo run -p forge-mc-runner -- --dry-run --episodes 1` — Smoke-test the runner binary without docker / Minecraft (CI: `forge-mc-runner-bin` job)
@@ -21,11 +21,18 @@
 - `pytest tests/python/integration/ -m minecraft_e2e -v` — Run the opt-in compose-stack E2E (requires docker; never runs on a default `pytest` invocation)
 - `python -m forge.training.muzero_mc.cli compute-schema-id --action-map configs/minecraft/action_map.toml --rewards configs/minecraft/rewards.toml --quiet` — v0.4: print the canonical 64-hex schema_id to stdout (stderr-bound logs). Used by `mc_self_play.sh` to populate `FORGE_MC_SCHEMA_ID` before compose-up
 - `python -m forge.training.muzero_mc.cli train --input trajectories/ --out models/ --schema-id <sha> --obs-dim N --action-dim M --continuous --round-iters 10 --round-poll-sleep 5 --max-trajectories 200 --max-bundle-versions 5 --device cpu` — v0.4 continuous trainer: yields one round summary per loop iteration, polls trajectory dir for new files (cold-start safe), exports an atomic `v{NNNNNNNN}/` bundle subdir + bumps manifest each round. SIGINT-clean shutdown
-- `cargo build -p forge-mc-runner --features mc-live` — v0.4 live runner build (`mc-live` transitively pulls `onnx-reload` + `forge-env-mc` + ONNX Runtime — no need to double-flag). CI builds this for the binary smoke job
+- `cargo build -p forge-mc-runner --features mc-live` — v0.5 live runner build. NOTE: `mc-live` no longer implies `onnx-reload` (v0.5 split — the random-baseline path doesn't need ORT). For trained-mode runs add `--features onnx-reload`, or use the convenience aggregate `--features mc-live-bundled` which adds `onnx-reload` + `ort/load-dynamic` for the docker image
 - `cargo build -p forge-mc-runner --features live-test-stub` — v0.4 opt-in test-stub mode for T7 follow-ups (real `OnnxMuZeroModel` against a mock env). Transitively pulls `onnx-reload`
 - `scripts/mc_self_play.sh [--gpu] [--detach]` — v0.4 one-command orchestrator: preflights compose v2, computes schema_id via `trainer-bootstrap` one-shot, exports `FORGE_MC_SCHEMA_ID`, runs `bootstrap` if needed, brings up self-play profile. `--gpu` layers `compose.minecraft.gpu.yml`
 - `scripts/mc_self_play.sh --dry-run` — Print every step's resolved docker-compose argv to STDERR + exit 0 (used by `tests/python/integration/test_mc_self_play_unit.py`)
 - `pytest tests/python/integration/test_minecraft_self_improvement_smoke.py -v` — v0.4 self-improvement smoke (PR-CI gate; runs by default, skips if torch+onnx extras missing)
+- `python -m forge.training.muzero_mc.cli capture-baseline --variant random|trained --episodes 100 --out baseline_<variant>.json [--metrics-url URL] [--trajectory-dir PATH] [--timeout-secs N] [--dry-run]` — v0.5 first-real-run baseline capture. Drives N episodes against a running stack, dumps snapshot JSON the plotter consumes. `scripts/mc_capture_baseline.py` is a thin shim
+- `python scripts/mc_plot_baseline.py --random baseline_random.json --trained baseline_trained.json --out docs/results/v0.5-first-real-run.md [--no-plots]` — v0.5 Markdown report + matplotlib PNGs. Sources per-episode rewards from trajectory JSON (NOT Prometheus aggregates). `--no-plots` runs table-only on hosts without matplotlib
+- `cargo run -p forge-mc-runner -- --random-actions --mc-config configs/minecraft/env.toml` — v0.5 random-actions runtime switch. Bypasses MCTS entirely; live.rs skips the ONNX bundle load. Used by `capture-baseline --variant random` via the env-var ladder
+- `docker build -f docker/mc-runner.Dockerfile -t forge-mc-runner:dev .` — v0.5 runner image (rust:1.93-bookworm builder, 135 MB debian:bookworm-slim runtime, builds with `--features mc-live` — random-baseline-only). For trained mode rebuild with `--features mc-live-bundled` (requires re-enabling the commented-out ONNX-runtime install block in the Dockerfile)
+- `docker compose -f docker/compose.minecraft.yml --env-file docker/compose.minecraft.env up -d minecraft mc-bot runner` — v0.5 full stack bring-up. Compose mounts `configs/minecraft/env.docker.toml` over `env.toml` so the bot uses docker DNS hostnames (`bot.host = "minecraft"`, `ws_url = "ws://mc-bot:8765"`) instead of the local-dev `127.0.0.1` defaults
+- `python scripts/v05_handshake_probe.py 127.0.0.1 8765` — v0.5 stdlib-only WS handshake probe. Connects to the live mc-bot, reads `Hello`, validates the v0.5 contract end-to-end (`obs_dim=920`, `grid_shape={11,11,1,7,73}`). Returns EXIT_OK / EXIT_GRID_SHAPE_MISSING / EXIT_GRID_SHAPE_MISMATCH for CI gating
+- `python scripts/v05_manual_baseline.py --episodes N --max-steps-per-episode M --out PATH` — v0.5 Python-driven random baseline (stand-in for the Rust runner's `--random-actions` path while the trained-mode docker image is being plumbed through). Output JSON schema-compatible with `mc_plot_baseline.py`. Shares the `scripts/_ws_client.py` RFC 6455 frame parser with the handshake probe
 
 ## Architecture
 - **Workspace**: Multi-crate Rust workspace under `crates/`

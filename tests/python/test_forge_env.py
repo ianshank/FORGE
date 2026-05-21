@@ -77,10 +77,12 @@ def test_import_utils() -> None:
 # Native-dependent tests — skip gracefully when Rust extension is unavailable
 # ---------------------------------------------------------------------------
 
+
 def _skip_if_no_native() -> None:
     """Skip the calling test when the forge_env native extension is not built."""
     try:
         from forge_env import gymnasium_env
+
         if gymnasium_env._NativeEnv is None:
             pytest.skip("forge_env running in pure-Python mode (no native backend)")
     except ImportError as exc:
@@ -312,7 +314,9 @@ def test_normalize_reward_wrapper_pure() -> None:
 
     for _ in range(100):
         _obs, reward, _term, _trunc, _info = env.step(0)
-        assert -DEFAULT_REWARD_CLIP <= reward <= DEFAULT_REWARD_CLIP, f"Normalised reward out of range: {reward}"
+        assert -DEFAULT_REWARD_CLIP <= reward <= DEFAULT_REWARD_CLIP, (
+            f"Normalised reward out of range: {reward}"
+        )
 
 
 def test_record_episode_statistics_pure() -> None:
@@ -418,7 +422,9 @@ def test_normalize_reward_clips_extreme() -> None:
 
     for _ in range(50):
         _obs, reward, _term, _trunc, _info = env.step(0)
-        assert -DEFAULT_REWARD_CLIP <= reward <= DEFAULT_REWARD_CLIP, f"Normalised reward out of range: {reward}"
+        assert -DEFAULT_REWARD_CLIP <= reward <= DEFAULT_REWARD_CLIP, (
+            f"Normalised reward out of range: {reward}"
+        )
 
 
 def test_record_episode_statistics_resets_on_new_episode() -> None:
@@ -794,7 +800,8 @@ def test_benchmark_fps_resets_on_episode_end() -> None:
         """Dummy env that terminates every 3 steps."""
 
         def step(
-            self, action: int,
+            self,
+            action: int,
         ) -> tuple[dict[str, list[float]], float, bool, bool, dict[str, int]]:
             self._step_count += 1
             obs: dict[str, list[float]] = {"x": [1.0, 2.0], "y": [3.0]}

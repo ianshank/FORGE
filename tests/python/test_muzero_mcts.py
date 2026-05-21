@@ -1,4 +1,5 @@
 """Tests for MuZero MCTS planner and agent."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -108,16 +109,24 @@ class TestMuZeroMCTS:
         obs = np.random.randn(OBS_DIM).astype(np.float32)
 
         np.random.seed(42)
-        mcts_no_noise = MuZeroMCTS(model, MuZeroMCTSConfig(
-            num_simulations=10, add_exploration_noise=False,
-        ))
+        mcts_no_noise = MuZeroMCTS(
+            model,
+            MuZeroMCTSConfig(
+                num_simulations=10,
+                add_exploration_noise=False,
+            ),
+        )
         _, info_no = mcts_no_noise.search(obs, temperature=0.0)
 
         # With noise, the distribution may differ
         np.random.seed(99)
-        mcts_with_noise = MuZeroMCTS(model, MuZeroMCTSConfig(
-            num_simulations=10, add_exploration_noise=True,
-        ))
+        mcts_with_noise = MuZeroMCTS(
+            model,
+            MuZeroMCTSConfig(
+                num_simulations=10,
+                add_exploration_noise=True,
+            ),
+        )
         _, info_yes = mcts_with_noise.search(obs, temperature=0.0)
 
         # At minimum, both should produce valid results
@@ -230,9 +239,9 @@ class TestMuZeroAgent:
             "actions": np.random.randint(0, ACTION_DIM, (2, K)).astype(np.int64),
             "target_values": np.random.randn(2, K + 1).astype(np.float32),
             "target_rewards": np.random.randn(2, K).astype(np.float32),
-            "target_policies": np.random.dirichlet(
-                np.ones(ACTION_DIM), (2, K + 1)
-            ).astype(np.float32),
+            "target_policies": np.random.dirichlet(np.ones(ACTION_DIM), (2, K + 1)).astype(
+                np.float32
+            ),
         }
         metrics = agent.learn(batch)
         assert "loss" in metrics

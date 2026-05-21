@@ -11,20 +11,51 @@ Protocol v1 — JSON-only WebSocket. Wire format defined in
 ```
 mc-bot/
   src/
-    protocol.js     - ClientMsg parser + ServerMsg builders
-    action_map.js   - loads + validates action_map.toml; canonicalises
-    schema_id.js    - SHA256 over canonical action map (xlang-pinned)
+    protocol.js          - ClientMsg parser + ServerMsg builders
+                           (Hello may carry optional `grid_shape` since v0.5)
+    action_map.js        - loads + validates action_map.toml; canonicalises
+    schema_id.js         - SHA256 over canonical action map (xlang-pinned)
+    hash.js              - shared FNV-1a `stableStringHash` + `finiteNumber`
+    observation.js       - flat scalar observation vector + `flat_vector_dim` pad
+    observation_grid.js  - v0.5 ego-centric block-grid encoder
+                           (xlang-pinned `BLOCK_FEATURE_CHANNELS`)
     reward/
-      index.js      - composer over named built-ins
+      index.js           - composer over named built-ins
       builtins/
         survival.js
         inventory_acquired.js
         distance_to_goal.js
         health_delta.js
         composite.js
-    reset.js        - teleport-based episode reset (v1 strategy)
-  test/             - node:test suites (no install needed for these)
+    reset.js             - teleport-based episode reset (v1 strategy)
+  test/                  - node:test suites (no install needed for these)
 ```
+
+## v0.5 `[observation]` config knobs
+
+Every value below is read from the bot's TOML config (defaults at the
+right). No hard-coded literals at any call site.
+
+| Key | Default | Purpose |
+|---|---|---|
+| `include_block_grid` | `false` (JS) / `true` (env.toml) | Toggle the v0.5 block-grid prefix on the observation vector |
+| `grid_radius` | `5` | X/Z half-extent → 11 tiles per side |
+| `grid_height_radius` | `0` | Y half-extent (0 = single eye-level slice; matches MuZero 2D CNN) |
+| `grid_channels` | `7` | Per-tile feature count; MUST match `BLOCK_FEATURE_CHANNELS.length` |
+| `block_id_hash_mod` | `4096` | Modulus for `block_type_hash` channel |
+| `biome_id_hash_mod` | `256` | Modulus for `biome_id_hash` channel |
+| `grid_hardness_scale` | `10` | Normaliser for the `hardness` channel |
+| `dangerous_block_names` | `["lava", "fire", "magma_block", ...]` | Names the `is_dangerous` channel matches |
+| `flat_vector_dim` | unset (env.toml: `73`) | Zero-pad the flat suffix up to this length |
+| `expected_dim` | unset (env.toml: `920`) | Runner-side cross-check; reject Hello on mismatch |
+
+The bot's `Hello` handshake includes a `grid_shape` payload whenever
+`include_block_grid = true`, and the runner cross-checks it against
+`[observation.expected_grid_shape]` in `configs/minecraft/env.toml`.
+Reorder either side without coordinating the other and both the JS
+`BLOCK_FEATURE_CHANNELS` test and the Rust
+`xlang_block_feature_channels_pinned_to_known_good` test fail
+simultaneously.
 
 ## Tests
 
@@ -50,9 +81,30 @@ the canonical-form drift on both sides before bumping.
 - ✅ Reward registry with 5 built-ins (survival, inventory_acquired,
        distance_to_goal, health_delta, composite)
 - ✅ Reset strategy (teleport) with stub-bot tests
-- ⏳ `index.js` entry point + mineflayer wire-up (needs real MC server)
-- ⏳ prismarine-viewer integration
-- ⏳ End-to-end episode against a Paper Minecraft server
+- ✅ `index.js` entry point + mineflayer wire-up (v0.5 Phase 1 —
+       verified end-to-end against a real `itzg/minecraft-server`)
+- ✅ prismarine-viewer integration (browser viewer at :3007)
+- ✅ End-to-end episode against a real Minecraft server (v0.5 Phase 1
+       — see [`docs/results/v0.5-first-real-run.md`](../docs/results/v0.5-first-real-run.md))
+- ✅ v0.5 block-grid observation encoder (`observation_grid.js`) +
+       `Hello.grid_shape` cross-language pin
+- ⏳ Mineflayer auto-reconnect on MC-side tick timeout (Phase 2 —
+       known production-stability gap; the bot's WS layer stays UP
+       but the mineflayer connection enters a half-open state after
+       the first MC server-side exception, requiring a
+       `docker compose restart mc-bot` between captures today)
+
+## Docker vs local-dev hostnames
+
+The shipped `configs/minecraft/env.toml` uses local-dev defaults
+(`bot.host = "127.0.0.1"`, `ws_url = "ws://127.0.0.1:8765"`) so
+running the bot natively on the host works without edits.
+
+For docker compose runs, `docker/compose.minecraft.yml` mounts
+`configs/minecraft/env.docker.toml` over `env.toml` (single-file
+overlay) so the bot uses docker DNS hostnames (`bot.host =
+"minecraft"`, `ws_url = "ws://mc-bot:8766"`) automatically. No
+operator action required.
 
 See `docs/plans/minecraft_rl_integration_plan_v2.md` Phase 3 for the
 full design and the protocol contract.

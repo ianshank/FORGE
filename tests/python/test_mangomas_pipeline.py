@@ -1,4 +1,5 @@
 """Tests for the stage-based MangoMAS drone training pipeline."""
+
 from __future__ import annotations
 
 import json

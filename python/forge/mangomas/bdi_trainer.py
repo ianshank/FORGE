@@ -147,9 +147,7 @@ class BDIPreTrainer:
         ):
             ep_len = min(len(ep_obs), len(ep_actions), len(ep_rewards))
             episode_lengths.append(ep_len)
-            teacher_ep = (
-                (teacher_intentions or [[]])[ep_idx] if use_teacher else None
-            )
+            teacher_ep = (teacher_intentions or [[]])[ep_idx] if use_teacher else None
             for t in range(ep_len):
                 all_obs.append(ep_obs[t])
                 if use_teacher and teacher_ep is not None and t < len(teacher_ep):

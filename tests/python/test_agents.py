@@ -72,9 +72,7 @@ class TestMCTSNode:
         "visit_count,total_value,parent_visits",
         [(5, 3.0, 20), (1, 0.5, 2), (100, 50.0, 1000)],
     )
-    def test_ucb1_visited(
-        self, visit_count: int, total_value: float, parent_visits: int
-    ) -> None:
+    def test_ucb1_visited(self, visit_count: int, total_value: float, parent_visits: int) -> None:
         """Visited nodes should return a finite UCB1 score."""
         node = MCTSNode()
         node.visit_count = visit_count

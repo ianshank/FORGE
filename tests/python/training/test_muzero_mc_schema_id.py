@@ -130,12 +130,8 @@ def test_rewards_canonical_sha256_sorts_nested_table_keys() -> None:
     serialise in alphabetical order. Verify by reordering the nested
     dict and asserting hash invariance.
     """
-    a = rewards_canonical_sha256(
-        {"reward": [{"kind": "x", "target": {"x": 1, "y": 2, "z": 3}}]}
-    )
-    b = rewards_canonical_sha256(
-        {"reward": [{"kind": "x", "target": {"z": 3, "y": 2, "x": 1}}]}
-    )
+    a = rewards_canonical_sha256({"reward": [{"kind": "x", "target": {"x": 1, "y": 2, "z": 3}}]})
+    b = rewards_canonical_sha256({"reward": [{"kind": "x", "target": {"z": 3, "y": 2, "x": 1}}]})
     assert a == b
 
 

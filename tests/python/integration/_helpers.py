@@ -13,13 +13,16 @@ module-level constants — single source of truth.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import shutil
 import subprocess
 import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
+    from pathlib import Path
 
 #: Maximum seconds to wait for a polling predicate to flip true.
 #: The longest realistic compose-stack startup we've seen is ~60s
@@ -144,3 +147,61 @@ def wait_until(
     if last_error is not None:
         msg += f"; last predicate error: {last_error!r}"
     raise TimeoutError(msg)
+
+
+def get_posix_path(path: Path) -> str:
+    """Convert a pathlib.Path to a POSIX path format suitable for the shell.
+
+    On Windows, if WSL bash is used, converts C:\\foo to /mnt/c/foo.
+    Otherwise, returns the standard path using forward slashes.
+    """
+    if os.name != "nt":
+        return path.as_posix()
+
+    bash = shutil.which("bash")
+    if not bash:
+        return path.as_posix()
+
+    # Check if the bash is WSL bash (usually C:\\WINDOWS\\system32\\bash.exe or Microsoft store)
+    is_wsl = "system32\\bash.exe" in bash.lower() or "windowsapps" in bash.lower()
+
+    if is_wsl:
+        parts = path.resolve().parts
+        if parts and len(parts[0]) >= 2 and parts[0][1] == ":":
+            drive = parts[0][0].lower()
+            return f"/mnt/{drive}/" + "/".join(parts[1:])
+
+    return path.as_posix()
+
+
+@contextlib.contextmanager
+def lf_normalized_script(script_path: Path) -> Iterator[str]:
+    """Context manager to ensure a bash script has LF line endings.
+
+    Creates a temporary script in the same folder if on Windows and using WSL bash.
+    Yields the POSIX-compliant path of the script to execute.
+    """
+    if os.name != "nt":
+        yield script_path.as_posix()
+        return
+
+    bash = shutil.which("bash")
+    if not bash:
+        yield script_path.as_posix()
+        return
+
+    # Check if WSL bash is used
+    is_wsl = "system32\\bash.exe" in bash.lower() or "windowsapps" in bash.lower()
+
+    if not is_wsl:
+        yield script_path.as_posix()
+        return
+
+    content = script_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    temp_script = script_path.parent / f".tmp_{script_path.name}"
+    temp_script.write_bytes(content.encode("utf-8"))
+    try:
+        yield get_posix_path(temp_script)
+    finally:
+        if temp_script.exists():
+            temp_script.unlink()

@@ -1,4 +1,5 @@
 """Tests for forge.utils.weight_loader module."""
+
 from __future__ import annotations
 
 from dataclasses import fields

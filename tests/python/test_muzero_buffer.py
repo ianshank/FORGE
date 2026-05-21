@@ -1,4 +1,5 @@
 """Tests for MuZero replay buffer."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -23,9 +24,7 @@ def _make_game(length: int = 10) -> GameHistory:
         history.actions.append(np.random.randint(0, ACTION_DIM))
         history.rewards.append(float(np.random.randn()))
         history.root_values.append(float(np.random.randn()))
-        history.child_visits.append(
-            np.random.rand(ACTION_DIM).astype(np.float32)
-        )
+        history.child_visits.append(np.random.rand(ACTION_DIM).astype(np.float32))
         history.dones.append(i == length - 1)
     return history
 
@@ -115,7 +114,10 @@ class TestMuZeroReplayBuffer:
             buf.save_game(_make_game(20))
 
         batch = buf.sample_batch(
-            batch_size=8, num_unroll_steps=3, td_steps=5, discount=0.99,
+            batch_size=8,
+            num_unroll_steps=3,
+            td_steps=5,
+            discount=0.99,
         )
         assert batch["observations"].shape[0] == 8
         assert batch["actions"].shape == (8, 3)
@@ -130,7 +132,10 @@ class TestMuZeroReplayBuffer:
             buf.save_game(_make_game(10))
 
         batch = buf.sample_batch(
-            batch_size=4, num_unroll_steps=2, td_steps=3, discount=0.99,
+            batch_size=4,
+            num_unroll_steps=2,
+            td_steps=3,
+            discount=0.99,
         )
         assert batch["weights"].max() <= 1.0 + 1e-6
 

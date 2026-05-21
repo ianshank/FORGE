@@ -113,12 +113,8 @@ def train_with_gradients(
     obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=device)
     actions = torch.as_tensor(batch["actions"], dtype=torch.long, device=device)
     target_values = torch.as_tensor(batch["target_values"], dtype=torch.float32, device=device)
-    target_rewards = torch.as_tensor(
-        batch["target_rewards"], dtype=torch.float32, device=device
-    )
-    target_policies = torch.as_tensor(
-        batch["target_policies"], dtype=torch.float32, device=device
-    )
+    target_rewards = torch.as_tensor(batch["target_rewards"], dtype=torch.float32, device=device)
+    target_policies = torch.as_tensor(batch["target_policies"], dtype=torch.float32, device=device)
 
     optimizer.zero_grad()
 

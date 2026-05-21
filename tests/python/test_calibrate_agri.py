@@ -328,9 +328,7 @@ def test_export_toml_readable(tmp_path: Path) -> None:
     assert "disease_spread_rate" in data["agri"]
 
 
-def test_export_toml_exits_without_tomli_w(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_export_toml_exits_without_tomli_w(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cal, "_TOMLI_W_AVAILABLE", False)
     with pytest.raises(SystemExit):
         cal.export_toml(cal.CalibratedAgriConfig(), tmp_path / "out.toml")
@@ -403,10 +401,14 @@ def test_plantvillage_live_path_with_mock(tmp_path: Path, monkeypatch: pytest.Mo
     assert result["samples"] == 100
 
 
-def test_plantvillage_live_path_exception_handled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_plantvillage_live_path_exception_handled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Exceptions in the live path fall back to defaults."""
     monkeypatch.setattr(cal, "_DATASETS_AVAILABLE", True)
-    monkeypatch.setattr(cal, "_load_dataset", lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        cal, "_load_dataset", lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
 
     result = cal.analyse_plantvillage(tmp_path, dry_run=False)
     assert result["disease_spread_rate"] == cal.to_fixed(0.005)
@@ -422,9 +424,13 @@ def test_cropnet_live_path_with_mock(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert result["counties"] == 2200
 
 
-def test_cropnet_live_path_exception_handled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cropnet_live_path_exception_handled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(cal, "_HF_HUB_AVAILABLE", True)
-    monkeypatch.setattr(cal, "_hf_hub_download", lambda **_kwargs: (_ for _ in ()).throw(OSError("no network")))
+    monkeypatch.setattr(
+        cal, "_hf_hub_download", lambda **_kwargs: (_ for _ in ()).throw(OSError("no network"))
+    )
 
     result = cal.analyse_cropnet(tmp_path, dry_run=False)
     assert result["ndvi_scan_radius"] == 8
@@ -441,9 +447,13 @@ def test_karaagroai_live_path_with_mock(tmp_path: Path, monkeypatch: pytest.Monk
     assert result["images"] == 8784
 
 
-def test_karaagroai_live_path_exception_handled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_karaagroai_live_path_exception_handled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(cal, "_HF_HUB_AVAILABLE", True)
-    monkeypatch.setattr(cal, "_hf_hub_download", lambda **_kwargs: (_ for _ in ()).throw(OSError("timeout")))
+    monkeypatch.setattr(
+        cal, "_hf_hub_download", lambda **_kwargs: (_ for _ in ()).throw(OSError("timeout"))
+    )
 
     result = cal.analyse_karaagroai(tmp_path, dry_run=False)
     assert result["spray_radius"] == 3

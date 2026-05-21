@@ -184,9 +184,7 @@ class TestOpenAIProviderTokenCapture:
     def test_complete_captures_usage_tokens(self) -> None:
         provider = OpenAIProvider(api_key="dummy")
         fake_client = MagicMock()
-        fake_client.chat.completions.create.return_value = _fake_chat_response(
-            "hi", 11, 7
-        )
+        fake_client.chat.completions.create.return_value = _fake_chat_response("hi", 11, 7)
         provider._client = fake_client
         resp = provider.complete("hello", CompletionConfig(model="m"))
         assert resp.text == "hi"
@@ -197,9 +195,7 @@ class TestOpenAIProviderTokenCapture:
     def test_complete_forwards_optional_fields(self) -> None:
         provider = OpenAIProvider(api_key="dummy")
         fake_client = MagicMock()
-        fake_client.chat.completions.create.return_value = _fake_chat_response(
-            "x", 1, 1
-        )
+        fake_client.chat.completions.create.return_value = _fake_chat_response("x", 1, 1)
         provider._client = fake_client
         cfg = CompletionConfig(
             model="m",
@@ -218,9 +214,7 @@ class TestOpenAIProviderTokenCapture:
     def test_complete_does_not_send_optional_when_unset(self) -> None:
         provider = OpenAIProvider(api_key="dummy")
         fake_client = MagicMock()
-        fake_client.chat.completions.create.return_value = _fake_chat_response(
-            "x", 1, 1
-        )
+        fake_client.chat.completions.create.return_value = _fake_chat_response("x", 1, 1)
         provider._client = fake_client
         provider.complete("hi", CompletionConfig(model="m"))
         call_kwargs = fake_client.chat.completions.create.call_args.kwargs
@@ -244,14 +238,15 @@ class TestLMStudioProviderSync:
         provider = LMStudioProvider(model=lmstudio_model_id)
         assert provider._default_model == lmstudio_model_id
 
-    def test_complete_uses_lmstudio_provider_name_in_logs(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_complete_uses_lmstudio_provider_name_in_logs(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         provider = LMStudioProvider()
         fake_client = MagicMock()
-        fake_client.chat.completions.create.return_value = _fake_chat_response(
-            "ok", 4, 5
-        )
+        fake_client.chat.completions.create.return_value = _fake_chat_response("ok", 4, 5)
         provider._client = fake_client
         import logging
+
         caplog.set_level(logging.INFO, logger="forge.cognitive.providers")
         provider.complete("hi", CompletionConfig(model="qwen"))
         assert any("provider=lmstudio" in r.message for r in caplog.records)
@@ -289,9 +284,7 @@ class TestLMStudioProviderSync:
         sleeps: list[float] = []
         monkeypatch.setattr(providers_mod.time, "sleep", sleeps.append)
         # backoff_secs=1.0 + base=3.0 -> expected delays [1.0, 3.0] for 2 retries.
-        provider = LMStudioProvider(
-            max_retries=2, retry_backoff_secs=1.0, retry_backoff_base=3.0
-        )
+        provider = LMStudioProvider(max_retries=2, retry_backoff_secs=1.0, retry_backoff_base=3.0)
         fake_client = MagicMock()
         fake_client.chat.completions.create.side_effect = RuntimeError("boom")
         provider._client = fake_client

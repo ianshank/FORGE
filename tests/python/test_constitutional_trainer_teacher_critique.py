@@ -8,15 +8,18 @@ from forge.mangomas.config import ConstitutionalTrainerConfig
 from forge.mangomas.constitutional_trainer import ConstitutionalPreTrainer
 
 
-def _sample_inputs(n: int = 4) -> tuple[
-    np.ndarray, np.ndarray, np.ndarray, list[dict[str, float]]
-]:
+def _sample_inputs(n: int = 4) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict[str, float]]]:
     obs = np.zeros((n, 4), dtype=np.float32)
     actions = np.zeros((n,), dtype=np.int64)
     rewards = np.ones((n,), dtype=np.float32)
     obs_dicts: list[dict[str, float]] = [
-        {"battery": 0.9, "altitude": 0.2, "stamina_inverse": 0.0,
-         "boundary_distance": 0.5, "threat_proximity": 1.0}
+        {
+            "battery": 0.9,
+            "altitude": 0.2,
+            "stamina_inverse": 0.0,
+            "boundary_distance": 0.5,
+            "threat_proximity": 1.0,
+        }
         for _ in range(n)
     ]
     return obs, actions, rewards, obs_dicts
@@ -57,9 +60,7 @@ def test_teacher_critique_or_merged_with_rules() -> None:
 
 
 def test_penalty_recomputed_with_merged_violations() -> None:
-    trainer = ConstitutionalPreTrainer(
-        ConstitutionalTrainerConfig(penalty_weight=2.0)
-    )
+    trainer = ConstitutionalPreTrainer(ConstitutionalTrainerConfig(penalty_weight=2.0))
     obs, actions, rewards, obs_dicts = _sample_inputs(2)
     critiques = [{"battery_minimum": True, "speed_ceiling": True}, {}]
     dataset = trainer.build_dataset(

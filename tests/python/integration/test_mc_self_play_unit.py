@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from ._helpers import lf_normalized_script
+
 
 @pytest.fixture(scope="module")
 def repo_root() -> Path:
@@ -41,13 +43,14 @@ def _run_dry(script_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("bash not on PATH; mc_self_play.sh unit tests need POSIX shell")
-    return subprocess.run(
-        [bash, str(script_path), "--dry-run", *args],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    with lf_normalized_script(script_path) as posix_script:
+        return subprocess.run(
+            [bash, posix_script, "--dry-run", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
 
 
 def test_script_exists_and_is_executable(script_path: Path) -> None:
@@ -58,9 +61,8 @@ def test_script_exists_and_is_executable(script_path: Path) -> None:
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("bash not on PATH")
-    rc = subprocess.run(
-        [bash, "-n", str(script_path)], check=False, capture_output=True, text=True
-    )
+    with lf_normalized_script(script_path) as posix_script:
+        rc = subprocess.run([bash, "-n", posix_script], check=False, capture_output=True, text=True)
     assert rc.returncode == 0, f"bash -n failed: {rc.stderr}"
 
 
@@ -83,9 +85,12 @@ def test_dry_run_emits_bootstrap_call_when_manifest_missing(script_path: Path) -
     # The bootstrap sub-command lands in argv right after `--rm trainer-bootstrap`.
     assert "trainer-bootstrap" in combined
     assert "bootstrap" in combined
-    # `--obs-dim 31` and `--action-dim 12` are the defaults pinned in
-    # the script's env-var ladder (OBS_DIM / ACTION_DIM).
-    assert "--obs-dim 31" in combined
+    # v0.5 Phase 1: `--obs-dim 920` and `--action-dim 12` are the
+    # defaults pinned in the script's env-var ladder (OBS_DIM /
+    # ACTION_DIM).  T2 flipped OBS_DIM from 31 → 920 to match the
+    # block-grid observation contract; operators can re-set to 31
+    # for the legacy `include_block_grid = false` path.
+    assert "--obs-dim 920" in combined
     assert "--action-dim 12" in combined
 
 

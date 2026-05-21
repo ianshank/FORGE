@@ -1,4 +1,5 @@
 """Fast tests for the top-level training CLI parser."""
+
 from __future__ import annotations
 
 import pytest

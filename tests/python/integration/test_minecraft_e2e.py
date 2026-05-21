@@ -12,59 +12,52 @@ with docker running.
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Callable  # noqa: TC003 — used in test signatures
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from ._helpers import POLL_TIMEOUT_SECS, wait_until
+from forge.utils.metrics import (
+    fetch_prometheus_metrics,
+    scrape_counter,
+    scrape_gauge,
+)
+
+from ._helpers import POLL_TIMEOUT_SECS, lf_normalized_script, wait_until
 
 pytestmark = pytest.mark.minecraft_e2e
 
 
 def _fetch_metrics(url: str) -> str:
-    """Return the body of the `/metrics` endpoint.
+    """Thin wrapper around :func:`forge.utils.metrics.fetch_prometheus_metrics`
+    kept for backwards-compat with this test file's existing call sites.
 
-    Uses the stdlib `urllib` so the test suite doesn't pull `httpx`
-    or `requests` as a hard dep for the cheap GET case.
+    Re-raises the underlying ``URLError`` as ``RuntimeError`` because
+    the existing assertions assume that flavor of error.
     """
     import urllib.error
-    import urllib.request
 
-    req = urllib.request.Request(url, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            body: bytes = resp.read()
+        return fetch_prometheus_metrics(url)
     except urllib.error.URLError as e:
         raise RuntimeError(f"metrics fetch failed: {e}") from e
-    return body.decode("utf-8", errors="replace")
 
 
 def _scrape_counter(metrics_text: str, name: str) -> float:
-    """Extract a counter value from the Prometheus text format.
-
-    Matches `forge_mc_episode_total 7` lines (counter without labels);
-    returns 0.0 if the counter hasn't been incremented yet (Prometheus
-    convention).
-    """
-    pattern = re.compile(rf"^{re.escape(name)}\s+(\S+)\s*$", re.MULTILINE)
-    m = pattern.search(metrics_text)
-    if m is None:
-        return 0.0
-    try:
-        return float(m.group(1))
-    except ValueError:
-        return 0.0
+    """Backwards-compat alias for :func:`forge.utils.metrics.scrape_counter`."""
+    return scrape_counter(metrics_text, name)
 
 
 def _scrape_gauge(metrics_text: str, name: str) -> float:
-    """Same as :func:`_scrape_counter` but for gauges — semantically
-    identical extraction (Prometheus text format treats counters and
-    gauges identically wire-wise; the type is metadata only).
+    """Backwards-compat alias for :func:`forge.utils.metrics.scrape_gauge`.
+
+    Returns 0.0 for missing gauges to preserve the test file's prior
+    semantics; new callers should use :func:`scrape_gauge` directly
+    so they can distinguish absent metrics (``None``) from zero.
     """
-    return _scrape_counter(metrics_text, name)
+    value = scrape_gauge(metrics_text, name)
+    return value if value is not None else 0.0
 
 
 def test_two_episode_loop_writes_trajectories(
@@ -155,14 +148,15 @@ def test_compose_down_is_idempotent(
     # Running --down once on the live stack is the canonical
     # teardown; running it again must still exit 0.
     for _ in range(2):
-        completed = subprocess.run(
-            ["bash", str(script), "--down"],
-            cwd=repo_root,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        with lf_normalized_script(script) as posix_script:
+            completed = subprocess.run(
+                ["bash", posix_script, "--down"],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
         if completed.returncode != 0:
             pytest.fail(
                 f"mc_run.sh --down exited {completed.returncode}; "

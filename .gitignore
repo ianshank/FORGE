@@ -142,6 +142,11 @@ playwright-report/
 replays/minecraft/
 replay_buffer/minecraft/
 trajectories/
+# v0.5 Phase 1: per-variant trajectory dirs (see
+# python/forge/training/muzero_mc/capture_baseline.py::resolve_trajectory_dir).
+# Operator-side workspace; never tracked.
+trajectories.random/
+trajectories.trained/
 _smoke_traj/
 # Gzip-compressed sibling of the .json trajectory output. Now opt-in
 # via RunnerConfig.trajectory_compression = "gzip" (v0.3-pre); same

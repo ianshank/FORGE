@@ -77,16 +77,12 @@ def test_truncates_sum_at_end_of_rewards() -> None:
 
 def test_rejects_negative_position() -> None:
     with pytest.raises(AssertionError):
-        compute_n_step_return(
-            rewards=[1.0], values=[0.0], position=-1, td_steps=1, discount=1.0
-        )
+        compute_n_step_return(rewards=[1.0], values=[0.0], position=-1, td_steps=1, discount=1.0)
 
 
 def test_rejects_negative_td_steps() -> None:
     with pytest.raises(AssertionError):
-        compute_n_step_return(
-            rewards=[1.0], values=[0.0], position=0, td_steps=-1, discount=1.0
-        )
+        compute_n_step_return(rewards=[1.0], values=[0.0], position=0, td_steps=-1, discount=1.0)
 
 
 def test_extraction_matches_original_buffer_method() -> None:

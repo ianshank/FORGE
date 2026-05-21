@@ -30,7 +30,11 @@ pub enum OnnxReloadError {
     /// Reload returns this **before** touching the existing sessions,
     /// so the model remains usable with the previous bundle.
     #[error("missing ONNX file: {}", .path.display())]
-    MissingFile { path: PathBuf },
+    MissingFile {
+        /// On-disk path that the new manifest pointed at but which
+        /// does not exist. Useful for surfacing in operator logs.
+        path: PathBuf,
+    },
     /// `ort::Session::builder().commit_from_file(...)` failed (corrupt
     /// ONNX, schema mismatch, op-set unsupported, etc.). Like
     /// `MissingFile`, this is raised before any swap so the existing
@@ -140,6 +144,40 @@ pub struct OnnxMuZeroModel {
     prediction: Mutex<Session>,
 }
 
+/// Build an `ort::Session` from a single ONNX file at `path`.
+///
+/// `ort` 2.0.0-rc.10 removed `SessionBuilder::commit_from_file` in
+/// favor of `commit_from_memory(&[u8])`. We read the bytes here and
+/// surface any I/O error as an `ort::Error` so the call sites stay
+/// a single `?` (the rc.9 ergonomics).
+///
+/// Emits a `tracing::error!` event with the resolved path before
+/// returning so operators see the structured failure in the runner
+/// log stream (per CLAUDE.md's structured-logging convention).
+fn build_session_from_path<P: AsRef<Path>>(
+    num_threads: usize,
+    path: P,
+) -> Result<Session, ort::Error> {
+    let path_ref = path.as_ref();
+    let bytes = match std::fs::read(path_ref) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!(
+                path = %path_ref.display(),
+                err = %e,
+                "failed to read ONNX file"
+            );
+            return Err(ort::Error::new(format!(
+                "read ONNX file {}: {e}",
+                path_ref.display()
+            )));
+        }
+    };
+    Session::builder()?
+        .with_intra_threads(num_threads)?
+        .commit_from_memory(&bytes)
+}
+
 impl OnnxMuZeroModel {
     /// Load ONNX models from the configured paths.
     ///
@@ -147,17 +185,9 @@ impl OnnxMuZeroModel {
     ///
     /// Returns an error if any of the ONNX files cannot be loaded.
     pub fn load(config: OnnxModelConfig) -> Result<Self, ort::Error> {
-        let rep = Session::builder()?
-            .with_intra_threads(config.num_threads)?
-            .commit_from_file(&config.representation_path)?;
-
-        let dyn_ = Session::builder()?
-            .with_intra_threads(config.num_threads)?
-            .commit_from_file(&config.dynamics_path)?;
-
-        let pred = Session::builder()?
-            .with_intra_threads(config.num_threads)?
-            .commit_from_file(&config.prediction_path)?;
+        let rep = build_session_from_path(config.num_threads, &config.representation_path)?;
+        let dyn_ = build_session_from_path(config.num_threads, &config.dynamics_path)?;
+        let pred = build_session_from_path(config.num_threads, &config.prediction_path)?;
 
         Ok(Self {
             config,
@@ -217,15 +247,11 @@ impl OnnxMuZeroModel {
         // Build all three sessions in stack locals BEFORE swapping
         // anything on `self`. `?` propagates ort::Error via
         // `From<ort::Error> for OnnxReloadError`.
-        let new_rep = Session::builder()?
-            .with_intra_threads(new_config.num_threads)?
-            .commit_from_file(&new_config.representation_path)?;
-        let new_dyn = Session::builder()?
-            .with_intra_threads(new_config.num_threads)?
-            .commit_from_file(&new_config.dynamics_path)?;
-        let new_pred = Session::builder()?
-            .with_intra_threads(new_config.num_threads)?
-            .commit_from_file(&new_config.prediction_path)?;
+        let new_rep =
+            build_session_from_path(new_config.num_threads, &new_config.representation_path)?;
+        let new_dyn = build_session_from_path(new_config.num_threads, &new_config.dynamics_path)?;
+        let new_pred =
+            build_session_from_path(new_config.num_threads, &new_config.prediction_path)?;
 
         // Swap in the documented contractual order:
         // representation -> dynamics -> prediction. The old `Mutex`
@@ -270,7 +296,7 @@ impl OnnxMuZeroModel {
         let (_shape, slice) = value
             .try_extract_tensor::<f32>()
             .context("failed to extract f32 tensor")?;
-        Ok(slice.iter().copied().collect())
+        Ok(slice.to_vec())
     }
 
     /// Build the standard "<name> lock poisoned" error. Factored out so
@@ -392,6 +418,39 @@ mod tests {
     //! onnx subprocess to produce the test ONNX files.
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn build_session_from_path_missing_file_returns_ort_error() {
+        // The v0.5 forward-port (commit_from_file → commit_from_memory)
+        // routes any std::fs::read failure through ort::Error::new with
+        // the resolved path baked into the message. Pins the error-
+        // format contract so a future refactor doesn't silently
+        // swallow the path detail.
+        let err = build_session_from_path(1, "/definitely/does/not/exist.onnx")
+            .expect_err("missing file must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("/definitely/does/not/exist.onnx"),
+            "ort::Error message must surface the path; got: {msg}"
+        );
+        assert!(
+            msg.contains("read ONNX file"),
+            "ort::Error message must tag the failure class; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn build_session_from_path_rejects_invalid_onnx_bytes() {
+        // Even when the file exists, a non-ONNX payload must fail
+        // through the ort layer (commit_from_memory rejects the
+        // bytes). Verifies the no-panic contract on the binary
+        // happy path of `std::fs::read`.
+        let dir = tempdir().unwrap();
+        let bogus_path = dir.path().join("bogus.onnx");
+        std::fs::write(&bogus_path, b"not a real onnx model").unwrap();
+        let result = build_session_from_path(1, &bogus_path);
+        assert!(result.is_err(), "garbage ONNX bytes must surface as Err");
+    }
 
     #[test]
     fn validate_reload_paths_accepts_existing_trio() {

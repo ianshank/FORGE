@@ -128,9 +128,7 @@ class BCTrainer:
         flat_actions: list[int] = []
         flat_topk_rows: list[NDArray[np.float32]] = []
         flat_values: list[float] = []
-        for ep_idx, (ep_obs, ep_actions) in enumerate(
-            zip(observations, teacher_action_ids)
-        ):
+        for ep_idx, (ep_obs, ep_actions) in enumerate(zip(observations, teacher_action_ids)):
             steps = min(int(ep_obs.shape[0]), int(ep_actions.shape[0]))
             # `top_k_probs` / `value_hats` are Optional[Sequence[...]]; the
             # truthiness check on the same expression narrows them to the
@@ -252,16 +250,10 @@ class BCTrainer:
                 ce = -np.log(probs[np.arange(len(y)), y] + self.config.numerical_epsilon)
                 loss = float(ce.mean())
 
-                if (
-                    dataset.teacher_top_k_probs is not None
-                    and self.config.kl_weight > 0.0
-                ):
+                if dataset.teacher_top_k_probs is not None and self.config.kl_weight > 0.0:
                     target = dataset.teacher_top_k_probs[idx]
                     eps = self.config.numerical_epsilon
-                    kl = (
-                        target
-                        * (np.log(target + eps) - np.log(probs + eps))
-                    ).sum(axis=1)
+                    kl = (target * (np.log(target + eps) - np.log(probs + eps))).sum(axis=1)
                     loss += float(self.config.kl_weight * kl.mean())
 
                 # Cross-entropy gradient on the linear head only.
@@ -295,9 +287,7 @@ class BCTrainer:
             accuracy_history=acc_history,
         )
 
-    def _train_torch(
-        self, dataset: BCDataset, actor_critic: Any
-    ) -> BCTrainResult:
+    def _train_torch(self, dataset: BCDataset, actor_critic: Any) -> BCTrainResult:
         try:
             import torch
             import torch.nn.functional as F
@@ -309,15 +299,11 @@ class BCTrainer:
         x = torch.as_tensor(dataset.observations, dtype=torch.float32, device=device)
         y = torch.as_tensor(dataset.teacher_action_ids, dtype=torch.long, device=device)
         topk = (
-            torch.as_tensor(
-                dataset.teacher_top_k_probs, dtype=torch.float32, device=device
-            )
+            torch.as_tensor(dataset.teacher_top_k_probs, dtype=torch.float32, device=device)
             if dataset.teacher_top_k_probs is not None
             else None
         )
-        optimizer = torch.optim.Adam(
-            actor_critic.parameters(), lr=self.config.learning_rate
-        )
+        optimizer = torch.optim.Adam(actor_critic.parameters(), lr=self.config.learning_rate)
 
         loss_history: list[float] = []
         acc_history: list[float] = []
@@ -337,18 +323,13 @@ class BCTrainer:
                     log_probs = F.log_softmax(logits, dim=-1)
                     kl = F.kl_div(log_probs, topk[idx], reduction="batchmean")
                     loss = loss + self.config.kl_weight * kl
-                if (
-                    dataset.teacher_value_hats is not None
-                    and self.config.value_loss_weight > 0.0
-                ):
+                if dataset.teacher_value_hats is not None and self.config.value_loss_weight > 0.0:
                     vh = torch.as_tensor(
                         dataset.teacher_value_hats[idx.cpu().numpy()],
                         dtype=torch.float32,
                         device=device,
                     )
-                    loss = loss + self.config.value_loss_weight * F.mse_loss(
-                        values.squeeze(-1), vh
-                    )
+                    loss = loss + self.config.value_loss_weight * F.mse_loss(values.squeeze(-1), vh)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()

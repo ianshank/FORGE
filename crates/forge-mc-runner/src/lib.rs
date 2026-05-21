@@ -37,6 +37,7 @@ pub mod manifest;
 pub mod metrics;
 #[cfg(feature = "onnx-reload")]
 pub mod onnx_reload;
+pub mod random_baseline;
 pub mod runner;
 pub mod trajectory;
 
@@ -49,6 +50,7 @@ pub use manifest::{ModelFileEntry, ModelManifest, ModelManifestFiles, MANIFEST_S
 pub use metrics::{serve_metrics, MetricsError, MetricsRecorder};
 #[cfg(feature = "onnx-reload")]
 pub use onnx_reload::{config_from_manifest, into_reload_fn};
+pub use random_baseline::{sample_random_action, RandomLatentModel};
 pub use runner::{
     format_episode_id, EpisodeOutcome, ReloadFn, Runner, RunnerOutcome, EPISODE_ID_PAD_WIDTH,
     EPISODE_ID_PREFIX,

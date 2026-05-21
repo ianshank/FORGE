@@ -49,10 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="forge.training.muzero_mc.cli",
-        description=(
-            "Bootstrap and validate MuZero model bundles for the Rust "
-            "forge-mc-runner."
-        ),
+        description=("Bootstrap and validate MuZero model bundles for the Rust forge-mc-runner."),
     )
     parser.add_argument(
         "--log-level",
@@ -352,7 +349,97 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    _add_capture_baseline_subcommand(sub)
+
     return parser
+
+
+def _add_capture_baseline_subcommand(sub: argparse._SubParsersAction[Any]) -> None:
+    """Register the v0.5 `capture-baseline` subcommand on the parser.
+
+    Lifted out of ``build_parser`` so the parent stays under ruff's
+    PLR0915 (too-many-statements) threshold; the inner argparse
+    boilerplate is single-purpose and reads cleaner as its own block.
+    """
+    from forge.training.muzero_mc.capture_baseline import (
+        ALL_VARIANTS,
+        DEFAULT_METRICS_URL,
+        DEFAULT_POLL_INTERVAL_SECS,
+        DEFAULT_RUNNER_CONTAINER,
+        DEFAULT_TIMEOUT_SECS,
+    )
+
+    p_cap = sub.add_parser(
+        "capture-baseline",
+        help=(
+            "Drive N episodes against a running Minecraft self-play "
+            "stack and dump a snapshot JSON the plotter consumes. "
+            "Used by the v0.5 first-real-run flow to compare random "
+            "vs trained policies side-by-side."
+        ),
+    )
+    p_cap.add_argument(
+        "--variant",
+        choices=list(ALL_VARIANTS),
+        required=True,
+        help="Which capture variant to write (sets the output name + namespaced trajectory dir).",
+    )
+    p_cap.add_argument(
+        "--episodes",
+        type=int,
+        default=100,
+        help="Number of episodes to wait for (default: 100).",
+    )
+    p_cap.add_argument(
+        "--metrics-url",
+        type=str,
+        default=DEFAULT_METRICS_URL,
+        help=f"Runner Prometheus endpoint (default: {DEFAULT_METRICS_URL}).",
+    )
+    p_cap.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help=(
+            "Snapshot output path. Default `baseline_<variant>.json` "
+            "resolves relative to the current working directory — be "
+            "explicit when running inside docker so the host can see "
+            "the output."
+        ),
+    )
+    p_cap.add_argument(
+        "--trajectory-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Trajectory dir to scan for per-episode JSONs (default: "
+            "trajectories.<variant>/ — namespaced so the trainer's "
+            "trim buffer cannot evict random-baseline files mid-run)."
+        ),
+    )
+    p_cap.add_argument(
+        "--runner-container",
+        type=str,
+        default=DEFAULT_RUNNER_CONTAINER,
+        help=f"Container name for `docker logs` on timeout (default: {DEFAULT_RUNNER_CONTAINER}).",
+    )
+    p_cap.add_argument(
+        "--timeout-secs",
+        type=int,
+        default=DEFAULT_TIMEOUT_SECS,
+        help=f"Hard timeout on the capture loop (default: {DEFAULT_TIMEOUT_SECS}).",
+    )
+    p_cap.add_argument(
+        "--poll-interval-secs",
+        type=float,
+        default=DEFAULT_POLL_INTERVAL_SECS,
+        help=f"Seconds between Prometheus scrape polls (default: {DEFAULT_POLL_INTERVAL_SECS}).",
+    )
+    p_cap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the resolved CaptureConfig + exit 0 (no scrape, no write).",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -381,6 +468,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_train(args)
     if args.cmd == "compute-schema-id":
         return _run_compute_schema_id(args)
+    if args.cmd == "capture-baseline":
+        return _run_capture_baseline(args)
     parser.error(f"unknown command: {args.cmd!r}")  # pragma: no cover — argparse blocks this
     return EXIT_USAGE
 
@@ -414,6 +503,65 @@ def _run_bootstrap(args: argparse.Namespace) -> int:
         result.manifest.version,
         result.manifest.schema_id,
     )
+    return EXIT_OK
+
+
+def _run_capture_baseline(args: argparse.Namespace) -> int:
+    """``capture-baseline`` subcommand entry. See module docstring."""
+    from forge.training.muzero_mc.capture_baseline import (
+        CaptureConfig,
+        capture_baseline,
+        resolve_trajectory_dir,
+    )
+
+    trajectory_dir = (
+        args.trajectory_dir
+        if args.trajectory_dir is not None
+        else resolve_trajectory_dir(args.variant)
+    )
+    out_path = args.out if args.out is not None else Path(f"baseline_{args.variant}.json").resolve()
+
+    try:
+        cfg = CaptureConfig(
+            variant=args.variant,
+            episodes=args.episodes,
+            out_path=out_path,
+            trajectory_dir=trajectory_dir,
+            metrics_url=args.metrics_url,
+            runner_container=args.runner_container,
+            timeout_secs=args.timeout_secs,
+            poll_interval_secs=args.poll_interval_secs,
+        )
+    except ValueError as e:
+        logger.error("invalid capture config: %s", e)
+        return EXIT_USAGE
+
+    if args.dry_run:
+        # Print resolved knobs so operators (and the unit test) can
+        # verify the CLI surface without actually scraping the bot.
+        logger.info(
+            "DRY-RUN capture-baseline: variant=%s episodes=%d out=%s "
+            "trajectory_dir=%s metrics_url=%s timeout_secs=%d "
+            "poll_interval_secs=%.1f runner_container=%s",
+            cfg.variant,
+            cfg.episodes,
+            cfg.out_path,
+            cfg.trajectory_dir,
+            cfg.metrics_url,
+            cfg.timeout_secs,
+            cfg.poll_interval_secs,
+            cfg.runner_container,
+        )
+        return EXIT_OK
+
+    try:
+        capture_baseline(cfg)
+    except TimeoutError as e:
+        logger.error("capture-baseline timed out: %s", e)
+        return EXIT_IO
+    except (OSError, RuntimeError) as e:
+        logger.error("capture-baseline failed: %s", e)
+        return EXIT_IO
     return EXIT_OK
 
 

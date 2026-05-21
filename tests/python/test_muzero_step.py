@@ -86,9 +86,7 @@ def test_train_step_metrics_dataclass_round_trips_to_dict() -> None:
     """
     from forge.training._muzero_step import TrainStepMetrics
 
-    m = TrainStepMetrics(
-        loss=1.0, policy_loss=0.5, value_loss=0.3, reward_loss=0.2, l2_reg=0.01
-    )
+    m = TrainStepMetrics(loss=1.0, policy_loss=0.5, value_loss=0.3, reward_loss=0.2, l2_reg=0.01)
     d = m.to_dict()
     assert set(d.keys()) == {"loss", "policy_loss", "value_loss", "reward_loss", "l2_reg"}
     assert math.isclose(d["loss"], 1.0)
@@ -111,9 +109,7 @@ def test_train_with_gradients_decreases_loss_on_fixed_seed() -> None:
 
     model = _make_tiny_model()
     optimizer = torch.optim.Adam(model.all_parameters(), lr=1e-3)
-    batch = _make_batch(
-        batch_size=8, obs_dim=_OBS_DIM, action_dim=_ACTION_DIM, unroll=2
-    )
+    batch = _make_batch(batch_size=8, obs_dim=_OBS_DIM, action_dim=_ACTION_DIM, unroll=2)
     step_cfg = MuZeroStepConfig(max_grad_norm=1.0, gradient_scale=0.5)
 
     initial = train_with_gradients(model, optimizer, batch, step_cfg)
@@ -121,8 +117,7 @@ def test_train_with_gradients_decreases_loss_on_fixed_seed() -> None:
         last = train_with_gradients(model, optimizer, batch, step_cfg)
 
     assert last.loss < initial.loss, (
-        f"loss did not decrease after 20 steps; initial={initial.loss:.4f} "
-        f"final={last.loss:.4f}"
+        f"loss did not decrease after 20 steps; initial={initial.loss:.4f} final={last.loss:.4f}"
     )
     # All four loss components should be finite.
     for field, value in last.to_dict().items():

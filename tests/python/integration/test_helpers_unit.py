@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from . import _helpers
 from ._helpers import (
     COMPOSE_DOWN_TIMEOUT_SECS,
     COMPOSE_UP_TIMEOUT_SECS,
@@ -28,6 +29,8 @@ from ._helpers import (
     runner_container_state,
     wait_until,
 )
+
+_HELPERS_MOD = _helpers.__name__
 
 # ---------- constants -------------------------------------------------
 
@@ -61,9 +64,10 @@ class _FakeMonotonic:
 def test_wait_until_returns_on_first_true(monkeypatch: pytest.MonkeyPatch) -> None:
     """Predicate true on the very first call → immediate return, no
     sleep, no extra clock reads beyond the loop guard."""
-    monkeypatch.setattr("tests.python.integration._helpers.time.sleep", lambda *_: None)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.time.sleep", lambda *_: None)
     monkeypatch.setattr(
-        "tests.python.integration._helpers.time.monotonic", _FakeMonotonic(iter([0.0, 0.0])),
+        f"{_HELPERS_MOD}.time.monotonic",
+        _FakeMonotonic(iter([0.0, 0.0])),
     )
     calls: list[int] = []
 
@@ -79,9 +83,10 @@ def test_wait_until_propagates_health_check_exception(monkeypatch: pytest.Monkey
     """The health-check is called BEFORE the predicate's try/except, so
     a ``pytest.fail`` from the health check propagates immediately and
     is not swallowed as a transient predicate error."""
-    monkeypatch.setattr("tests.python.integration._helpers.time.sleep", lambda *_: None)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.time.sleep", lambda *_: None)
     monkeypatch.setattr(
-        "tests.python.integration._helpers.time.monotonic", _FakeMonotonic(iter([0.0, 0.0, 0.0])),
+        f"{_HELPERS_MOD}.time.monotonic",
+        _FakeMonotonic(iter([0.0, 0.0, 0.0])),
     )
 
     def health() -> None:
@@ -97,12 +102,13 @@ def test_wait_until_propagates_health_check_exception(monkeypatch: pytest.Monkey
 def test_wait_until_swallows_predicate_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
     """Predicate raising Exception is recorded as the last_error and
     retried until either it returns True or the timeout fires."""
-    monkeypatch.setattr("tests.python.integration._helpers.time.sleep", lambda *_: None)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.time.sleep", lambda *_: None)
     # Tick sequence: deadline check returns 0.0 every iteration until
     # we've made 3 predicate calls, then jump past 10.
     ticks = iter([0.0] * 6 + [100.0])
     monkeypatch.setattr(
-        "tests.python.integration._helpers.time.monotonic", lambda: next(ticks),
+        f"{_HELPERS_MOD}.time.monotonic",
+        lambda: next(ticks),
     )
     n = {"calls": 0}
 
@@ -119,11 +125,12 @@ def test_wait_until_swallows_predicate_exceptions(monkeypatch: pytest.MonkeyPatc
 def test_wait_until_times_out_with_last_error_in_msg(monkeypatch: pytest.MonkeyPatch) -> None:
     """When the deadline fires before the predicate flips true, the
     raised TimeoutError contains the last predicate exception's repr."""
-    monkeypatch.setattr("tests.python.integration._helpers.time.sleep", lambda *_: None)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.time.sleep", lambda *_: None)
     # Two iterations then deadline elapsed.
     ticks = iter([0.0, 0.0, 0.0, 100.0])
     monkeypatch.setattr(
-        "tests.python.integration._helpers.time.monotonic", lambda: next(ticks),
+        f"{_HELPERS_MOD}.time.monotonic",
+        lambda: next(ticks),
     )
 
     def predicate() -> bool:
@@ -139,10 +146,11 @@ def test_wait_until_times_out_without_predicate_error(monkeypatch: pytest.Monkey
     """Timeout path when the predicate never raises (just returns
     False). The error message must NOT include the
     'last predicate error' suffix in that case."""
-    monkeypatch.setattr("tests.python.integration._helpers.time.sleep", lambda *_: None)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.time.sleep", lambda *_: None)
     ticks = iter([0.0, 0.0, 100.0])
     monkeypatch.setattr(
-        "tests.python.integration._helpers.time.monotonic", lambda: next(ticks),
+        f"{_HELPERS_MOD}.time.monotonic",
+        lambda: next(ticks),
     )
 
     with pytest.raises(TimeoutError) as exc_info:
@@ -158,7 +166,7 @@ def test_docker_compose_available_returns_false_when_docker_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No docker CLI on PATH → short-circuit False (no subprocess call)."""
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: None)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: None)
     assert docker_compose_available() is False
 
 
@@ -166,25 +174,26 @@ def test_docker_compose_available_returns_false_on_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Subprocess timeout → False (no propagation)."""
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: "/usr/bin/docker")
 
     def fake_run(*_args: Any, **_kwargs: Any) -> Any:
         raise subprocess.TimeoutExpired(cmd="docker", timeout=10)
 
-    monkeypatch.setattr("tests.python.integration._helpers.subprocess.run", fake_run)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.subprocess.run", fake_run)
     assert docker_compose_available() is False
 
 
 def test_docker_compose_available_returns_true_on_zero_returncode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: "/usr/bin/docker")
 
     class _Completed:
         returncode = 0
 
     monkeypatch.setattr(
-        "tests.python.integration._helpers.subprocess.run", lambda *a, **k: _Completed(),
+        f"{_HELPERS_MOD}.subprocess.run",
+        lambda *a, **k: _Completed(),
     )
     assert docker_compose_available() is True
 
@@ -192,19 +201,20 @@ def test_docker_compose_available_returns_true_on_zero_returncode(
 def test_runner_container_state_returns_none_when_docker_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: None)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: None)
     assert runner_container_state("any") is None
 
 
 def test_runner_container_state_returns_status_string(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: "/usr/bin/docker")
 
     class _Completed:
         returncode = 0
         stdout = "running\n"
 
     monkeypatch.setattr(
-        "tests.python.integration._helpers.subprocess.run", lambda *a, **k: _Completed(),
+        f"{_HELPERS_MOD}.subprocess.run",
+        lambda *a, **k: _Completed(),
     )
     assert runner_container_state("foo") == "running"
 
@@ -214,14 +224,15 @@ def test_runner_container_state_returns_none_on_nonzero_returncode(
 ) -> None:
     """`docker inspect` returns non-zero when the container doesn't
     exist; the helper must surface that as None, not a crash."""
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: "/usr/bin/docker")
 
     class _Completed:
         returncode = 1
         stdout = ""
 
     monkeypatch.setattr(
-        "tests.python.integration._helpers.subprocess.run", lambda *a, **k: _Completed(),
+        f"{_HELPERS_MOD}.subprocess.run",
+        lambda *a, **k: _Completed(),
     )
     assert runner_container_state("nope") is None
 
@@ -231,25 +242,26 @@ def test_runner_container_state_returns_none_on_empty_stdout(
 ) -> None:
     """Empty `.State.Status` (e.g. a fresh `created` container with no
     state yet) maps to None rather than an empty string."""
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: "/usr/bin/docker")
 
     class _Completed:
         returncode = 0
         stdout = "   \n"
 
     monkeypatch.setattr(
-        "tests.python.integration._helpers.subprocess.run", lambda *a, **k: _Completed(),
+        f"{_HELPERS_MOD}.subprocess.run",
+        lambda *a, **k: _Completed(),
     )
     assert runner_container_state("foo") is None
 
 
 def test_docker_logs_returns_marker_when_docker_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: None)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: None)
     assert docker_logs("foo") == "<docker CLI not available>"
 
 
 def test_docker_logs_returns_concatenated_streams(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: "/usr/bin/docker")
 
     class _Completed:
         returncode = 0
@@ -257,7 +269,8 @@ def test_docker_logs_returns_concatenated_streams(monkeypatch: pytest.MonkeyPatc
         stderr = "stderr-line\n"
 
     monkeypatch.setattr(
-        "tests.python.integration._helpers.subprocess.run", lambda *a, **k: _Completed(),
+        f"{_HELPERS_MOD}.subprocess.run",
+        lambda *a, **k: _Completed(),
     )
     out = docker_logs("foo", tail=5)
     assert "stdout-line" in out
@@ -269,10 +282,10 @@ def test_docker_logs_returns_marker_on_oserror(monkeypatch: pytest.MonkeyPatch) 
     marker, NOT a propagated exception — the caller is usually a test
     failure-reporting path and shouldn't be derailed by a docker
     failure."""
-    monkeypatch.setattr("tests.python.integration._helpers.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(f"{_HELPERS_MOD}.shutil.which", lambda _: "/usr/bin/docker")
 
     def fake_run(*_args: Any, **_kwargs: Any) -> Any:
         raise OSError("engine down")
 
-    monkeypatch.setattr("tests.python.integration._helpers.subprocess.run", fake_run)
+    monkeypatch.setattr(f"{_HELPERS_MOD}.subprocess.run", fake_run)
     assert "docker logs failed" in docker_logs("foo")

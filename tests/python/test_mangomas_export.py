@@ -1,4 +1,5 @@
 """Tests for MangoMAS weight export pipeline."""
+
 from __future__ import annotations
 
 import json
@@ -90,7 +91,12 @@ class TestWeightExporter:
 
         assert len(manifest["components"]) == 6
         assert set(manifest["components"]) == {
-            "bdi", "constitutional", "rssm", "mcts", "curiosity", "curriculum"
+            "bdi",
+            "constitutional",
+            "rssm",
+            "mcts",
+            "curiosity",
+            "curriculum",
         }
 
 

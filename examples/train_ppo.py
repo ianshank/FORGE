@@ -109,7 +109,9 @@ def make_env(seed: int = 0, max_steps: int = 500):
     return env
 
 
-def train_with_sb3(timesteps: int, seed: int, logger_backend: str = "none", log_dir: str = "runs/ppo") -> None:
+def train_with_sb3(
+    timesteps: int, seed: int, logger_backend: str = "none", log_dir: str = "runs/ppo"
+) -> None:
     """Train a PPO agent using Stable Baselines3.
 
     Args:
@@ -130,6 +132,7 @@ def train_with_sb3(timesteps: int, seed: int, logger_backend: str = "none", log_
         if logger_backend != "none":
             try:
                 from forge.training.loggers import make_logger
+
                 logger_kwargs: dict[str, Any]
                 if logger_backend == "tensorboard":
                     logger_kwargs = {"log_dir": log_dir}

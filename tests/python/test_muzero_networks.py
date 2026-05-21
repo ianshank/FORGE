@@ -1,4 +1,5 @@
 """Tests for MuZero network components: config, representation, dynamics, prediction."""
+
 from __future__ import annotations
 
 import tempfile
@@ -79,7 +80,9 @@ class TestMuZeroConfig:
 
     def test_obs_dim_auto_computed(self) -> None:
         cfg = MuZeroConfig(obs_dim=0)
-        expected = DEFAULT_GRID_HEIGHT * DEFAULT_GRID_WIDTH * DEFAULT_GRID_CHANNELS + DEFAULT_VECTOR_DIM
+        expected = (
+            DEFAULT_GRID_HEIGHT * DEFAULT_GRID_WIDTH * DEFAULT_GRID_CHANNELS + DEFAULT_VECTOR_DIM
+        )
         assert cfg.obs_dim == expected
 
     def test_custom_values(self) -> None:
@@ -412,9 +415,9 @@ class TestMuZeroWorldModel:
             "actions": np.random.randint(0, ACTION_DIM, (N, K)).astype(np.int64),
             "target_values": np.random.randn(N, K + 1).astype(np.float32),
             "target_rewards": np.random.randn(N, K).astype(np.float32),
-            "target_policies": np.random.dirichlet(
-                np.ones(ACTION_DIM), (N, K + 1)
-            ).astype(np.float32),
+            "target_policies": np.random.dirichlet(np.ones(ACTION_DIM), (N, K + 1)).astype(
+                np.float32
+            ),
         }
         metrics = model.train_step(batch)
         assert "loss" in metrics

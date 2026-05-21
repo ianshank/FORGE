@@ -61,9 +61,12 @@ ACTION_MAP_IN_CONTAINER="${ACTION_MAP_IN_CONTAINER:-/app/configs/action_map.toml
 REWARDS_IN_CONTAINER="${REWARDS_IN_CONTAINER:-/app/configs/rewards.toml}"
 MANIFEST_IN_CONTAINER="${MANIFEST_IN_CONTAINER:-/app/models/model_manifest.json}"
 
-# Bootstrap dimensions. Defaults track the shipped env.toml /
-# observation.js values from PR #57. Operators override via env.
-OBS_DIM="${OBS_DIM:-31}"
+# Bootstrap dimensions. Defaults match v0.5 Phase 1's block-grid
+# observation shape: 11*11*1*7 (847 grid floats) + 73 flat = 920.
+# This must equal what mc-bot's `Hello` handshake reports under the
+# stock `configs/minecraft/env.toml` — set `OBS_DIM=31` for the legacy
+# flat-only shape (see `include_block_grid = false` in env.toml).
+OBS_DIM="${OBS_DIM:-920}"
 ACTION_DIM="${ACTION_DIM:-12}"
 
 log()   { printf '%s [mc_self_play] %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }

@@ -29,6 +29,10 @@ on:
         description: "Run opt-in Minecraft E2E job (requires docker; spins up compose.minecraft.yml)"
         type: boolean
         default: false
+      run_minecraft_real_run:
+        description: "Run opt-in v0.5 first-real-run baseline capture (requires docker)"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -330,6 +334,73 @@ jobs:
       - name: Tear down compose stack
         if: always()
         run: bash scripts/mc_run.sh --down || true
+
+  python-test-minecraft-real-run:
+    # v0.5 Phase 1 first-real-run baseline capture. Brings the full
+    # self-play stack up against a real itzg/minecraft-server, drives
+    # a small N-episode capture for both `random` and `trained`
+    # variants, then renders the comparison report. Mirrors the
+    # python-test-minecraft-e2e template; triggered only via
+    # workflow_dispatch with `run_minecraft_real_run=true`.
+    name: Python Minecraft Real Run (opt-in)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_minecraft_real_run
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify docker compose is available
+        run: docker compose version
+      - name: Accept Minecraft EULA in the compose env
+        run: |
+          cp docker/compose.minecraft.env.example docker/compose.minecraft.env
+          sed -i 's/^MC_EULA=FALSE/MC_EULA=TRUE/' docker/compose.minecraft.env
+          grep '^MC_EULA' docker/compose.minecraft.env
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pytest + matplotlib
+        run: pip install 'pytest==8.3.4' 'matplotlib>=3.8,<4.0'
+      - name: Install forge in editable mode (capture-baseline + plot subcommands)
+        run: pip install -e .
+      - name: Capture random-action baseline (5 episodes for CI smoke)
+        run: |
+          python -m forge.training.muzero_mc.cli capture-baseline \
+            --variant random \
+            --episodes 5 \
+            --out baseline_random.json \
+            --timeout-secs 600
+      - name: Capture trained baseline (5 episodes for CI smoke)
+        run: |
+          python -m forge.training.muzero_mc.cli capture-baseline \
+            --variant trained \
+            --episodes 5 \
+            --out baseline_trained.json \
+            --timeout-secs 600
+      - name: Render Markdown report
+        run: |
+          python scripts/mc_plot_baseline.py \
+            --random baseline_random.json \
+            --trained baseline_trained.json \
+            --out /tmp/v0.5-first-real-run.md
+      - name: Sanity-check the snapshot JSONs
+        run: |
+          python -c "
+          import json
+          for name in ('baseline_random.json', 'baseline_trained.json'):
+              snap = json.loads(open(name).read())
+              assert len(snap['per_episode']) >= 3, f'{name} has too few episodes'
+              print(f'{name}: {len(snap[\"per_episode\"])} episodes, '
+                    f'manifest_versions={snap[\"manifest_versions_seen\"]}')"
+      - name: Dump compose service logs on failure
+        if: failure()
+        run: |
+          for svc in forge-mc-server forge-mc-bot forge-mc-runner forge-mc-trainer; do
+            echo "::group::$svc logs"
+            docker logs --tail=200 "$svc" 2>&1 || true
+            echo "::endgroup::"
+          done
+      - name: Tear down self-play stack
+        if: always()
+        run: bash scripts/mc_self_play.sh --down || true
 
   python-test-fast:
     name: Python Tests (no native)

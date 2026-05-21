@@ -71,15 +71,25 @@ def _run_main(module: ModuleType, args: list[str]) -> int:
         sys.argv = old_argv
 
 
-def test_clean_report_exits_zero(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_clean_report_exits_zero(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     report = tmp_report_dir / "clean.json"
     _write_report(
         report,
         [
-            {"variant": "Noop", "iters": 100, "total_blocks": 0, "total_bytes": 0, "peak_live_bytes": 0},
-            {"variant": "Move", "iters": 100, "total_blocks": 0, "total_bytes": 0, "peak_live_bytes": 0},
+            {
+                "variant": "Noop",
+                "iters": 100,
+                "total_blocks": 0,
+                "total_bytes": 0,
+                "peak_live_bytes": 0,
+            },
+            {
+                "variant": "Move",
+                "iters": 100,
+                "total_blocks": 0,
+                "total_bytes": 0,
+                "peak_live_bytes": 0,
+            },
         ],
     )
     summary = tmp_report_dir / "summary.json"
@@ -93,14 +103,18 @@ def test_clean_report_exits_zero(
     assert body["clean_count"] == 2
 
 
-def test_violation_exits_one(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_violation_exits_one(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     report = tmp_report_dir / "bad.json"
     _write_report(
         report,
         [
-            {"variant": "Noop", "iters": 100, "total_blocks": 0, "total_bytes": 0, "peak_live_bytes": 0},
+            {
+                "variant": "Noop",
+                "iters": 100,
+                "total_blocks": 0,
+                "total_bytes": 0,
+                "peak_live_bytes": 0,
+            },
             {
                 "variant": "Move_Up",
                 "iters": 100,
@@ -114,9 +128,7 @@ def test_violation_exits_one(
     assert rc == helper_module.EXIT_VIOLATION
 
 
-def test_allowlisted_violation_exits_zero(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_allowlisted_violation_exits_zero(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     report = tmp_report_dir / "allowed.json"
     _write_report(
         report,
@@ -150,18 +162,14 @@ def test_allowlisted_violation_exits_zero(
     assert body["allowlisted"][0]["variant"] == "Communicate_0"
 
 
-def test_missing_input_exits_two(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_missing_input_exits_two(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     missing = tmp_report_dir / "does_not_exist.json"
     with pytest.raises(SystemExit) as exc:
         _run_main(helper_module, ["--input", str(missing), "--log-level", "ERROR"])
     assert exc.value.code == helper_module.EXIT_INPUT_ERROR
 
 
-def test_malformed_input_exits_two(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_malformed_input_exits_two(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     bad = tmp_report_dir / "bad.json"
     bad.write_text("{not json", encoding="utf-8")
     with pytest.raises(SystemExit) as exc:
@@ -169,24 +177,26 @@ def test_malformed_input_exits_two(
     assert exc.value.code == helper_module.EXIT_INPUT_ERROR
 
 
-def test_empty_variants_exits_two(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_empty_variants_exits_two(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     empty = tmp_report_dir / "empty.json"
     empty.write_text(json.dumps({"variants": []}), encoding="utf-8")
     rc = _run_main(helper_module, ["--input", str(empty), "--log-level", "ERROR"])
     assert rc == helper_module.EXIT_INPUT_ERROR
 
 
-def test_max_bytes_threshold(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_max_bytes_threshold(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     """A variant with ``total_bytes <= max-bytes`` passes when blocks == 0."""
     report = tmp_report_dir / "threshold.json"
     _write_report(
         report,
         [
-            {"variant": "Noop", "iters": 100, "total_blocks": 0, "total_bytes": 32, "peak_live_bytes": 16},
+            {
+                "variant": "Noop",
+                "iters": 100,
+                "total_blocks": 0,
+                "total_bytes": 32,
+                "peak_live_bytes": 16,
+            },
         ],
     )
     rc = _run_main(
@@ -196,9 +206,7 @@ def test_max_bytes_threshold(
     assert rc == 0
 
 
-def test_max_bytes_relaxes_blocks_check(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_max_bytes_relaxes_blocks_check(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     """When `--max-bytes > 0` (regression-investigation mode), non-zero
     `total_blocks` within the byte ceiling is NOT a violation. The strict
     `total_blocks == 0` contract only applies in the default zero-max-bytes
@@ -207,7 +215,13 @@ def test_max_bytes_relaxes_blocks_check(
     _write_report(
         report,
         [
-            {"variant": "Noop", "iters": 100, "total_blocks": 3, "total_bytes": 0, "peak_live_bytes": 0},
+            {
+                "variant": "Noop",
+                "iters": 100,
+                "total_blocks": 3,
+                "total_bytes": 0,
+                "peak_live_bytes": 0,
+            },
         ],
     )
     rc = _run_main(
@@ -217,9 +231,7 @@ def test_max_bytes_relaxes_blocks_check(
     assert rc == 0
 
 
-def test_non_integer_field_exits_two(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_non_integer_field_exits_two(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     """A variant row with a non-integer numeric field is malformed input.
 
     Surfaces as ``EXIT_INPUT_ERROR`` via the ``_MalformedReport`` sentinel
@@ -243,9 +255,7 @@ def test_non_integer_field_exits_two(
     assert rc == helper_module.EXIT_INPUT_ERROR
 
 
-def test_null_field_exits_two(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_null_field_exits_two(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     """A ``null`` numeric field is also malformed input, not a crash."""
     report = tmp_report_dir / "null_field.json"
     report.write_text(
@@ -268,9 +278,7 @@ def test_null_field_exits_two(
     assert rc == helper_module.EXIT_INPUT_ERROR
 
 
-def test_non_object_row_exits_two(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_non_object_row_exits_two(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     """A variant row that is not a JSON object is malformed input."""
     report = tmp_report_dir / "non_object.json"
     report.write_text(json.dumps({"variants": ["not-a-dict"]}), encoding="utf-8")
@@ -278,16 +286,20 @@ def test_non_object_row_exits_two(
     assert rc == helper_module.EXIT_INPUT_ERROR
 
 
-def test_strict_mode_rejects_any_blocks(
-    helper_module: ModuleType, tmp_report_dir: Path
-) -> None:
+def test_strict_mode_rejects_any_blocks(helper_module: ModuleType, tmp_report_dir: Path) -> None:
     """Default strict mode (`--max-bytes 0`) counts any non-zero
     `total_blocks` as a violation — the original zero-allocation contract."""
     report = tmp_report_dir / "strict_blocks.json"
     _write_report(
         report,
         [
-            {"variant": "Noop", "iters": 100, "total_blocks": 1, "total_bytes": 0, "peak_live_bytes": 0},
+            {
+                "variant": "Noop",
+                "iters": 100,
+                "total_blocks": 1,
+                "total_bytes": 0,
+                "peak_live_bytes": 0,
+            },
         ],
     )
     rc = _run_main(helper_module, ["--input", str(report), "--log-level", "ERROR"])

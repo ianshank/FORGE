@@ -70,6 +70,7 @@ def lmstudio_model_id(request: pytest.FixtureRequest) -> str:
     """
     return cast("str", request.param)
 
+
 # ---------------------------------------------------------------------------
 # Mock observation data matching the native wrapper's expected structure.
 # ---------------------------------------------------------------------------

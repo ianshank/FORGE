@@ -186,9 +186,9 @@ class RealisticFakeEnv:
             dtype=np.float32,
         )
 
-        result: np.ndarray = np.concatenate(
-            [grid_part, inventory_part, scalar_part]
-        ).astype(np.float32)
+        result: np.ndarray = np.concatenate([grid_part, inventory_part, scalar_part]).astype(
+            np.float32
+        )
         return result
 
     def _make_info(self) -> dict:

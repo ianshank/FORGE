@@ -11,7 +11,7 @@ use crate::action_map::ActionMap;
 use crate::client::ProtocolClient;
 use crate::config::MinecraftEnvConfig;
 use crate::error::McEnvError;
-use crate::protocol::{ClientMsg, ServerMsg, SCHEMA_VERSION};
+use crate::protocol::{ClientMsg, GridShape, ServerMsg, SCHEMA_VERSION};
 
 /// Diagnostic info attached to each [`StepOutput`] from `MinecraftEnv`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -41,13 +41,14 @@ impl MinecraftEnv {
         action_map.validate()?;
         let mut client = ProtocolClient::connect(&config.ws_url, config.heartbeat_ms)?;
         let hello = client.recv()?;
-        let (schema_version, action_count, obs_dim, schema_id) = match hello {
+        let (schema_version, action_count, obs_dim, schema_id, grid_shape) = match hello {
             ServerMsg::Hello {
                 schema_version,
                 action_count,
                 obs_dim,
                 schema_id,
-            } => (schema_version, action_count, obs_dim, schema_id),
+                grid_shape,
+            } => (schema_version, action_count, obs_dim, schema_id, grid_shape),
             other => {
                 return Err(McEnvError::Unexpected(format!(
                     "expected Hello, got {other:?}"
@@ -81,6 +82,51 @@ impl MinecraftEnv {
                 return Err(McEnvError::HandshakeMismatch {
                     client: format!("schema_id={expected}"),
                     server: format!("schema_id={schema_id}"),
+                });
+            }
+        }
+        // grid_shape cross-check. We require the bot to advertise a
+        // grid_shape whenever the operator pinned `expected_grid_shape`
+        // (silent absence would mean the bot ran with the legacy
+        // flat-only encoder against a trainer expecting spatial input).
+        if let Some(expected) = config.observation.expected_grid_shape {
+            let Some(server) = grid_shape else {
+                warn!(
+                    expected = ?expected,
+                    "grid_shape mismatch: client expected Some(_), server reported None"
+                );
+                return Err(McEnvError::HandshakeMismatch {
+                    client: format!("grid_shape={expected:?}"),
+                    server: "grid_shape=None".to_string(),
+                });
+            };
+            if !grid_shape_matches(&expected, &server) {
+                warn!(
+                    expected = ?expected,
+                    server = ?server,
+                    "grid_shape mismatch: field-wise comparison failed"
+                );
+                return Err(McEnvError::HandshakeMismatch {
+                    client: format!("grid_shape={expected:?}"),
+                    server: format!("grid_shape={server:?}"),
+                });
+            }
+            // Defensive: the grid + flat dims must add up to obs_dim.
+            let derived = (server.height as usize)
+                * (server.width as usize)
+                * (server.depth as usize)
+                * (server.channels as usize)
+                + (server.vector_dim as usize);
+            if derived != obs_dim {
+                warn!(
+                    derived,
+                    obs_dim,
+                    server = ?server,
+                    "grid_shape derived obs_dim != advertised obs_dim — bot is lying about its shape"
+                );
+                return Err(McEnvError::HandshakeMismatch {
+                    client: format!("derived_obs_dim={derived}"),
+                    server: format!("obs_dim={obs_dim}"),
                 });
             }
         }
@@ -266,3 +312,34 @@ impl FlatObsEnv for MinecraftEnv {
 // MinecraftEnv's `step_into` reuses the caller's obs buffer for the
 // observation bytes; internal network I/O deserialization still allocates,
 // but that is unavoidable and not governed by the zero-alloc CI gate.
+
+fn grid_shape_matches(expected: &GridShape, server: &GridShape) -> bool {
+    expected.height == server.height
+        && expected.width == server.width
+        && expected.depth == server.depth
+        && expected.channels == server.channels
+        && expected.vector_dim == server.vector_dim
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grid_shape_matches_is_field_wise() {
+        let a = GridShape {
+            height: 11,
+            width: 11,
+            depth: 11,
+            channels: 7,
+            vector_dim: 73,
+        };
+        let mut b = a;
+        assert!(grid_shape_matches(&a, &b));
+        b.channels = 6;
+        assert!(!grid_shape_matches(&a, &b));
+        b = a;
+        b.vector_dim = 31;
+        assert!(!grid_shape_matches(&a, &b));
+    }
+}

@@ -166,9 +166,7 @@ def main() -> None:
         seed=seed,
     )
     env = create_env(config=fake_cfg)
-    logger.info(
-        "Environment created: type=%s", type(env).__name__
-    )
+    logger.info("Environment created: type=%s", type(env).__name__)
 
     # ------------------------------------------------------------------
     # Build agent
