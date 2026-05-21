@@ -81,9 +81,30 @@ the canonical-form drift on both sides before bumping.
 - ✅ Reward registry with 5 built-ins (survival, inventory_acquired,
        distance_to_goal, health_delta, composite)
 - ✅ Reset strategy (teleport) with stub-bot tests
-- ⏳ `index.js` entry point + mineflayer wire-up (needs real MC server)
-- ⏳ prismarine-viewer integration
-- ⏳ End-to-end episode against a Paper Minecraft server
+- ✅ `index.js` entry point + mineflayer wire-up (v0.5 Phase 1 —
+       verified end-to-end against a real `itzg/minecraft-server`)
+- ✅ prismarine-viewer integration (browser viewer at :3007)
+- ✅ End-to-end episode against a real Minecraft server (v0.5 Phase 1
+       — see [`docs/results/v0.5-first-real-run.md`](../docs/results/v0.5-first-real-run.md))
+- ✅ v0.5 block-grid observation encoder (`observation_grid.js`) +
+       `Hello.grid_shape` cross-language pin
+- ⏳ Mineflayer auto-reconnect on MC-side tick timeout (Phase 2 —
+       known production-stability gap; the bot's WS layer stays UP
+       but the mineflayer connection enters a half-open state after
+       the first MC server-side exception, requiring a
+       `docker compose restart mc-bot` between captures today)
+
+## Docker vs local-dev hostnames
+
+The shipped `configs/minecraft/env.toml` uses local-dev defaults
+(`bot.host = "127.0.0.1"`, `ws_url = "ws://127.0.0.1:8765"`) so
+running the bot natively on the host works without edits.
+
+For docker compose runs, `docker/compose.minecraft.yml` mounts
+`configs/minecraft/env.docker.toml` over `env.toml` (single-file
+overlay) so the bot uses docker DNS hostnames (`bot.host =
+"minecraft"`, `ws_url = "ws://mc-bot:8766"`) automatically. No
+operator action required.
 
 See `docs/plans/minecraft_rl_integration_plan_v2.md` Phase 3 for the
 full design and the protocol contract.

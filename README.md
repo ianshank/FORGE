@@ -437,6 +437,20 @@ Architecture and contracts are documented in
 the v2 plan supersedes v1 with peer-review fixes (reward subsystem,
 episode reset, dynamic env names, dyn-compatible trait).
 
+**v0.5 Phase 1 — first-real-run readiness** ([`docs/results/v0.5-first-real-run.md`](docs/results/v0.5-first-real-run.md)).
+Adds the ego-centric block-grid observation encoder (`mc-bot/src/observation_grid.js`,
+`11×11×1×7 + 73 = 920 floats`), the `Hello.grid_shape` cross-language
+handshake gate, a `forge.training.muzero_mc.cli capture-baseline` CLI
+subcommand for random-vs-trained snapshots, the `mc_plot_baseline.py`
+report generator, a Python `scripts/v05_handshake_probe.py` that
+validates the v0.5 contract against a live bot, and the
+`docker/mc-runner.Dockerfile` for a from-source runner image. The
+v0.5 grid_shape handshake has been verified end-to-end against a real
+`itzg/minecraft-server`; the report documents what's verified and the
+two infrastructure issues deferred to Phase 2 (mineflayer
+auto-reconnect, `ort` rc.12 forward-port for the trained-mode docker
+image).
+
 ### Quickstart
 
 **v0.4 self-improving loop** (Minecraft server + mc-bot + runner +
@@ -468,6 +482,36 @@ one-shot container if no manifest exists, exports
 (`minecraft`, `mc-bot`, `runner`, `trainer`). The trainer
 continuously consumes runner-emitted trajectories and bumps the
 manifest the runner's `HotReloadWatcher` picks up.
+
+**v0.5 Phase 1 — capture a random-vs-trained baseline** (after the
+self-play stack is up):
+
+```bash
+# 1. Validate the v0.5 grid_shape handshake against the live bot.
+#    Returns EXIT_OK + prints obs_dim=920 / grid_shape={11,11,1,7,73}
+#    on success; non-zero for any contract mismatch.
+python scripts/v05_handshake_probe.py 127.0.0.1 8766
+
+# 2. Capture a random-policy baseline (100 episodes, ~30-60 min).
+#    Per-variant trajectory dir so `_trim_replay_buffer` can't
+#    evict baseline files mid-capture.
+python -m forge.training.muzero_mc.cli capture-baseline \
+    --variant random --episodes 100 \
+    --trajectory-dir trajectories.random/ \
+    --out baseline_random.json
+
+# 3. Same for the trained variant once the trainer has run.
+python -m forge.training.muzero_mc.cli capture-baseline \
+    --variant trained --episodes 100 \
+    --trajectory-dir trajectories.trained/ \
+    --out baseline_trained.json
+
+# 4. Render the Markdown comparison report + matplotlib PNGs.
+python scripts/mc_plot_baseline.py \
+    --random baseline_random.json \
+    --trained baseline_trained.json \
+    --out docs/results/v0.5-first-real-run.md
+```
 
 **Legacy quickstart (v0.3-pre — runner only, no trainer)**:
 

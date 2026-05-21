@@ -29,6 +29,14 @@ DEFAULT_HANDSHAKE_TIMEOUT_SECS: Final[float] = 10.0
 #: Socket recv() chunk size for frame-buffer growth. Matches the
 #: stdlib default for buffered IO so behaviour is predictable.
 DEFAULT_RECV_CHUNK_SIZE: Final[int] = 65536
+#: Hard cap on a single inbound frame's payload size (64 MiB). The
+#: mc-bot's largest realistic frame is the 920-float observation +
+#: a small info-blob (~10-30 KiB); 64 MiB is several orders of
+#: magnitude above that and below the host-RAM exhaustion threshold.
+#: A hostile bot could otherwise send a u64-typed payload_len header
+#: (~9 EiB) and crash this client via the `while len(buf) <
+#: cursor + payload_len` allocation loop. Security audit HIGH-1.
+DEFAULT_MAX_FRAME_BYTES: Final[int] = 64 * 1024 * 1024
 #: Short frame-length sentinel: payload_len in [126, 65535] uses 2
 #: extended bytes; payload_len > 65535 uses 8. Pinned per RFC 6455.
 EXT_PAYLOAD_LEN_16: Final[int] = 126
@@ -133,6 +141,15 @@ def recv_text(sock: socket.socket, buf: bytearray) -> dict[str, Any]:  # noqa: P
             buf.extend(sock.recv(DEFAULT_RECV_CHUNK_SIZE))
         payload_len = struct.unpack(">Q", bytes(buf[cursor : cursor + 8]))[0]
         cursor += 8
+    # Hostile-server DoS guard (security audit HIGH-1): refuse
+    # frames larger than DEFAULT_MAX_FRAME_BYTES BEFORE the
+    # recv-loop tries to allocate them.
+    if payload_len > DEFAULT_MAX_FRAME_BYTES:
+        msg = (
+            f"frame payload_len={payload_len} exceeds cap "
+            f"{DEFAULT_MAX_FRAME_BYTES}; refusing to allocate"
+        )
+        raise RuntimeError(msg)
     mask = bytes(buf[cursor : cursor + 4]) if masked else None
     if masked:
         cursor += 4

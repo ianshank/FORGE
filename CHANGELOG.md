@@ -9,6 +9,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Minecraft RL Integration: v0.5 Phase 1 post-T9 — hardening, docker runner image, first-real-run validation
+
+Four commits landed after the original T1-T9 sweep, all preserved on
+`feat/mc-v05-phase1-first-real-run` (PR #60):
+
+- **Hardening pass 1** (`7d144a6`): folds in 16 peer-review findings —
+  drops the `random-baseline` Cargo feature gate (no extra deps,
+  no benefit); hoists Prometheus helpers to `forge.utils.metrics`;
+  promotes `mc_capture_baseline.py` to the `forge.training.muzero_mc.cli
+  capture-baseline` subcommand; renames `radius` → `grid_radius`
+  with a serde alias for backwards-compat; per-tile `Number.isFinite`
+  coercion against NaN gradients; per-variant `trajectories.<variant>/`
+  dirs so the trainer's `_trim_replay_buffer` can't evict baseline
+  files mid-capture; Rust-side `BLOCK_FEATURE_CHANNELS` xlang pin.
+- **Lint pass** (`1797d71`): `cargo fmt + clippy -D warnings + ruff`
+  sweep; `assert_eq!(x, true)` → `assert!(x)` everywhere; `PERF401`
+  for-loop → comprehension; `PLR0915` build_parser extracted to a
+  helper; TC003 `# noqa` annotations on pytest-fixture imports.
+- **Docker infra** (`cf06bbf`): unblocks the runner image build by
+  forward-porting `forge-agent/onnx_model.rs` from ort rc.9
+  `commit_from_file` → rc.12 `commit_from_memory` API; refactors
+  `live.rs` to split the trained-mode path into `run_live_trained()`
+  feature-gated behind `onnx-reload`; new
+  `docker/mc-runner.Dockerfile` (rust:1.93-bookworm builder, 135 MB
+  debian:bookworm-slim runtime) building the `mc-live` variant
+  cleanly; updates `docker/compose.minecraft.yml` to build the
+  runner from source (the previous `ghcr.io/ianshank/forge-mc-runner:
+  dev` reference was a placeholder that was never actually
+  published); new `scripts/v05_handshake_probe.py` +
+  `scripts/v05_manual_baseline.py` (stdlib-only WS clients) drive
+  the first-ever real v0.5 episodes against a live `itzg/minecraft-
+  server`; preserves the first-real-episode evidence as tracked
+  JSONs in `docs/results/v0.5-first-real-run-baseline*.json`.
+- **Hardening pass 2** (`5acb374`): folds in another peer-review
+  pass against the docker commit — restores `configs/minecraft/
+  env.toml` to local-dev `127.0.0.1` defaults (H1); new
+  `configs/minecraft/env.docker.toml` overlay carries the docker-
+  DNS hostnames (`mc-bot:8766`, `minecraft`) mounted on top of the
+  dir mount in compose so docker runs get the override
+  automatically without breaking local-dev; extracts the shared
+  `scripts/_ws_client.py` (eliminates ~80 lines of duplication
+  between the probe + baseline script; spec-mapped RFC 6455 frame
+  parser); new `ships_default_runner_toml_parses_with_random_actions`
+  Rust integration test (drift in the shipped runner.toml fails
+  CI); `tracing::error!` events added on every error path in
+  `build_session_from_path` + `run_live_trained` guard;
+  `v05_manual_baseline.py` snapshot now schema-compat with
+  `mc_plot_baseline.py`'s consumer (adds `summary_counters`,
+  `summary_gauges`, `manifest_versions_seen`, `prometheus_snapshot`,
+  `trajectory_dir` keys); `Final[...]` annotations in
+  `v05_handshake_probe.py` replace the `920` + `8766` magic
+  literals.
+
+Security-audit follow-ups (one round of `security-auditor` agent
+review against the post-T9 commits):
+
+- **HIGH-1**: `_ws_client.recv_text` now caps inbound frame
+  `payload_len` at `DEFAULT_MAX_FRAME_BYTES = 64 MiB` before any
+  allocation — a hostile bot sending the u64-max payload_len
+  header (~9 EiB) would previously crash the script via heap
+  exhaustion.
+- **MEDIUM-3**: `observation_grid.blockTypeName` now truncates
+  block names to `MAX_BLOCK_NAME_LENGTH = 256` chars before
+  hashing — a hostile MC server returning a megabyte-long block
+  name would previously CPU-DoS the per-tile encoder.
+- **LOW-2** (documented, not changed): `runner.toml`'s
+  `metrics_bind = "0.0.0.0"` is container-internal only (compose
+  doesn't publish the port to the host); the existing inline
+  comment now spells this out.
+
 ### Added — Minecraft RL Integration: v0.5 Phase 1 — first real-end-to-end run readiness (block-grid obs + baseline capture)
 
 Closes the v0.4 → real-run gap. Every test in PR #59 passed against

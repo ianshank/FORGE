@@ -68,6 +68,14 @@ const DEFAULT_DANGEROUS_NAMES = Object.freeze([
   'wither_rose',
 ]);
 
+// Hard cap on a single block-name string we hash. Real Minecraft
+// block names are < 64 chars (`minecraft:sweet_berry_bush` is the
+// longest in vanilla); 256 leaves ample headroom for modded servers
+// while bounding the FNV-1a hash's per-call CPU cost. A hostile
+// server returning a 1-MiB block name would otherwise CPU-DoS the
+// encoder via `stableStringHash`. Security audit MEDIUM-3.
+const MAX_BLOCK_NAME_LENGTH = 256;
+
 function positiveIntOr(value, fallback) {
   return Number.isInteger(value) && value > 0 ? value : fallback;
 }
@@ -118,7 +126,14 @@ function buildDangerousSet(config) {
 
 function blockTypeName(block) {
   if (!block) return '';
-  if (typeof block.name === 'string') return block.name;
+  if (typeof block.name === 'string') {
+    // Truncate hostile / mod-pathological names so the FNV-1a hash
+    // doesn't spin per-character through megabyte strings. Real MC
+    // names are < 64 chars; 256 leaves ample headroom.
+    return block.name.length > MAX_BLOCK_NAME_LENGTH
+      ? block.name.slice(0, MAX_BLOCK_NAME_LENGTH)
+      : block.name;
+  }
   if (Number.isFinite(block.type)) return String(block.type);
   return '';
 }

@@ -33,10 +33,14 @@ random_actions = true
 planning_sims = 50
 action_repeat = 4
 
-# Bind to 0.0.0.0 so the scrape from a sibling container (or the
-# host's loopback via the published port) can reach the endpoint.
+# Security audit LOW-2: default to localhost-only. Operators
+# scraping Prometheus from a sibling container (or across hosts)
+# must explicitly flip to "0.0.0.0" to opt in to network exposure.
+# Inside the compose network this is reachable via the docker DNS
+# name `runner` even on 127.0.0.1 because the container's loopback
+# is independent of the host's.
 metrics_port = 9090
-metrics_bind = "0.0.0.0"
+metrics_bind = "0.0.0.0"  # NB: container-internal 0.0.0.0; not host-exposed unless the runner service publishes the port
 
 # v0.4 live-runner path.  Resolves relative to the runner container's
 # /app/ working dir; the mc_env_config_path field is required by

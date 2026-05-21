@@ -249,6 +249,90 @@ integrated").
 | ✅ | T7 — Self-improvement smoke (PR-CI) + opt-in milestone | `cab1280` |
 | ✅ | T8 — Docs sweep | (this commit) |
 
+### Minecraft RL — v0.5 Phase 1 LANDED (branch `feat/mc-v05-phase1-first-real-run`, PR #60)
+
+The v0.5 Phase 1 milestone closes the v0.4 → real-run gap. Every
+test in PR #59 passed against **stubs and mocks**; no one had
+actually brought the stack up against a real `itzg/minecraft-server`.
+v0.5 Phase 1 fixes the hidden contract violation (mc-bot emitted
+31 floats, MuZeroConfig required 920) and ships the operator-facing
+tooling for a calibrated random-vs-trained baseline.
+
+| Status | Track | Commit |
+|---|---|---|
+| ✅ | T1 — mc-bot block-grid encoder (`observation_grid.js`) + `Hello.grid_shape` xlang pin | `fd5785f` |
+| ✅ | T2 — `expected_dim=920` flipped across env.toml / mc_self_play.sh / compose env | `fc9b9d7` |
+| ✅ | T3 — `--random-actions` runtime switch + `RandomLatentModel` adapter | `2c7cff6` |
+| ✅ | T4 — `forge.training.muzero_mc.cli capture-baseline` subcommand + metrics hoist | `540536c` |
+| ✅ | T5 — `scripts/mc_plot_baseline.py` Markdown report + matplotlib PNGs | `2958310` |
+| ✅ | T6 — opt-in `python-test-minecraft-real-run` CI job | `2958310` |
+| ✅ | T7 — cross-cutting logging audit + Rust-side `BLOCK_FEATURE_CHANNELS` pin | `2958310` |
+| ✅ | T8 — `docs/results/v0.5-first-real-run.md` skeleton + final report | `2958310` |
+| ✅ | T9 — docs sweep (CHANGELOG / README / CLAUDE.md / Agent.md / architecture / next_steps) | `2958310` + this commit |
+| ✅ | Hardening pass 1 — 16 peer-review findings folded in | `7d144a6` |
+| ✅ | Lint pass — cargo fmt / clippy / ruff sweep | `1797d71` |
+| ✅ | Docker infra — `mc-runner.Dockerfile`, `env.docker.toml`, `v05_handshake_probe.py`, `v05_manual_baseline.py`, ort rc.12 forward-port, `live.rs` feature-gate refactor | `cf06bbf` |
+| ✅ | Hardening pass 2 — 6 more peer-review findings (env.docker overlay, `_ws_client.py`, tracing events, ships-default-runner.toml test, snapshot schema-compat) | `5acb374` |
+
+**End-to-end validation against a real `itzg/minecraft-server`:**
+v0.5 grid_shape handshake verified (`obs_dim=920`,
+`grid_shape={11,11,1,7,73}`, `schema_id` byte-matches Rust + JS xlang
+constants). First-real-episode rollouts captured (3 full 400-step
+episodes + 1 hardened 11-step episode; rewards -7..+40 with random
+actions). Full report: [`docs/results/v0.5-first-real-run.md`](results/v0.5-first-real-run.md).
+
+### Minecraft RL — v0.5 Phase 2 (open)
+
+The v0.5-Phase-1 first-real-run surfaced two production-stability
+issues out of Phase 1's scope:
+
+- **Mineflayer auto-reconnect on MC-side tick timeout**  `[STATUS: not-started]`
+  After the bot's mineflayer hits a server-side exception (e.g.
+  "ForgeBot tried to attack an invalid entity" — a random `attack`
+  action with no entity in melee range), the WS layer stays UP but
+  mineflayer's MC connection enters a half-open state; every
+  subsequent `step` returns INTERNAL/timeout after ~5s. Fix is
+  detect-and-rebuild in `mc-bot/src/index.js::handleClientMessage`.
+  Out of scope for Phase 1 (orchestration/UX hardening, not the
+  block-grid contract).
+- **`ort 2.0.0-rc.12` forward-port for trained-mode docker image**  `[STATUS: not-started]`
+  Four cascading dep conflicts block `--features mc-live-bundled`:
+  (1) `download-binaries` pulls ureq 3.x whose `tls` is
+  feature-gated; (2) `load-dynamic` + onnxruntime 1.22.0 hits an
+  ABI mismatch (`unknown field CreateEnvWithCustomLoggerAndGlobal
+  ThreadPools`); (3) workspace deps require rustc 1.93 (already
+  bumped in the v0.5 Dockerfile); (4) workspace Cargo.lock pins
+  versions that conflict with rc.12's build-script
+  tracing-subscriber expectations. Fix is to either downgrade
+  `ort` to a stable rc.9 line or forward-port
+  `forge-agent::onnx_model.rs` to whatever rc.12 ABI accepts.
+  Random-baseline `mc-live` already works.
+
+Phase-2 RL-specific candidates (deferred from Phase 1's "Out of
+scope" + the first-real-run report's next-steps):
+
+- **Bigger random baseline.** With bot auto-reconnect in place, run
+  the full 100-ep × 6000-tick baseline overnight (the v0.5 Phase 1
+  evidence is 3-4 real rollouts; enough to validate the contract
+  but not statistically meaningful as a trained-vs-random
+  comparison).  `[STATUS: not-started]`
+- **Block-ID embeddings** (replace the `block_type_hash` mod-N
+  with a learned lookup table). Eliminates hash collisions and
+  gives the CNN a richer per-tile signal.  `[STATUS: not-started]`
+- **Resource-acquisition + milestone reward shapers** ("first
+  wood", "first stone tool", etc.) so the planner sees a useful
+  gradient beyond the current survival/inventory/distance/health
+  composite.  `[STATUS: not-started]`
+- **HuggingFace pretrained-checkpoint loader** for warm-starts so
+  the trained variant doesn't start from random init.  `[STATUS: not-started]`
+- **DPO trainer** consuming `top_k_probs` / `value_hat` from the
+  trajectory traces (the schema already carries these; the trainer
+  doesn't consume them yet).  `[STATUS: not-started]`
+- **3D block-grid variant** (`grid_height_radius > 0`) once the
+  Conv3d branch is wired on the trainer side. The v0.5 encoder
+  defaults to single-Y-layer (`depth=1`) matching MuZero's 2D
+  CNN.  `[STATUS: not-started]`
+
 ### Minecraft RL — deferred to v0.5
 
 After v0.4 lands, these items remain for a future milestone:
