@@ -1,4 +1,5 @@
 """Tests for forge.models.rssm_world_model module."""
+
 from __future__ import annotations
 
 import tempfile

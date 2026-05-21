@@ -40,7 +40,7 @@ from collections.abc import Iterable  # noqa: TC003 — runtime use in collect_p
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +65,7 @@ DEFAULT_DOCKER_LOGS_TIMEOUT_SECS: Final[int] = 30
 # Gauges the snapshot pulls out of the Prometheus scrape for the
 # summary header. Kept in one tuple so the JSON output stays in sync
 # with the documented schema.
-SUMMARY_GAUGES: Final[tuple[str, ...]] = (
-    "forge_mc_model_version",
-)
+SUMMARY_GAUGES: Final[tuple[str, ...]] = ("forge_mc_model_version",)
 SUMMARY_COUNTERS: Final[tuple[str, ...]] = (
     "forge_mc_episode_total",
     "forge_mc_steps_total",
@@ -262,9 +260,7 @@ def capture_baseline(
     """
     metrics_fetcher = metrics_fetcher or _default_metrics_fetcher
     trajectory_loader = trajectory_loader or (
-        lambda: load_episode_records(
-            cfg.trajectory_dir, glob_pattern=cfg.trajectory_glob_pattern
-        )
+        lambda: load_episode_records(cfg.trajectory_dir, glob_pattern=cfg.trajectory_glob_pattern)
     )
     docker_log_reader = docker_log_reader or (
         lambda: _default_docker_log_reader(cfg.runner_container, cfg.docker_logs_tail)
@@ -359,7 +355,13 @@ def capture_baseline(
     # End-of-run summary — single high-signal INFO line operators can
     # grep with `grep "capture-baseline done"` across multi-hour
     # captures to confirm success + check the manifest-version trace.
-    rewards = [float(rec["total_reward"]) for rec in snapshot["per_episode"]]
+    #
+    # Cast both dict reads to the concrete list[BaselineRecord]/list
+    # types so mypy's `dict[str, Any]` narrowing doesn't collapse the
+    # value to `object` (CI gate fix).
+    per_episode_field = cast("list[dict[str, Any]]", snapshot["per_episode"])
+    manifest_versions_field = cast("list[float]", snapshot["manifest_versions_seen"])
+    rewards = [float(rec["total_reward"]) for rec in per_episode_field]
     mean_reward = sum(rewards) / len(rewards) if rewards else 0.0
     logger.info(
         "capture-baseline done: variant=%s episodes_target=%d "
@@ -368,9 +370,9 @@ def capture_baseline(
         cfg.variant,
         cfg.episodes,
         progress.last_episode_count,
-        len(snapshot["per_episode"]),
+        len(per_episode_field),
         mean_reward,
-        snapshot["manifest_versions_seen"],
+        manifest_versions_field,
     )
     return snapshot
 

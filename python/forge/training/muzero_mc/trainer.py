@@ -143,7 +143,9 @@ def _safe_unlink_all(paths: list[Path]) -> int:
     return deleted
 
 
-def _resolve_device(device: str) -> Any:  # actually torch.device, but kept Any to avoid the runtime torch import here
+def _resolve_device(
+    device: str,
+) -> Any:  # actually torch.device, but kept Any to avoid the runtime torch import here
     """Resolve a config-level device string to a concrete
     ``torch.device``.
 
@@ -227,29 +229,19 @@ class MuZeroMcTrainerConfig:
         if self.train_iters < 0:
             raise ValueError(f"train_iters must be >= 0, got {self.train_iters}")
         if self.export_every_n_iters < 0:
-            raise ValueError(
-                f"export_every_n_iters must be >= 0, got {self.export_every_n_iters}"
-            )
+            raise ValueError(f"export_every_n_iters must be >= 0, got {self.export_every_n_iters}")
         if self.batch_size <= 0:
             raise ValueError(f"batch_size must be > 0, got {self.batch_size}")
         if not self.schema_id:
             raise ValueError("schema_id must be non-empty")
         if self.device not in _ALLOWED_DEVICES:
-            raise ValueError(
-                f"device must be one of {_ALLOWED_DEVICES!r}, got {self.device!r}"
-            )
+            raise ValueError(f"device must be one of {_ALLOWED_DEVICES!r}, got {self.device!r}")
         if self.round_poll_sleep_s <= 0:
-            raise ValueError(
-                f"round_poll_sleep_s must be > 0, got {self.round_poll_sleep_s}"
-            )
+            raise ValueError(f"round_poll_sleep_s must be > 0, got {self.round_poll_sleep_s}")
         if self.max_trajectories is not None and self.max_trajectories <= 0:
-            raise ValueError(
-                f"max_trajectories must be > 0 when set, got {self.max_trajectories}"
-            )
+            raise ValueError(f"max_trajectories must be > 0 when set, got {self.max_trajectories}")
         if self.max_bundle_versions < 0:
-            raise ValueError(
-                f"max_bundle_versions must be >= 0, got {self.max_bundle_versions}"
-            )
+            raise ValueError(f"max_bundle_versions must be >= 0, got {self.max_bundle_versions}")
 
 
 def build_batch_from_trajectory(
@@ -296,9 +288,7 @@ def build_batch_from_trajectory(
     for pos in indices:
         # Initial observation at row[pos].
         if pos >= len(steps):
-            raise IndexError(
-                f"trajectory has {len(steps)} steps; cannot start a batch at {pos}"
-            )
+            raise IndexError(f"trajectory has {len(steps)} steps; cannot start a batch at {pos}")
         obs.append(list(steps[pos]["obs"]))
 
         # Actions[k] for k in 0..num_unroll_steps-1
@@ -550,8 +540,7 @@ class MuzeroMcTrainer:
             # `round_poll_sleep_s` between checks.
             while not self._reader.episode_paths() and not check_stop():
                 logger.info(
-                    "train_continuous: waiting for first trajectory in %s "
-                    "(sleeping %.2fs)",
+                    "train_continuous: waiting for first trajectory in %s (sleeping %.2fs)",
                     self._reader.directory,
                     sleep_s,
                 )
@@ -788,7 +777,7 @@ class MuzeroMcTrainer:
                 continue
             if not p.name.startswith(BUNDLE_VERSION_PREFIX):
                 continue
-            digits = p.name[len(BUNDLE_VERSION_PREFIX):]
+            digits = p.name[len(BUNDLE_VERSION_PREFIX) :]
             if not digits.isdigit():
                 continue
             candidates.append((int(digits), p))

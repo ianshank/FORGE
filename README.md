@@ -490,7 +490,7 @@ self-play stack is up):
 # 1. Validate the v0.5 grid_shape handshake against the live bot.
 #    Returns EXIT_OK + prints obs_dim=920 / grid_shape={11,11,1,7,73}
 #    on success; non-zero for any contract mismatch.
-python scripts/v05_handshake_probe.py 127.0.0.1 8766
+python scripts/v05_handshake_probe.py 127.0.0.1 8765
 
 # 2. Capture a random-policy baseline (100 episodes, ~30-60 min).
 #    Per-variant trajectory dir so `_trim_replay_buffer` can't

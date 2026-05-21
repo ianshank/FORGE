@@ -31,7 +31,9 @@ from _ws_client import open_ws, recv_text, send_text
 logger = logging.getLogger("v05_manual_baseline")
 
 DEFAULT_HOST: Final[str] = "127.0.0.1"
-DEFAULT_PORT: Final[int] = 8766
+# Matches `configs/minecraft/env.toml` (local-dev) and
+# `docker/compose.minecraft.env.example` (`MC_BOT_WS_PORT=8765`).
+DEFAULT_PORT: Final[int] = 8765
 DEFAULT_EPISODES: Final[int] = 10
 DEFAULT_MAX_STEPS_PER_EPISODE: Final[int] = 100
 DEFAULT_BASE_SEED: Final[int] = 0xCAFEF00D
@@ -73,8 +75,7 @@ def drive_episode(
             truncated = True
             step_count = tick + 1
             logger.warning(
-                "step %d returned protocol error code=%s message=%s; "
-                "truncating episode",
+                "step %d returned protocol error code=%s message=%s; truncating episode",
                 tick,
                 last_msg.get("code"),
                 last_msg.get("message"),
@@ -134,9 +135,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--episodes", type=int, default=DEFAULT_EPISODES)
-    parser.add_argument(
-        "--max-steps-per-episode", type=int, default=DEFAULT_MAX_STEPS_PER_EPISODE
-    )
+    parser.add_argument("--max-steps-per-episode", type=int, default=DEFAULT_MAX_STEPS_PER_EPISODE)
     parser.add_argument("--base-seed", type=int, default=DEFAULT_BASE_SEED)
     parser.add_argument("--out", type=Path, default=Path(DEFAULT_OUT_PATH))
     return parser.parse_args(argv)

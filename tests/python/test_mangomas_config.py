@@ -1,4 +1,5 @@
 """Tests for MangoMAS configuration dataclasses."""
+
 from __future__ import annotations
 
 import pytest
@@ -218,35 +219,33 @@ class TestMangoMASBridgeConfigToml:
         assert config.platform == "car"
 
     def test_from_dict_with_action_adapter(self) -> None:
-        config = MangoMASBridgeConfig._from_dict({
-            "action_adapter": {"bins_per_axis": 5}
-        })
+        config = MangoMASBridgeConfig._from_dict({"action_adapter": {"bins_per_axis": 5}})
         assert config.action_adapter.bins_per_axis == 5
 
     def test_from_dict_with_observation_adapter(self) -> None:
-        config = MangoMASBridgeConfig._from_dict({
-            "observation_adapter": {"grid_summary_dim": 32}
-        })
+        config = MangoMASBridgeConfig._from_dict({"observation_adapter": {"grid_summary_dim": 32}})
         assert config.observation_adapter.grid_summary_dim == 32
 
     def test_from_dict_with_sweep_nested(self) -> None:
-        config = MangoMASBridgeConfig._from_dict({
-            "sweep": {
-                "c_puct": {"range": [1.0, 2.0], "steps": 3},
-                "sim_budget": {"range": [20, 200], "steps": 4},
-                "depth": {"range": [5, 50], "steps": 2},
-                "discount": {"range": [0.95, 0.999], "steps": 2},
+        config = MangoMASBridgeConfig._from_dict(
+            {
+                "sweep": {
+                    "c_puct": {"range": [1.0, 2.0], "steps": 3},
+                    "sim_budget": {"range": [20, 200], "steps": 4},
+                    "depth": {"range": [5, 50], "steps": 2},
+                    "discount": {"range": [0.95, 0.999], "steps": 2},
+                }
             }
-        })
+        )
         assert config.sweep.c_puct_range == (1.0, 2.0)
         assert config.sweep.c_puct_steps == 3
         assert config.sweep.sim_budget_range == (20, 200)
         assert config.sweep.sim_budget_steps == 4
 
     def test_from_dict_sweep_with_surprise_ignored(self) -> None:
-        config = MangoMASBridgeConfig._from_dict({
-            "sweep": {"surprise": {"some": "data"}, "episodes_per_config": 10}
-        })
+        config = MangoMASBridgeConfig._from_dict(
+            {"sweep": {"surprise": {"some": "data"}, "episodes_per_config": 10}}
+        )
         assert config.sweep.episodes_per_config == 10
 
     def test_from_toml_file(self, tmp_path: object) -> None:

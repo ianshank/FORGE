@@ -135,7 +135,9 @@ class TestPageLoad:
     def test_no_console_errors(self, browser_page: Page) -> None:
         """The page should load without JavaScript console errors."""
         errors: list[str] = []
-        browser_page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+        browser_page.on(
+            "console", lambda msg: errors.append(msg.text) if msg.type == "error" else None
+        )
         # Reload to capture any errors
         browser_page.reload(wait_until="networkidle")
         assert len(errors) == 0, f"Console errors detected: {errors}"
@@ -229,9 +231,7 @@ class TestSectionStateMachine:
         expect(fresh_page.locator(WORLDGEN_BTN)).to_have_class(
             re.compile(r"\brunning\b"), timeout=TIMEOUT_FAST_MS
         )
-        expect(fresh_page.locator(WORLDGEN_BADGE)).to_have_text(
-            "RUNNING", timeout=TIMEOUT_FAST_MS
-        )
+        expect(fresh_page.locator(WORLDGEN_BADGE)).to_have_text("RUNNING", timeout=TIMEOUT_FAST_MS)
 
         # PASS arrives when the SSE payload contains "PASS"; --quick mode
         # finishes worldgen in a few seconds, but allow headroom for
@@ -268,8 +268,7 @@ class TestTerminalStream:
         # Wait for a healthy stream of lines; the threshold is centralised
         # in MIN_TERMINAL_SPANS so flake-driven tuning lives in one place.
         fresh_page.wait_for_function(
-            f"document.querySelectorAll('{TERMINAL_OUTPUT} span').length"
-            f" > {MIN_TERMINAL_SPANS}",
+            f"document.querySelectorAll('{TERMINAL_OUTPUT} span').length > {MIN_TERMINAL_SPANS}",
             timeout=TIMEOUT_PROGRESS_MS,
         )
 
@@ -289,8 +288,7 @@ class TestProgressBar:
         # observing advance to keep CI runtime tight.
         fresh_page.locator(RUN_ALL_BTN).click()
         fresh_page.wait_for_function(
-            f"parseFloat(getComputedStyle(document.querySelector('{PROGRESS_BAR}'))"
-            ".width) > 0",
+            f"parseFloat(getComputedStyle(document.querySelector('{PROGRESS_BAR}')).width) > 0",
             timeout=TIMEOUT_PROGRESS_MS,
         )
         # Stop the run so subsequent module fixtures are not blocked by the

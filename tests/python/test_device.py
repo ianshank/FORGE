@@ -1,4 +1,5 @@
 """Tests for forge.utils.device — compute device detection."""
+
 from __future__ import annotations
 
 import sys

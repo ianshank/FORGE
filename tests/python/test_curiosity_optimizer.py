@@ -1,4 +1,5 @@
 """Tests for MangoMAS curiosity weight optimizer."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -31,9 +32,7 @@ class TestCuriosityWeights:
         np.testing.assert_allclose(arr, [0.4, 0.3, 0.2, 0.1])
 
     def test_repr(self) -> None:
-        weights = CuriosityWeights(
-            weights={"social": 0.5, "epistemic": 0.5}, fitness=1.234
-        )
+        weights = CuriosityWeights(weights={"social": 0.5, "epistemic": 0.5}, fitness=1.234)
         text = repr(weights)
         assert "social=0.500" in text
         assert "epistemic=0.500" in text

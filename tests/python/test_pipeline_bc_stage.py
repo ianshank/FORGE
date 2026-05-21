@@ -10,9 +10,9 @@ from forge.mangomas.config import MangoMASBridgeConfig
 from forge.mangomas.pipeline import CollectedTrainingData, MangoMASDroneTrainingPipeline
 
 
-def _empty_episode(n_steps: int = 3) -> tuple[
-    np.ndarray, list[str], np.ndarray, np.ndarray, np.ndarray, list[dict[str, float]]
-]:
+def _empty_episode(
+    n_steps: int = 3,
+) -> tuple[np.ndarray, list[str], np.ndarray, np.ndarray, np.ndarray, list[dict[str, float]]]:
     obs = np.zeros((n_steps + 1, 4), dtype=np.float32)
     action_names = ["Noop"] * n_steps
     action_ids = np.zeros((n_steps,), dtype=np.int64)

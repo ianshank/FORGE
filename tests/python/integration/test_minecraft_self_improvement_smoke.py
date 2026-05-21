@@ -159,9 +159,7 @@ def test_trainer_continuous_bumps_manifest_with_atomic_bundles(tmp_path: Path) -
         return rounds_seen["n"] >= 2
 
     start = time.monotonic()
-    for round_summary in trainer.train_continuous(
-        round_iters=2, stop=stop_after_two_rounds
-    ):
+    for round_summary in trainer.train_continuous(round_iters=2, stop=stop_after_two_rounds):
         rounds_seen["n"] += 1
         # Pin the per-round invariants right where they're produced.
         assert round_summary["exports"] >= 1, round_summary
@@ -245,6 +243,5 @@ def test_trainer_continuous_respects_max_bundle_versions_floor(tmp_path: Path) -
         f"v{trainer.last_manifest_version - 1:08d}",
     }
     assert set(surviving) == expected_top_versions, (
-        f"GC kept wrong subdirs: surviving={surviving!r}, "
-        f"expected={expected_top_versions!r}"
+        f"GC kept wrong subdirs: surviving={surviving!r}, expected={expected_top_versions!r}"
     )

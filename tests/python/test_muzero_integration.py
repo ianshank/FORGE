@@ -3,6 +3,7 @@
 Tests the complete flow: create model -> self-play -> train -> export.
 Uses a mock environment to avoid FORGE native library dependency.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

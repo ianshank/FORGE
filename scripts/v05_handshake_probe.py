@@ -24,7 +24,11 @@ from _ws_client import open_ws, recv_text
 # per the CLAUDE.md "no hard-coded values" rule. Operators override
 # via CLI args (`v05_handshake_probe.py <host> <port>`).
 DEFAULT_HOST: Final[str] = "127.0.0.1"
-DEFAULT_PORT: Final[int] = 8766
+# Matches the historical v0.4 default (`MC_BOT_WS_PORT=8765` in
+# `docker/compose.minecraft.env.example` + `ws_url` in env.toml).
+# Operators running multiple bot instances or with a port conflict
+# override via CLI args.
+DEFAULT_PORT: Final[int] = 8765
 # v0.5 Phase 1 contract: 11x11x1x7 grid (847 floats) + 73 flat = 920.
 # Drift here means env.toml's [observation] knobs were changed without
 # updating the probe's acceptance gate.
@@ -66,23 +70,23 @@ def main() -> int:
     if grid_shape is None:
         print("[probe] WARN: grid_shape is missing (legacy flat-only bot?)")
         return EXIT_GRID_SHAPE_MISSING
-    derived = (
-        grid_shape["height"]
-        * grid_shape["width"]
-        * grid_shape["depth"]
-        * grid_shape["channels"]
-        + grid_shape.get("vector_dim", 0)
-    )
+    derived = grid_shape["height"] * grid_shape["width"] * grid_shape["depth"] * grid_shape[
+        "channels"
+    ] + grid_shape.get("vector_dim", 0)
     print(f"[probe] derived obs_dim from grid_shape = {derived}")
     if derived != obs_dim:
         print(f"[probe] FAIL: derived {derived} != advertised {obs_dim}")
         return EXIT_GRID_SHAPE_MISMATCH
     if obs_dim == EXPECTED_OBS_DIM:
+        # Use `.get()` for vector_dim so legacy bots that omit the
+        # optional field (serde_default in the Rust struct) don't
+        # KeyError out of the success path.
+        vector_dim = grid_shape.get("vector_dim", 0)
         print(
             f"[probe] PASS: v0.5 Phase 1 contract "
             f"(grid {grid_shape['height']}*{grid_shape['width']}*"
             f"{grid_shape['depth']}*{grid_shape['channels']} + "
-            f"{grid_shape['vector_dim']} = {EXPECTED_OBS_DIM}) "
+            f"{vector_dim} = {EXPECTED_OBS_DIM}) "
             f"verified end-to-end"
         )
     else:

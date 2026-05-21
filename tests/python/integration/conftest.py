@@ -33,6 +33,7 @@ from ._helpers import (
     DEFAULT_RUNNER_CONTAINER,
     docker_compose_available,
     docker_logs,
+    lf_normalized_script,
     runner_container_state,
 )
 
@@ -71,19 +72,19 @@ def compose_up_minecraft_stack() -> Iterator[dict[str, Any]]:
     runner_container = env.get("FORGE_MC_RUNNER_CONTAINER", DEFAULT_RUNNER_CONTAINER)
 
     logger.info("compose up (--build --detach)")
-    up = subprocess.run(
-        ["bash", str(script), "--build", "--detach"],
-        cwd=repo_root,
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=COMPOSE_UP_TIMEOUT_SECS,
-    )
+    with lf_normalized_script(script) as posix_script:
+        up = subprocess.run(
+            ["bash", posix_script, "--build", "--detach"],
+            cwd=repo_root,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=COMPOSE_UP_TIMEOUT_SECS,
+        )
     if up.returncode != 0:
         pytest.skip(
-            f"compose up failed (rc={up.returncode}); skipping E2E. "
-            f"stderr:\n{up.stderr[-800:]}"
+            f"compose up failed (rc={up.returncode}); skipping E2E. stderr:\n{up.stderr[-800:]}"
         )
 
     try:
@@ -98,14 +99,15 @@ def compose_up_minecraft_stack() -> Iterator[dict[str, Any]]:
         }
     finally:
         logger.info("compose down")
-        subprocess.run(
-            ["bash", str(script), "--down"],
-            cwd=repo_root,
-            env=env,
-            check=False,
-            capture_output=True,
-            timeout=COMPOSE_DOWN_TIMEOUT_SECS,
-        )
+        with lf_normalized_script(script) as posix_script:
+            subprocess.run(
+                ["bash", posix_script, "--down"],
+                cwd=repo_root,
+                env=env,
+                check=False,
+                capture_output=True,
+                timeout=COMPOSE_DOWN_TIMEOUT_SECS,
+            )
 
 
 @pytest.fixture

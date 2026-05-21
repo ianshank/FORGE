@@ -226,12 +226,7 @@ def utc_now_rfc3339() -> str:
     suffix — the canonical form the Rust ``chrono::Utc::now().to_rfc3339()``
     produces, modulo subsecond precision which both sides tolerate.
     """
-    return (
-        datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def sha256_file(path: str | os.PathLike[str]) -> str:

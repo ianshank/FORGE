@@ -1,4 +1,5 @@
 """Tests for MuZero model export to ONNX and TorchScript."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -19,18 +20,20 @@ HIDDEN_DIM = 16
 
 
 def _make_model() -> MuZeroWorldModel:
-    return MuZeroWorldModel(MuZeroConfig(
-        obs_dim=OBS_DIM,
-        action_dim=ACTION_DIM,
-        latent_dim=LATENT_DIM,
-        hidden_dim=HIDDEN_DIM,
-        num_blocks=1,
-        reward_support_size=11,
-        value_support_size=11,
-        cnn_channels=(8,),
-        cnn_kernel_sizes=(3,),
-        cnn_strides=(1,),
-    ))
+    return MuZeroWorldModel(
+        MuZeroConfig(
+            obs_dim=OBS_DIM,
+            action_dim=ACTION_DIM,
+            latent_dim=LATENT_DIM,
+            hidden_dim=HIDDEN_DIM,
+            num_blocks=1,
+            reward_support_size=11,
+            value_support_size=11,
+            cnn_channels=(8,),
+            cnn_kernel_sizes=(3,),
+            cnn_strides=(1,),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -257,9 +257,18 @@ def test_parse_step_defaults() -> None:
 
 
 def test_parse_step_grid_view_dict_tiles() -> None:
-    tiles = [{"terrain": 1, "has_agent": True, "elevation": 2, "object_type": 0,
-               "resource_type": 0, "has_object": False, "has_resource": False}
-             for _ in range(121)]
+    tiles = [
+        {
+            "terrain": 1,
+            "has_agent": True,
+            "elevation": 2,
+            "object_type": 0,
+            "resource_type": 0,
+            "has_object": False,
+            "has_resource": False,
+        }
+        for _ in range(121)
+    ]
     raw = {"observations": [{"grid_view": tiles, "view_width": 11, "view_height": 11}]}
     step = _parse_forge_jsonl_step(raw, tick=0)
     assert step is not None
@@ -451,10 +460,12 @@ def test_load_minerl_max_steps(tmp_path: Path) -> None:
 def test_load_minerl_max_episodes(tmp_path: Path) -> None:
     rows = []
     for _ in range(3):
-        rows.extend([
-            {"action": {}, "reward": 0.0, "terminated": False},
-            {"action": {}, "reward": 1.0, "terminated": True},
-        ])
+        rows.extend(
+            [
+                {"action": {}, "reward": 0.0, "terminated": False},
+                {"action": {}, "reward": 1.0, "terminated": True},
+            ]
+        )
     p = _write_minerl_jsonl(tmp_path, rows)
     ds = load_minerl(str(p), max_episodes=2)
     # 2 episodes x 2 steps each
@@ -515,8 +526,8 @@ def test_load_maze_max_mazes(tmp_path: Path) -> None:
 
 def test_load_maze_max_solution_length_filter(tmp_path: Path) -> None:
     records = [
-        {"solution": "R", "start": [0, 0]},        # passes (len 1)
-        {"solution": "RRRRRR", "start": [0, 0]},   # filtered (len 6 > 4)
+        {"solution": "R", "start": [0, 0]},  # passes (len 1)
+        {"solution": "RRRRRR", "start": [0, 0]},  # filtered (len 6 > 4)
     ]
     p = _write_maze_jsonl(tmp_path, records)
     ds = load_maze_jsonl(str(p), max_solution_length=4)
@@ -579,6 +590,7 @@ def test_load_maze_blank_lines_skipped(tmp_path: Path) -> None:
 
 def test_load_minari_raises_without_package(monkeypatch: pytest.MonkeyPatch) -> None:
     import forge_env.datasets as _mod
+
     original = _mod._minari
     monkeypatch.setattr(_mod, "_minari", None)
     with pytest.raises(ImportError, match="minari"):

@@ -10,6 +10,7 @@ from forge.agents.mcts_agent import MCTSAgent, MCTSConfig, MCTSEvaluator, MCTSNo
 # Mock evaluator for testing
 # ---------------------------------------------------------------------------
 
+
 class UniformMockEvaluator:
     """Mock evaluator that returns uniform priors and a fixed value."""
 
@@ -40,6 +41,7 @@ class BiasedMockEvaluator:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestPUCTScore:
     """Tests for the MCTSNode.puct_score method."""

@@ -88,9 +88,7 @@ class BootstrapConfig:
     latent_dim: int | None = None
     hidden_dim: int | None = None
     num_blocks: int | None = None
-    filenames: dict[str, str] = field(
-        default_factory=lambda: dict(DEFAULT_BUNDLE_FILENAMES)
-    )
+    filenames: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_BUNDLE_FILENAMES))
     manifest_filename: str = MANIFEST_FILENAME
     seed: int | None = None
 

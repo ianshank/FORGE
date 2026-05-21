@@ -1,4 +1,5 @@
 """Tests for MangoMAS FORGE scenario collection."""
+
 from __future__ import annotations
 
 import json
@@ -71,27 +72,36 @@ def test_decode_action_name_supports_agri_and_hex_layouts() -> None:
     comm_vocab = 8
     drone_base = 40 + comm_vocab
 
-    assert decode_action_name(
-        drone_base + 19 + 12,
-        comm_vocab,
-        True,
-        agri_enabled=True,
-        hex_enabled=False,
-    ) == "RelaySoilData"
-    assert decode_action_name(
-        drone_base,
-        comm_vocab,
-        False,
-        agri_enabled=False,
-        hex_enabled=True,
-    ) == "Move"
-    assert decode_action_name(
-        drone_base + 19 + 14,
-        comm_vocab,
-        True,
-        agri_enabled=True,
-        hex_enabled=True,
-    ) == "Move"
+    assert (
+        decode_action_name(
+            drone_base + 19 + 12,
+            comm_vocab,
+            True,
+            agri_enabled=True,
+            hex_enabled=False,
+        )
+        == "RelaySoilData"
+    )
+    assert (
+        decode_action_name(
+            drone_base,
+            comm_vocab,
+            False,
+            agri_enabled=False,
+            hex_enabled=True,
+        )
+        == "Move"
+    )
+    assert (
+        decode_action_name(
+            drone_base + 19 + 14,
+            comm_vocab,
+            True,
+            agri_enabled=True,
+            hex_enabled=True,
+        )
+        == "Move"
+    )
 
 
 def test_resolve_forge_scenarios_supports_high_level_and_eval_formats(tmp_path: Path) -> None:
@@ -248,7 +258,9 @@ def test_write_collection_report_serializes_collection_summary(tmp_path: Path) -
     assert payload["scenarios"][0]["difficulty_tier"] == 1
 
 
-def test_collect_training_data_requires_enough_episodes_for_selected_scenarios(tmp_path: Path) -> None:
+def test_collect_training_data_requires_enough_episodes_for_selected_scenarios(
+    tmp_path: Path,
+) -> None:
     first = tmp_path / "one.toml"
     second = tmp_path / "two.toml"
     for path, name in ((first, "one"), (second, "two")):

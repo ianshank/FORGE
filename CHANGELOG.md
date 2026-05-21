@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Minecraft RL Integration: v0.5 Phase 1 - CLI Hardening & Test Coverage Boost
+
+A comprehensive hardening and test coverage boost pass has been completed on the training CLI and trainer subcommands, achieving a package-level test coverage of **89.04%** (well exceeding the 85.0% global floor):
+
+- **CLI Coverage Boost**:
+  - Expanded unit test coverage in `test_muzero_mc_cli.py` to cover all subcommand entrypoints and error conditions.
+  - Plumbed unit tests for `_run_bootstrap` success and error paths (`ValueError`, `OSError`).
+  - Added unit tests for `_run_compute_schema_id` error paths (`ValueError`, `KeyError`).
+  - Covered all execution branches of `_run_capture_baseline` including `--dry-run`, `ValueError`, `TimeoutError`, `OSError`, and successful run scenarios.
+  - Added robust validation tests for `_run_train` path verification, optional dependency import failures (`ImportError` simulations for PyTorch/ONNX/ONNXRuntime), and execution anomalies (`ValueError`, `OSError`).
+  - Plumbed `_drive_continuous_loop` success flow and signal handling, proving that `SIGINT` / `KeyboardInterrupt` triggers graceful shutdown, sets stop flags, and cleanly restores original signal handlers in the `finally` block.
+- **WebSocket RFC 6455 Client Test Integration**:
+  - Registered and tracked `tests/python/test_ws_client.py` validating the stdlib-only frame parser shared by the handshake probe and manual baseline scripts.
+  - Added test coverage for `recv_text` happy paths, masked `send_text` payload frames, extended 16-bit/64-bit frame payload length encodings, socket EOF/close-frame exceptions, and security audit **HIGH-1** DoS mitigation (denying payload sizes exceeding 64 MiB).
+
 ### Added — Minecraft RL Integration: v0.5 Phase 1 post-T9 — hardening, docker runner image, first-real-run validation
 
 Four commits landed after the original T1-T9 sweep, all preserved on

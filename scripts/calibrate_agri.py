@@ -89,6 +89,7 @@ def to_fixed(value: float) -> int:
 # Result dataclass mirrors AgriConfig in forge-types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CalibratedAgriConfig:
     """Calibrated values for FORGE AgriConfig.
@@ -96,6 +97,7 @@ class CalibratedAgriConfig:
     All rate fields are in FORGE fixed-point (16 fractional bits).
     See crates/forge-types/src/config.rs for field documentation.
     """
+
     enabled: bool = True
 
     # Growth & health
@@ -143,6 +145,7 @@ class CalibratedAgriConfig:
 # Step 1: PlantVillage — disease prevalence analysis
 # ---------------------------------------------------------------------------
 
+
 def analyse_plantvillage(cache_dir: Path, dry_run: bool) -> dict:
     """Derive disease spread / decay parameters from PlantVillage class distribution.
 
@@ -183,15 +186,11 @@ def analyse_plantvillage(cache_dir: Path, dry_run: bool) -> dict:
         # Label names ending in "healthy" are disease-free; the rest are diseased.
         label_names = ds.features["label"].names
         diseased_count = sum(
-            c for lbl, c in counts.items()
-            if "healthy" not in label_names[lbl].lower()
+            c for lbl, c in counts.items() if "healthy" not in label_names[lbl].lower()
         )
         prevalence = diseased_count / total if total > 0 else 0.6
 
-        logger.info(
-            "PlantVillage: %d samples, disease prevalence=%.3f",
-            total, prevalence
-        )
+        logger.info("PlantVillage: %d samples, disease prevalence=%.3f", total, prevalence)
 
         # Equilibrium condition: spread_rate / (spread_rate + decay_rate) = prevalence
         # => decay_rate = spread_rate * (1 - prevalence) / prevalence
@@ -220,6 +219,7 @@ def analyse_plantvillage(cache_dir: Path, dry_run: bool) -> dict:
 # ---------------------------------------------------------------------------
 # Step 2: CropNet / Sentinel-2 — NDVI scan radius calibration
 # ---------------------------------------------------------------------------
+
 
 def analyse_cropnet(cache_dir: Path, dry_run: bool) -> dict:
     """Calibrate ndvi_scan_radius from CropNet Sentinel-2 spatial resolution.
@@ -270,6 +270,7 @@ def analyse_cropnet(cache_dir: Path, dry_run: bool) -> dict:
 # Step 3: KaraAgroAI Drone — spray coverage calibration
 # ---------------------------------------------------------------------------
 
+
 def analyse_karaagroai(cache_dir: Path, dry_run: bool) -> dict:
     """Calibrate spray_radius and spray_efficacy from KaraAgroAI drone imagery.
 
@@ -297,11 +298,13 @@ def analyse_karaagroai(cache_dir: Path, dry_run: bool) -> dict:
         # Dataset documents 8,784 images; spray coverage analysis from paper:
         # optimal spray radius ≈ 3 tiles (matches 3 crop-row widths at drone altitude).
         spray_radius = 3
-        spray_efficacy = 0.6   # 60% disease reduction per application (from paper)
+        spray_efficacy = 0.6  # 60% disease reduction per application (from paper)
         images = 8784
         logger.info(
             "KaraAgroAI: %d images → spray_radius=%d, efficacy=%.2f",
-            images, spray_radius, spray_efficacy
+            images,
+            spray_radius,
+            spray_efficacy,
         )
         return {
             "spray_radius": spray_radius,
@@ -317,6 +320,7 @@ def analyse_karaagroai(cache_dir: Path, dry_run: bool) -> dict:
 # ---------------------------------------------------------------------------
 # Merge and export
 # ---------------------------------------------------------------------------
+
 
 def build_config(
     plantvillage: dict,
@@ -370,6 +374,7 @@ def export_json(cfg: CalibratedAgriConfig, output_path: Path) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -421,17 +426,22 @@ def main() -> None:
     logger.info("=== Calibration Summary ===")
     logger.info(
         "PlantVillage: %d samples → disease_spread_rate=%d, disease_decay_rate=%d",
-        pv.get("samples", 0), cfg.disease_spread_rate, cfg.disease_decay_rate,
+        pv.get("samples", 0),
+        cfg.disease_spread_rate,
+        cfg.disease_decay_rate,
     )
     logger.info(
         "CropNet: %d counties → ndvi_scan_radius=%d",
-        cn.get("counties", 0), cfg.ndvi_scan_radius,
+        cn.get("counties", 0),
+        cfg.ndvi_scan_radius,
     )
     logger.info(
         "KaraAgroAI: %d images → spray_radius=%d, spray_efficacy=%d",
-        ka.get("images", 0), cfg.spray_radius, cfg.spray_efficacy,
+        ka.get("images", 0),
+        cfg.spray_radius,
+        cfg.spray_efficacy,
     )
-    logger.info("Done. Load with: ForgeConfig::from_file(\"%s\")", output_path)
+    logger.info('Done. Load with: ForgeConfig::from_file("%s")', output_path)
 
 
 if __name__ == "__main__":

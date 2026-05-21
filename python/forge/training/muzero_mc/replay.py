@@ -98,6 +98,7 @@ def format_episode_id(seq: int) -> str:
     """
     return f"{EPISODE_ID_PREFIX}{seq:0{EPISODE_ID_PAD_WIDTH}d}"
 
+
 #: Hard cap on decompressed bytes accepted by :func:`load_trajectory`
 #: when the file extension is ``.gz``. Mirrors the Rust constant
 #: ``forge_replay::v2::MAX_DECOMPRESSED_TRAJECTORY_BYTES`` byte-for-
@@ -215,8 +216,7 @@ def load_trajectory(path: str | os.PathLike[str]) -> dict[str, Any]:
     fmt = data.get("format_version")
     if fmt != TRAJECTORY_FORMAT_VERSION:
         raise TrajectoryError(
-            f"{p}: format_version mismatch (expected "
-            f"{TRAJECTORY_FORMAT_VERSION}, got {fmt!r})"
+            f"{p}: format_version mismatch (expected {TRAJECTORY_FORMAT_VERSION}, got {fmt!r})"
         )
     for key in (
         "env_id",
@@ -352,13 +352,9 @@ class TrajectoryReader:
             yield trajectory
 
     def _validate_header(self, trajectory: dict[str, Any], path: Path) -> None:
-        if (
-            self._expected_obs_dim is not None
-            and trajectory["obs_dim"] != self._expected_obs_dim
-        ):
+        if self._expected_obs_dim is not None and trajectory["obs_dim"] != self._expected_obs_dim:
             raise TrajectoryError(
-                f"{path}: obs_dim {trajectory['obs_dim']!r} != "
-                f"expected {self._expected_obs_dim!r}"
+                f"{path}: obs_dim {trajectory['obs_dim']!r} != expected {self._expected_obs_dim!r}"
             )
         if (
             self._expected_action_count is not None

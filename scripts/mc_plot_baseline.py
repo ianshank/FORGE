@@ -29,6 +29,7 @@ non-zero with an actionable message.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import logging
 import statistics
@@ -139,10 +140,17 @@ def write_plots(
 ) -> dict[str, Path]:
     """Write the three PNG plots into ``out_dir`` and return paths."""
     try:
-        import matplotlib
-
+        # matplotlib is an opt-in dependency (declared under the
+        # `minecraft-plots` extra in pyproject.toml). The dual
+        # `import-not-found, unused-ignore` suppression covers both
+        # cases — CI lint job runs without stubs (import-not-found
+        # fires), local-dev with `pip install matplotlib` HAS stubs
+        # (unused-ignore would fire without the second code). The
+        # `Any` annotations keep mypy quiet about the dynamic
+        # `matplotlib.use` + `plt.subplots()` return types.
+        matplotlib: Any = importlib.import_module("matplotlib")
         matplotlib.use("Agg")  # headless backend, no display required
-        import matplotlib.pyplot as plt
+        plt: Any = importlib.import_module("matplotlib.pyplot")
     except ImportError as exc:
         msg = (
             "matplotlib not installed; install via "
@@ -154,10 +162,7 @@ def write_plots(
     paths: dict[str, Path] = {}
 
     def _rewards(snapshot: dict[str, Any]) -> list[float]:
-        return [
-            float(rec.get("total_reward", 0.0))
-            for rec in snapshot.get("per_episode", [])
-        ]
+        return [float(rec.get("total_reward", 0.0)) for rec in snapshot.get("per_episode", [])]
 
     def _steps(snapshot: dict[str, Any]) -> list[float]:
         return [float(rec.get("steps", 0)) for rec in snapshot.get("per_episode", [])]
@@ -264,7 +269,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--random", type=Path, required=True, help="Random-variant snapshot JSON.")
-    parser.add_argument("--trained", type=Path, required=True, help="Trained-variant snapshot JSON.")
+    parser.add_argument(
+        "--trained", type=Path, required=True, help="Trained-variant snapshot JSON."
+    )
     parser.add_argument(
         "--out",
         type=Path,

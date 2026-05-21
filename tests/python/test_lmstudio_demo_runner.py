@@ -4,6 +4,7 @@ The helper is intentionally narrow: it pings the configured LM Studio
 endpoint with the preset's model and reports latency. Real collection
 goes through scripts/train.py.
 """
+
 from __future__ import annotations
 
 import logging

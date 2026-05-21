@@ -6,7 +6,7 @@
 - `cargo clippy --workspace -- -D warnings` — Lint (must pass with zero warnings)
 - `cargo fmt --check` — Format check
 - `cargo bench -p forge-bench` — Run benchmarks
-- `pytest tests/python/ -v` — Run Python tests (requires `maturin develop` first)
+- `python -m pytest tests/python/ -v` — Run Python tests using the local environment (e.g. Python 3.11.9) to bind core dependencies like `onnx`, `torch` and `onnxruntime` (requires `maturin develop` first)
 - `cd mc-bot && npm test` — Run Node-side mc-bot tests (no install required for the dep-free modules; `npm install` for mineflayer + Biome)
 - `cd mc-bot && npm run lint` — Biome lint + format check on the JS surface
 - `cargo run -p forge-mc-runner -- --dry-run --episodes 1` — Smoke-test the runner binary without docker / Minecraft (CI: `forge-mc-runner-bin` job)
@@ -30,8 +30,8 @@
 - `python scripts/mc_plot_baseline.py --random baseline_random.json --trained baseline_trained.json --out docs/results/v0.5-first-real-run.md [--no-plots]` — v0.5 Markdown report + matplotlib PNGs. Sources per-episode rewards from trajectory JSON (NOT Prometheus aggregates). `--no-plots` runs table-only on hosts without matplotlib
 - `cargo run -p forge-mc-runner -- --random-actions --mc-config configs/minecraft/env.toml` — v0.5 random-actions runtime switch. Bypasses MCTS entirely; live.rs skips the ONNX bundle load. Used by `capture-baseline --variant random` via the env-var ladder
 - `docker build -f docker/mc-runner.Dockerfile -t forge-mc-runner:dev .` — v0.5 runner image (rust:1.93-bookworm builder, 135 MB debian:bookworm-slim runtime, builds with `--features mc-live` — random-baseline-only). For trained mode rebuild with `--features mc-live-bundled` (requires re-enabling the commented-out ONNX-runtime install block in the Dockerfile)
-- `docker compose -f docker/compose.minecraft.yml --env-file docker/compose.minecraft.env up -d minecraft mc-bot runner` — v0.5 full stack bring-up. Compose mounts `configs/minecraft/env.docker.toml` over `env.toml` so the bot uses docker DNS hostnames (`bot.host = "minecraft"`, `ws_url = "ws://mc-bot:8766"`) instead of the local-dev `127.0.0.1` defaults
-- `python scripts/v05_handshake_probe.py 127.0.0.1 8766` — v0.5 stdlib-only WS handshake probe. Connects to the live mc-bot, reads `Hello`, validates the v0.5 contract end-to-end (`obs_dim=920`, `grid_shape={11,11,1,7,73}`). Returns EXIT_OK / EXIT_GRID_SHAPE_MISSING / EXIT_GRID_SHAPE_MISMATCH for CI gating
+- `docker compose -f docker/compose.minecraft.yml --env-file docker/compose.minecraft.env up -d minecraft mc-bot runner` — v0.5 full stack bring-up. Compose mounts `configs/minecraft/env.docker.toml` over `env.toml` so the bot uses docker DNS hostnames (`bot.host = "minecraft"`, `ws_url = "ws://mc-bot:8765"`) instead of the local-dev `127.0.0.1` defaults
+- `python scripts/v05_handshake_probe.py 127.0.0.1 8765` — v0.5 stdlib-only WS handshake probe. Connects to the live mc-bot, reads `Hello`, validates the v0.5 contract end-to-end (`obs_dim=920`, `grid_shape={11,11,1,7,73}`). Returns EXIT_OK / EXIT_GRID_SHAPE_MISSING / EXIT_GRID_SHAPE_MISMATCH for CI gating
 - `python scripts/v05_manual_baseline.py --episodes N --max-steps-per-episode M --out PATH` — v0.5 Python-driven random baseline (stand-in for the Rust runner's `--random-actions` path while the trained-mode docker image is being plumbed through). Output JSON schema-compatible with `mc_plot_baseline.py`. Shares the `scripts/_ws_client.py` RFC 6455 frame parser with the handshake probe
 
 ## Architecture

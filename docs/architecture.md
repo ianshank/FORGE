@@ -277,7 +277,7 @@ own `docker_default` network with its own volumes.
 │  │ :25565 (host:25565)  │         │                              │    │
 │  │                      │         │ - mineflayer 4.x             │    │
 │  │ Vanilla 1.20.4       │         │ - prismarine-viewer :3007    │    │
-│  │ EULA=TRUE (operator) │         │ - WS server :8766 (host:8766)│    │
+│  │ EULA=TRUE (operator) │         │ - WS server :8765 (host:8765)│    │
 │  │                      │         │                              │    │
 │  │ healthcheck:         │         │ Emits: Hello{schema_id,      │    │
 │  │   mc-status @25565   │         │         grid_shape={11,11,1, │    │
@@ -288,8 +288,8 @@ own `docker_default` network with its own volumes.
 │              │                    │ Encoder: observation_grid.js │    │
 │              │ env.docker.toml    │   BLOCK_FEATURE_CHANNELS pin │    │
 │              │ overlay:           └────────────┬─────────────────┘    │
-│              │  bot.host="minecraft"           │ ws://mc-bot:8766     │
-│              │  ws_url="ws://mc-bot:8766"     ▼                       │
+│              │  bot.host="minecraft"           │ ws://mc-bot:8765     │
+│              │  ws_url="ws://mc-bot:8765"     ▼                       │
 │              │                    ┌──────────────────────────────┐    │
 │              │                    │ runner                       │    │
 │              │                    │ debian:bookworm-slim (135 MB)│    │
@@ -359,7 +359,7 @@ Server (mc-bot) → Client (runner)
 
 1. `minecraft` starts → waits for healthcheck (world-gen, ~90s on first boot)
 2. `mc-bot` starts only after `minecraft` is **healthy**, joins as `ForgeBot`
-3. `runner` starts only after `mc-bot` is **healthy** (WS port 8766 accepting connections)
+3. `runner` starts only after `mc-bot` is **healthy** (WS port 8765 accepting connections)
 4. (self-play profile only) `trainer` starts after `runner` is **started**
 
 **Ports** (all bound to `127.0.0.1` by default):
@@ -367,7 +367,7 @@ Server (mc-bot) → Client (runner)
 | Container | Internal | Host | Protocol |
 |---|---|---|---|
 | minecraft | 25565 | 25565 | Java MC TCP |
-| mc-bot | 8766 (WS), 3007 (viewer) | 8766, 3007 | WebSocket, HTTP |
+| mc-bot | 8765 (WS), 3007 (viewer) | 8765, 3007 | WebSocket, HTTP |
 | runner | 9090 (metrics) | not published by default | HTTP (Prometheus) |
 | trainer | — | — | — (writes to bind-mounted models/) |
 
@@ -381,7 +381,7 @@ Server (mc-bot) → Client (runner)
 | `docker/mc-runner.Dockerfile` | rust:1.93-bookworm builder → debian:bookworm-slim runtime (135 MB) |
 | `docker/trainer.Dockerfile` | python:3.11 + torch + onnx + maturin |
 | `configs/minecraft/env.toml` | Local-dev defaults (`127.0.0.1`) |
-| `configs/minecraft/env.docker.toml` | Docker overlay (`bot.host="minecraft"`, `ws_url="ws://mc-bot:8766"`) |
+| `configs/minecraft/env.docker.toml` | Docker overlay (`bot.host="minecraft"`, `ws_url="ws://mc-bot:8765"`) |
 | `configs/minecraft/runner.toml` | Runner config; `random_actions=true` default for v0.5 baseline-capture |
 
 ---
@@ -2020,7 +2020,7 @@ run:
                                               (read-only single-file overlay
                                                with docker DNS hostnames:
                                                bot.host = "minecraft"
-                                               ws_url = "ws://mc-bot:8766")
+                                               ws_url = "ws://mc-bot:8765")
         - models/                   → /app/models           (read-write)
         - trajectories.<variant>/   → /app/trajectories     (read-write)
 

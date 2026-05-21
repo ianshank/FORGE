@@ -3,6 +3,7 @@
 Verifies TOML config → episode loop wiring and export pipeline integrity
 using real config files from configs/mangomas/.
 """
+
 from __future__ import annotations
 
 import json
@@ -85,9 +86,7 @@ def _make_collected_data(state_dim: int = 22) -> CollectedTrainingData:
         np.random.default_rng(i).standard_normal((ep_len + 1, state_dim)).astype(np.float32)
         for i in range(num_episodes)
     ]
-    action_names = [
-        ["Move", "Ascend", "Hover", "Scan", "Noop"] * 2 for _ in range(num_episodes)
-    ]
+    action_names = [["Move", "Ascend", "Hover", "Scan", "Noop"] * 2 for _ in range(num_episodes)]
     action_ids = [
         np.random.default_rng(i).integers(0, 50, size=ep_len).astype(np.int64)
         for i in range(num_episodes)
@@ -190,9 +189,7 @@ class TestPipelineStageWiring:
         config = MangoMASBridgeConfig()
         trainer = BDIPreTrainer(config=config.bdi_trainer)
         data = _make_collected_data()
-        dataset = trainer.build_dataset(
-            data.observations, data.action_names, data.rewards
-        )
+        dataset = trainer.build_dataset(data.observations, data.action_names, data.rewards)
         assert dataset.num_samples > 0
         dist = dataset.intention_distribution()
         assert len(dist) == config.bdi_trainer.num_intentions
@@ -218,7 +215,10 @@ class TestPipelineStageWiring:
         trainer = RSSMPreTrainer(config=config.rssm_pretrain)
         data = _make_collected_data()
         dataset = trainer.build_sequences(
-            data.observations, data.action_ids, data.rewards, data.dones,
+            data.observations,
+            data.action_ids,
+            data.rewards,
+            data.dones,
         )
         assert dataset.num_sequences > 0
         # Sequences should have correct length
@@ -231,9 +231,7 @@ class TestPipelineStageWiring:
             initial_weights=list(config.curiosity_optimizer.initial_weights),
             seed=config.curiosity_optimizer.seed,
         )
-        weights = optimizer._normalize(
-            np.array([0.5, 0.3, 0.1, 0.1])
-        )
+        weights = optimizer._normalize(np.array([0.5, 0.3, 0.1, 0.1]))
         assert abs(weights.sum() - 1.0) < 1e-6
         assert all(w >= 0 for w in weights)
 
@@ -284,7 +282,12 @@ class TestExportPipelineIntegrity:
             manifest = json.load(f)
         assert manifest["platform"] == "drone"
         assert set(manifest["components"]) == {
-            "bdi", "constitutional", "rssm", "mcts", "curiosity", "curriculum",
+            "bdi",
+            "constitutional",
+            "rssm",
+            "mcts",
+            "curiosity",
+            "curriculum",
         }
         # Verify all weight files exist
         assert (export_dir / "bdi_weights.npz").exists()
@@ -324,8 +327,6 @@ class TestPipelineEndToEnd:
 
         result = pipeline.run(data)
         assert result is not None
-        bdi_stage = next(
-            (s for s in result.stage_results if s.name == "bdi"), None
-        )
+        bdi_stage = next((s for s in result.stage_results if s.name == "bdi"), None)
         assert bdi_stage is not None
         assert bdi_stage.status == "completed"

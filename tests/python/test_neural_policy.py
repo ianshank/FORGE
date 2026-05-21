@@ -1,4 +1,5 @@
 """Tests for forge.models.neural_policy module."""
+
 from __future__ import annotations
 
 import tempfile
@@ -257,9 +258,7 @@ class TestNeuralMCTSPolicyLoadFromNpz:
             + list(policy.policy_head.parameters())
             + list(policy.value_head.parameters())
         )
-        fake_data = {
-            f"param_{i:03d}": p.detach().cpu().numpy() for i, p in enumerate(all_params)
-        }
+        fake_data = {f"param_{i:03d}": p.detach().cpu().numpy() for i, p in enumerate(all_params)}
 
         mock_loader = MagicMock()
         mock_loader.load_npz.return_value = fake_data

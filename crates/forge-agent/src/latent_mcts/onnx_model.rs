@@ -420,6 +420,39 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn build_session_from_path_missing_file_returns_ort_error() {
+        // The v0.5 forward-port (commit_from_file → commit_from_memory)
+        // routes any std::fs::read failure through ort::Error::new with
+        // the resolved path baked into the message. Pins the error-
+        // format contract so a future refactor doesn't silently
+        // swallow the path detail.
+        let err = build_session_from_path(1, "/definitely/does/not/exist.onnx")
+            .expect_err("missing file must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("/definitely/does/not/exist.onnx"),
+            "ort::Error message must surface the path; got: {msg}"
+        );
+        assert!(
+            msg.contains("read ONNX file"),
+            "ort::Error message must tag the failure class; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn build_session_from_path_rejects_invalid_onnx_bytes() {
+        // Even when the file exists, a non-ONNX payload must fail
+        // through the ort layer (commit_from_memory rejects the
+        // bytes). Verifies the no-panic contract on the binary
+        // happy path of `std::fs::read`.
+        let dir = tempdir().unwrap();
+        let bogus_path = dir.path().join("bogus.onnx");
+        std::fs::write(&bogus_path, b"not a real onnx model").unwrap();
+        let result = build_session_from_path(1, &bogus_path);
+        assert!(result.is_err(), "garbage ONNX bytes must surface as Err");
+    }
+
+    #[test]
     fn validate_reload_paths_accepts_existing_trio() {
         let dir = tempdir().unwrap();
         for name in ["rep.onnx", "dyn.onnx", "pred.onnx"] {

@@ -49,10 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="forge.training.muzero_mc.cli",
-        description=(
-            "Bootstrap and validate MuZero model bundles for the Rust "
-            "forge-mc-runner."
-        ),
+        description=("Bootstrap and validate MuZero model bundles for the Rust forge-mc-runner."),
     )
     parser.add_argument(
         "--log-level",
@@ -385,8 +382,7 @@ def _add_capture_baseline_subcommand(sub: argparse._SubParsersAction[Any]) -> No
         "--variant",
         choices=list(ALL_VARIANTS),
         required=True,
-        help="Which capture variant to write (sets the output name + "
-        "namespaced trajectory dir).",
+        help="Which capture variant to write (sets the output name + namespaced trajectory dir).",
     )
     p_cap.add_argument(
         "--episodes",
@@ -523,11 +519,7 @@ def _run_capture_baseline(args: argparse.Namespace) -> int:
         if args.trajectory_dir is not None
         else resolve_trajectory_dir(args.variant)
     )
-    out_path = (
-        args.out
-        if args.out is not None
-        else Path(f"baseline_{args.variant}.json").resolve()
-    )
+    out_path = args.out if args.out is not None else Path(f"baseline_{args.variant}.json").resolve()
 
     try:
         cfg = CaptureConfig(

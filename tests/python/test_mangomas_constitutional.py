@@ -1,4 +1,5 @@
 """Tests for MangoMAS constitutional pre-trainer."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -21,10 +22,10 @@ class TestConstraintChecking:
     def test_no_violations_safe_state(self) -> None:
         trainer = ConstitutionalPreTrainer()
         obs = {
-            "battery": 0.8,           # above 0.2 floor
-            "altitude": 0.5,          # below 0.9 ceiling
-            "stamina_inverse": 0.3,   # below 0.8 ceiling
-            "boundary_distance": 0.5, # above 0.1 floor
+            "battery": 0.8,  # above 0.2 floor
+            "altitude": 0.5,  # below 0.9 ceiling
+            "stamina_inverse": 0.3,  # below 0.8 ceiling
+            "boundary_distance": 0.5,  # above 0.1 floor
             "threat_proximity": 0.8,  # above 0.3 floor
         }
         violations = trainer.check_violations(obs)
@@ -32,32 +33,52 @@ class TestConstraintChecking:
 
     def test_battery_violation(self) -> None:
         trainer = ConstitutionalPreTrainer()
-        obs = {"battery": 0.1, "altitude": 0.5, "stamina_inverse": 0.3,
-               "boundary_distance": 0.5, "threat_proximity": 0.5}
+        obs = {
+            "battery": 0.1,
+            "altitude": 0.5,
+            "stamina_inverse": 0.3,
+            "boundary_distance": 0.5,
+            "threat_proximity": 0.5,
+        }
         violations = trainer.check_violations(obs)
         names = [v.constraint_name for v in violations]
         assert "battery_minimum" in names
 
     def test_altitude_violation(self) -> None:
         trainer = ConstitutionalPreTrainer()
-        obs = {"battery": 0.8, "altitude": 0.95, "stamina_inverse": 0.3,
-               "boundary_distance": 0.5, "threat_proximity": 0.5}
+        obs = {
+            "battery": 0.8,
+            "altitude": 0.95,
+            "stamina_inverse": 0.3,
+            "boundary_distance": 0.5,
+            "threat_proximity": 0.5,
+        }
         violations = trainer.check_violations(obs)
         names = [v.constraint_name for v in violations]
         assert "altitude_ceiling" in names
 
     def test_multiple_violations(self) -> None:
         trainer = ConstitutionalPreTrainer()
-        obs = {"battery": 0.05, "altitude": 0.95, "stamina_inverse": 0.9,
-               "boundary_distance": 0.05, "threat_proximity": 0.1}
+        obs = {
+            "battery": 0.05,
+            "altitude": 0.95,
+            "stamina_inverse": 0.9,
+            "boundary_distance": 0.05,
+            "threat_proximity": 0.1,
+        }
         violations = trainer.check_violations(obs)
         assert len(violations) == 5  # All 5 constraints violated
 
     def test_all_5_constraints_covered(self) -> None:
         assert len(DEFAULT_CONSTRAINTS) == 5
         names = {c["name"] for c in DEFAULT_CONSTRAINTS}
-        assert names == {"battery_minimum", "altitude_ceiling", "speed_ceiling",
-                         "geofence", "threat_exclusion"}
+        assert names == {
+            "battery_minimum",
+            "altitude_ceiling",
+            "speed_ceiling",
+            "geofence",
+            "threat_exclusion",
+        }
 
 
 class TestConstitutionalPenalty:
@@ -68,9 +89,7 @@ class TestConstitutionalPenalty:
         assert trainer.compute_penalty([]) == 0.0
 
     def test_penalty_scales_with_severity(self) -> None:
-        trainer = ConstitutionalPreTrainer(
-            config=ConstitutionalTrainerConfig(penalty_weight=10.0)
-        )
+        trainer = ConstitutionalPreTrainer(config=ConstitutionalTrainerConfig(penalty_weight=10.0))
         v1 = ConstraintViolation("test", 0.0, 0.2, True, 0.2)
         v2 = ConstraintViolation("test", 0.0, 0.2, True, 0.1)
         p1 = trainer.compute_penalty([v1])
@@ -169,8 +188,15 @@ class TestConstitutionalPreTrainer:
         obs = np.random.rand(20, 18).astype(np.float32)
         actions = np.random.randint(0, 10, 20).astype(np.int64)
         rewards = np.ones(20, dtype=np.float32)
-        obs_dicts = [{"battery": 0.1, "altitude": 0.5, "stamina_inverse": 0.3,
-                       "boundary_distance": 0.5, "threat_proximity": 0.5}] * 20
+        obs_dicts = [
+            {
+                "battery": 0.1,
+                "altitude": 0.5,
+                "stamina_inverse": 0.3,
+                "boundary_distance": 0.5,
+                "threat_proximity": 0.5,
+            }
+        ] * 20
         ds = trainer.build_dataset(obs, actions, rewards, obs_dicts)
         assert ds.num_samples == 20
         assert ds.constraint_violations.shape == (20, 5)

@@ -45,7 +45,11 @@ def _flatten_teacher_critiques(
         return None
     flat: list[dict[str, bool]] = []
     for ep_idx, episode in enumerate(per_episode):
-        count = per_episode_step_counts[ep_idx] if ep_idx < len(per_episode_step_counts) else len(episode)
+        count = (
+            per_episode_step_counts[ep_idx]
+            if ep_idx < len(per_episode_step_counts)
+            else len(episode)
+        )
         flat.extend(episode[:count])
     return flat or None
 
@@ -427,10 +431,7 @@ class MangoMASDroneTrainingPipeline:
             num_actions = int(flat_actions.max()) + 1
         dataset = trainer.build_dataset(
             collected_data.step_observations(),
-            [
-                episode.astype(np.int64, copy=False)
-                for episode in collected_data.action_ids
-            ],
+            [episode.astype(np.int64, copy=False) for episode in collected_data.action_ids],
             top_k_probs=collected_data.teacher_top_k_probs or None,
             value_hats=collected_data.teacher_value_hats or None,
             num_actions=num_actions,

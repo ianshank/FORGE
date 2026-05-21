@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path  # noqa: TC003 — used as a runtime fixture type.
 from typing import TYPE_CHECKING
 
-from forge.training.muzero_mc.cli import EXIT_IO, EXIT_OK, EXIT_VALIDATION, main
+from forge.training.muzero_mc.cli import EXIT_IO, EXIT_OK, EXIT_USAGE, EXIT_VALIDATION, main
 
 if TYPE_CHECKING:
     import pytest
@@ -90,7 +90,9 @@ def test_build_parser_has_all_subcommands() -> None:
     # comparison (not `<=`) so a future deletion of any subcommand fails
     # this test rather than silently passing.
     sub_actions = [
-        a for a in parser._actions if hasattr(a, "choices") and a.choices and "bootstrap" in a.choices
+        a
+        for a in parser._actions
+        if hasattr(a, "choices") and a.choices and "bootstrap" in a.choices
     ]
     assert sub_actions, "no subparser action found"
     raw_choices = sub_actions[0].choices
@@ -111,13 +113,9 @@ def test_compute_schema_id_prints_hash_quiet(
     prints ONLY the 64-hex sha256 to stdout (stderr-bound logs).
     """
     am_path = tmp_path / "action_map.toml"
-    am_path.write_text(
-        '[[action]]\nid = 0\nkind = "noop"\nticks = 1\n', encoding="utf-8"
-    )
+    am_path.write_text('[[action]]\nid = 0\nkind = "noop"\nticks = 1\n', encoding="utf-8")
     rw_path = tmp_path / "rewards.toml"
-    rw_path.write_text(
-        '[[reward]]\nkind = "survival"\nvalue = 0.01\n', encoding="utf-8"
-    )
+    rw_path.write_text('[[reward]]\nkind = "survival"\nvalue = 0.01\n', encoding="utf-8")
     rc = main(
         [
             "compute-schema-id",
@@ -137,9 +135,7 @@ def test_compute_schema_id_prints_hash_quiet(
 
 def test_compute_schema_id_missing_action_map_returns_io(tmp_path: Path) -> None:
     rw_path = tmp_path / "rewards.toml"
-    rw_path.write_text(
-        '[[reward]]\nkind = "survival"\nvalue = 0.01\n', encoding="utf-8"
-    )
+    rw_path.write_text('[[reward]]\nkind = "survival"\nvalue = 0.01\n', encoding="utf-8")
     rc = main(
         [
             "compute-schema-id",
@@ -219,3 +215,415 @@ def test_bootstrap_rejects_invalid_obs_dim(tmp_path: Path) -> None:
         ]
     )
     assert rc != EXIT_OK
+
+
+def test_bootstrap_success(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock, patch
+
+    from forge.training.muzero_mc.bootstrap import BootstrapResult
+
+    mock_manifest = MagicMock()
+    mock_manifest.version = 1
+    mock_manifest.schema_id = "test-schema-id"
+    mock_result = BootstrapResult(
+        manifest=mock_manifest, manifest_path=tmp_path / "model_manifest.json", onnx_paths={}
+    )
+    with patch("forge.training.muzero_mc.cli.bootstrap", return_value=mock_result) as mock_boot:
+        rc = main(
+            [
+                "bootstrap",
+                "--obs-dim",
+                "4",
+                "--action-dim",
+                "3",
+                "--schema-id",
+                "test-schema-id",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+        assert rc == EXIT_OK
+        mock_boot.assert_called_once()
+
+
+def test_bootstrap_os_error(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    with patch("forge.training.muzero_mc.cli.bootstrap", side_effect=OSError("Disk write error")):
+        rc = main(
+            [
+                "bootstrap",
+                "--obs-dim",
+                "4",
+                "--action-dim",
+                "3",
+                "--schema-id",
+                "test-schema-id",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+        assert rc == EXIT_IO
+
+
+def test_compute_schema_id_fails_validation(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    am_path = tmp_path / "action_map.toml"
+    am_path.write_text("bad action map", encoding="utf-8")
+    rw_path = tmp_path / "rewards.toml"
+    rw_path.write_text("bad rewards", encoding="utf-8")
+
+    with patch(
+        "forge.training.muzero_mc.schema_id.compute_schema_id_from_paths",
+        side_effect=ValueError("malformed toml"),
+    ):
+        rc = main(
+            [
+                "compute-schema-id",
+                "--action-map",
+                str(am_path),
+                "--rewards",
+                str(rw_path),
+                "--quiet",
+            ]
+        )
+        assert rc == EXIT_VALIDATION
+
+
+def test_capture_baseline_dry_run(tmp_path: Path) -> None:
+    rc = main(
+        [
+            "capture-baseline",
+            "--variant",
+            "random",
+            "--episodes",
+            "5",
+            "--out",
+            str(tmp_path / "baseline_random.json"),
+            "--trajectory-dir",
+            str(tmp_path),
+            "--dry-run",
+        ]
+    )
+    assert rc == EXIT_OK
+
+
+def test_capture_baseline_invalid_config(tmp_path: Path) -> None:
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "capture-baseline",
+                "--variant",
+                "invalid-variant",
+                "--episodes",
+                "5",
+                "--out",
+                str(tmp_path / "baseline_random.json"),
+            ]
+        )
+    assert exc.value.code == 2
+
+
+def test_capture_baseline_timeout(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    with patch(
+        "forge.training.muzero_mc.capture_baseline.capture_baseline",
+        side_effect=TimeoutError("Scrape timed out"),
+    ):
+        rc = main(
+            [
+                "capture-baseline",
+                "--variant",
+                "random",
+                "--episodes",
+                "5",
+                "--out",
+                str(tmp_path / "baseline_random.json"),
+                "--trajectory-dir",
+                str(tmp_path),
+            ]
+        )
+        assert rc == EXIT_IO
+
+
+def test_capture_baseline_os_error(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    with patch(
+        "forge.training.muzero_mc.capture_baseline.capture_baseline",
+        side_effect=OSError("Network down"),
+    ):
+        rc = main(
+            [
+                "capture-baseline",
+                "--variant",
+                "random",
+                "--episodes",
+                "5",
+                "--out",
+                str(tmp_path / "baseline_random.json"),
+                "--trajectory-dir",
+                str(tmp_path),
+            ]
+        )
+        assert rc == EXIT_IO
+
+
+def test_capture_baseline_success(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    with patch(
+        "forge.training.muzero_mc.capture_baseline.capture_baseline", return_value={}
+    ) as mock_cap:
+        rc = main(
+            [
+                "capture-baseline",
+                "--variant",
+                "random",
+                "--episodes",
+                "5",
+                "--out",
+                str(tmp_path / "baseline_random.json"),
+                "--trajectory-dir",
+                str(tmp_path),
+            ]
+        )
+        assert rc == EXIT_OK
+        mock_cap.assert_called_once()
+
+
+def test_train_subcommand_input_is_file_not_dir(tmp_path: Path) -> None:
+    dummy_file = tmp_path / "dummy_file"
+    dummy_file.write_text("not a dir", encoding="utf-8")
+    rc = main(
+        [
+            "train",
+            "--input",
+            str(dummy_file),
+            "--out",
+            str(tmp_path / "out"),
+            "--schema-id",
+            "x",
+            "--obs-dim",
+            "4",
+            "--action-dim",
+            "3",
+            "--iters",
+            "1",
+        ]
+    )
+    assert rc == EXIT_IO
+
+
+def test_train_subcommand_missing_dependencies(tmp_path: Path) -> None:
+    import builtins
+    from unittest.mock import patch
+
+    original_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if "muzero_config" in name or "muzero_world_model" in name:
+            raise ImportError("Simulated missing optional dependencies")
+        return original_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=mock_import):
+        in_dir = tmp_path / "in"
+        in_dir.mkdir()
+        rc = main(
+            [
+                "train",
+                "--input",
+                str(in_dir),
+                "--out",
+                str(tmp_path / "out"),
+                "--schema-id",
+                "x",
+                "--obs-dim",
+                "4",
+                "--action-dim",
+                "3",
+                "--iters",
+                "1",
+            ]
+        )
+        assert rc == EXIT_IO
+
+
+def test_train_subcommand_success_and_value_error(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock, patch
+
+    in_dir = tmp_path / "in"
+    in_dir.mkdir()
+
+    # 1. Test ValueError during config instantiation
+    with patch("forge.models.muzero_config.MuZeroConfig", side_effect=ValueError("Invalid dim")):
+        rc = main(
+            [
+                "train",
+                "--input",
+                str(in_dir),
+                "--out",
+                str(tmp_path / "out"),
+                "--schema-id",
+                "x",
+                "--obs-dim",
+                "4",
+                "--action-dim",
+                "3",
+                "--iters",
+                "1",
+            ]
+        )
+        assert rc == EXIT_USAGE
+
+    # 2. Test OSError during training
+    with patch(
+        "forge.training.muzero_mc.trainer.MuzeroMcTrainer", side_effect=OSError("Disk full")
+    ):
+        rc = main(
+            [
+                "train",
+                "--input",
+                str(in_dir),
+                "--out",
+                str(tmp_path / "out"),
+                "--schema-id",
+                "x",
+                "--obs-dim",
+                "4",
+                "--action-dim",
+                "3",
+                "--iters",
+                "1",
+            ]
+        )
+        assert rc == EXIT_IO
+
+    # 3. Test successful non-continuous training run
+    mock_trainer = MagicMock()
+    mock_trainer.train.return_value = {
+        "iters_completed": 10,
+        "exports": 1,
+        "last_manifest_version": 2,
+    }
+    with (
+        patch("forge.models.muzero_config.MuZeroConfig"),
+        patch("forge.models.muzero_world_model.MuZeroWorldModel"),
+        patch("forge.training.muzero_mc.replay.TrajectoryReader"),
+        patch("forge.training.muzero_mc.trainer.MuzeroMcTrainer", return_value=mock_trainer),
+    ):
+        rc = main(
+            [
+                "train",
+                "--input",
+                str(in_dir),
+                "--out",
+                str(tmp_path / "out"),
+                "--schema-id",
+                "x",
+                "--obs-dim",
+                "4",
+                "--action-dim",
+                "3",
+                "--iters",
+                "10",
+            ]
+        )
+        assert rc == EXIT_OK
+        mock_trainer.train.assert_called_once()
+
+
+def test_train_subcommand_continuous_loop_and_sigint(tmp_path: Path) -> None:
+    import signal
+    from unittest.mock import MagicMock, patch
+
+    in_dir = tmp_path / "in"
+    in_dir.mkdir()
+
+    # We mock the trainer.train_continuous to yield round summaries
+    # and then simulate stop condition being checked.
+    mock_trainer = MagicMock()
+
+    rounds = [
+        {"round": 1, "iters_completed": 10, "exports": 1, "last_manifest_version": 2},
+        {"round": 2, "iters_completed": 20, "exports": 2, "last_manifest_version": 3},
+    ]
+
+    def train_continuous_generator(round_iters, stop):
+        for r in rounds:
+            if stop():
+                break
+            yield r
+
+    mock_trainer.train_continuous.side_effect = train_continuous_generator
+
+    with (
+        patch("forge.models.muzero_config.MuZeroConfig"),
+        patch("forge.models.muzero_world_model.MuZeroWorldModel"),
+        patch("forge.training.muzero_mc.replay.TrajectoryReader"),
+        patch("forge.training.muzero_mc.trainer.MuzeroMcTrainer", return_value=mock_trainer),
+    ):
+        rc = main(
+            [
+                "train",
+                "--input",
+                str(in_dir),
+                "--out",
+                str(tmp_path / "out"),
+                "--schema-id",
+                "x",
+                "--obs-dim",
+                "4",
+                "--action-dim",
+                "3",
+                "--iters",
+                "10",
+                "--continuous",
+                "--round-iters",
+                "10",
+            ]
+        )
+        assert rc == EXIT_OK
+
+    # Now let's test the SIGINT signal handler being triggered
+    def train_continuous_with_sigint(round_iters, stop):
+        # Trigger the SIGINT handler
+        # Retrieve registered sigint handler
+        sigint_handler = signal.getsignal(signal.SIGINT)
+        # Call it
+        sigint_handler(signal.SIGINT, None)
+        assert stop() is True
+        yield {"round": 1, "iters_completed": 10, "exports": 1, "last_manifest_version": 2}
+
+    mock_trainer.train_continuous.side_effect = train_continuous_with_sigint
+    with (
+        patch("forge.models.muzero_config.MuZeroConfig"),
+        patch("forge.models.muzero_world_model.MuZeroWorldModel"),
+        patch("forge.training.muzero_mc.replay.TrajectoryReader"),
+        patch("forge.training.muzero_mc.trainer.MuzeroMcTrainer", return_value=mock_trainer),
+    ):
+        rc = main(
+            [
+                "train",
+                "--input",
+                str(in_dir),
+                "--out",
+                str(tmp_path / "out"),
+                "--schema-id",
+                "x",
+                "--obs-dim",
+                "4",
+                "--action-dim",
+                "3",
+                "--iters",
+                "10",
+                "--continuous",
+                "--round-iters",
+                "10",
+            ]
+        )
+        assert rc == EXIT_OK

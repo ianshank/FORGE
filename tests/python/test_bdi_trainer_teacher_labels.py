@@ -44,9 +44,7 @@ def test_teacher_intentions_negative_falls_back_to_rule_map() -> None:
     trainer = BDIPreTrainer(BDITrainerConfig(num_intentions=8, default_intention=7))
     obs1, act1, rew1 = _fake_episode(3)
     teacher = [[1, -1, 2]]
-    dataset = trainer.build_dataset(
-        [obs1], [act1], [rew1], teacher_intentions=teacher
-    )
+    dataset = trainer.build_dataset([obs1], [act1], [rew1], teacher_intentions=teacher)
     assert list(dataset.intentions) == [1, 7, 2]
 
 
@@ -56,6 +54,4 @@ def test_teacher_intentions_length_mismatch_raises() -> None:
     import pytest
 
     with pytest.raises(ValueError, match="number of episodes"):
-        trainer.build_dataset(
-            [obs1], [act1], [rew1], teacher_intentions=[[0], [0]]
-        )
+        trainer.build_dataset([obs1], [act1], [rew1], teacher_intentions=[[0], [0]])

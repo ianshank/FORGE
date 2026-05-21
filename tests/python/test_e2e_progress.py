@@ -64,7 +64,11 @@ def test_progress_save_is_atomic_via_tempfile_replace(tmp_path: Path) -> None:
     path = tmp_path / ".e2e_progress.json"
     save(path, _state(episodes_completed=1))
     save(path, _state(episodes_completed=2))
-    leftovers = [p for p in tmp_path.iterdir() if p.name.startswith(".e2e_progress.") and p.name.endswith(".tmp")]
+    leftovers = [
+        p
+        for p in tmp_path.iterdir()
+        if p.name.startswith(".e2e_progress.") and p.name.endswith(".tmp")
+    ]
     assert leftovers == [], f"orphan tempfile(s) leaked: {leftovers}"
     assert load(path) == _state(episodes_completed=2)
 

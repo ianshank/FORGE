@@ -53,7 +53,9 @@ def test_config_loads_from_toml_defaults(tmp_path: Path, clean_env: None) -> Non
     assert cfg.run_id  # fresh UUID, non-empty
 
 
-def test_config_env_overrides_toml(tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_env_overrides_toml(
+    tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("FORGE_E2E_EPISODES", "42")
     monkeypatch.setenv("FORGE_MLFLOW_TRACKING_URI", "https://mlflow.example.org")
     monkeypatch.setenv("FORGE_E2E_EXPERIMENT_NAME", "ci-experiment")
@@ -68,7 +70,9 @@ def test_config_env_overrides_toml(tmp_path: Path, clean_env: None, monkeypatch:
     assert cfg.teacher_preset == "qwen14b_teacher"
 
 
-def test_config_cli_flag_overrides_env(tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_cli_flag_overrides_env(
+    tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("FORGE_E2E_EPISODES", "100")
     cfg = run_e2e_long.E2ELongConfig.from_toml_with_env_override(
         PRESET_PATH,
@@ -78,7 +82,9 @@ def test_config_cli_flag_overrides_env(tmp_path: Path, clean_env: None, monkeypa
     assert cfg.total_episodes == 7
 
 
-def test_config_explicit_run_id_via_env(tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_explicit_run_id_via_env(
+    tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("FORGE_E2E_RUN_ID", "ci-pin-001")
     cfg = run_e2e_long.E2ELongConfig.from_toml_with_env_override(
         PRESET_PATH,
@@ -96,7 +102,9 @@ def test_config_run_id_resumes_from_progress(tmp_path: Path, clean_env: None) ->
     assert cfg.run_id == "resumed-run-zzz"
 
 
-def test_config_relative_hf_root_resolves_under_repo(tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_relative_hf_root_resolves_under_repo(
+    tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("FORGE_HF_EXPORT_ROOT", "artifacts/relative-hf")
     cfg = run_e2e_long.E2ELongConfig.from_toml_with_env_override(
         PRESET_PATH,
@@ -106,7 +114,9 @@ def test_config_relative_hf_root_resolves_under_repo(tmp_path: Path, clean_env: 
     assert cfg.hf_export_root == REPO_ROOT / "artifacts" / "relative-hf"
 
 
-def test_config_absolute_hf_root_is_preserved(tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_absolute_hf_root_is_preserved(
+    tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     abs_hf = tmp_path / "abs-hf"
     monkeypatch.setenv("FORGE_HF_EXPORT_ROOT", str(abs_hf))
     cfg = run_e2e_long.E2ELongConfig.from_toml_with_env_override(
@@ -141,14 +151,21 @@ def test_main_skips_collection_when_already_complete(tmp_path: Path, clean_env: 
     weights_path = tmp_path / "bc_weights.npz"
     weights_path.write_bytes(b"\x00")  # avoid the "weights missing" warning path
 
-    with patch.object(run_e2e_long, "run_collection") as mock_collect, \
-         patch.object(run_e2e_long, "run_bc_training") as mock_bc, \
-         patch.object(run_e2e_long, "run_eval_subprocess") as mock_eval:
-        rc = run_e2e_long.main([
-            "--config", str(PRESET_PATH),
-            "--output-dir", str(tmp_path),
-            "--episodes", "4",
-        ])
+    with (
+        patch.object(run_e2e_long, "run_collection") as mock_collect,
+        patch.object(run_e2e_long, "run_bc_training") as mock_bc,
+        patch.object(run_e2e_long, "run_eval_subprocess") as mock_eval,
+    ):
+        rc = run_e2e_long.main(
+            [
+                "--config",
+                str(PRESET_PATH),
+                "--output-dir",
+                str(tmp_path),
+                "--episodes",
+                "4",
+            ]
+        )
     assert rc == 0
     mock_collect.assert_not_called()
     mock_bc.assert_not_called()
@@ -165,14 +182,23 @@ def test_main_runs_collection_then_bc_then_eval_on_fresh_run(
 ) -> None:
     fake_weights = tmp_path / "bc_weights.npz"
 
-    with patch.object(run_e2e_long, "run_collection", return_value=_fake_collection_result()) as mock_collect, \
-         patch.object(run_e2e_long, "run_bc_training", return_value=fake_weights) as mock_bc, \
-         patch.object(run_e2e_long, "run_eval_subprocess") as mock_eval:
-        rc = run_e2e_long.main([
-            "--config", str(PRESET_PATH),
-            "--output-dir", str(tmp_path),
-            "--episodes", "4",
-        ])
+    with (
+        patch.object(
+            run_e2e_long, "run_collection", return_value=_fake_collection_result()
+        ) as mock_collect,
+        patch.object(run_e2e_long, "run_bc_training", return_value=fake_weights) as mock_bc,
+        patch.object(run_e2e_long, "run_eval_subprocess") as mock_eval,
+    ):
+        rc = run_e2e_long.main(
+            [
+                "--config",
+                str(PRESET_PATH),
+                "--output-dir",
+                str(tmp_path),
+                "--episodes",
+                "4",
+            ]
+        )
 
     assert rc == 0
     mock_collect.assert_called_once()
@@ -196,17 +222,26 @@ def test_main_collection_seed_offset_by_progress(tmp_path: Path, clean_env: None
         tmp_path / ".e2e_progress.json",
         ProgressState(run_id="rA", episodes_completed=3, scenario_cursor=2, last_seed=42),
     )
-    with patch.object(run_e2e_long, "run_collection", return_value=_fake_collection_result()) as mock_collect, \
-         patch.object(run_e2e_long, "run_bc_training", return_value=tmp_path / "bc.npz"), \
-         patch.object(run_e2e_long, "run_eval_subprocess"):
-        run_e2e_long.main([
-            "--config", str(PRESET_PATH),
-            "--output-dir", str(tmp_path),
-            "--episodes", "10",
-        ])
+    with (
+        patch.object(
+            run_e2e_long, "run_collection", return_value=_fake_collection_result()
+        ) as mock_collect,
+        patch.object(run_e2e_long, "run_bc_training", return_value=tmp_path / "bc.npz"),
+        patch.object(run_e2e_long, "run_eval_subprocess"),
+    ):
+        run_e2e_long.main(
+            [
+                "--config",
+                str(PRESET_PATH),
+                "--output-dir",
+                str(tmp_path),
+                "--episodes",
+                "10",
+            ]
+        )
     _, kwargs = mock_collect.call_args
     assert kwargs["remaining_episodes"] == 7  # 10 requested - 3 completed
-    assert kwargs["start_seed"] == 42 + 3     # base_seed + already_done
+    assert kwargs["start_seed"] == 42 + 3  # base_seed + already_done
 
 
 def test_main_eval_subprocess_receives_resolved_env(
@@ -217,14 +252,21 @@ def test_main_eval_subprocess_receives_resolved_env(
     monkeypatch.setenv("FORGE_MLFLOW_TRACKING_URI", "https://mlflow.example.org")
     fake_weights = tmp_path / "bc_weights.npz"
 
-    with patch.object(run_e2e_long, "run_collection", return_value=_fake_collection_result()), \
-         patch.object(run_e2e_long, "run_bc_training", return_value=fake_weights), \
-         patch.object(run_e2e_long, "run_eval_subprocess") as mock_eval:
-        run_e2e_long.main([
-            "--config", str(PRESET_PATH),
-            "--output-dir", str(tmp_path),
-            "--episodes", "2",
-        ])
+    with (
+        patch.object(run_e2e_long, "run_collection", return_value=_fake_collection_result()),
+        patch.object(run_e2e_long, "run_bc_training", return_value=fake_weights),
+        patch.object(run_e2e_long, "run_eval_subprocess") as mock_eval,
+    ):
+        run_e2e_long.main(
+            [
+                "--config",
+                str(PRESET_PATH),
+                "--output-dir",
+                str(tmp_path),
+                "--episodes",
+                "2",
+            ]
+        )
     cfg_passed: run_e2e_long.E2ELongConfig = mock_eval.call_args.args[0]
     assert cfg_passed.mlflow_tracking_uri == "https://mlflow.example.org"
     assert cfg_passed.output_root == tmp_path
@@ -320,7 +362,11 @@ def test_env_var_registry_covers_every_env_lookup() -> None:
         )
 
     def _record_if_key(node: ast.AST) -> None:
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and key_pattern.match(node.value):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and key_pattern.match(node.value)
+        ):
             found.add(node.value)
 
     for node in ast.walk(tree):

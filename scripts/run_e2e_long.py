@@ -148,24 +148,24 @@ class E2ELongConfig:
             if episodes_override is not None
             else int(_from_env("FORGE_E2E_EPISODES", str(data["run"]["total_episodes"])))
         )
-        experiment_name = _from_env("FORGE_E2E_EXPERIMENT_NAME", str(data["run"]["experiment_name"]))
+        experiment_name = _from_env(
+            "FORGE_E2E_EXPERIMENT_NAME", str(data["run"]["experiment_name"])
+        )
         teacher_preset = _from_env("FORGE_E2E_TEACHER_PRESET", str(data["teacher"]["preset"]))
         base_seed = int(data["run"]["base_seed"])
         bc_epochs = int(data["run"]["bc_epochs"])
 
         # ---- run id: explicit > env > resumed > fresh UUID --------------
-        run_id = (
-            os.environ.get("FORGE_E2E_RUN_ID")
-            or progress_run_id
-            or uuid4().hex
-        )
+        run_id = os.environ.get("FORGE_E2E_RUN_ID") or progress_run_id or uuid4().hex
 
         # ---- exporter targets -------------------------------------------
         mlflow_uri = _from_env("FORGE_MLFLOW_TRACKING_URI", str(data["mlflow"]["tracking_uri"]))
         # MLflow log-batch chunk size: env override wins; otherwise the TOML
         # preset value flows through. Forwarded to the Rust CLI via the
         # FORGE_E2E_BATCH_SIZE env var so the preset leaf is no longer dead.
-        mlflow_batch_size = int(_from_env("FORGE_E2E_BATCH_SIZE", str(data["mlflow"]["batch_size"])))
+        mlflow_batch_size = int(
+            _from_env("FORGE_E2E_BATCH_SIZE", str(data["mlflow"]["batch_size"]))
+        )
         hf_root = Path(_from_env("FORGE_HF_EXPORT_ROOT", str(data["huggingface"]["export_root"])))
         if not hf_root.is_absolute():
             hf_root = REPO_ROOT / hf_root
@@ -278,9 +278,16 @@ def run_bc_training(result: Any, cfg: E2ELongConfig) -> Path:
     if getattr(training, "action_space_sizes", None):
         num_actions = int(max(training.action_space_sizes))
     else:
-        max_observed = int(max((int(arr.max()) for arr in action_episodes if arr.size > 0), default=0))
+        max_observed = int(
+            max((int(arr.max()) for arr in action_episodes if arr.size > 0), default=0)
+        )
         num_actions = max_observed + 1
-    logger.info("bc start: episodes=%d num_actions=%d epochs=%d", len(obs_episodes), num_actions, cfg.bc_epochs)
+    logger.info(
+        "bc start: episodes=%d num_actions=%d epochs=%d",
+        len(obs_episodes),
+        num_actions,
+        cfg.bc_epochs,
+    )
 
     dataset = BCTrainer.build_dataset(
         obs_episodes,

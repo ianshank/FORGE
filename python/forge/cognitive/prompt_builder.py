@@ -105,9 +105,7 @@ class PromptBuilder:
             msg = f"prompt template does not exist: {path}"
             raise FileNotFoundError(msg)
         self._template = path.read_text(encoding="utf-8")
-        fewshot_path = (
-            Path(few_shot_examples_path) if few_shot_examples_path else None
-        )
+        fewshot_path = Path(few_shot_examples_path) if few_shot_examples_path else None
         self._few_shots = _load_few_shots(fewshot_path)
         self._include_legal_actions = include_legal_actions
         logger.info(
@@ -125,11 +123,7 @@ class PromptBuilder:
         system_prompt: str = "",
     ) -> str:
         """Render a prompt string for the given observation."""
-        legal_str = (
-            _render_legal_actions(legal_actions)
-            if self._include_legal_actions
-            else ""
-        )
+        legal_str = _render_legal_actions(legal_actions) if self._include_legal_actions else ""
         obs_json = json.dumps(structured_obs, sort_keys=True)
         rendered = self._template.format_map(
             _SafeDict(

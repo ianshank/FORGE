@@ -17,7 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 _SUPPORTED_SCALAR_TYPES: tuple[Any, ...] = (
-    bool, "bool", int, "int", float, "float", str, "str",
+    bool,
+    "bool",
+    int,
+    "int",
+    float,
+    "float",
+    str,
+    "str",
 )
 
 
@@ -69,7 +76,10 @@ def apply_env_overrides(obj: Any, section: str, *, prefix: str = "FORGE_") -> No
         except UnsupportedFieldType as exc:
             logger.warning(
                 "Skipping env override %s=%s for field %s: %s",
-                key, val, f.name, exc,
+                key,
+                val,
+                f.name,
+                exc,
             )
             continue
         except (ValueError, TypeError) as exc:

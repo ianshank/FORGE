@@ -112,9 +112,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "Must contain a [teacher] section."
         ),
     )
-    parser.add_argument(
-        "--check", action="store_true", help="Ping the endpoint and print latency."
-    )
+    parser.add_argument("--check", action="store_true", help="Ping the endpoint and print latency.")
     parser.add_argument(
         "--log-level",
         default="INFO",

@@ -83,9 +83,7 @@ class CognitiveProvider(ABC):
     def complete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         """Generate a completion for the given prompt."""
 
-    async def acomplete(
-        self, prompt: str, config: CompletionConfig
-    ) -> CompletionResponse:
+    async def acomplete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         """Async completion. Default implementation off-loads ``complete``.
 
         Concrete providers that have a native async client (e.g. OpenAI's
@@ -302,11 +300,7 @@ class OpenAIProvider(CognitiveProvider):
                 self._log_payload("prompt_preview", prompt)
                 response = client.chat.completions.create(**kwargs)
                 latency_ms = (time.perf_counter() - start) * 1000.0
-                text = (
-                    response.choices[0].message.content or ""
-                    if response.choices
-                    else ""
-                )
+                text = response.choices[0].message.content or "" if response.choices else ""
                 prompt_tokens, completion_tokens = _extract_usage(response)
                 logger.info(
                     "provider=%s model=%s tokens_in=%d tokens_out=%d latency_ms=%.1f attempt=%d",
@@ -334,14 +328,12 @@ class OpenAIProvider(CognitiveProvider):
                 )
                 if attempt >= self._max_retries:
                     break
-                time.sleep(self._retry_backoff_secs * (self._retry_backoff_base ** attempt))
+                time.sleep(self._retry_backoff_secs * (self._retry_backoff_base**attempt))
                 attempt += 1
         assert last_exc is not None  # for type narrowing
         raise last_exc
 
-    async def acomplete(
-        self, prompt: str, config: CompletionConfig
-    ) -> CompletionResponse:
+    async def acomplete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         """Async completion using ``openai.AsyncOpenAI``."""
         client = self._get_async_client()
         kwargs = _build_openai_kwargs(prompt, config, self._default_model)
@@ -353,11 +345,7 @@ class OpenAIProvider(CognitiveProvider):
                 self._log_payload("prompt_preview", prompt)
                 response = await client.chat.completions.create(**kwargs)
                 latency_ms = (time.perf_counter() - start) * 1000.0
-                text = (
-                    response.choices[0].message.content or ""
-                    if response.choices
-                    else ""
-                )
+                text = response.choices[0].message.content or "" if response.choices else ""
                 prompt_tokens, completion_tokens = _extract_usage(response)
                 logger.info(
                     "provider=%s model=%s tokens_in=%d tokens_out=%d latency_ms=%.1f attempt=%d async=true",
@@ -385,7 +373,7 @@ class OpenAIProvider(CognitiveProvider):
                 )
                 if attempt >= self._max_retries:
                     break
-                await asyncio.sleep(self._retry_backoff_secs * (self._retry_backoff_base ** attempt))
+                await asyncio.sleep(self._retry_backoff_secs * (self._retry_backoff_base**attempt))
                 attempt += 1
         assert last_exc is not None
         raise last_exc

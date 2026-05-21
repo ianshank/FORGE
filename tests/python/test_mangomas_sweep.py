@@ -1,4 +1,5 @@
 """Tests for MangoMAS MCTS sweep runner."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -35,7 +36,13 @@ class TestMCTSSweepRunner:
             assert 0.9 <= g["discount"] <= 0.999
 
     def test_run_sweep(self) -> None:
-        config = SweepConfig(c_puct_steps=2, sim_budget_steps=2, depth_steps=2, discount_steps=2, episodes_per_config=5)
+        config = SweepConfig(
+            c_puct_steps=2,
+            sim_budget_steps=2,
+            depth_steps=2,
+            discount_steps=2,
+            episodes_per_config=5,
+        )
         runner = MCTSSweepRunner(config)
         report = runner.run_sweep(_mock_evaluate)
         assert len(report.results) == 16
@@ -43,7 +50,13 @@ class TestMCTSSweepRunner:
         assert report.total_time_secs > 0
 
     def test_best_has_highest_reward(self) -> None:
-        config = SweepConfig(c_puct_steps=2, sim_budget_steps=2, depth_steps=2, discount_steps=2, episodes_per_config=5)
+        config = SweepConfig(
+            c_puct_steps=2,
+            sim_budget_steps=2,
+            depth_steps=2,
+            discount_steps=2,
+            episodes_per_config=5,
+        )
         runner = MCTSSweepRunner(config)
         report = runner.run_sweep(_mock_evaluate)
         best_reward = report.best.mean_reward
@@ -68,7 +81,13 @@ class TestMCTSSweepRunner:
         assert out_path.exists()
 
     def test_compare_puct_vs_ucb1(self) -> None:
-        config = SweepConfig(c_puct_steps=2, sim_budget_steps=2, depth_steps=1, discount_steps=1, episodes_per_config=3)
+        config = SweepConfig(
+            c_puct_steps=2,
+            sim_budget_steps=2,
+            depth_steps=1,
+            discount_steps=1,
+            episodes_per_config=3,
+        )
         runner = MCTSSweepRunner(config)
 
         def _puct_eval(c: dict, n: int) -> tuple[float, float, float]:
@@ -84,8 +103,11 @@ class TestMCTSSweepRunner:
 
     def test_summary(self) -> None:
         result = SweepResult(
-            config={"c_puct": 1.5}, mean_reward=10.0, std_reward=1.0,
-            mean_planning_time_us=500.0, episodes_run=50,
+            config={"c_puct": 1.5},
+            mean_reward=10.0,
+            std_reward=1.0,
+            mean_planning_time_us=500.0,
+            episodes_run=50,
         )
         report = SweepReport(results=[result], best=result, total_time_secs=5.0)
         summary = report.summary()
@@ -106,8 +128,11 @@ class TestMCTSSweepRunner:
     def test_export_unsupported_format(self, tmp_path: Any) -> None:
         runner = MCTSSweepRunner()
         result = SweepResult(
-            config={"c_puct": 1.0}, mean_reward=1.0, std_reward=0.1,
-            mean_planning_time_us=50.0, episodes_run=10,
+            config={"c_puct": 1.0},
+            mean_reward=1.0,
+            std_reward=0.1,
+            mean_planning_time_us=50.0,
+            episodes_run=10,
         )
         report = SweepReport(results=[result], best=result)
         with pytest.raises(ValueError, match="Unsupported format"):

@@ -259,7 +259,11 @@ def test_load_trajectory_rejects_gzip_bomb(tmp_path: Path) -> None:
     written = 0
     with gzip.open(p, "wb") as f:
         while written <= MAX_DECOMPRESSED_TRAJECTORY_BYTES:
-            n = len(chunk) if (written + len(chunk)) < (MAX_DECOMPRESSED_TRAJECTORY_BYTES + 1) else (MAX_DECOMPRESSED_TRAJECTORY_BYTES + 1 - written)
+            n = (
+                len(chunk)
+                if (written + len(chunk)) < (MAX_DECOMPRESSED_TRAJECTORY_BYTES + 1)
+                else (MAX_DECOMPRESSED_TRAJECTORY_BYTES + 1 - written)
+            )
             f.write(chunk[:n])
             written += n
     with pytest.raises(TrajectoryError, match=r"byte cap|exceeds"):

@@ -168,9 +168,7 @@ def test_env_example_documents_all_trainer_vars(repo_root: Path) -> None:
     every `TRAINER_*` var the compose file consumes. Catches docs
     drift when a new var is added to the compose without the
     matching .env line."""
-    env_text = (repo_root / "docker" / "compose.minecraft.env.example").read_text(
-        encoding="utf-8"
-    )
+    env_text = (repo_root / "docker" / "compose.minecraft.env.example").read_text(encoding="utf-8")
     required_vars = {
         "TRAINER_IMAGE",
         "TRAINER_TORCH_VARIANT",

@@ -52,9 +52,7 @@ def test_cli_teacher_overrides_threaded(tmp_path: Path) -> None:
 
 
 def test_cli_teacher_config_loads_preset(tmp_path: Path) -> None:
-    preset_path = (
-        _REPO_ROOT / "configs" / "cognitive" / "qwen14b_teacher.toml"
-    )
+    preset_path = _REPO_ROOT / "configs" / "cognitive" / "qwen14b_teacher.toml"
     if not preset_path.exists():
         pytest.skip("preset TOML missing")
     args = train.parse_args(

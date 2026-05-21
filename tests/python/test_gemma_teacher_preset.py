@@ -1,4 +1,5 @@
 """Smoke + structural tests for the google/gemma-4-e4b LM Studio preset."""
+
 from __future__ import annotations
 
 import json
@@ -63,12 +64,8 @@ def test_gemma_template_renders_with_observation_and_legal_actions() -> None:
         few_shot_examples_path=None,
     )
     obs = {"position": [0, 0], "health": 1.0, "visible_resources": [], "visible_enemies": []}
-    rendered_a = builder.render(
-        obs, legal_actions=[0, 1, 2, 3], system_prompt="You are a teacher."
-    )
-    rendered_b = builder.render(
-        obs, legal_actions=[0, 1, 2, 3], system_prompt="You are a teacher."
-    )
+    rendered_a = builder.render(obs, legal_actions=[0, 1, 2, 3], system_prompt="You are a teacher.")
+    rendered_b = builder.render(obs, legal_actions=[0, 1, 2, 3], system_prompt="You are a teacher.")
     assert rendered_a == rendered_b, "PromptBuilder must be deterministic"
     # Substitutions ACTUALLY happened (defends against silent _SafeDict pass-through):
     assert "You are a teacher." in rendered_a
@@ -206,9 +203,7 @@ def test_gemma_prompt_matches_snapshot() -> None:
     """
     builder = PromptBuilder(template_path=str(TEMPLATE_PATH), few_shot_examples_path=None)
     obs = {"position": [0, 0], "health": 1.0, "visible_resources": [], "visible_enemies": []}
-    rendered = builder.render(
-        obs, legal_actions=[0, 1, 2, 3], system_prompt="You are a teacher."
-    )
+    rendered = builder.render(obs, legal_actions=[0, 1, 2, 3], system_prompt="You are a teacher.")
     expected = SNAPSHOT_PATH.read_text(encoding="utf-8")
     assert rendered == expected, (
         "Rendered prompt drifted from snapshot.\n"

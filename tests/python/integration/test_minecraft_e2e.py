@@ -24,7 +24,7 @@ from forge.utils.metrics import (
     scrape_gauge,
 )
 
-from ._helpers import POLL_TIMEOUT_SECS, wait_until
+from ._helpers import POLL_TIMEOUT_SECS, lf_normalized_script, wait_until
 
 pytestmark = pytest.mark.minecraft_e2e
 
@@ -148,14 +148,15 @@ def test_compose_down_is_idempotent(
     # Running --down once on the live stack is the canonical
     # teardown; running it again must still exit 0.
     for _ in range(2):
-        completed = subprocess.run(
-            ["bash", str(script), "--down"],
-            cwd=repo_root,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        with lf_normalized_script(script) as posix_script:
+            completed = subprocess.run(
+                ["bash", posix_script, "--down"],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
         if completed.returncode != 0:
             pytest.fail(
                 f"mc_run.sh --down exited {completed.returncode}; "

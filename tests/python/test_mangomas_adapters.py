@@ -1,4 +1,5 @@
 """Tests for MangoMAS action and observation adapters."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -34,7 +35,7 @@ class TestActionSpaceAdapter:
 
     def test_discrete_to_continuous_roundtrip(self) -> None:
         adapter = ActionSpaceAdapter(platform="car")
-        for action_id in range(min(adapter._bins ** 2, 20)):
+        for action_id in range(min(adapter._bins**2, 20)):
             continuous = adapter.discrete_to_continuous(action_id)
             assert continuous.shape == (2,)
             assert np.all(continuous >= adapter._lo)
@@ -48,7 +49,9 @@ class TestActionSpaceAdapter:
         assert isinstance(discrete, int)
 
     def test_custom_config(self) -> None:
-        config = ActionAdapterConfig(bins_per_axis=5, continuous_range_min=-2.0, continuous_range_max=2.0)
+        config = ActionAdapterConfig(
+            bins_per_axis=5, continuous_range_min=-2.0, continuous_range_max=2.0
+        )
         adapter = ActionSpaceAdapter(config=config, platform="car")
         assert adapter._bins == 5
         assert adapter._lo == -2.0
@@ -56,7 +59,7 @@ class TestActionSpaceAdapter:
 
     def test_all_bins_reachable_car(self) -> None:
         adapter = ActionSpaceAdapter(platform="car")
-        total_actions = adapter._bins ** 2
+        total_actions = adapter._bins**2
         seen = set()
         for i in range(total_actions):
             cont = adapter.discrete_to_continuous(i)
@@ -155,8 +158,8 @@ class TestObservationAdapter:
 
     def test_total_action_space_car(self) -> None:
         adapter = ActionSpaceAdapter(platform="car")
-        assert adapter.total_action_space == 7 ** 2
+        assert adapter.total_action_space == 7**2
 
     def test_total_action_space_drone(self) -> None:
         adapter = ActionSpaceAdapter(platform="drone")
-        assert adapter.total_action_space == 7 ** 4
+        assert adapter.total_action_space == 7**4

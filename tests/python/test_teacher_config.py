@@ -56,9 +56,7 @@ def test_from_toml_loads_teacher_section(tmp_path: Path) -> None:
     assert cfg.teacher.seed == 7
 
 
-def test_env_overrides_applied_on_load(
-    tmp_path: Path, monkeypatch: object
-) -> None:
+def test_env_overrides_applied_on_load(tmp_path: Path, monkeypatch: object) -> None:
     toml_path = tmp_path / "t.toml"
     toml_path.write_text(
         """
@@ -70,6 +68,7 @@ def test_env_overrides_applied_on_load(
         encoding="utf-8",
     )
     import os
+
     os.environ["FORGE_TEACHER_CONCURRENCY"] = "8"
     os.environ["FORGE_TEACHER_SEED"] = "99"
     os.environ["FORGE_TEACHER_LOG_PAYLOADS"] = "true"
@@ -94,6 +93,7 @@ def test_apply_env_overrides_unknown_key_ignored() -> None:
 
     cfg = _Cfg()
     import os
+
     os.environ["FORGE_SECTION_UNKNOWN"] = "5"
     try:
         apply_env_overrides(cfg, "SECTION")
@@ -109,6 +109,7 @@ def test_apply_env_overrides_invalid_int_is_logged_and_skipped() -> None:
 
     cfg = _Cfg()
     import os
+
     os.environ["FORGE_SECTION_N"] = "not-an-int"
     try:
         apply_env_overrides(cfg, "SECTION")
@@ -151,6 +152,7 @@ def test_apply_env_overrides_bool_parsing() -> None:
 
     cfg = _Cfg()
     import os
+
     for raw, expected in (
         ("true", True),
         ("1", True),
@@ -170,10 +172,7 @@ def test_apply_env_overrides_bool_parsing() -> None:
 
 def test_qwen14b_preset_loads(tmp_path: Path) -> None:
     cfg = MangoMASBridgeConfig.from_toml(
-        Path(__file__).parent.parent.parent
-        / "configs"
-        / "cognitive"
-        / "qwen14b_teacher.toml"
+        Path(__file__).parent.parent.parent / "configs" / "cognitive" / "qwen14b_teacher.toml"
     )
     assert cfg.teacher.enabled is True
     assert cfg.teacher.provider == "lmstudio"

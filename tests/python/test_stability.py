@@ -101,7 +101,10 @@ def test_plateau_detector_min_lr() -> None:
     """Doesn't reduce below min_lr."""
     pd = PlateauDetector(
         PlateauDetectorConfig(
-            patience=1, factor=0.5, min_lr=0.005, cooldown=0,
+            patience=1,
+            factor=0.5,
+            min_lr=0.005,
+            cooldown=0,
         ),
     )
     lr = 0.01

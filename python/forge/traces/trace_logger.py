@@ -28,6 +28,7 @@ class TraceRecord(Protocol):
         """Return a JSON-serialisable dict view of this record."""
         ...
 
+
 DEFAULT_MAX_FILE_SIZE_MB = 100
 BYTES_PER_MB = 1024 * 1024
 

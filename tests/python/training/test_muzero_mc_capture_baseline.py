@@ -136,9 +136,7 @@ def _write_trajectory(
 
 def test_load_episode_records_parses_uncompressed_and_gzip(tmp_path: Path) -> None:
     _write_trajectory(tmp_path / "ep-000001.json", episode_id="ep-000001")
-    _write_trajectory(
-        tmp_path / "ep-000002.json.gz", episode_id="ep-000002", gz=True
-    )
+    _write_trajectory(tmp_path / "ep-000002.json.gz", episode_id="ep-000002", gz=True)
     records = load_episode_records(tmp_path)
     assert [r.episode_id for r in records] == ["ep-000001", "ep-000002"]
     assert all(r.total_reward == 2.5 for r in records)  # 1.0 - 0.5 + 2.0
@@ -427,9 +425,7 @@ def test_known_variant_constants_present() -> None:
     assert VARIANT_TRAINED == "trained"
 
 
-def test_cli_handles_timeout_with_exit_io(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cli_handles_timeout_with_exit_io(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """When `capture_baseline` raises `TimeoutError`, the CLI must
     return `EXIT_IO` (not propagate the exception) so docker
     orchestrations can keep tearing the stack down.

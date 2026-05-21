@@ -1,4 +1,5 @@
 """Tests for MangoMAS curiosity weight optimizer."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -50,9 +51,7 @@ class TestCuriosityWeightOptimizer:
         assert opt.sigma == pytest.approx(0.1)
 
     def test_init_with_config(self) -> None:
-        config = CuriosityOptimizerConfig(
-            population_size=10, sigma=0.2, learning_rate=0.1
-        )
+        config = CuriosityOptimizerConfig(population_size=10, sigma=0.2, learning_rate=0.1)
         opt = CuriosityWeightOptimizer(config=config)
         assert opt.population_size == 10
         assert opt.sigma == pytest.approx(0.2)

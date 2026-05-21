@@ -78,6 +78,7 @@ except ImportError as exc:
 try:
     from forge_env.utils import seed_everything
 except ImportError:
+
     def seed_everything(seed: int) -> None:  # type: ignore[misc]
         random.seed(seed)
         np.random.seed(seed)
@@ -140,31 +141,31 @@ def _build_argparser(defaults: dict[str, Any]) -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=env_cfg.get("seed", _DEFAULT_SEED))
 
     # SAC hyperparams
-    p.add_argument("--total-timesteps", type=int,
-                   default=hp.get("total_timesteps", 1_000_000))
-    p.add_argument("--learning-rate", type=float,
-                   default=hp.get("learning_rate", 3e-4))
-    p.add_argument("--buffer-size", type=int,
-                   default=hp.get("buffer_size", 1_000_000))
+    p.add_argument("--total-timesteps", type=int, default=hp.get("total_timesteps", 1_000_000))
+    p.add_argument("--learning-rate", type=float, default=hp.get("learning_rate", 3e-4))
+    p.add_argument("--buffer-size", type=int, default=hp.get("buffer_size", 1_000_000))
     p.add_argument("--batch-size", type=int, default=hp.get("batch_size", 256))
-    p.add_argument("--learning-starts", type=int,
-                   default=hp.get("learning_starts", 1000))
+    p.add_argument("--learning-starts", type=int, default=hp.get("learning_starts", 1000))
     p.add_argument("--gamma", type=float, default=hp.get("gamma", 0.99))
     p.add_argument("--tau", type=float, default=hp.get("tau", 0.005))
     p.add_argument("--train-freq", type=int, default=hp.get("train_freq", 1))
-    p.add_argument("--gradient-steps", type=int,
-                   default=hp.get("gradient_steps", 1))
-    p.add_argument("--ent-coef", type=str,
-                   default=str(hp.get("ent_coef", "auto")),
-                   help="Entropy coef: 'auto' or a float.")
-    p.add_argument("--target-entropy", type=str,
-                   default=str(hp.get("target_entropy", "auto")),
-                   help="Target entropy: 'auto' or a float.")
+    p.add_argument("--gradient-steps", type=int, default=hp.get("gradient_steps", 1))
+    p.add_argument(
+        "--ent-coef",
+        type=str,
+        default=str(hp.get("ent_coef", "auto")),
+        help="Entropy coef: 'auto' or a float.",
+    )
+    p.add_argument(
+        "--target-entropy",
+        type=str,
+        default=str(hp.get("target_entropy", "auto")),
+        help="Target entropy: 'auto' or a float.",
+    )
 
     # Logging
     p.add_argument("--log-freq", type=int, default=log_cfg.get("log_freq", 1000))
-    p.add_argument("--logger", choices=["none", "wandb", "mlflow", "tensorboard"],
-                   default="none")
+    p.add_argument("--logger", choices=["none", "wandb", "mlflow", "tensorboard"], default="none")
     p.add_argument("--wandb-project", type=str, default="forge-sac")
     p.add_argument("--log-dir", type=str, default="runs/forge_sac")
     p.add_argument(
@@ -300,9 +301,7 @@ class _Actor(nn.Module):
         layers.append(nn.Linear(current, action_dim))
         self.net = nn.Sequential(*layers)
 
-    def forward(
-        self, obs: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Return action probabilities, log-probabilities, and sampled action.
 
         Args:
@@ -371,9 +370,7 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
     qf2_target.load_state_dict(qf2.state_dict())
 
     actor_optim = optim.Adam(actor.parameters(), lr=args.learning_rate)
-    q_optim = optim.Adam(
-        list(qf1.parameters()) + list(qf2.parameters()), lr=args.learning_rate
-    )
+    q_optim = optim.Adam(list(qf1.parameters()) + list(qf2.parameters()), lr=args.learning_rate)
 
     # Auto temperature (entropy coef)
     auto_ent = args.ent_coef == "auto"
@@ -395,6 +392,7 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
     if args.logger != "none":
         try:
             from forge.training.loggers import make_logger
+
             logger_kwargs: dict[str, Any]
             if args.logger == "wandb":
                 logger_kwargs = {"project": args.wandb_project}
@@ -494,7 +492,10 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
             mean_return = float(np.mean(list(episode_returns))) if episode_returns else 0.0
             logger.info(
                 "step=%d fps=%d mean_ep_return=%.3f alpha=%.4f",
-                global_step, fps, mean_return, alpha,
+                global_step,
+                fps,
+                mean_return,
+                alpha,
             )
             if forge_logger is not None:
                 forge_logger.log(

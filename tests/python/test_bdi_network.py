@@ -1,4 +1,5 @@
 """Tests for forge.models.bdi_network module."""
+
 from __future__ import annotations
 
 import tempfile

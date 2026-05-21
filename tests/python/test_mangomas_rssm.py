@@ -1,4 +1,5 @@
 """Tests for MangoMAS RSSM pre-trainer."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -119,7 +120,9 @@ class TestRSSMPreTrainer:
             trainer.export_all(tmp_path / "weights.npz")
 
     def test_weight_shapes(self) -> None:
-        config = RSSMPreTrainConfig(hidden_dim=64, latent_dim=16, state_dim=18, action_dim=75, num_epochs=1, batch_size=4)
+        config = RSSMPreTrainConfig(
+            hidden_dim=64, latent_dim=16, state_dim=18, action_dim=75, num_epochs=1, batch_size=4
+        )
         trainer = RSSMPreTrainer(config=config)
 
         ds = SequenceDataset(

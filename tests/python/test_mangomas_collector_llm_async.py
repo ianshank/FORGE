@@ -70,9 +70,7 @@ class _ConcurrentTeacherProvider(CognitiveProvider):
         # The sync path uses MockProvider; this lives behind aact.
         return CompletionResponse(text=self._payload())
 
-    async def acomplete(
-        self, prompt: str, config: CompletionConfig
-    ) -> CompletionResponse:
+    async def acomplete(self, prompt: str, config: CompletionConfig) -> CompletionResponse:
         async with self._lock:
             self.in_flight += 1
             self.max_in_flight = max(self.max_in_flight, self.in_flight)
@@ -126,12 +124,8 @@ def _teacher_config(tmp_path: Path, concurrency: int) -> TeacherConfig:
         enabled=True,
         provider="lmstudio",
         model="qwen",
-        prompt_template_path=str(
-            repo_root / "configs/cognitive/templates/qwen_teacher.txt"
-        ),
-        response_schema_path=str(
-            repo_root / "python/forge/cognitive/schemas/qwen_action.json"
-        ),
+        prompt_template_path=str(repo_root / "configs/cognitive/templates/qwen_teacher.txt"),
+        response_schema_path=str(repo_root / "python/forge/cognitive/schemas/qwen_action.json"),
         few_shot_examples_path="",
         output_root=str(tmp_path / "traces"),
         shard_size=10,
@@ -272,20 +266,14 @@ def test_concurrent_collection_byte_identical_to_serial_given_same_seeds(
     )
 
     serial_files = sorted((serial_root / "traces" / "drone_patrol").glob("*.jsonl"))
-    concurrent_files = sorted(
-        (concurrent_root / "traces" / "drone_patrol").glob("*.jsonl")
-    )
+    concurrent_files = sorted((concurrent_root / "traces" / "drone_patrol").glob("*.jsonl"))
     assert [f.name for f in serial_files] == [f.name for f in concurrent_files]
     for s, c in zip(serial_files, concurrent_files, strict=True):
         s_records = [
-            json.loads(line)
-            for line in s.read_text(encoding="utf-8").splitlines()
-            if line.strip()
+            json.loads(line) for line in s.read_text(encoding="utf-8").splitlines() if line.strip()
         ]
         c_records = [
-            json.loads(line)
-            for line in c.read_text(encoding="utf-8").splitlines()
-            if line.strip()
+            json.loads(line) for line in c.read_text(encoding="utf-8").splitlines() if line.strip()
         ]
         # Strip latency_ms / token counts which legitimately differ in the
         # async path (they are captured at trace write time, not at agent
@@ -295,6 +283,4 @@ def test_concurrent_collection_byte_identical_to_serial_given_same_seeds(
                 r.pop("latency_ms", None)
                 r.pop("prompt_tokens", None)
                 r.pop("completion_tokens", None)
-        assert s_records == c_records, (
-            f"shard {s.name}: serial vs concurrent diverge"
-        )
+        assert s_records == c_records, f"shard {s.name}: serial vs concurrent diverge"

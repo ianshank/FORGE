@@ -73,7 +73,9 @@ def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
         LOGGER.warning("ignoring non-integer %s=%r; using default %d", name, raw, default)
         return default
     if value < minimum:
-        LOGGER.warning("ignoring %s=%d below minimum %d; using default %d", name, value, minimum, default)
+        LOGGER.warning(
+            "ignoring %s=%d below minimum %d; using default %d", name, value, minimum, default
+        )
         return default
     return value
 

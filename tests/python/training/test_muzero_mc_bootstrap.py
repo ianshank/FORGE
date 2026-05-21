@@ -156,9 +156,7 @@ def test_bootstrap_logs_shape_summary_at_entry(
     )
     bootstrap(cfg)
 
-    entry_messages = [
-        r.getMessage() for r in caplog.records if "bootstrap start" in r.getMessage()
-    ]
+    entry_messages = [r.getMessage() for r in caplog.records if "bootstrap start" in r.getMessage()]
     assert entry_messages, (
         "expected an INFO line tagged 'bootstrap start' from "
         f"forge.training.muzero_mc.bootstrap; got {[r.getMessage() for r in caplog.records]}"
