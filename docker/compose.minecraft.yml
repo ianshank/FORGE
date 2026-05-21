@@ -79,6 +79,11 @@ services:
       - "${MC_BOT_VIEWER_PORT:-3007}:${MC_BOT_VIEWER_PORT:-3007}"
     volumes:
       - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
+      # mc-bot's `DEFAULT_CONFIG_DIR` resolves to /configs/minecraft
+      # (relative to its installed src dir). Mount the same host dir
+      # at that absolute path so the bot finds env.toml without
+      # needing an envPath CLI arg.
+      - ${MC_CONFIG_DIR:-../configs/minecraft}:/configs/minecraft:ro
     # NOTE on the healthcheck: `net.connect` is asynchronous, so a
     # plain `.on('connect', () => process.exit(0))` form would race the
     # node process exiting before the connect callback ever fires when
@@ -98,7 +103,10 @@ services:
       start_period: 30s
 
   runner:
-    image: ${FORGE_MC_RUNNER_IMAGE:-ghcr.io/ianshank/forge-mc-runner:dev}
+    build:
+      context: ..
+      dockerfile: docker/mc-runner.Dockerfile
+    image: ${FORGE_MC_RUNNER_IMAGE:-forge-mc-runner:dev}
     container_name: forge-mc-runner
     restart: ${RUNNER_RESTART_POLICY:-on-failure}
     depends_on:

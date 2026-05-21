@@ -24,10 +24,18 @@ onnx-reload = ["forge-agent/onnx"]
 # transitively because the stub still loads ONNX bundles.
 live-test-stub = ["onnx-reload"]
 # Enables the live-runner path that connects a real `MinecraftEnv`
-# to an `OnnxMuZeroModel`. Pulled by default in the binary builds
-# that ship with PR #58's CI; the optional gate keeps the lib crate
-# usable from downstream consumers that only want the runner core.
-mc-live = ["onnx-reload", "dep:forge-env-mc"]
+# to a planner. Pulled by default in the binary builds that ship with
+# PR #58's CI. As of v0.5 Phase 1 this no longer implies
+# `onnx-reload`: the random-baseline path only needs the WS client
+# (the OnnxMuZeroModel branch is feature-gated separately inside
+# `live.rs`).  For the trained-mode binary, add `--features
+# onnx-reload` or `--features mc-live-bundled`.
+mc-live = ["dep:forge-env-mc"]
+# `mc-live` with the trained-mode ONNX path AND the runtime ONNX
+# library plumbed in via `ort/load-dynamic`. Used by the runner
+# Docker image so the container `dlopen`s libonnxruntime.so from
+# /usr/local/lib at startup. Implies `mc-live` + `onnx-reload`.
+mc-live-bundled = ["mc-live", "onnx-reload", "forge-agent/onnx-bundled"]
 
 [dependencies]
 forge-agent = { workspace = true }

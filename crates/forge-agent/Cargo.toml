@@ -14,6 +14,12 @@ description = "Agent framework, MCTS planning, and baselines for FORGE"
 default = []
 # ONNX Runtime support (Windows MSVC only due to ort-sys binary availability)
 onnx = ["ort", "ndarray"]
+# Use ort's `load-dynamic` mode: at runtime, ort opens
+# libonnxruntime.so via `ORT_DYLIB_PATH`. Used by the runner Docker
+# image, which installs the shared lib manually under /usr/local/lib
+# (sidesteps the rc.12 `download-binaries` ureq dep conflict).
+# Implies `onnx`.
+onnx-bundled = ["onnx", "ort/load-dynamic"]
 
 [dependencies]
 forge-types = { workspace = true }

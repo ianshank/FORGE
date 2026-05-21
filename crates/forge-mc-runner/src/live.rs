@@ -35,21 +35,32 @@
 
 #![cfg(feature = "mc-live")]
 
+#[cfg(feature = "onnx-reload")]
 use std::path::PathBuf;
 
+#[cfg(feature = "onnx-reload")]
 use forge_agent::latent_mcts::onnx_model::{OnnxMuZeroModel, OnnxReloadError};
 use forge_agent::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch};
+use forge_env::Env;
 use forge_env_mc::{ActionMap, MinecraftEnv, MinecraftEnvConfig};
-use tracing::{info, warn};
+use tracing::info;
+#[cfg(feature = "onnx-reload")]
+use tracing::warn;
 
-use crate::config::{OnnxRuntimeConfig, RunnerConfig};
+#[cfg(feature = "onnx-reload")]
+use crate::config::OnnxRuntimeConfig;
+use crate::config::RunnerConfig;
 use crate::error::RunnerError;
 use crate::hot_reload::HotReloadWatcher;
+#[cfg(feature = "onnx-reload")]
 use crate::manifest::ModelManifest;
 use crate::metrics::MetricsRecorder;
+#[cfg(feature = "onnx-reload")]
 use crate::onnx_reload::config_from_manifest;
 use crate::random_baseline::RandomLatentModel;
-use crate::runner::{ReloadFn, Runner};
+#[cfg(feature = "onnx-reload")]
+use crate::runner::ReloadFn;
+use crate::runner::Runner;
 use crate::trajectory::TrajectoryWriter;
 
 /// Drive a single live session: connect to the bot, load the model
@@ -115,6 +126,34 @@ pub fn run_live(cfg: RunnerConfig, metrics: Option<MetricsRecorder>) -> Result<(
         return run_live_random(cfg, env, action_count, metrics);
     }
 
+    #[cfg(not(feature = "onnx-reload"))]
+    {
+        let _ = (action_count, metrics);
+        return Err(RunnerError::ConfigLoad(
+            "trained-mode live runner requires the `onnx-reload` Cargo \
+             feature; rebuild with `--features mc-live --features onnx-reload` \
+             (or `--features mc-live --features mc-live-bundled`)."
+                .into(),
+        ));
+    }
+
+    #[cfg(feature = "onnx-reload")]
+    {
+        run_live_trained(cfg, env, action_count, metrics)
+    }
+}
+
+/// Trained-mode live-runner branch: loads the ONNX manifest + bundle,
+/// installs the hot-reload wrapper, and drives the runner with a real
+/// `OnnxMuZeroModel`. Pulled into its own function so the ORT bits
+/// can be feature-gated together (`#[cfg(feature = "onnx-reload")]`).
+#[cfg(feature = "onnx-reload")]
+fn run_live_trained(
+    cfg: RunnerConfig,
+    env: MinecraftEnv,
+    action_count: u32,
+    metrics: Option<MetricsRecorder>,
+) -> Result<(), RunnerError> {
     // 4'. Load manifest + resolve bundle dir.
     let manifest = ModelManifest::load_json(&cfg.manifest_path).map_err(|e| {
         RunnerError::ConfigLoad(format!(
@@ -148,9 +187,8 @@ pub fn run_live(cfg: RunnerConfig, metrics: Option<MetricsRecorder>) -> Result<(
     );
 
     // 6. Load the model.
-    let model = OnnxMuZeroModel::load(onnx_cfg).map_err(|e: ort::Error| {
-        RunnerError::EnvSetup(format!("OnnxMuZeroModel::load failed: {e}"))
-    })?;
+    let model = OnnxMuZeroModel::load(onnx_cfg)
+        .map_err(|e| RunnerError::EnvSetup(format!("OnnxMuZeroModel::load failed: {e}")))?;
     info!(
         manifest_version = manifest.version,
         bundle_dir = %bundle_dir.display(),
@@ -277,12 +315,14 @@ fn run_live_random(
 /// Snapshot of the ONNX runtime invariants resolved at startup.
 /// Resolved once so `into_reload_fn` and the initial `OnnxModelConfig`
 /// share one source of truth.
+#[cfg(feature = "onnx-reload")]
 struct ResolvedOnnx {
     action_space_size: u32,
     latent_dim: usize,
     num_threads: usize,
 }
 
+#[cfg(feature = "onnx-reload")]
 fn resolve_onnx_invariants(cfg: &OnnxRuntimeConfig, action_count_from_map: u32) -> ResolvedOnnx {
     let action_space_size = if cfg.action_space_size == 0 {
         action_count_from_map
@@ -309,6 +349,7 @@ fn resolve_onnx_invariants(cfg: &OnnxRuntimeConfig, action_count_from_map: u32) 
 /// on each successful manifest swap. Pulled into its own function
 /// so the test surface can verify the wrapping discipline
 /// independent of the rest of `run_live`.
+#[cfg(feature = "onnx-reload")]
 fn build_reload_fn_with_metrics(
     bundle_dir: PathBuf,
     action_space_size: u32,
@@ -336,7 +377,7 @@ fn build_reload_fn_with_metrics(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "onnx-reload"))]
 mod tests {
     use super::*;
 

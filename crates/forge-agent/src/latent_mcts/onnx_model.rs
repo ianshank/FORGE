@@ -30,7 +30,11 @@ pub enum OnnxReloadError {
     /// Reload returns this **before** touching the existing sessions,
     /// so the model remains usable with the previous bundle.
     #[error("missing ONNX file: {}", .path.display())]
-    MissingFile { path: PathBuf },
+    MissingFile {
+        /// On-disk path that the new manifest pointed at but which
+        /// does not exist. Useful for surfacing in operator logs.
+        path: PathBuf,
+    },
     /// `ort::Session::builder().commit_from_file(...)` failed (corrupt
     /// ONNX, schema mismatch, op-set unsupported, etc.). Like
     /// `MissingFile`, this is raised before any swap so the existing
@@ -140,6 +144,24 @@ pub struct OnnxMuZeroModel {
     prediction: Mutex<Session>,
 }
 
+/// Build an `ort::Session` from a single ONNX file at `path`.
+///
+/// `ort` 2.0.0-rc.10 removed `SessionBuilder::commit_from_file` in
+/// favor of `commit_from_memory(&[u8])`. We read the bytes here and
+/// surface any I/O error as an `ort::Error` so the call sites stay
+/// a single `?` (the rc.9 ergonomics).
+fn build_session_from_path<P: AsRef<Path>>(
+    num_threads: usize,
+    path: P,
+) -> Result<Session, ort::Error> {
+    let path_ref = path.as_ref();
+    let bytes = std::fs::read(path_ref)
+        .map_err(|e| ort::Error::new(format!("read ONNX file {}: {e}", path_ref.display())))?;
+    Session::builder()?
+        .with_intra_threads(num_threads)?
+        .commit_from_memory(&bytes)
+}
+
 impl OnnxMuZeroModel {
     /// Load ONNX models from the configured paths.
     ///
@@ -147,17 +169,9 @@ impl OnnxMuZeroModel {
     ///
     /// Returns an error if any of the ONNX files cannot be loaded.
     pub fn load(config: OnnxModelConfig) -> Result<Self, ort::Error> {
-        let rep = Session::builder()?
-            .with_intra_threads(config.num_threads)?
-            .commit_from_file(&config.representation_path)?;
-
-        let dyn_ = Session::builder()?
-            .with_intra_threads(config.num_threads)?
-            .commit_from_file(&config.dynamics_path)?;
-
-        let pred = Session::builder()?
-            .with_intra_threads(config.num_threads)?
-            .commit_from_file(&config.prediction_path)?;
+        let rep = build_session_from_path(config.num_threads, &config.representation_path)?;
+        let dyn_ = build_session_from_path(config.num_threads, &config.dynamics_path)?;
+        let pred = build_session_from_path(config.num_threads, &config.prediction_path)?;
 
         Ok(Self {
             config,
@@ -217,15 +231,11 @@ impl OnnxMuZeroModel {
         // Build all three sessions in stack locals BEFORE swapping
         // anything on `self`. `?` propagates ort::Error via
         // `From<ort::Error> for OnnxReloadError`.
-        let new_rep = Session::builder()?
-            .with_intra_threads(new_config.num_threads)?
-            .commit_from_file(&new_config.representation_path)?;
-        let new_dyn = Session::builder()?
-            .with_intra_threads(new_config.num_threads)?
-            .commit_from_file(&new_config.dynamics_path)?;
-        let new_pred = Session::builder()?
-            .with_intra_threads(new_config.num_threads)?
-            .commit_from_file(&new_config.prediction_path)?;
+        let new_rep =
+            build_session_from_path(new_config.num_threads, &new_config.representation_path)?;
+        let new_dyn = build_session_from_path(new_config.num_threads, &new_config.dynamics_path)?;
+        let new_pred =
+            build_session_from_path(new_config.num_threads, &new_config.prediction_path)?;
 
         // Swap in the documented contractual order:
         // representation -> dynamics -> prediction. The old `Mutex`

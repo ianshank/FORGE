@@ -1,0 +1,44 @@
+# forge-mc-runner config for the v0.5 Phase 1 baseline-capture flow.
+#
+# Mounted into the runner container at /app/configs/runner.toml via
+# docker/compose.minecraft.yml.  Every field that takes an env-var
+# override (schema_id, episodes, ...) leaves the static default here
+# so the env-var ladder in main.rs wins at runtime.
+
+# 100 episodes is the v0.5 first-real-run baseline target.  Operators
+# can lower this for smoke testing via the runner's --episodes flag or
+# the FORGE_MC_RUNNER_EPISODES env var (set by mc_self_play.sh).
+episodes = 100
+
+# Capped at env_cfg.episode.max_ticks via the bot's truncation signal.
+max_steps_per_episode = 6000
+
+# Mounted from the host into the runner container.
+trajectory_dir = "/app/trajectories"
+manifest_path = "/app/models/model_manifest.json"
+
+env_id = "minecraft"
+# `unset` triggers the live.rs "accept whatever the bot reports"
+# branch.  Override via FORGE_MC_SCHEMA_ID env var for a hard pin.
+schema_id = "unset"
+
+# v0.5 Phase 1: random-actions baseline mode bypasses MCTS + ONNX
+# entirely.  Set false for the trained variant (requires a valid
+# manifest + ONNX bundle under manifest_path's parent dir).
+random_actions = true
+
+# Planning is bypassed in random mode, but leaving sensible
+# planner defaults here so flipping random_actions = false works
+# without a config edit.
+planning_sims = 50
+action_repeat = 4
+
+# Bind to 0.0.0.0 so the scrape from a sibling container (or the
+# host's loopback via the published port) can reach the endpoint.
+metrics_port = 9090
+metrics_bind = "0.0.0.0"
+
+# v0.4 live-runner path.  Resolves relative to the runner container's
+# /app/ working dir; the mc_env_config_path field is required by
+# live.rs even in random mode (the env handshake still runs).
+mc_env_config_path = "/app/configs/env.toml"
