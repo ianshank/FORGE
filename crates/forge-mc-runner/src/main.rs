@@ -237,7 +237,10 @@ async fn maybe_spawn_metrics_server(config: &RunnerConfig) -> Result<MetricsPart
     if config.metrics_disabled() {
         return Ok((None, None, None));
     }
-    let recorder = match MetricsRecorder::new(&config.metrics_histogram_buckets) {
+    let recorder = match MetricsRecorder::new(
+        &config.metrics_histogram_buckets,
+        &config.metrics_episode_length_buckets,
+    ) {
         Ok(r) => r,
         Err(e) => {
             error!("failed to build metrics recorder: {e}");

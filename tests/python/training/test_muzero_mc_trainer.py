@@ -699,4 +699,3 @@ def test_trainer_experiment_logging(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     trainer.close()
     mock_writer_instance.flush.assert_called_once()
     mock_writer_instance.close.assert_called_once()
-

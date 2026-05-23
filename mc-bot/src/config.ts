@@ -251,7 +251,7 @@ export async function loadConfigBundle(
   } = {}
 ): Promise<ConfigBundle> {
   const repoRoot = options.repoRoot ?? DEFAULT_REPO_ROOT;
-  const envPath = options.envPath ?? resolve(DEFAULT_CONFIG_DIR, 'env.toml');
+  const envPath = options.envPath ?? resolve(repoRoot, 'configs', 'minecraft', 'env.toml');
   const tomlParse = options.tomlParse ?? await defaultTomlParser();
   const env = await loadEnvConfig(envPath, { tomlParse });
   const actionMapPath = options.actionMapPath ?? resolveConfigPath(env.action_map_path, repoRoot);
@@ -265,7 +265,7 @@ export async function loadConfigBundle(
   const schemaId = combinedSchemaId(actionMap.schemaId, rewardConfig.canonicalSha256());
 
   // Load block embeddings mapping table
-  const defaultEmbeddingsPath = resolve(DEFAULT_CONFIG_DIR, 'block_embeddings.toml');
+  const defaultEmbeddingsPath = resolve(repoRoot, 'configs', 'minecraft', 'block_embeddings.toml');
   const blockEmbeddingsPath = resolveConfigPath(
     env.observation?.block_embeddings_path ?? defaultEmbeddingsPath,
     repoRoot,

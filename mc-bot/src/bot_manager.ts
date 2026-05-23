@@ -163,6 +163,11 @@ export class BotManager extends EventEmitter {
   #waitForSpawn(bot: any): Promise<void> {
     if (bot.entity) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Spawn timeout: bot failed to spawn within 30000ms'));
+      }, 30000);
+
       const onSpawn = () => {
         cleanup();
         resolve();
@@ -181,6 +186,7 @@ export class BotManager extends EventEmitter {
       };
 
       const cleanup = () => {
+        clearTimeout(timeout);
         bot.removeListener('spawn', onSpawn);
         bot.removeListener('error', onError);
         bot.removeListener('kicked', onKicked);

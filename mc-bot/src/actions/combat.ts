@@ -17,7 +17,7 @@ export const combatHandlers: Record<string, (bot: any, action: ActionEntry, acti
     } else if (typeof bot.swingArm === 'function') {
       bot.swingArm('right');
     }
-    await waitTicks(bot, DEFAULT_TICKS, actionOptions);
-    return { ticks: DEFAULT_TICKS };
+    await waitTicks(bot, actionOptions.defaultTicks, actionOptions);
+    return { ticks: actionOptions.defaultTicks };
   }
 };

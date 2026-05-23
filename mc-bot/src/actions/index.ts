@@ -39,7 +39,7 @@ export async function executeAction(
     tickMs: options.tickMs ?? DEFAULT_TICK_MS,
   };
 
-  if (action.kind !== 'attack' && bot.pvp && bot.pvp.target) {
+  if (action.kind !== 'attack' && bot.pvp && bot.pvp.target && typeof bot.pvp.stop === 'function') {
     bot.pvp.stop();
   }
 

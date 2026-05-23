@@ -458,13 +458,17 @@ class MuzeroMcTrainer:
                 }
             elif config.logging_backend == "tensorboard":
                 logger_kwargs = {
-                    "log_dir": config.logging_tracking_uri if config.logging_tracking_uri is not None else config.logging_project,
+                    "log_dir": config.logging_tracking_uri
+                    if config.logging_tracking_uri is not None
+                    else config.logging_project,
                 }
 
             try:
                 self._experiment_logger = make_logger(config.logging_backend, **logger_kwargs)
             except Exception as e:
-                logger.warning("failed to initialize logging backend %s: %s", config.logging_backend, e)
+                logger.warning(
+                    "failed to initialize logging backend %s: %s", config.logging_backend, e
+                )
 
     @property
     def iter(self) -> int:
@@ -541,7 +545,10 @@ class MuzeroMcTrainer:
             log_data["manifest_version"] = float(self._last_manifest_version)
             log_data["episode_length"] = float(ep_len)
             log_data["episode_reward"] = float(ep_reward)
-            self._experiment_logger.log(log_data, step=self._iter)
+            try:
+                self._experiment_logger.log(log_data, step=self._iter)
+            except Exception as e:
+                logger.warning("failed to log to experiment logger: %s", e)
 
         return metrics_dict
 
@@ -674,8 +681,12 @@ class MuzeroMcTrainer:
     def close(self) -> None:
         """Close any open experiment logging handlers."""
         if hasattr(self, "_experiment_logger") and self._experiment_logger is not None:
-            self._experiment_logger.close()
-            self._experiment_logger = None
+            try:
+                self._experiment_logger.close()
+            except Exception as e:
+                logger.warning("failed to close experiment logger: %s", e)
+            finally:
+                self._experiment_logger = None
 
     def train(self) -> dict[str, Any]:
         """Run ``train_iters`` gradient steps, exporting on the

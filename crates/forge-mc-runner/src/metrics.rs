@@ -29,10 +29,11 @@ use std::net::SocketAddr;
 
 use axum::{extract::State, response::IntoResponse, routing::get, Router};
 use prometheus::{
-    Counter, CounterVec, Encoder, Gauge, Histogram, HistogramOpts, Opts, Registry, TextEncoder,
+    Counter, CounterVec, Encoder, Gauge, GaugeVec, Histogram, HistogramOpts, Opts, Registry,
+    TextEncoder,
 };
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 
 /// Counter incremented once per finished episode.
 pub const METRIC_EPISODE_TOTAL: &str = "forge_mc_episode_total";
@@ -76,13 +77,13 @@ pub enum MetricsError {
 pub struct MetricsRecorder {
     registry: Registry,
     episode_total: Counter,
-    episode_reward_sum: Counter,
+    episode_reward_sum: Gauge,
     planning_latency_seconds: Histogram,
     model_version: Gauge,
     protocol_error_total: CounterVec,
     model_reload_count: Counter,
     episode_length_steps: Histogram,
-    episode_reward_components: CounterVec,
+    episode_reward_components: GaugeVec,
 }
 
 impl MetricsRecorder {
@@ -92,7 +93,10 @@ impl MetricsRecorder {
     /// `histogram_buckets` should be in strictly-increasing seconds.
     /// `RunnerConfig::validate` already enforces this, so callers
     /// that pass `&cfg.metrics_histogram_buckets` are safe.
-    pub fn new(histogram_buckets: &[f64]) -> Result<Self, MetricsError> {
+    pub fn new(
+        histogram_buckets: &[f64],
+        episode_length_buckets: &[f64],
+    ) -> Result<Self, MetricsError> {
         let registry = Registry::new();
 
         let episode_total = Counter::with_opts(Opts::new(
@@ -101,7 +105,7 @@ impl MetricsRecorder {
         ))?;
         registry.register(Box::new(episode_total.clone()))?;
 
-        let episode_reward_sum = Counter::with_opts(Opts::new(
+        let episode_reward_sum = Gauge::with_opts(Opts::new(
             METRIC_EPISODE_REWARD_SUM,
             "Cumulative sum of per-episode rewards across all completed episodes.",
         ))?;
@@ -142,13 +146,11 @@ impl MetricsRecorder {
                 METRIC_EPISODE_LENGTH_STEPS,
                 "Episode length in environment steps.",
             )
-            .buckets(vec![
-                10.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0,
-            ]),
+            .buckets(episode_length_buckets.to_vec()),
         )?;
         registry.register(Box::new(episode_length_steps.clone()))?;
 
-        let episode_reward_components = CounterVec::new(
+        let episode_reward_components = GaugeVec::new(
             Opts::new(
                 METRIC_EPISODE_REWARD_COMPONENTS,
                 "Per-episode reward breakdown by reward component.",
@@ -177,17 +179,20 @@ impl MetricsRecorder {
     }
 
     /// Record that a single episode finished.
+    #[instrument(skip(self))]
     pub fn record_episode_complete(&self, total_reward: f32) {
         self.episode_total.inc();
-        self.episode_reward_sum.inc_by(f64::from(total_reward));
+        self.episode_reward_sum.add(f64::from(total_reward));
     }
 
     /// Record one planning call's wall-clock latency (seconds).
+    #[instrument(skip(self))]
     pub fn record_planning_latency_seconds(&self, latency: f64) {
         self.planning_latency_seconds.observe(latency);
     }
 
     /// Update the last-observed model manifest version. Idempotent.
+    #[instrument(skip(self))]
     pub fn set_model_version(&self, version: u64) {
         // Gauge takes f64; manifest versions fit exactly in f64 up to
         // 2**53 which is far beyond any realistic export cadence.
@@ -197,26 +202,30 @@ impl MetricsRecorder {
     /// Record one protocol / env / reload error. `reason` should be a
     /// short, low-cardinality string (e.g. "env_step", "reload",
     /// "manifest_parse"); avoid embedding per-error detail.
+    #[instrument(skip(self))]
     pub fn record_protocol_error(&self, reason: &str) {
         self.protocol_error_total.with_label_values(&[reason]).inc();
     }
 
     /// Record that a model reload succeeded.
+    #[instrument(skip(self))]
     pub fn record_model_reload(&self) {
         self.model_reload_count.inc();
     }
 
     /// Record an episode length in steps.
+    #[instrument(skip(self))]
     pub fn record_episode_length(&self, steps: usize) {
         self.episode_length_steps.observe(steps as f64);
     }
 
     /// Record reward component values.
+    #[instrument(skip(self))]
     pub fn record_reward_component(&self, component: &str, value: f32) {
         if value != 0.0 {
             self.episode_reward_components
                 .with_label_values(&[component])
-                .inc_by(f64::from(value));
+                .add(f64::from(value));
         }
     }
 
@@ -292,7 +301,12 @@ mod tests {
     use crate::config::DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS;
 
     fn recorder() -> MetricsRecorder {
-        MetricsRecorder::new(DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS).expect("recorder build")
+        use crate::config::DEFAULT_METRICS_EPISODE_LENGTH_BUCKETS;
+        MetricsRecorder::new(
+            DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS,
+            DEFAULT_METRICS_EPISODE_LENGTH_BUCKETS,
+        )
+        .expect("recorder build")
     }
 
     #[test]
@@ -313,7 +327,7 @@ mod tests {
             assert!(text.contains(name), "expected {name} in text, got:\n{text}");
         }
         assert!(text.contains("# TYPE forge_mc_episode_total counter"));
-        assert!(text.contains("# TYPE forge_mc_episode_reward_sum counter"));
+        assert!(text.contains("# TYPE forge_mc_episode_reward_sum gauge"));
         assert!(text.contains("# TYPE forge_mc_planning_latency_seconds histogram"));
         assert!(text.contains("# TYPE forge_mc_model_version gauge"));
         assert!(text.contains("# TYPE forge_mc_protocol_error_total counter"));
@@ -361,7 +375,7 @@ mod tests {
 
     #[test]
     fn new_rejects_unsorted_histogram_buckets() {
-        let result = MetricsRecorder::new(&[0.1, 0.05]);
+        let result = MetricsRecorder::new(&[0.1, 0.05], &[10.0]);
         // Prometheus requires strictly-increasing buckets; surface
         // any rejection via the `MetricsError::Prometheus` variant.
         assert!(result.is_err(), "expected MetricsError::Prometheus");

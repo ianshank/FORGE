@@ -215,4 +215,3 @@ def test_minecraft_reconnect_scenario(
         health_check=runner_health_check,
         description="forge_mc_episode_total >= 2 after server restart",
     )
-

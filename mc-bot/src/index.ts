@@ -128,27 +128,33 @@ export function createConnectionHandler(options: {
       }
 
       if (message.type === 'reset') {
+        let resultMsg: any;
         try {
           await applyReset(currentBot, bundle.reset);
           episodeTicks = 0;
           previousSnapshot = snapshotObservation(currentBot, envConfig.observation);
           if (botManager) botManager.updateTickAge(currentBot.time?.age ?? 0);
-          sendJson(clientSocket, observationMsg({
+          resultMsg = observationMsg({
             tick: previousSnapshot.tick,
             obs: previousSnapshot.obs!,
             reward: 0,
             terminated: terminalFromSnapshot(previousSnapshot, envConfig),
             truncated: false,
             info: { event: 'reset', seed: message.seed ?? null },
-          }));
+          });
         } catch (err: any) {
           logger.warn?.({ event: 'reset_error', error: err.message });
           if (botManager) {
             botManager.reconnect().catch(() => {});
-            sendJson(clientSocket, errorMsg('RECONNECTING', 'mineflayer reconnecting after reset error'));
+            resultMsg = errorMsg('RECONNECTING', 'mineflayer reconnecting after reset error');
           } else {
-            sendJson(clientSocket, errorMsg('INTERNAL', err.message));
+            resultMsg = errorMsg('INTERNAL', err.message);
           }
+        }
+        try {
+          sendJson(clientSocket, resultMsg);
+        } catch (sendErr: any) {
+          logger.warn?.({ event: 'send_reset_reply_error', error: sendErr.message });
         }
         return;
       }
@@ -156,9 +162,14 @@ export function createConnectionHandler(options: {
       if (message.type === 'step') {
         const action = bundle.actionMap.get(message.action_id);
         if (!action) {
-          sendJson(clientSocket, errorMsg('INVALID_ACTION', `unknown action_id ${message.action_id}`));
+          try {
+            sendJson(clientSocket, errorMsg('INVALID_ACTION', `unknown action_id ${message.action_id}`));
+          } catch (sendErr: any) {
+            logger.warn?.({ event: 'send_invalid_action_reply_error', error: sendErr.message });
+          }
           return;
         }
+        let resultMsg: any;
         try {
           const before = previousSnapshot ?? snapshotObservation(currentBot, envConfig.observation);
           const executionResult = await executeAction(currentBot, action, {
@@ -170,7 +181,7 @@ export function createConnectionHandler(options: {
           const reward = bundle.rewardFn(rewardCtx);
           episodeTicks += actionTicks(action, executionResult, envConfig);
           previousSnapshot = after;
-          sendJson(clientSocket, observationMsg({
+          resultMsg = observationMsg({
             tick: after.tick,
             obs: after.obs!,
             reward,
@@ -182,15 +193,20 @@ export function createConnectionHandler(options: {
               episode_ticks: episodeTicks,
               reward_breakdown: rewardCtx.breakdown,
             },
-          }));
+          });
         } catch (err: any) {
           logger.warn?.({ event: 'step_error', error: err.message });
           if (botManager) {
             botManager.reconnect().catch(() => {});
-            sendJson(clientSocket, errorMsg('RECONNECTING', 'mineflayer reconnecting after step error'));
+            resultMsg = errorMsg('RECONNECTING', 'mineflayer reconnecting after step error');
           } else {
-            sendJson(clientSocket, errorMsg('INTERNAL', err.message));
+            resultMsg = errorMsg('INTERNAL', err.message);
           }
+        }
+        try {
+          sendJson(clientSocket, resultMsg);
+        } catch (sendErr: any) {
+          logger.warn?.({ event: 'send_step_reply_error', error: sendErr.message });
         }
       }
     }

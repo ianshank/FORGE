@@ -35,6 +35,7 @@ def test_representation_network_without_embeddings() -> None:
     latent_single = rep_net.forward(obs_single)
     assert latent_single.shape == (config.latent_dim,)
 
+
 def test_representation_network_with_embeddings() -> None:
     """Verify RepresentationNetwork works correctly with learned block embeddings."""
     config = MuZeroConfig(
@@ -61,7 +62,9 @@ def test_representation_network_with_embeddings() -> None:
     # Check forward pass
     obs = torch.randn(2, config.obs_dim)
     # Set the first channel to valid integer values (e.g., indices 0 to 35)
-    flat_grid = obs[:, :config.grid_flat_dim].view(-1, config.grid_channels, config.grid_height, config.grid_width)
+    flat_grid = obs[:, : config.grid_flat_dim].view(
+        -1, config.grid_channels, config.grid_height, config.grid_width
+    )
     flat_grid[:, 0, :, :] = torch.randint(0, 36, (2, config.grid_height, config.grid_width)).float()
 
     latent = rep_net.forward(obs)
@@ -71,6 +74,7 @@ def test_representation_network_with_embeddings() -> None:
     loss = latent.sum()
     loss.backward()
     assert rep_net.block_embeddings.weight.grad is not None
+
 
 def test_representation_network_3d_grid() -> None:
     """Verify RepresentationNetwork works correctly with a 3D block-grid variant (grid_depth > 1)."""
@@ -93,11 +97,16 @@ def test_representation_network_3d_grid() -> None:
     assert isinstance(rep_net.block_embeddings, torch.nn.Embedding)
 
     obs = torch.randn(2, config.obs_dim)
-    flat_grid = obs[:, :config.grid_flat_dim].view(-1, config.grid_channels, config.grid_depth, config.grid_height, config.grid_width)
-    flat_grid[:, 0, :, :, :] = torch.randint(0, 36, (2, config.grid_depth, config.grid_height, config.grid_width)).float()
+    flat_grid = obs[:, : config.grid_flat_dim].view(
+        -1, config.grid_channels, config.grid_depth, config.grid_height, config.grid_width
+    )
+    flat_grid[:, 0, :, :, :] = torch.randint(
+        0, 36, (2, config.grid_depth, config.grid_height, config.grid_width)
+    ).float()
 
     latent = rep_net.forward(obs)
     assert latent.shape == (2, config.latent_dim)
+
 
 def test_dynamics_and_prediction_networks() -> None:
     """Verify DynamicsNetwork and PredictionNetwork forward passes and output shapes."""

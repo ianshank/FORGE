@@ -192,12 +192,14 @@ def test_bootstrap_from_hf(
         local_dir: str | Path | None = None,
         local_dir_use_symlinks: bool = False,
     ) -> str:
-        download_calls.append({
-            "repo_id": repo_id,
-            "filename": filename,
-            "subfolder": subfolder,
-            "local_dir": Path(local_dir) if local_dir else None,
-        })
+        download_calls.append(
+            {
+                "repo_id": repo_id,
+                "filename": filename,
+                "subfolder": subfolder,
+                "local_dir": Path(local_dir) if local_dir else None,
+            }
+        )
         # Simulate writing the downloaded file
         assert local_dir is not None
         file_path = Path(local_dir) / filename
@@ -238,6 +240,7 @@ def test_bootstrap_from_hf(
     assert manifest_path.exists()
 
     from forge.training.muzero_mc.manifest import load_manifest
+
     manifest = load_manifest(manifest_path)
     assert manifest.version == 1
     assert manifest.schema_id == "mock_schema_id_hash"
@@ -248,4 +251,3 @@ def test_bootstrap_from_hf(
     assert result.manifest_path == manifest_path
     assert len(result.onnx_paths) == 3
     assert result.onnx_paths["representation"] == versioned_dir / "representation.onnx"
-

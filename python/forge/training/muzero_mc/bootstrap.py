@@ -209,7 +209,6 @@ def bootstrap(cfg: BootstrapConfig) -> BootstrapResult:
     # which the Rust runner's `config_from_manifest` resolves
     # against `bundle_dir` transparently.
 
-
     bundle_subdir_name = format_bundle_version_dir(cfg.version)
     versioned_dir = cfg.output_dir / bundle_subdir_name
     versioned_dir.mkdir(parents=True, exist_ok=True)
