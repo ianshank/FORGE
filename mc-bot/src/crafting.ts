@@ -1,6 +1,8 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
+const recipeCache = new Map<string, any>();
+
 export class CraftingPlanner {
   private bot: any;
   private Recipe: any;
@@ -8,7 +10,10 @@ export class CraftingPlanner {
 
   constructor(bot: any) {
     this.bot = bot;
-    const recipeModule = require('prismarine-recipe')(bot.version);
+    if (!recipeCache.has(bot.version)) {
+      recipeCache.set(bot.version, require('prismarine-recipe')(bot.version));
+    }
+    const recipeModule = recipeCache.get(bot.version);
     this.Recipe = recipeModule.Recipe;
     this.registry = bot.registry;
   }

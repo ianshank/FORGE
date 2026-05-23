@@ -3,6 +3,7 @@
 // and grants one-shot rewards upon triggering milestones.
 
 import { readFileSync } from 'node:fs';
+import { parse } from 'smol-toml';
 import type { RewardContext } from '../index.js';
 
 export const name = 'milestone';
@@ -26,29 +27,13 @@ export function factory(params: any): (ctx: RewardContext) => number {
   const craftingConfigPath = params.crafting_config_path || 'configs/minecraft/crafting_rewards.toml';
   
   const parseTomlConfig = (filepath: string): Record<string, MilestoneSpec> => {
-    const parsed: Record<string, MilestoneSpec> = {};
     try {
       const content = readFileSync(filepath, 'utf8');
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('#') || !trimmed.includes('=')) continue;
-        const [key, value] = trimmed.split('=').map((s) => s.trim());
-        if (value.startsWith('{') && value.endsWith('}')) {
-          const inner = value.slice(1, -1);
-          const rewardMatch = inner.match(/reward\s*=\s*([0-9.-]+)/);
-          const onceMatch = inner.match(/once\s*=\s*(true|false)/);
-          if (rewardMatch) {
-            parsed[key] = {
-              reward: parseFloat(rewardMatch[1]),
-              once: onceMatch ? onceMatch[1] === 'true' : true,
-            };
-          }
-        }
-      }
+      const data = parse(content) as any;
+      return data.milestones ?? {};
     } catch (_error) {
-      // Keep defaults
+      return {};
     }
-    return parsed;
   };
 
   const parsedMilestones = parseTomlConfig(configPath);

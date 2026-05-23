@@ -72,16 +72,53 @@ export const macroHandlers: Record<string, (bot: any, action: ActionEntry, actio
     if (!furnaceBlock) return { ticks: DEFAULT_TICKS, smelted: false };
     try {
       const furnace = await bot.openFurnace(furnaceBlock);
-      const rawIron = bot.inventory.items().find((i: any) => i.name === 'raw_iron');
-      if (rawIron) await furnace.putInput(rawIron.type, null, 1);
-      const fuel = bot.inventory.items().find((i: any) => i.name === 'coal' || i.name === 'charcoal' || i.name.endsWith('_planks'));
-      if (fuel) await furnace.putFuel(fuel.type, null, 1);
-      await delay(5000); // rudimentary wait
-      if (typeof furnace.takeOutput === 'function') {
-        await furnace.takeOutput();
+      
+      // 1. If there's already output, take it immediately
+      let output = typeof furnace.outputItem === 'function' ? furnace.outputItem() : null;
+      if (output) {
+        if (typeof furnace.takeOutput === 'function') {
+          await furnace.takeOutput();
+        }
+        furnace.close();
+        return { ticks: DEFAULT_TICKS, smelted: true };
       }
+      
+      // 2. Try to put raw iron and fuel in if the slots are empty
+      const rawIron = bot.inventory.items().find((i: any) => i.name === 'raw_iron' || i.name === 'iron_ore');
+      const fuel = bot.inventory.items().find((i: any) => i.name === 'coal' || i.name === 'charcoal' || i.name.endsWith('_planks'));
+      
+      let inputAdded = false;
+      let fuelAdded = false;
+      
+      const currentInput = typeof furnace.inputItem === 'function' ? furnace.inputItem() : null;
+      const currentFuel = typeof furnace.fuelItem === 'function' ? furnace.fuelItem() : null;
+      
+      if (rawIron && !currentInput) {
+        await furnace.putInput(rawIron.type, null, 1);
+        inputAdded = true;
+      }
+      if (fuel && !currentFuel) {
+        await furnace.putFuel(fuel.type, null, 1);
+        fuelAdded = true;
+      }
+      
+      // 3. Short non-blocking poll of 100ms to see if smelting completes instantly or is active
+      await delay(100);
+      output = typeof furnace.outputItem === 'function' ? furnace.outputItem() : null;
+      if (output) {
+        if (typeof furnace.takeOutput === 'function') {
+          await furnace.takeOutput();
+        }
+        furnace.close();
+        return { ticks: DEFAULT_TICKS, smelted: true };
+      }
+      
       furnace.close();
-      return { ticks: DEFAULT_TICKS, smelted: true };
+      return { 
+        ticks: DEFAULT_TICKS, 
+        smelted: false, 
+        status: (inputAdded || fuelAdded || currentInput) ? 'smelting_in_progress' : 'no_materials' 
+      };
     } catch (err: any) {
       return { ticks: DEFAULT_TICKS, smelted: false, error: err.message };
     }
