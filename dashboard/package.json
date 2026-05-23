@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint . --ext ts,tsx",
+    "lint": "biome check .",
     "format": "prettier --check \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
@@ -25,7 +25,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
-    "eslint": "^8.57.0",
+    "@biomejs/biome": "^1.9.4",
     "jsdom": "^24.0.0",
     "postcss": "^8.4.0",
     "prettier": "^3.2.0",

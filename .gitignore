@@ -207,3 +207,9 @@ mc-bot/**/*.d.ts.map
 .test-env.json
 summary-pr*.md
 
+# Nested duplicate clone directory
+/FORGE/
+
+# Scratch and temporary scripts
+scratch_recipe.js
+mc-bot/scratch_bot.js

@@ -7,8 +7,8 @@
 - `cargo fmt --check` — Format check
 - `cargo bench -p forge-bench` — Run benchmarks
 - `python -m pytest tests/python/ -v` — Run Python tests using the local environment (e.g. Python 3.11.9) to bind core dependencies like `onnx`, `torch` and `onnxruntime` (requires `maturin develop` first)
-- `cd mc-bot && npm test` — Run Node-side mc-bot tests (no install required for the dep-free modules; `npm install` for mineflayer + Biome)
-- `cd mc-bot && npm run lint` — Biome lint + format check on the JS surface
+- `cd mc-bot && npm test` — Run Node-side mc-bot unit/integration/security tests in strict TS using `tsx --test`
+- `cd mc-bot && npm run lint` — Biome lint + format check on the TypeScript source
 - `cargo run -p forge-mc-runner -- --dry-run --episodes 1` — Smoke-test the runner binary without docker / Minecraft (CI: `forge-mc-runner-bin` job)
 - `cargo test -p forge-agent --features onnx` + `cargo test -p forge-mc-runner --features onnx-reload` — Exercise the `OnnxMuZeroModel::reload()` + `into_reload_fn` ONNX hot-reload surface
 - `curl http://127.0.0.1:9090/metrics` — Scrape the runner's Prometheus endpoint (disabled by setting `metrics_port = 0` in the runner config; `metrics_bind` defaults to `127.0.0.1`)
@@ -17,7 +17,7 @@
 - `python -m forge.training.muzero_mc.cli train --input trajectories/ --out models/ --schema-id <sha> --obs-dim N --action-dim M --iters 100 --export-every 10` — Train loop consuming `.json` / `.json.gz` trajectories, periodic ONNX export + manifest bump that the runner's `HotReloadWatcher` picks up. `--obs-dim`, `--action-dim`, `--schema-id`, `--out`, `--input` are required; `--manifest` defaults to `<out>/model_manifest.json`
 - `scripts/mc_run.sh --dry-run` — Print resolved docker compose argv for the stack (no side effects)
 - `scripts/mc_run.sh --build` — Bring the Minecraft + mc-bot + runner stack up (foreground; Ctrl-C cleans up)
-- `cd mc-bot && npm run typecheck` — `tsc --noEmit` gate over the `.js` source (CI: `mc-bot-test` job runs this between `npm ci` and `npm test`)
+- `cd mc-bot && npm run typecheck` — `tsc --noEmit` strict typecheck gate over the `.ts` source (CI: `mc-bot-test` job gates on this)
 - `pytest tests/python/integration/ -m minecraft_e2e -v` — Run the opt-in compose-stack E2E (requires docker; never runs on a default `pytest` invocation)
 - `python -m forge.training.muzero_mc.cli compute-schema-id --action-map configs/minecraft/action_map.toml --rewards configs/minecraft/rewards.toml --quiet` — v0.4: print the canonical 64-hex schema_id to stdout (stderr-bound logs). Used by `mc_self_play.sh` to populate `FORGE_MC_SCHEMA_ID` before compose-up
 - `python -m forge.training.muzero_mc.cli train --input trajectories/ --out models/ --schema-id <sha> --obs-dim N --action-dim M --continuous --round-iters 10 --round-poll-sleep 5 --max-trajectories 200 --max-bundle-versions 5 --device cpu` — v0.4 continuous trainer: yields one round summary per loop iteration, polls trajectory dir for new files (cold-start safe), exports an atomic `v{NNNNNNNN}/` bundle subdir + bumps manifest each round. SIGINT-clean shutdown

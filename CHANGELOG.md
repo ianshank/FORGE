@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Minecraft RL Integration: v0.5 Phase 2 — Production Stability, TypeScript Migration & Hardening
+
+Delivered complete structural hardening, connection resilience, and compile-time type safety for the Minecraft WebSocket integration:
+
+- **100% TypeScript Migration (`mc-bot/`)**:
+  - Converted all **16 source files** and **15 test files** to strict ESM TypeScript (`.ts`).
+  - Added strict interfaces for `EnvConfig`, `ResetConfig`, `ConfigBundle`, `Snapshot`, `ActionMap`, `ActionEntry`, and WebSocket messages.
+  - Enabled rigorous compiler flags (`strict: true`, `noImplicitAny: true`) in `tsconfig.json` with **0 compilation errors** in `npm run typecheck`.
+  - Replaced ESLint with a unified Biome formatting and linting setup, reporting **0 linter/formatter violations** across all 41 package files.
+- **Connection Auto-Reconnect (`BotManager`)**:
+  - Implemented `BotManager` class in `mc-bot/src/bot_manager.ts` to actively monitor Mineflayer connection health via tick age tracking.
+  - Added auto-teardown and dynamic reconstruction of Mineflayer instances on server-side exceptions (preventing connection lockouts), complete with exponential backoff and connection failure notifications.
+- **ORT Toolchain Resolution**:
+  - Pinned exact `ort` version `2.0.0-rc.9` in `crates/forge-agent/Cargo.toml` and refactored `build_session_from_path` in `onnx_model.rs` to leverage the stable `commit_from_file` API, bypassing all FFI ABI hazards and ureq dependency conflicts for trained-mode Docker builds.
+- **Robust Security & Regression Coverage**:
+  - Implemented dedicated network payload shape and prototype pollution validations inside `mc-bot/test/security.test.ts`.
+  - Expanded unit test coverage in `actions.test.ts`, `bot_manager.test.ts`, and `config.test.ts` to **185 passing tests** under Node 22 native test runner via `tsx`.
+
 ### Added — Minecraft RL Integration: v0.5 Phase 1 - CLI Hardening & Test Coverage Boost
 
 A comprehensive hardening and test coverage boost pass has been completed on the training CLI and trainer subcommands, achieving a package-level test coverage of **89.04%** (well exceeding the 85.0% global floor):

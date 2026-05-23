@@ -75,6 +75,7 @@ StepResult (forge-types)  -->  Observations + Rewards
 
 | Crate | File | Persona |
 |-------|------|---------|
+| `Workspace` | [ANTIGRAVITY.md](file:///c:/Users/iansh/OneDrive/Documents/FORGE/ANTIGRAVITY.md) | Google DeepMind Coding Companion — system-level refactoring, test-coverage architect, and pair programmer |
 | `forge-types` | `crates/forge-types/Agent.md` | Foundation Architect — type contracts, config, constants |
 | `forge-core` | `crates/forge-core/Agent.md` | Simulation Engine — deterministic step pipeline |
 | `forge-worldgen` | `crates/forge-worldgen/Agent.md` | World Builder — procedural generation |
@@ -88,7 +89,7 @@ StepResult (forge-types)  -->  Observations + Rewards
 | `forge-env-mc` | (this file §Env-trait crates) | Minecraft Bridge — sync WebSocket client to mc-bot, JSON protocol v1 |
 | `forge-mc-runner` | `crates/forge-mc-runner/Agent.md` | Runner — `Runner<E,M>` episode loop + `LatentPlanner` + binary + the Phase-4 foundation modules (`RunnerConfig`, `ModelManifest`, `HotReloadWatcher`, `TrajectoryWriter`) |
 | `python/forge/training/muzero_mc/` | this file §Env-trait crates | Trainer Glue — Python `ModelManifest` mirror, `TrajectoryV2` JSONL reader, random-init ONNX bootstrap, `bootstrap`/`validate-manifest` CLI |
-| `mc-bot/` | `mc-bot/README.md` | Node Bridge — mineflayer + prismarine-viewer + reward registry; lint via Biome (`biome.json`) |
+| `mc-bot/` | `mc-bot/README.md` | Node Bridge — 100% strict TypeScript (Node 22 ESM). Dynamic modular action handlers, connection health monitoring / auto-reconnection (`BotManager`), and Biome check clean. |
 
 ### Env-Trait Crates (Minecraft RL integration)
 
@@ -114,8 +115,9 @@ Added on the `claude/minecraft-rl-agent-integration-xnJjt` branch.
 - **`forge-replay::v2`** — additive module inside `forge-replay`.
   `TrajectoryV2` carries `Vec<f32>` obs + MCTS policy/value targets;
   `format_version=2` pinned. v1 `Trajectory` untouched.
-- **`mc-bot/`** — Node 22+ package, ESM. Mirrors the protocol +
-  action map + reward registry layout. Pure JS canonicalisers produce
+- **`mc-bot/`** — Node 22+ package, ESM strictly-typed in TS (`.ts`). Mirrors the protocol +
+  action map + reward registry layout. Dynamic modular actions registry, connection
+  health monitoring and auto-reconnect (`BotManager`). Pure TS canonicalisers produce
   byte-identical `schema_id` to the Rust side (cross-language
   regression gates pinned at `587b1307…` for actions and
   `451b10f9…` for rewards). `SCHEMA_VERSION = 1` pinned on both

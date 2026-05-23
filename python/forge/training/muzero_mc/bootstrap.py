@@ -91,6 +91,8 @@ class BootstrapConfig:
     filenames: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_BUNDLE_FILENAMES))
     manifest_filename: str = MANIFEST_FILENAME
     seed: int | None = None
+    from_hf: str | None = None
+    subfolder: str | None = None
 
     def __post_init__(self) -> None:
         if self.obs_dim <= 0:
@@ -136,9 +138,33 @@ def bootstrap(cfg: BootstrapConfig) -> BootstrapResult:
     from forge.models.muzero_config import MuZeroConfig
     from forge.models.muzero_export import MuZeroExporter
     from forge.models.muzero_world_model import MuZeroWorldModel
+    from forge.training.muzero_mc.trainer import format_bundle_version_dir
 
     if cfg.seed is not None:
         torch.manual_seed(cfg.seed)
+
+    if cfg.from_hf is not None:
+        from forge.training.muzero_mc.checkpoint_loader import load_from_hf
+        from forge.training.muzero_mc.manifest import load_manifest
+
+        manifest_path = load_from_hf(
+            cfg.from_hf,
+            schema_id=cfg.schema_id,
+            output_dir=cfg.output_dir,
+            version=cfg.version,
+            filename_map=cfg.filenames,
+            subfolder=cfg.subfolder,
+        )
+        manifest = load_manifest(manifest_path)
+        bundle_subdir_name = format_bundle_version_dir(cfg.version)
+        return BootstrapResult(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            onnx_paths={
+                role: cfg.output_dir / bundle_subdir_name / fname
+                for role, fname in cfg.filenames.items()
+            },
+        )
 
     # Surface the cold-start shape contract so a real-run operator can
     # diagnose handshake mismatches from the bootstrap-container logs
@@ -182,7 +208,7 @@ def bootstrap(cfg: BootstrapConfig) -> BootstrapResult:
     # versioned relative path (`v00000001/representation.onnx`)
     # which the Rust runner's `config_from_manifest` resolves
     # against `bundle_dir` transparently.
-    from forge.training.muzero_mc.trainer import format_bundle_version_dir
+
 
     bundle_subdir_name = format_bundle_version_dir(cfg.version)
     versioned_dir = cfg.output_dir / bundle_subdir_name

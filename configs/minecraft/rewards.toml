@@ -26,6 +26,7 @@ kind = "composite"
 [reward.weights]
 distance_to_goal = 1.0
 survival = 0.01
+milestone = 1.0
 
 [reward.distance_to_goal]
 clip = 100.0
@@ -37,3 +38,7 @@ z = 0
 
 [reward.survival]
 value = 0.01
+
+[reward.milestone]
+config_path = "configs/minecraft/milestone_rewards.toml"
+crafting_config_path = "configs/minecraft/crafting_rewards.toml"

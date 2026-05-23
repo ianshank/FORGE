@@ -147,7 +147,7 @@ pub struct RunnerOutcome {
 /// the planner's latent forward model (`M: LatentForwardModel`).
 pub struct Runner<E: FlatObsEnv, M: LatentForwardModel>
 where
-    E::Info: Default,
+    E::Info: Default + serde::Serialize,
 {
     config: RunnerConfig,
     env: E,
@@ -170,7 +170,7 @@ where
 
 impl<E: FlatObsEnv, M: LatentForwardModel> Runner<E, M>
 where
-    E::Info: Default,
+    E::Info: Default + serde::Serialize,
 {
     /// Build a new runner. Buffer sizes are derived from
     /// `writer.obs_dim()` — the writer is the single source of truth
@@ -315,6 +315,7 @@ where
         self.reloads_applied += 1;
         if let Some(rec) = self.metrics.as_ref() {
             rec.set_model_version(new_version);
+            rec.record_model_reload();
         }
         Ok(())
     }
@@ -413,6 +414,20 @@ where
             truncated = self.step_out.truncated;
             total_reward += step_reward;
 
+            if let Some(rec) = self.metrics.as_ref() {
+                if let Ok(info_val) = serde_json::to_value(&self.step_out.info) {
+                    if let Some(breakdown) =
+                        info_val.get("reward_breakdown").and_then(|v| v.as_object())
+                    {
+                        for (component, val) in breakdown {
+                            if let Some(v_f64) = val.as_f64() {
+                                rec.record_reward_component(component, v_f64 as f32);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Runner-side truncation prediction: if this is the final
             // iteration the loop will execute (last `tick` before the
             // cap) and the env did not flag terminated/truncated on its
@@ -463,6 +478,7 @@ where
 
         if let Some(rec) = self.metrics.as_ref() {
             rec.record_episode_complete(total_reward);
+            rec.record_episode_length(steps_taken as usize);
         }
 
         Ok(EpisodeOutcome {
@@ -1076,5 +1092,108 @@ mod tests {
         // so we expect exactly [1].
         let observed = reload_versions.lock().unwrap().clone();
         assert_eq!(observed, vec![1]);
+    }
+
+    #[test]
+    fn benchmark_trajectory_compression_sweep() {
+        use crate::config::TrajectoryCompression;
+        use forge_replay::v2::{NamedGzipLevel, StepV2, TrajectoryGzipLevel, TrajectoryV2};
+        use std::time::Instant;
+
+        let dir = tempfile::tempdir().unwrap();
+        let obs_dim = 920;
+        let action_count: u32 = 12;
+
+        // Generate a synthetic episode with 100 steps to get realistic sizing
+        let mut steps = Vec::new();
+        for t in 0..100u64 {
+            steps.push(StepV2 {
+                tick: t,
+                obs: vec![t as f32 * 0.1; obs_dim],
+                action_id: (t as u32) % action_count,
+                policy_target: vec![1.0 / action_count as f32; action_count as usize],
+                value_target: 0.5,
+                reward: 1.0,
+                terminated: false,
+                truncated: false,
+            });
+        }
+
+        let mut base_traj = TrajectoryV2::empty(
+            "minecraft",
+            "schema-x",
+            "ep-bench",
+            obs_dim,
+            action_count,
+            Some(42),
+            "2026-05-23T00:00:00Z",
+        );
+        for step in steps {
+            base_traj.push(step).unwrap();
+        }
+        base_traj.finalize("2026-05-23T00:00:10Z");
+
+        let cases = vec![
+            (
+                "None",
+                TrajectoryCompression::None,
+                TrajectoryGzipLevel::Named(NamedGzipLevel::Default),
+            ),
+            (
+                "Fastest",
+                TrajectoryCompression::Gzip,
+                TrajectoryGzipLevel::Named(NamedGzipLevel::Fastest),
+            ),
+            (
+                "Default",
+                TrajectoryCompression::Gzip,
+                TrajectoryGzipLevel::Named(NamedGzipLevel::Default),
+            ),
+            (
+                "Best",
+                TrajectoryCompression::Gzip,
+                TrajectoryGzipLevel::Named(NamedGzipLevel::Best),
+            ),
+        ];
+
+        println!("\n=== Replay Compression Sweep Benchmark ===");
+        println!("Steps: {}, Obs Dim: {}", base_traj.steps.len(), obs_dim);
+        println!(
+            "{:<10} | {:<12} | {:<12} | {:<12}",
+            "Variant", "Size (bytes)", "Write (ms)", "Read (ms)"
+        );
+        println!("-------------------------------------------------------------");
+
+        for (name, compression, level) in cases {
+            let filename = format!("bench_{}.{}", name, compression.extension());
+            let path = dir.path().join(filename);
+
+            // Measure Write
+            let t0 = Instant::now();
+            match compression {
+                TrajectoryCompression::None => base_traj.save_json(&path).unwrap(),
+                TrajectoryCompression::Gzip => base_traj.save_json_gz(&path, level).unwrap(),
+            }
+            let write_dur = t0.elapsed();
+
+            // Get size
+            let size = std::fs::metadata(&path).unwrap().len();
+
+            // Measure Read
+            let t1 = Instant::now();
+            let loaded = TrajectoryV2::load_json(&path).unwrap();
+            let read_dur = t1.elapsed();
+
+            assert_eq!(loaded.steps.len(), 100);
+
+            println!(
+                "{:<10} | {:<12} | {:<12.3} | {:<12.3}",
+                name,
+                size,
+                write_dur.as_secs_f64() * 1000.0,
+                read_dur.as_secs_f64() * 1000.0
+            );
+        }
+        println!("==========================================\n");
     }
 }

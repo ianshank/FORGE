@@ -645,15 +645,13 @@ trajectory_compression = "gzip"
 trajectory_gzip_level = "default"
 ```
 
-### What's still out of scope (deferred to v0.4)
+### What's still out of scope (deferred to v1.0)
 
-- mc-bot `.js → .ts` file rewrite (toolchain landed; pure source
-  rename + cross-language schema-id pin against the Rust constant).
 - Multi-threaded shared `Arc<OnnxMuZeroModel>` reload via
   `ArcSwap<Sessions>` (today's `reload(&mut self)` is borrow-checker
   safe for the single-owner runner).
 - DPO / preference trainer consuming teacher decision traces.
-- Replay-compression level tuning sweep.
+- Complex learned block embeddings (T3 Phase 2 candidate).
 
 See [`docs/next_steps.md`](docs/next_steps.md) for the status table.
 

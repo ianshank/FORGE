@@ -166,3 +166,86 @@ def test_bootstrap_logs_shape_summary_at_entry(
     assert "action_dim=12" in msg
     assert "grid=" in msg
     assert "vector_dim=" in msg
+
+
+def test_bootstrap_from_hf(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test bootstrapping from a HuggingFace checkpoint.
+
+    This mocks hf_hub_download to simulate pulling ONNX files
+    and verifies that a valid manifest and versioned subdir are created.
+    """
+    import sys
+    import types
+    from pathlib import Path
+
+    # Mock huggingface_hub
+    fake_hf = types.ModuleType("huggingface_hub")
+    download_calls = []
+
+    def mock_hf_hub_download(
+        repo_id: str,
+        filename: str,
+        subfolder: str | None = None,
+        local_dir: str | Path | None = None,
+        local_dir_use_symlinks: bool = False,
+    ) -> str:
+        download_calls.append({
+            "repo_id": repo_id,
+            "filename": filename,
+            "subfolder": subfolder,
+            "local_dir": Path(local_dir) if local_dir else None,
+        })
+        # Simulate writing the downloaded file
+        assert local_dir is not None
+        file_path = Path(local_dir) / filename
+        file_path.write_bytes(b"mocked_onnx_content")
+        return str(file_path)
+
+    fake_hf.hf_hub_download = mock_hf_hub_download  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+    from forge.training.muzero_mc.bootstrap import BootstrapConfig, bootstrap
+
+    cfg = BootstrapConfig(
+        obs_dim=920,
+        action_dim=12,
+        schema_id="mock_schema_id_hash",
+        output_dir=tmp_path,
+        from_hf="mock-user/mock-repo",
+        subfolder="models/v1",
+    )
+
+    result = bootstrap(cfg)
+
+    # Verify download calls
+    assert len(download_calls) == 3
+    filenames = {call["filename"] for call in download_calls}
+    assert filenames == {"representation.onnx", "dynamics.onnx", "prediction.onnx"}
+    for call in download_calls:
+        assert call["repo_id"] == "mock-user/mock-repo"
+        assert call["subfolder"] == "models/v1"
+        assert call["local_dir"] == tmp_path / "v00000001"
+
+    # Verify output structure
+    versioned_dir = tmp_path / "v00000001"
+    assert versioned_dir.exists()
+    assert (versioned_dir / "representation.onnx").read_bytes() == b"mocked_onnx_content"
+
+    manifest_path = tmp_path / "model_manifest.json"
+    assert manifest_path.exists()
+
+    from forge.training.muzero_mc.manifest import load_manifest
+    manifest = load_manifest(manifest_path)
+    assert manifest.version == 1
+    assert manifest.schema_id == "mock_schema_id_hash"
+    assert manifest.files.representation.path == "v00000001/representation.onnx"
+    assert manifest.files.dynamics.path == "v00000001/dynamics.onnx"
+    assert manifest.files.prediction.path == "v00000001/prediction.onnx"
+
+    assert result.manifest_path == manifest_path
+    assert len(result.onnx_paths) == 3
+    assert result.onnx_paths["representation"] == versioned_dir / "representation.onnx"
+

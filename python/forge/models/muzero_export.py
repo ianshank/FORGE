@@ -276,6 +276,8 @@ def _build_rep_module(model: MuZeroWorldModel) -> torch.nn.Module:
     class RepModule(nn.Module):
         def __init__(self) -> None:
             super().__init__()
+            if model.representation.block_embeddings is not None:
+                self.block_embeddings = model.representation.block_embeddings
             self.cnn = model.representation.cnn
             self.vector_mlp = model.representation.vector_mlp
             self.fusion = model.representation.fusion

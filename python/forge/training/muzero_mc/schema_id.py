@@ -66,6 +66,22 @@ ACTION_KIND_FIELD_ORDER: Final[Mapping[str, tuple[str, ...]]] = {
     "place": ("hotbar_slot",),
     "select_slot": ("hotbar_slot",),
     "look": ("yaw_deg", "pitch_deg"),
+    "eat": (),
+    "craft_planks": (),
+    "craft_sticks": (),
+    "craft_crafting_table": (),
+    "place_crafting_table": (),
+    "craft_wooden_pickaxe": (),
+    "mine_stone": (),
+    "craft_stone_pickaxe": (),
+    "craft_furnace": (),
+    "place_furnace": (),
+    "smelt_iron": (),
+    "craft_iron_pickaxe": (),
+    "equip_pickaxe": (),
+    "sprint": ("ticks",),
+    "sneak": ("ticks",),
+    "swim_up": ("ticks",),
 }
 
 

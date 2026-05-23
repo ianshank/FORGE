@@ -146,36 +146,16 @@ pub struct OnnxMuZeroModel {
 
 /// Build an `ort::Session` from a single ONNX file at `path`.
 ///
-/// `ort` 2.0.0-rc.10 removed `SessionBuilder::commit_from_file` in
-/// favor of `commit_from_memory(&[u8])`. We read the bytes here and
-/// surface any I/O error as an `ort::Error` so the call sites stay
-/// a single `?` (the rc.9 ergonomics).
-///
-/// Emits a `tracing::error!` event with the resolved path before
-/// returning so operators see the structured failure in the runner
-/// log stream (per CLAUDE.md's structured-logging convention).
+/// Uses `commit_from_file` which handles I/O internally and avoids
+/// the `ort::Error::new()` FFI hazard present in rc.12. This API is
+/// available in ort 2.0.0-rc.9 (removed in rc.10+).
 fn build_session_from_path<P: AsRef<Path>>(
     num_threads: usize,
     path: P,
 ) -> Result<Session, ort::Error> {
-    let path_ref = path.as_ref();
-    let bytes = match std::fs::read(path_ref) {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::error!(
-                path = %path_ref.display(),
-                err = %e,
-                "failed to read ONNX file"
-            );
-            return Err(ort::Error::new(format!(
-                "read ONNX file {}: {e}",
-                path_ref.display()
-            )));
-        }
-    };
     Session::builder()?
         .with_intra_threads(num_threads)?
-        .commit_from_memory(&bytes)
+        .commit_from_file(path)
 }
 
 impl OnnxMuZeroModel {
@@ -294,7 +274,7 @@ impl OnnxMuZeroModel {
     /// Helper: extract a flat Vec<f32> from an ONNX output DynValue.
     fn extract_f32(value: &ort::value::DynValue) -> Result<Vec<f32>> {
         let (_shape, slice) = value
-            .try_extract_tensor::<f32>()
+            .try_extract_raw_tensor::<f32>()
             .context("failed to extract f32 tensor")?;
         Ok(slice.to_vec())
     }
@@ -309,12 +289,12 @@ impl OnnxMuZeroModel {
     /// Run representation network and return latent data.
     fn run_representation(&self, observation: &[f32]) -> Result<Vec<f32>> {
         let obs_value = Self::make_input(observation.to_vec(), observation.len())?;
-        let mut session = self
+        let session = self
             .representation
             .lock()
             .map_err(|_| Self::poisoned("representation"))?;
         let outputs = session
-            .run(ort::inputs![obs_value])
+            .run(ort::inputs![obs_value]?)
             .context("Representation inference failed")?;
         Self::extract_f32(&outputs[0])
     }
@@ -322,12 +302,12 @@ impl OnnxMuZeroModel {
     /// Run prediction network and return (policy_logits, value).
     fn run_prediction(&self, latent_data: Vec<f32>) -> Result<(Vec<f32>, f32)> {
         let latent_value = Self::make_input(latent_data, self.config.latent_dim)?;
-        let mut session = self
+        let session = self
             .prediction
             .lock()
             .map_err(|_| Self::poisoned("prediction"))?;
         let outputs = session
-            .run(ort::inputs![latent_value])
+            .run(ort::inputs![latent_value]?)
             .context("Prediction inference failed")?;
         let policy_logits = Self::extract_f32(&outputs[0])?;
         let value = Self::extract_f32(&outputs[1])?;
@@ -342,12 +322,12 @@ impl OnnxMuZeroModel {
     /// Run dynamics network and return (next_latent_data, reward).
     fn run_dynamics(&self, dyn_input: Vec<f32>, input_dim: usize) -> Result<(Vec<f32>, f32)> {
         let dyn_value = Self::make_input(dyn_input, input_dim)?;
-        let mut session = self
+        let session = self
             .dynamics
             .lock()
             .map_err(|_| Self::poisoned("dynamics"))?;
         let outputs = session
-            .run(ort::inputs![dyn_value])
+            .run(ort::inputs![dyn_value]?)
             .context("Dynamics inference failed")?;
         let next_latent = Self::extract_f32(&outputs[0])?;
         let reward = Self::extract_f32(&outputs[1])?;
@@ -421,30 +401,24 @@ mod tests {
 
     #[test]
     fn build_session_from_path_missing_file_returns_ort_error() {
-        // The v0.5 forward-port (commit_from_file → commit_from_memory)
-        // routes any std::fs::read failure through ort::Error::new with
-        // the resolved path baked into the message. Pins the error-
-        // format contract so a future refactor doesn't silently
-        // swallow the path detail.
+        // With rc.9's `commit_from_file`, ort itself produces the
+        // missing-file error. We verify it surfaces as `Err` and
+        // that the path appears somewhere in the error message so
+        // operators can diagnose the failure.
         let err = build_session_from_path(1, "/definitely/does/not/exist.onnx")
             .expect_err("missing file must fail");
         let msg = err.to_string();
         assert!(
-            msg.contains("/definitely/does/not/exist.onnx"),
+            msg.contains("/definitely/does/not/exist.onnx") || msg.contains("does/not/exist"),
             "ort::Error message must surface the path; got: {msg}"
-        );
-        assert!(
-            msg.contains("read ONNX file"),
-            "ort::Error message must tag the failure class; got: {msg}"
         );
     }
 
     #[test]
     fn build_session_from_path_rejects_invalid_onnx_bytes() {
         // Even when the file exists, a non-ONNX payload must fail
-        // through the ort layer (commit_from_memory rejects the
-        // bytes). Verifies the no-panic contract on the binary
-        // happy path of `std::fs::read`.
+        // through the ort layer (commit_from_file rejects the
+        // contents). Verifies the no-panic contract.
         let dir = tempdir().unwrap();
         let bogus_path = dir.path().join("bogus.onnx");
         std::fs::write(&bogus_path, b"not a real onnx model").unwrap();

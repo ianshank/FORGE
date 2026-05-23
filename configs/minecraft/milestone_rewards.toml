@@ -1,0 +1,10 @@
+# configs/minecraft/milestone_rewards.toml
+# Defines milestones for achievement-based reward shaping.
+# Each milestone is a one-shot reward evaluated once per episode when the condition is met.
+
+[milestones]
+first_wood = { reward = 10.0, once = true }
+first_stone_tool = { reward = 25.0, once = true }
+first_iron = { reward = 50.0, once = true }
+first_shelter = { reward = 100.0, once = true }
+first_food_cooked = { reward = 15.0, once = true }

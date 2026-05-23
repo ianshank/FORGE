@@ -1633,25 +1633,15 @@ through the same `RunnerConfig.toml` they already edit.
 
 ---
 
-### 3.10.7 mc-bot TypeScript toolchain (2026-05-20)
+### 3.10.7 mc-bot TypeScript toolchain & Complete Migration (2026-05-23)
 
-Adds the `tsc --noEmit` gate over the existing `.js` source so the
-full file-rename (16 sources + 11 tests) can land as a follow-up
-without further CI plumbing.
+The mc-bot service is migrated 100% to strict TypeScript. All 16 source files and 15 test files are fully typed and strictly compiled.
 
-- **`mc-bot/tsconfig.json`** — ES2022 target, `allowJs: true`,
-  `checkJs: true`, `strict: true`, `noImplicitAny: false`,
-  `noEmit: true`. The `.js` files are type-checked in place; once
-  they're renamed, flipping `noImplicitAny` to `true` is a one-line
-  ratchet.
-- **`mc-bot/package.json`** — `typescript`, `@types/node`, `@types/ws`,
-  `tsx` devDeps + `typecheck` npm script (`tsc --noEmit`).
-- **`.github/workflows/ci.yml`** — `mc-bot-test` job now runs
-  `npm run typecheck` between `npm ci` and `npm test`, so any new
-  TypeScript regression fails CI.
-
-The 116-test `node:test` surface continues to run unchanged; this
-commit adds a typecheck layer on top.
+- **`mc-bot/tsconfig.json`** — Strict typechecking (`strict: true`, `noImplicitAny: true`, `noEmit: true`, and `allowJs: false`).
+- **`mc-bot/package.json`** — TypeScript, `@types/node`, `@types/ws`, `tsx` devDeps + `typecheck` npm script (`tsc --noEmit`).
+- **`.github/workflows/ci.yml`** — `mc-bot-test` job runs `npm run typecheck` and `npm test`, ensuring absolute type safety in CI.
+- **Biomes & Zero Warnings** — Enforced 0 biome format/lint errors across the TypeScript bridge.
+- **`BotManager` & Auto-Reconnect** — Fully handles Mineflayer's MC-level exceptions and disconnects, using configurable exponential backoff and connection-health/last-tick age monitoring without tearing down the WebSocket server.
 
 ---
 
@@ -1944,7 +1934,7 @@ pub const BLOCK_FEATURE_CHANNELS: [&str; 7] = [
 Three coordinated cross-language tests pin the order:
 
 - `crates/forge-env-mc/src/protocol.rs::tests::xlang_block_feature_channels_pinned_to_known_good`
-- `mc-bot/test/observation_grid.test.js::feature channel order pin`
+- `mc-bot/test/observation_grid.test.ts::feature channel order pin`
 - `tests/python/training/test_muzero_mc_replay.py` (channel-index slicing)
 
 Drift on any side fails the corresponding test simultaneously,

@@ -162,3 +162,57 @@ def test_compose_down_is_idempotent(
                 f"mc_run.sh --down exited {completed.returncode}; "
                 f"stderr:\n{completed.stderr[-800:]}"
             )
+
+
+def test_minecraft_reconnect_scenario(
+    compose_up_minecraft_stack: dict[str, Any],
+    runner_health_check: Callable[[], None],
+) -> None:
+    """E2E verification of Mineflayer Auto-Reconnect.
+
+    1. Wait for the first episode to complete.
+    2. Restart the Minecraft server container to trigger a disconnection.
+    3. Wait for another episode to complete, proving that the runner recovers
+       and continues its loop successfully after mc-bot reconnects.
+    """
+    import subprocess
+
+    metrics_url = compose_up_minecraft_stack["metrics_url"]
+
+    def one_episode_done() -> bool:
+        try:
+            text = _fetch_metrics(metrics_url)
+        except RuntimeError:
+            return False
+        return _scrape_counter(text, "forge_mc_episode_total") >= 1.0
+
+    wait_until(
+        one_episode_done,
+        timeout_secs=POLL_TIMEOUT_SECS,
+        health_check=runner_health_check,
+        description="forge_mc_episode_total >= 1",
+    )
+
+    # Simulate server crash/restart by restarting the minecraft container
+    server_container = os.environ.get("FORGE_MC_SERVER_CONTAINER", "forge-mc-server")
+    subprocess.run(
+        ["docker", "restart", server_container],
+        check=True,
+        timeout=30,
+    )
+
+    def two_episodes_done() -> bool:
+        try:
+            text = _fetch_metrics(metrics_url)
+        except RuntimeError:
+            return False
+        return _scrape_counter(text, "forge_mc_episode_total") >= 2.0
+
+    # Wait for the reconnect loop and next episode to finish
+    wait_until(
+        two_episodes_done,
+        timeout_secs=POLL_TIMEOUT_SECS,
+        health_check=runner_health_check,
+        description="forge_mc_episode_total >= 2 after server restart",
+    )
+

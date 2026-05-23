@@ -46,6 +46,12 @@ pub const METRIC_MODEL_VERSION: &str = "forge_mc_model_version";
 /// Labelled by reason so dashboards can split by failure mode without
 /// re-deploying the runner.
 pub const METRIC_PROTOCOL_ERROR_TOTAL: &str = "forge_mc_protocol_error_total";
+/// Counter of total model reloads.
+pub const METRIC_MODEL_RELOAD_COUNT: &str = "forge_mc_model_reload_count";
+/// Histogram of episode length in steps.
+pub const METRIC_EPISODE_LENGTH_STEPS: &str = "forge_mc_episode_length_steps";
+/// CounterVec of episode rewards, broken down by reward component.
+pub const METRIC_EPISODE_REWARD_COMPONENTS: &str = "forge_mc_episode_reward_components";
 
 /// Errors raised by metrics setup. Distinct from
 /// [`crate::RunnerError`] so the binary's main can surface
@@ -74,10 +80,13 @@ pub struct MetricsRecorder {
     planning_latency_seconds: Histogram,
     model_version: Gauge,
     protocol_error_total: CounterVec,
+    model_reload_count: Counter,
+    episode_length_steps: Histogram,
+    episode_reward_components: CounterVec,
 }
 
 impl MetricsRecorder {
-    /// Build the five metrics, register them with a fresh
+    /// Build the metrics, register them with a fresh
     /// [`prometheus::Registry`], and return the recorder.
     ///
     /// `histogram_buckets` should be in strictly-increasing seconds.
@@ -122,6 +131,32 @@ impl MetricsRecorder {
         )?;
         registry.register(Box::new(protocol_error_total.clone()))?;
 
+        let model_reload_count = Counter::with_opts(Opts::new(
+            METRIC_MODEL_RELOAD_COUNT,
+            "Total number of times the ONNX model was successfully hot-reloaded.",
+        ))?;
+        registry.register(Box::new(model_reload_count.clone()))?;
+
+        let episode_length_steps = Histogram::with_opts(
+            HistogramOpts::new(
+                METRIC_EPISODE_LENGTH_STEPS,
+                "Episode length in environment steps.",
+            )
+            .buckets(vec![
+                10.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0,
+            ]),
+        )?;
+        registry.register(Box::new(episode_length_steps.clone()))?;
+
+        let episode_reward_components = CounterVec::new(
+            Opts::new(
+                METRIC_EPISODE_REWARD_COMPONENTS,
+                "Per-episode reward breakdown by reward component.",
+            ),
+            &["component"],
+        )?;
+        registry.register(Box::new(episode_reward_components.clone()))?;
+
         Ok(Self {
             registry,
             episode_total,
@@ -129,6 +164,9 @@ impl MetricsRecorder {
             planning_latency_seconds,
             model_version,
             protocol_error_total,
+            model_reload_count,
+            episode_length_steps,
+            episode_reward_components,
         })
     }
 
@@ -161,6 +199,25 @@ impl MetricsRecorder {
     /// "manifest_parse"); avoid embedding per-error detail.
     pub fn record_protocol_error(&self, reason: &str) {
         self.protocol_error_total.with_label_values(&[reason]).inc();
+    }
+
+    /// Record that a model reload succeeded.
+    pub fn record_model_reload(&self) {
+        self.model_reload_count.inc();
+    }
+
+    /// Record an episode length in steps.
+    pub fn record_episode_length(&self, steps: usize) {
+        self.episode_length_steps.observe(steps as f64);
+    }
+
+    /// Record reward component values.
+    pub fn record_reward_component(&self, component: &str, value: f32) {
+        if value != 0.0 {
+            self.episode_reward_components
+                .with_label_values(&[component])
+                .inc_by(f64::from(value));
+        }
     }
 
     /// Encode the registry as Prometheus text format. Useful for

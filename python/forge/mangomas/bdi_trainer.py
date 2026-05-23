@@ -260,5 +260,5 @@ class BDIPreTrainer:
             raise RuntimeError("No trained weights to export. Call train() first.")
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(str(path), **self._weights)
+        np.savez(str(path), **self._weights)  # type: ignore[arg-type]
         logger.info("BDI weights exported to %s", path)

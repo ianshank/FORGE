@@ -92,15 +92,19 @@ class MuZeroConfig:
     grid_height: int = DEFAULT_GRID_HEIGHT
     grid_width: int = DEFAULT_GRID_WIDTH
     grid_channels: int = DEFAULT_GRID_CHANNELS
+    grid_depth: int = 1
     vector_dim: int = DEFAULT_VECTOR_DIM
     cnn_channels: tuple[int, ...] = DEFAULT_CNN_CHANNELS
     cnn_kernel_sizes: tuple[int, ...] = DEFAULT_CNN_KERNEL_SIZES
     cnn_strides: tuple[int, ...] = DEFAULT_CNN_STRIDES
     device: str = "cpu"
+    use_raw_block_id: bool = True
+    num_block_embeddings: int = 36
+    block_embedding_dim: int = 8
 
     def __post_init__(self) -> None:
         """Validate configuration and compute derived fields."""
-        grid_dim = self.grid_height * self.grid_width * self.grid_channels
+        grid_dim = self.grid_depth * self.grid_height * self.grid_width * self.grid_channels
         expected_obs = grid_dim + self.vector_dim
 
         if self.obs_dim == 0:
@@ -143,7 +147,7 @@ class MuZeroConfig:
     @property
     def grid_flat_dim(self) -> int:
         """Total number of elements in the flattened grid observation."""
-        return self.grid_height * self.grid_width * self.grid_channels
+        return self.grid_depth * self.grid_height * self.grid_width * self.grid_channels
 
     @property
     def reward_support_range(self) -> tuple[int, int]:

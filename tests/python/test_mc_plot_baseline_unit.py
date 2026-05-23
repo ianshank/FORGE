@@ -99,7 +99,7 @@ def test_render_report_emits_markdown_with_plot_references(tmp_path: Path) -> No
     body = render_report(random_snap, trained_snap, plot_paths=plot_paths, out_path=out)
     assert out.exists()
     assert out.read_text(encoding="utf-8") == body
-    assert "# v0.5 Phase 1 — First real run baseline" in body
+    assert "# FORGE v0.5 Trained vs. Random Comparative Report" in body
     assert "## Summary table" in body
     assert REWARD_CURVE_FILENAME in body
     assert EPISODE_LENGTH_FILENAME in body

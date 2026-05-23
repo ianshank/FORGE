@@ -1,45 +1,16 @@
 {
-  "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
-    // Lock to a Node 22-compatible target so `tsc --noEmit` matches
-    // the runtime mc-bot's package.json `engines.node` field.
     "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "Bundler",
-    "lib": ["ES2022"],
-
-    // Hybrid-migration mode: `allowJs` so tsc walks the .js files
-    // (catches project-structure / parse issues), `checkJs: false`
-    // so the JS surface isn't type-checked against mineflayer /
-    // prismarine-viewer (neither ships type stubs, and the JS files
-    // don't carry enough JSDoc to satisfy strict TS). Future `.ts`
-    // files added to the source tree ARE type-checked. This makes
-    // the gate a "no .ts regression introduced" guarantee for now;
-    // checkJs flips to true once the .ts rewrite lands the
-    // mineflayer / prismarine stubs.
-    "noEmit": true,
-    "allowJs": true,
-    "checkJs": false,
-
-    // Strict for any .ts that lands.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-
-    // Match Node's ESM + .js-extension import resolution.
-    "allowImportingTsExtensions": false,
+    "noImplicitAny": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-
-    // Pin the build's tsbuildinfo location so a future incremental
-    // build (when we flip noEmit off) lands in a predictable spot.
-    "incremental": true,
-    "tsBuildInfoFile": "./.tsbuildinfo"
+    "outDir": "./dist",
+    "allowJs": true
   },
-  "include": ["src/**/*.js", "src/**/*.ts", "test/**/*.js", "test/**/*.ts"],
+  "include": ["src/**/*", "test/**/*"],
   "exclude": ["node_modules", "dist"]
 }

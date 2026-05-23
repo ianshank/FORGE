@@ -41,6 +41,7 @@ def _make_model() -> MuZeroWorldModel:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 class TestTorchScriptExport:
     def test_export_creates_files(self, tmp_path: Any) -> None:
         model = _make_model()
