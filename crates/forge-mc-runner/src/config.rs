@@ -133,6 +133,11 @@ pub struct RunnerConfig {
     /// for sub-second per-decision MCTS planning calls.
     pub metrics_histogram_buckets: Vec<f64>,
 
+    /// Histogram bucket boundaries (in steps) for the
+    /// ``forge_mc_episode_length_steps`` Prometheus histogram.
+    /// Defaults to default steps counts.
+    pub metrics_episode_length_buckets: Vec<f64>,
+
     /// Compression codec for trajectory files. Defaults to `None`
     /// (plain `.json`) for backwards compatibility with existing
     /// readers. Set to `Gzip` to write `.json.gz`; the reader
@@ -258,6 +263,11 @@ pub const DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS: &[f64] = &[
     0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
 ];
 
+/// Default episode-length histogram buckets (in steps).
+pub const DEFAULT_METRICS_EPISODE_LENGTH_BUCKETS: &[f64] = &[
+    10.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0,
+];
+
 /// Default localhost bind for the metrics endpoint. Pinned as a
 /// `const` so the default flows through one source of truth.
 pub const DEFAULT_METRICS_BIND: &str = "127.0.0.1";
@@ -277,6 +287,7 @@ impl Default for RunnerConfig {
             metrics_port: 9090,
             metrics_bind: DEFAULT_METRICS_BIND.to_string(),
             metrics_histogram_buckets: DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS.to_vec(),
+            metrics_episode_length_buckets: DEFAULT_METRICS_EPISODE_LENGTH_BUCKETS.to_vec(),
             trajectory_compression: TrajectoryCompression::default(),
             trajectory_gzip_level: TrajectoryGzipLevel::default(),
             tokio_worker_threads: DEFAULT_TOKIO_WORKER_THREADS,
@@ -384,6 +395,23 @@ impl RunnerConfig {
                     ));
                 }
                 prev = b;
+            }
+
+            if self.metrics_episode_length_buckets.is_empty() {
+                return Err(
+                    "metrics_episode_length_buckets must be non-empty when metrics_port != 0"
+                        .into(),
+                );
+            }
+            let mut prev_len = 0.0f64;
+            for (i, &b) in self.metrics_episode_length_buckets.iter().enumerate() {
+                if !b.is_finite() || b <= prev_len {
+                    return Err(format!(
+                        "metrics_episode_length_buckets must be strictly increasing positive finite floats; \
+                         index {i} ({b}) violates this (previous = {prev_len})"
+                    ));
+                }
+                prev_len = b;
             }
         }
         Ok(())

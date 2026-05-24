@@ -73,6 +73,7 @@ export function ScenarioControls({ onRemix }: ScenarioControlsProps) {
         <span className="text-white text-sm w-8">{gridSize}</span>
       </label>
       <button
+        type="button"
         onClick={() => void handleRemix()}
         disabled={loading}
         className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white text-sm px-4 py-1 rounded transition-colors"

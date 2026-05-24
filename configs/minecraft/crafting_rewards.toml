@@ -1,0 +1,10 @@
+# configs/minecraft/crafting_rewards.toml
+# Defines milestones for achievement-based crafting progressions.
+# These reward the agent for successfully executing crafting tasks.
+
+[milestones]
+first_crafting_table = { reward = 5.0, once = true }
+first_wooden_pickaxe = { reward = 10.0, once = true }
+first_stone_pickaxe = { reward = 20.0, once = true }
+first_furnace = { reward = 25.0, once = true }
+first_iron_pickaxe = { reward = 50.0, once = true }

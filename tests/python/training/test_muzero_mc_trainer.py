@@ -635,3 +635,67 @@ def test_train_continuous_stops_on_flag(tmp_path: Path) -> None:
     assert summaries == []
     # Trainer's gradient counter must NOT have advanced.
     assert trainer.iter == 0
+
+
+def test_trainer_experiment_logging(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test pluggable experiment logging inside MuzeroMcTrainer.
+
+    Verifies that the resolved experiment logger logs loss curves,
+    replay buffer size, manifest version, episode length, and episode reward.
+    """
+    pytest.importorskip("torch")
+    import sys
+    import types
+    from unittest.mock import MagicMock
+
+    # Mock PyTorch's SummaryWriter so TensorBoard works without real IO/imports
+    fake_tb = types.ModuleType("torch.utils.tensorboard")
+    mock_writer_instance = MagicMock()
+    fake_tb.SummaryWriter = MagicMock(return_value=mock_writer_instance)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "torch.utils.tensorboard", fake_tb)
+
+    from forge.training.muzero_mc.replay import TrajectoryReader
+    from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
+
+    _write_trajectory(
+        tmp_path,
+        episode_id="ep-1",
+        steps=8,
+        obs_dim=_OBS_DIM,
+        action_count=_ACTION_DIM,
+    )
+
+    model = _make_tiny_model()
+    reader = TrajectoryReader(tmp_path, batch_size=4)
+    cfg = MuZeroMcTrainerConfig(
+        train_iters=1,
+        output_dir=tmp_path / "out",
+        manifest_path=tmp_path / "out" / "model_manifest.json",
+        schema_id="stub-sid",
+        batch_size=4,
+        seed=0,
+        export_every_n_iters=0,
+        log_every_n_iters=0,
+        logging_backend="tensorboard",
+        logging_project="test-project",
+    )
+
+    trainer = MuzeroMcTrainer(model, reader, cfg)
+    assert trainer._experiment_logger is not None
+
+    # Run a single training step
+    metrics = trainer.train_step()
+    assert math.isfinite(metrics["loss"])
+
+    # Verify that add_scalar was called on our mocked SummaryWriter for key metrics
+    called_tags = [call.args[0] for call in mock_writer_instance.add_scalar.call_args_list]
+    assert "loss" in called_tags
+    assert "replay_buffer_size" in called_tags
+    assert "manifest_version" in called_tags
+    assert "episode_length" in called_tags
+    assert "episode_reward" in called_tags
+
+    # Close trainer and verify flush/close are called
+    trainer.close()
+    mock_writer_instance.flush.assert_called_once()
+    mock_writer_instance.close.assert_called_once()

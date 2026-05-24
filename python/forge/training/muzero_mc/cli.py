@@ -41,7 +41,7 @@ EXIT_VALIDATION: int = 3
 EXIT_IO: int = 4
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     """Construct the top-level argument parser.
 
     Exposed publicly so tests can introspect the CLI surface without
@@ -126,6 +126,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Optional torch RNG seed for reproducibility.",
+    )
+    p_boot.add_argument(
+        "--from-hf",
+        type=str,
+        default=None,
+        help="Warm-start from a HuggingFace Hub repo ID instead of random initialization.",
+    )
+    p_boot.add_argument(
+        "--subfolder",
+        type=str,
+        default=None,
+        help="Subfolder within the HuggingFace Hub repository containing the weights.",
     )
 
     # compute-schema-id
@@ -292,6 +304,31 @@ def build_parser() -> argparse.ArgumentParser:
             f"Torch device for training (default: {DEFAULT_DEVICE!r}). "
             "'auto' picks CUDA if torch.cuda.is_available() else CPU."
         ),
+    )
+    p_train.add_argument(
+        "--logging-backend",
+        type=str,
+        default=None,
+        choices=["wandb", "mlflow", "tensorboard"],
+        help="Pluggable experiment tracking backend.",
+    )
+    p_train.add_argument(
+        "--logging-project",
+        type=str,
+        default="forge-minecraft",
+        help="Logging project / experiment name (default: forge-minecraft).",
+    )
+    p_train.add_argument(
+        "--logging-run-name",
+        type=str,
+        default=None,
+        help="Logging run/session name inside the project.",
+    )
+    p_train.add_argument(
+        "--logging-tracking-uri",
+        type=str,
+        default=None,
+        help="MLflow tracking server URI or TensorBoard log directory override.",
     )
     p_train.add_argument(
         "--continuous",
@@ -488,6 +525,8 @@ def _run_bootstrap(args: argparse.Namespace) -> int:
                 hidden_dim=args.hidden_dim,
                 num_blocks=args.num_blocks,
                 seed=args.seed,
+                from_hf=args.from_hf,
+                subfolder=args.subfolder,
             )
         )
     except ValueError as e:
@@ -684,6 +723,10 @@ def _run_train(args: argparse.Namespace) -> int:
             round_poll_sleep_s=args.round_poll_sleep,
             max_trajectories=args.max_trajectories,
             max_bundle_versions=args.max_bundle_versions,
+            logging_backend=args.logging_backend,
+            logging_project=args.logging_project,
+            logging_run_name=args.logging_run_name,
+            logging_tracking_uri=args.logging_tracking_uri,
         )
         trainer = MuzeroMcTrainer(model, reader, trainer_cfg)
         outcome = (

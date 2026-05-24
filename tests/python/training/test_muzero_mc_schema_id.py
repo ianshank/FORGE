@@ -84,6 +84,22 @@ def test_action_map_canonical_kind_field_order_covers_rust_variants() -> None:
         "place",
         "select_slot",
         "look",
+        "eat",
+        "craft_planks",
+        "craft_sticks",
+        "craft_crafting_table",
+        "place_crafting_table",
+        "craft_wooden_pickaxe",
+        "mine_stone",
+        "craft_stone_pickaxe",
+        "craft_furnace",
+        "place_furnace",
+        "smelt_iron",
+        "craft_iron_pickaxe",
+        "equip_pickaxe",
+        "sprint",
+        "sneak",
+        "swim_up",
     }
     assert set(ACTION_KIND_FIELD_ORDER) == expected_variants
 

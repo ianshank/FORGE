@@ -208,6 +208,15 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short -m 'not lmstudio and not e2e_long and not minecraft_e2e' --cov=python --cov-report=term-missing --cov-fail-under=85"
+filterwarnings = [
+  "ignore::DeprecationWarning:jax.*",
+  "ignore::DeprecationWarning:gymnasium.*",
+  "ignore::DeprecationWarning:pkg_resources.*",
+  "ignore::DeprecationWarning:stable_baselines3.*",
+  "ignore::DeprecationWarning:torch.*",
+  "default::DeprecationWarning:forge.*",
+  "default::DeprecationWarning:forge_env.*",
+]
 markers = [
   "lmstudio: opt-in tests requiring a running LM Studio (or OpenAI-compatible) endpoint.",
   "e2e_long: long-running (1000+ episodes) end-to-end pipeline test; opt-in via FORGE_E2E_LONG=1.",

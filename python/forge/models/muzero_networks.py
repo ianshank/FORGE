@@ -59,7 +59,7 @@ def scalar_to_support(x: torch.Tensor, support_size: int) -> torch.Tensor:
     Returns:
         Categorical distribution of shape ``(..., support_size)``.
     """
-    import torch  # noqa: PLC0415
+    import torch
 
     half = support_size // 2
     x = torch.clamp(x, -half, half)
@@ -85,7 +85,7 @@ def support_to_scalar(logits: torch.Tensor, support_size: int) -> torch.Tensor:
     Returns:
         Scalar tensor of shape ``(...)``.
     """
-    import torch  # noqa: PLC0415
+    import torch
 
     half = support_size // 2
     probs = torch.softmax(logits, dim=-1)
@@ -112,7 +112,7 @@ class ResidualBlock:
         Returns:
             A module that computes ``x + relu(linear(layer_norm(x)))``.
         """
-        from torch import nn  # noqa: PLC0415
+        from torch import nn
 
         class _ResBlock(nn.Module):
             def __init__(self, d: int) -> None:
@@ -147,26 +147,53 @@ class RepresentationNetwork:
     """
 
     def __init__(self, config: MuZeroConfig) -> None:
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         self._config = config
         self._device = torch.device(config.device)
 
         # Spatial stream: CNN over grid observations
         cnn_layers: list[nn.Module] = []
-        in_channels = config.grid_channels
+        if config.use_raw_block_id:
+            self.block_embeddings: nn.Embedding | None = nn.Embedding(
+                num_embeddings=config.num_block_embeddings,
+                embedding_dim=config.block_embedding_dim,
+            ).to(self._device)
+            in_channels = config.block_embedding_dim + config.grid_channels - 1
+        else:
+            self.block_embeddings = None
+            in_channels = config.grid_channels
+
+        use_conv3d = config.grid_depth > 1
         for out_ch, kernel, stride in zip(
             config.cnn_channels, config.cnn_kernel_sizes, config.cnn_strides
         ):
-            cnn_layers.append(nn.Conv2d(in_channels, out_ch, kernel, stride, padding=kernel // 2))
+            if use_conv3d:
+                cnn_layers.append(nn.Conv3d(in_channels, out_ch, kernel, stride, padding=kernel // 2))
+            else:
+                cnn_layers.append(nn.Conv2d(in_channels, out_ch, kernel, stride, padding=kernel // 2))
             cnn_layers.append(nn.ReLU())
             in_channels = out_ch
         self.cnn = nn.Sequential(*cnn_layers).to(self._device)
 
         # Compute CNN output dimension
         with torch.no_grad():
-            dummy = torch.zeros(1, config.grid_channels, config.grid_height, config.grid_width)
+            if use_conv3d:
+                dummy = torch.zeros(
+                    1,
+                    config.block_embedding_dim + config.grid_channels - 1 if config.use_raw_block_id else config.grid_channels,
+                    config.grid_depth,
+                    config.grid_height,
+                    config.grid_width,
+                )
+            else:
+                dummy = torch.zeros(
+                    1,
+                    config.block_embedding_dim + config.grid_channels - 1 if config.use_raw_block_id else config.grid_channels,
+                    config.grid_height,
+                    config.grid_width,
+                )
             cnn_out = self.cnn(dummy.to(self._device))
             self._cnn_flat_dim = int(cnn_out.numel())
 
@@ -191,9 +218,11 @@ class RepresentationNetwork:
         ).to(self._device)
 
         # Collect all modules for parameter access
-        self.modules_list = nn.ModuleList([
-            self.cnn, self.vector_mlp, self.fusion, self.res_blocks,
-        ]).to(self._device)
+        modules = []
+        if self.block_embeddings is not None:
+            modules.append(self.block_embeddings)
+        modules.extend([self.cnn, self.vector_mlp, self.fusion, self.res_blocks])
+        self.modules_list = nn.ModuleList(modules).to(self._device)
 
         total_params = sum(p.numel() for p in self.modules_list.parameters())
         logger.info(
@@ -212,6 +241,8 @@ class RepresentationNetwork:
         Returns:
             Latent state of shape ``(B, latent_dim)`` or ``(latent_dim,)``.
         """
+        import torch
+
         squeezed = observation.dim() == 1
         if squeezed:
             observation = observation.unsqueeze(0)
@@ -224,7 +255,35 @@ class RepresentationNetwork:
         vector = observation[:, grid_dim:]
 
         # Spatial stream
-        grid = grid_flat.view(-1, c.grid_channels, c.grid_height, c.grid_width)
+        if c.grid_depth > 1:
+            grid = grid_flat.view(-1, c.grid_channels, c.grid_depth, c.grid_height, c.grid_width)
+            if self.block_embeddings is not None:
+                # Extract first channel (block type hash/index)
+                # block_types shape: (B, D, H, W)
+                block_types = grid[:, 0, :, :, :].long()
+                block_types = torch.clamp(block_types, 0, c.num_block_embeddings - 1)
+                # block_emb shape: (B, D, H, W, block_embedding_dim)
+                block_emb = self.block_embeddings(block_types)
+                # permute to shape: (B, block_embedding_dim, D, H, W)
+                block_emb = block_emb.permute(0, 4, 1, 2, 3)
+                # Concatenate with remaining channels along channel dimension (dim=1)
+                # remaining channels shape: (B, grid_channels-1, D, H, W)
+                grid = torch.cat([block_emb, grid[:, 1:, :, :, :]], dim=1)
+        else:
+            grid = grid_flat.view(-1, c.grid_channels, c.grid_height, c.grid_width)
+            if self.block_embeddings is not None:
+                # Extract first channel (block type hash/index)
+                # block_types shape: (B, H, W)
+                block_types = grid[:, 0, :, :].long()
+                block_types = torch.clamp(block_types, 0, c.num_block_embeddings - 1)
+                # block_emb shape: (B, H, W, block_embedding_dim)
+                block_emb = self.block_embeddings(block_types)
+                # permute to shape: (B, block_embedding_dim, H, W)
+                block_emb = block_emb.permute(0, 3, 1, 2)
+                # Concatenate with remaining channels along channel dimension (dim=1)
+                # remaining channels shape: (B, grid_channels-1, H, W)
+                grid = torch.cat([block_emb, grid[:, 1:, :, :]], dim=1)
+
         spatial_features = self.cnn(grid).flatten(start_dim=1)
 
         # Vector stream
@@ -242,11 +301,11 @@ class RepresentationNetwork:
 
     @staticmethod
     def _cat(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        import torch  # noqa: PLC0415
+        import torch
 
         return torch.cat([a, b], dim=-1)
 
-    def parameters(self) -> list:
+    def parameters(self) -> list[torch.nn.Parameter]:
         """Return all trainable parameters."""
         return list(self.modules_list.parameters())
 
@@ -265,8 +324,8 @@ class DynamicsNetwork:
     """
 
     def __init__(self, config: MuZeroConfig) -> None:
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         self._config = config
         self._device = torch.device(config.device)
@@ -317,7 +376,7 @@ class DynamicsNetwork:
             Tuple of (next_latent_state, reward_logits) with shapes
             ``(B, latent_dim)`` and ``(B, reward_support_size)``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         x = torch.cat([latent_state, action], dim=-1)
         next_latent = self.transition(x)
@@ -325,7 +384,7 @@ class DynamicsNetwork:
         reward_logits = self.reward_head(next_latent)
         return next_latent, reward_logits
 
-    def parameters(self) -> list:
+    def parameters(self) -> list[torch.nn.Parameter]:
         """Return all trainable parameters."""
         return list(self.modules_list.parameters())
 
@@ -343,8 +402,8 @@ class PredictionNetwork:
     """
 
     def __init__(self, config: MuZeroConfig) -> None:
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         self._config = config
         self._device = torch.device(config.device)
@@ -402,6 +461,6 @@ class PredictionNetwork:
             value_logits = value_logits.squeeze(0)
         return policy_logits, value_logits
 
-    def parameters(self) -> list:
+    def parameters(self) -> list[torch.nn.Parameter]:
         """Return all trainable parameters."""
         return list(self.modules_list.parameters())

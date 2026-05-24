@@ -50,6 +50,7 @@ USE_GPU=0
 DETACH=0
 DOWN=0
 ENV_FILE=""
+BASELINE_ONLY=0
 
 # Compose v2 minimum version required for `deploy.resources.reservations.devices`.
 COMPOSE_MIN_VERSION="${COMPOSE_MIN_VERSION:-2.20}"
@@ -113,6 +114,7 @@ while (( $# > 0 )); do
     --gpu)     USE_GPU=1; shift ;;
     --detach)  DETACH=1; shift ;;
     --down)    DOWN=1; shift ;;
+    --baseline-only) BASELINE_ONLY=1; shift ;;
     --env-file)
       [[ -n "${2-}" ]] || die "--env-file requires a path"
       ENV_FILE="$2"; shift 2 ;;
@@ -137,7 +139,8 @@ fi
 # ---------- down-only short-circuit ----------
 if (( DOWN )); then
   log "tearing the stack down"
-  down_args=("--down" "--profile" "self-play" "--env-file" "${ENV_FILE}")
+  down_args=("--down" "--env-file" "${ENV_FILE}")
+  (( BASELINE_ONLY )) || down_args+=("--profile" "self-play")
   (( USE_GPU )) && down_args+=("--gpu")
   run_or_echo "${MC_RUN_SH}" "${down_args[@]}"
   exit 0
@@ -153,57 +156,63 @@ else
     || die "docker compose v2 not installed (need >= ${COMPOSE_MIN_VERSION})"
 fi
 
-# ---------- step 2: compute schema_id ----------
-log "computing schema_id via trainer-bootstrap one-shot"
-compose_args=(
-  "compose"
-  "--env-file" "${ENV_FILE}"
-  "-f" "${COMPOSE_FILE}"
-)
-(( USE_GPU )) && compose_args+=("-f" "${GPU_OVERLAY_FILE}")
-compose_args+=("--profile" "self-play")
-
-SCHEMA_ID="$(capture_or_echo \
-  docker "${compose_args[@]}" run --rm trainer-bootstrap \
-    compute-schema-id \
-    --action-map "${ACTION_MAP_IN_CONTAINER}" \
-    --rewards "${REWARDS_IN_CONTAINER}" \
-    --quiet | tr -d '[:space:]')"
-
-# Validate the captured schema_id (skip in dry-run since it's
-# synthetic).
-if (( ! DRY_RUN )); then
-  [[ ${#SCHEMA_ID} -eq 64 ]] \
-    || die "compute-schema-id returned non-64-hex output: ${SCHEMA_ID}"
-fi
-log "schema_id=${SCHEMA_ID}"
-export FORGE_MC_SCHEMA_ID="${SCHEMA_ID}"
-
-# ---------- step 3: bootstrap initial manifest if missing ----------
-log "checking for existing manifest at ${MANIFEST_IN_CONTAINER}"
-# Use a containerised `test -f` so we don't need to map host paths.
-if (( DRY_RUN )); then
-  log "DRY-RUN: would check ${MANIFEST_IN_CONTAINER}; assuming missing"
-  manifest_present=0
+if (( BASELINE_ONLY )); then
+  SCHEMA_ID="unset"
+  log "baseline-only mode: skipping schema_id computation and model bootstrap"
+  export FORGE_MC_SCHEMA_ID="${SCHEMA_ID}"
 else
-  if docker "${compose_args[@]}" run --rm --entrypoint /usr/bin/test \
-       trainer-bootstrap -f "${MANIFEST_IN_CONTAINER}" >/dev/null 2>&1; then
-    manifest_present=1
-  else
-    manifest_present=0
+  # ---------- step 2: compute schema_id ----------
+  log "computing schema_id via trainer-bootstrap one-shot"
+  compose_args=(
+    "compose"
+    "--env-file" "${ENV_FILE}"
+    "-f" "${COMPOSE_FILE}"
+  )
+  (( USE_GPU )) && compose_args+=("-f" "${GPU_OVERLAY_FILE}")
+  compose_args+=("--profile" "self-play")
+
+  SCHEMA_ID="$(capture_or_echo \
+    docker "${compose_args[@]}" run --rm trainer-bootstrap \
+      compute-schema-id \
+      --action-map "${ACTION_MAP_IN_CONTAINER}" \
+      --rewards "${REWARDS_IN_CONTAINER}" \
+      --quiet | tr -d '[:space:]')"
+
+  # Validate the captured schema_id (skip in dry-run since it's
+  # synthetic).
+  if (( ! DRY_RUN )); then
+    [[ ${#SCHEMA_ID} -eq 64 ]] \
+      || die "compute-schema-id returned non-64-hex output: ${SCHEMA_ID}"
   fi
-fi
+  log "schema_id=${SCHEMA_ID}"
+  export FORGE_MC_SCHEMA_ID="${SCHEMA_ID}"
 
-if (( manifest_present == 0 )); then
-  log "no manifest at ${MANIFEST_IN_CONTAINER}; running bootstrap one-shot"
-  run_or_echo docker "${compose_args[@]}" run --rm trainer-bootstrap \
-    bootstrap \
-    --schema-id "${SCHEMA_ID}" \
-    --obs-dim "${OBS_DIM}" \
-    --action-dim "${ACTION_DIM}" \
-    --out /app/models
-else
-  log "manifest already present; skipping bootstrap"
+  # ---------- step 3: bootstrap initial manifest if missing ----------
+  log "checking for existing manifest at ${MANIFEST_IN_CONTAINER}"
+  # Use a containerised `test -f` so we don't need to map host paths.
+  if (( DRY_RUN )); then
+    log "DRY-RUN: would check ${MANIFEST_IN_CONTAINER}; assuming missing"
+    manifest_present=0
+  else
+    if docker "${compose_args[@]}" run --rm --entrypoint /usr/bin/test \
+         trainer-bootstrap -f "${MANIFEST_IN_CONTAINER}" >/dev/null 2>&1; then
+      manifest_present=1
+    else
+      manifest_present=0
+    fi
+  fi
+
+  if (( manifest_present == 0 )); then
+    log "no manifest at ${MANIFEST_IN_CONTAINER}; running bootstrap one-shot"
+    run_or_echo docker "${compose_args[@]}" run --rm trainer-bootstrap \
+      bootstrap \
+      --schema-id "${SCHEMA_ID}" \
+      --obs-dim "${OBS_DIM}" \
+      --action-dim "${ACTION_DIM}" \
+      --out /app/models
+  else
+    log "manifest already present; skipping bootstrap"
+  fi
 fi
 
 # ---------- step 4: install SIGINT trap (foreground only) ----------
@@ -218,7 +227,8 @@ fi
 # down. The earlier docstring promised a trap in the detach path
 # too — that was wrong (would tear down immediately after up).
 if ! (( DETACH )); then
-  down_trap_args=("--down" "--profile" "self-play" "--env-file" "${ENV_FILE}")
+  down_trap_args=("--down" "--env-file" "${ENV_FILE}")
+  (( BASELINE_ONLY )) || down_trap_args+=("--profile" "self-play")
   (( USE_GPU )) && down_trap_args+=("--gpu")
   # shellcheck disable=SC2064 — variable expansion at trap-set time
   # is intentional so the trap command captures the resolved args.
@@ -226,8 +236,9 @@ if ! (( DETACH )); then
 fi
 
 # ---------- step 5: bring the stack up via mc_run.sh ----------
-log "starting the self-play stack"
-up_args=("--profile" "self-play" "--env-file" "${ENV_FILE}")
+log "starting the stack"
+up_args=("--env-file" "${ENV_FILE}")
+(( BASELINE_ONLY )) || up_args+=("--profile" "self-play")
 (( USE_GPU )) && up_args+=("--gpu")
 (( DETACH )) && up_args+=("--detach")
 # Forward FORGE_MC_SCHEMA_ID into the child shell so `mc_run.sh`'s

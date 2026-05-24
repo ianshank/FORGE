@@ -1,0 +1,41 @@
+# block_embeddings.toml
+# Maps Minecraft block names to compact, contiguous embedding indices.
+# Unmapped blocks will fall back to a default 'unknown' index.
+
+[blocks]
+air = 0
+stone = 1
+grass_block = 2
+dirt = 3
+cobblestone = 4
+oak_planks = 5
+oak_sapling = 6
+bedrock = 7
+water = 8
+lava = 9
+sand = 10
+gravel = 11
+gold_ore = 12
+iron_ore = 13
+coal_ore = 14
+oak_log = 15
+oak_leaves = 16
+lapis_ore = 17
+sandstone = 18
+diamond_ore = 19
+redstone_ore = 20
+obsidian = 21
+torch = 22
+crafting_table = 23
+furnace = 24
+chest = 25
+iron_block = 26
+gold_block = 27
+diamond_block = 28
+coal_block = 29
+netherrack = 30
+glowstone = 31
+emerald_ore = 32
+emerald_block = 33
+redstone_block = 34
+unknown = 35

@@ -488,6 +488,7 @@ def demo_day_night(seed: int) -> bool:
 
     config = {
         "world": {"width": 16, "height": 10, "day_night_cycle_length": 20},
+        "agents": {"default_vision_radius": 4},
     }
     env = ForgeEnv(config=config)
     obs, info = env.reset(seed=seed)

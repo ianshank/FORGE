@@ -78,6 +78,54 @@ pub enum ActionKind {
         /// Pitch delta in degrees.
         pitch_deg: f32,
     },
+    /// Eat food from the inventory.
+    Eat,
+    /// Craft wood planks.
+    CraftPlanks,
+    /// Craft sticks.
+    CraftSticks,
+    /// Craft a crafting table.
+    CraftCraftingTable,
+    /// Place a crafting table.
+    PlaceCraftingTable,
+    /// Craft a wooden pickaxe.
+    CraftWoodenPickaxe,
+    /// Mine stone.
+    MineStone,
+    /// Craft a stone pickaxe.
+    CraftStonePickaxe,
+    /// Craft a furnace.
+    CraftFurnace,
+    /// Place a furnace.
+    PlaceFurnace,
+    /// Smelt iron.
+    SmeltIron,
+    /// Craft an iron pickaxe.
+    CraftIronPickaxe,
+    /// Equip pickaxe.
+    EquipPickaxe,
+    /// Equip armor.
+    EquipArmor,
+    /// Drop item from hand.
+    DropItem,
+    /// Sprint for `ticks` server ticks.
+    Sprint {
+        /// Hold sprint for this many ticks.
+        #[serde(default = "default_ticks")]
+        ticks: u32,
+    },
+    /// Sneak for `ticks` server ticks.
+    Sneak {
+        /// Hold sneak for this many ticks.
+        #[serde(default = "default_ticks")]
+        ticks: u32,
+    },
+    /// Swim up for `ticks` server ticks.
+    SwimUp {
+        /// Hold swim up for this many ticks.
+        #[serde(default = "default_ticks")]
+        ticks: u32,
+    },
 }
 
 fn default_ticks() -> u32 {

@@ -131,7 +131,7 @@ def _rolling_mean(values: list[float], window: int) -> list[float]:
     return out
 
 
-def write_plots(
+def write_plots(  # noqa: PLR0915
     out_dir: Path,
     random_snapshot: dict[str, Any],
     trained_snapshot: dict[str, Any],
@@ -169,12 +169,35 @@ def write_plots(
 
     # 1. reward curve (smoothed)
     fig, ax = plt.subplots()
-    ax.plot(_rolling_mean(_rewards(random_snapshot), smooth_window), label="random")
-    ax.plot(_rolling_mean(_rewards(trained_snapshot), smooth_window), label="trained")
+    random_rewards = _rewards(random_snapshot)
+    trained_rewards = _rewards(trained_snapshot)
+
+    random_rolling = _rolling_mean(random_rewards, smooth_window)
+    trained_rolling = _rolling_mean(trained_rewards, smooth_window)
+
+    ax.plot(random_rolling, label="random (rolling)", color="#1f77b4", alpha=0.6)
+    ax.plot(trained_rolling, label="trained (rolling)", color="#ff7f0e", linewidth=2.5)
+
+    if random_rewards:
+        rand_mean = statistics.fmean(random_rewards)
+        rand_std = statistics.pstdev(random_rewards) if len(random_rewards) > 1 else 0.0
+        ax.axhline(rand_mean, color="#1f77b4", linestyle="--", label="random mean", alpha=0.8)
+
+        # Shade random baseline standard deviation range
+        max_len = max(len(random_rewards), len(trained_rewards))
+        ax.fill_between(
+            range(max_len),
+            rand_mean - rand_std,
+            rand_mean + rand_std,
+            color="#1f77b4",
+            alpha=0.1,
+            label="random baseline ±1σ"  # noqa: RUF001
+        )
+
     ax.set_xlabel("Episode")
     ax.set_ylabel(f"Total reward ({smooth_window}-ep rolling mean)")
-    ax.set_title("Per-episode reward — random vs trained")
-    ax.legend()
+    ax.set_title("Per-episode reward — random vs trained progression")
+    ax.legend(loc="best")
     p = out_dir / REWARD_CURVE_FILENAME
     fig.savefig(p)
     plt.close(fig)
@@ -182,8 +205,8 @@ def write_plots(
 
     # 2. episode-length histogram
     fig, ax = plt.subplots()
-    ax.hist(_steps(random_snapshot), bins=20, alpha=0.5, label="random")
-    ax.hist(_steps(trained_snapshot), bins=20, alpha=0.5, label="trained")
+    ax.hist(_steps(random_snapshot), bins=20, alpha=0.5, label="random", color="#1f77b4")
+    ax.hist(_steps(trained_snapshot), bins=20, alpha=0.5, label="trained", color="#ff7f0e")
     ax.set_xlabel("Steps per episode")
     ax.set_ylabel("Count")
     ax.set_title("Episode length distribution")
@@ -193,13 +216,10 @@ def write_plots(
     plt.close(fig)
     paths["episode_length"] = p
 
-    # 3. reward histogram (planner-latency extraction from the
-    # Prometheus snapshot is a Phase 2 follow-up; for now we plot the
-    # reward distribution which is the most useful operator signal we
-    # have from the in-snapshot per_episode block).
+    # 3. reward histogram
     fig, ax = plt.subplots()
-    ax.hist(_rewards(random_snapshot), bins=20, alpha=0.5, label="random")
-    ax.hist(_rewards(trained_snapshot), bins=20, alpha=0.5, label="trained")
+    ax.hist(random_rewards, bins=20, alpha=0.5, label="random", color="#1f77b4")
+    ax.hist(trained_rewards, bins=20, alpha=0.5, label="trained", color="#ff7f0e")
     ax.set_xlabel("Per-episode total reward")
     ax.set_ylabel("Count")
     ax.set_title("Total-reward distribution")
@@ -225,15 +245,23 @@ def render_report(
     ]
     body = "\n".join(
         [
-            "# v0.5 Phase 1 — First real run baseline",
+            "# FORGE v0.5 Trained vs. Random Comparative Report",
+            "",
+            "This comparative report evaluates the learning progression and performance of a trained **MuZero MC** agent against a **Random Action Baseline** in Minecraft.",
             "",
             "## Summary table",
             "",
             render_summary_table(summaries),
             "",
-            "## Reward curve (rolling mean)",
+            "> [!TIP]",
+            "> **Learning Active**: A successful training run is demonstrated when the trained agent's average reward rises significantly above the random baseline's flat mean.",
+            "",
+            "## Reward progression curve",
             "",
             f"![reward curve]({plot_paths['reward_curve'].name})",
+            "",
+            "> [!IMPORTANT]",
+            "> The trained agent curve (orange) represents the agent's reward progression over successive self-play training episodes. The dashed blue line represents the flat average reward of the random action baseline, with the shaded light-blue region representing the standard deviation of random rollouts.",
             "",
             "## Episode length distribution",
             "",

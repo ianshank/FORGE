@@ -224,6 +224,14 @@ class MuZeroMcTrainerConfig:
     #: gives the runner a safety margin so an in-flight reload doesn't
     #: race the trainer's GC. ``0`` disables GC (keep all history).
     max_bundle_versions: int = DEFAULT_MAX_BUNDLE_VERSIONS
+    #: Pluggable experiment logger backend ("wandb", "mlflow", "tensorboard", or None).
+    logging_backend: str | None = None
+    #: Logging project / experiment name.
+    logging_project: str = "forge-minecraft"
+    #: Logging run / session name.
+    logging_run_name: str | None = None
+    #: MLflow tracking server URI or TensorBoard log directory override.
+    logging_tracking_uri: str | None = None
 
     def __post_init__(self) -> None:
         if self.train_iters < 0:
@@ -428,6 +436,40 @@ class MuzeroMcTrainer:
                 # than getting swallowed as "unreadable manifest".
                 logger.warning("ignoring unreadable manifest %s: %s", config.manifest_path, e)
 
+        self._experiment_logger = None
+        if config.logging_backend is not None:
+            from dataclasses import asdict
+
+            from forge.training.loggers import make_logger
+
+            logger_kwargs = {}
+            if config.logging_backend == "wandb":
+                logger_kwargs = {
+                    "project": config.logging_project,
+                    "run_name": config.logging_run_name,
+                    "config": asdict(config),
+                }
+            elif config.logging_backend == "mlflow":
+                logger_kwargs = {
+                    "experiment_name": config.logging_project,
+                    "run_name": config.logging_run_name,
+                    "tracking_uri": config.logging_tracking_uri,
+                    "params": asdict(config),
+                }
+            elif config.logging_backend == "tensorboard":
+                logger_kwargs = {
+                    "log_dir": config.logging_tracking_uri
+                    if config.logging_tracking_uri is not None
+                    else config.logging_project,
+                }
+
+            try:
+                self._experiment_logger = make_logger(config.logging_backend, **logger_kwargs)
+            except Exception as e:
+                logger.warning(
+                    "failed to initialize logging backend %s: %s", config.logging_backend, e
+                )
+
     @property
     def iter(self) -> int:
         """Number of gradient steps completed so far."""
@@ -469,6 +511,9 @@ class MuzeroMcTrainer:
                 "l2_reg": 0.0,
             }
 
+        ep_len = len(steps)
+        ep_reward = sum(float(s["reward"]) for s in steps)
+
         # Sample batch_size starting positions (with replacement so
         # short trajectories still produce full batches).
         indices = [self._rng.randrange(len(steps)) for _ in range(self._config.batch_size)]
@@ -492,7 +537,20 @@ class MuzeroMcTrainer:
             ),
         )
         self._iter += 1
-        return metrics.to_dict()
+        metrics_dict = metrics.to_dict()
+
+        if self._experiment_logger is not None:
+            log_data = dict(metrics_dict)
+            log_data["replay_buffer_size"] = float(len(self._reader.episode_paths()))
+            log_data["manifest_version"] = float(self._last_manifest_version)
+            log_data["episode_length"] = float(ep_len)
+            log_data["episode_reward"] = float(ep_reward)
+            try:
+                self._experiment_logger.log(log_data, step=self._iter)
+            except Exception as e:
+                logger.warning("failed to log to experiment logger: %s", e)
+
+        return metrics_dict
 
     def train_continuous(
         self,
@@ -620,6 +678,16 @@ class MuzeroMcTrainer:
             )
         return deleted
 
+    def close(self) -> None:
+        """Close any open experiment logging handlers."""
+        if hasattr(self, "_experiment_logger") and self._experiment_logger is not None:
+            try:
+                self._experiment_logger.close()
+            except Exception as e:
+                logger.warning("failed to close experiment logger: %s", e)
+            finally:
+                self._experiment_logger = None
+
     def train(self) -> dict[str, Any]:
         """Run ``train_iters`` gradient steps, exporting on the
         configured cadence. Returns a summary dict.
@@ -627,42 +695,45 @@ class MuzeroMcTrainer:
         if self._config.train_iters <= 0:
             return {"iters_completed": 0, "exports": 0}
 
-        exports = 0
-        last_metrics: dict[str, float] = {}
-        for _ in range(self._config.train_iters):
-            last_metrics = self.train_step()
-            if (
-                self._config.log_every_n_iters > 0
-                and self._iter % self._config.log_every_n_iters == 0
-            ):
-                logger.info(
-                    "iter %d loss=%.4f policy=%.4f value=%.4f reward=%.4f",
-                    self._iter,
-                    last_metrics["loss"],
-                    last_metrics["policy_loss"],
-                    last_metrics["value_loss"],
-                    last_metrics["reward_loss"],
-                )
-            if (
-                self._config.export_every_n_iters > 0
-                and self._iter % self._config.export_every_n_iters == 0
+        try:
+            exports = 0
+            last_metrics: dict[str, float] = {}
+            for _ in range(self._config.train_iters):
+                last_metrics = self.train_step()
+                if (
+                    self._config.log_every_n_iters > 0
+                    and self._iter % self._config.log_every_n_iters == 0
+                ):
+                    logger.info(
+                        "iter %d loss=%.4f policy=%.4f value=%.4f reward=%.4f",
+                        self._iter,
+                        last_metrics["loss"],
+                        last_metrics["policy_loss"],
+                        last_metrics["value_loss"],
+                        last_metrics["reward_loss"],
+                    )
+                if (
+                    self._config.export_every_n_iters > 0
+                    and self._iter % self._config.export_every_n_iters == 0
+                ):
+                    self._export_bundle()
+                    exports += 1
+
+            # Always export at the end so the final state is reachable.
+            if self._config.export_every_n_iters > 0 and (
+                exports == 0 or self._iter % self._config.export_every_n_iters != 0
             ):
                 self._export_bundle()
                 exports += 1
 
-        # Always export at the end so the final state is reachable.
-        if self._config.export_every_n_iters > 0 and (
-            exports == 0 or self._iter % self._config.export_every_n_iters != 0
-        ):
-            self._export_bundle()
-            exports += 1
-
-        return {
-            "iters_completed": self._iter,
-            "exports": exports,
-            "last_metrics": last_metrics,
-            "last_manifest_version": self._last_manifest_version,
-        }
+            return {
+                "iters_completed": self._iter,
+                "exports": exports,
+                "last_metrics": last_metrics,
+                "last_manifest_version": self._last_manifest_version,
+            }
+        finally:
+            self.close()
 
     def _sample_trajectory(self) -> dict[str, Any]:
         """Pick the next trajectory file in round-robin order. Falls
