@@ -32,7 +32,7 @@ resolver = "2"
 
 [package]
 name = "forge-integration-tests"
-version = "0.1.0"
+version = "0.5.0"
 edition = "2021"
 publish = false
 
@@ -75,7 +75,7 @@ name = "integration_cloud_edge"
 path = "tests/rust/integration_cloud_edge.rs"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.5.0"
 edition = "2021"
 authors = ["Ian Shank"]
 license = "Apache-2.0"

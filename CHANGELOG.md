@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-02
+
+Release-hygiene cut: the workspace version is moved off the stale `0.1.0`
+placeholder to `0.5.0`, reflecting the v0.2–v0.5 features already shipped
+(Minecraft RL self-improving loop, block-grid encoder, first-real-run
+validation, TypeScript migration). No functional change in this bump itself.
+
 ### Added — Minecraft RL Integration: v0.5 Phase 2 — Production Stability, TypeScript Migration & Hardening
 
 Delivered complete structural hardening, connection resilience, and compile-time type safety for the Minecraft WebSocket integration:
