@@ -116,6 +116,9 @@ pub struct AppState {
     pub start_time: std::time::Instant,
     /// Channel to send a replacement world to the simulation loop (e.g. from remix).
     pub world_replacement_tx: Arc<tokio::sync::mpsc::Sender<forge_core::WorldState>>,
+    /// REST session world, decoupled from the demo broadcast loop
+    /// (see [`crate::env`]). `None` until `/api/env/reset` is called.
+    pub rest_world: crate::env::SessionWorld,
 }
 
 /// Serializes a `WsMessage` to a JSON string for sending over WebSocket.
