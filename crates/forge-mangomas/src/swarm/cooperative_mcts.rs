@@ -289,6 +289,16 @@ mod tests {
     }
 
     #[test]
+    fn test_config_accessor() {
+        let protocol = fast_protocol(4);
+        assert_eq!(protocol.config().num_agents, 4);
+        assert_eq!(
+            protocol.config().joint_strategy,
+            JointStrategy::SequentialFactored
+        );
+    }
+
+    #[test]
     fn test_coordinate_worldless_length() {
         let protocol = fast_protocol(3);
         let obs = vec![make_obs(); 3];
@@ -315,6 +325,21 @@ mod tests {
         let plan = protocol.plan(&world).unwrap();
         let expected = plan[1].try_to_discrete_full(0).unwrap();
         assert_eq!(protocol.select_action(&make_obs(), 1), expected);
+    }
+
+    #[test]
+    fn test_cache_recovers_from_poisoned_lock() {
+        let protocol = fast_protocol(2);
+        // Poison the cache mutex by panicking while holding the guard.
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = protocol.cached.lock().unwrap();
+            panic!("intentional poison");
+        }));
+        assert!(poisoned.is_err());
+        // store_cache must recover (Err(poisoned) branch), not propagate a panic.
+        protocol.store_cache(vec![Action::Noop, Action::Noop]);
+        // select_action must also read through a poisoned lock without panicking.
+        assert_eq!(protocol.select_action(&make_obs(), 0), 0);
     }
 
     #[test]

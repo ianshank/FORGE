@@ -102,4 +102,17 @@ mod tests {
         let resp = ApiError::NotReset.into_response();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
     }
+
+    #[test]
+    fn test_into_response_internal_is_500() {
+        // Exercises the 500 branch (and its tracing::error path).
+        let resp = ApiError::Internal("boom".into()).into_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_into_response_config_is_400() {
+        let resp = ApiError::Config("bad".into()).into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
 }

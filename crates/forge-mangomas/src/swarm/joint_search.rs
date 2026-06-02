@@ -88,6 +88,16 @@ where
     }
 
     /// Per-agent single-agent MCTS at the shared root world. Deterministic.
+    ///
+    /// Each agent plans against the same root state (others assumed idle), i.e.
+    /// simultaneous best-response. This is intentionally *not* full
+    /// coordinate-ascent conditioning: committing an earlier agent's action into
+    /// the world before planning the next would require advancing a tick (via
+    /// the forward model), which corrupts single-timestep joint semantics. Richer
+    /// cross-agent conditioning would need a joint forward model that holds
+    /// partial commitments without stepping — a future enhancement once such a
+    /// model exists. The [`JointStrategy::Sampled`] path does score full joint
+    /// actions against the centralized critic.
     fn plan_factored(&self, world: &WorldState, n: usize) -> Vec<Action> {
         // Align the tree's action space with the real (comm-vocab-derived)
         // action space so expansion covers every valid action — no hard-coded
@@ -294,6 +304,43 @@ mod tests {
         let world = make_world(1);
         let err = planner.plan(&world).unwrap_err();
         assert!(matches!(err, MangoMasError::SwarmCoordination(_)));
+    }
+
+    #[test]
+    fn test_agent_count_mismatch_uses_world_count() {
+        // config says 5 agents but the world only has 2; plan must return the
+        // world's count (and log a warn) so the result fits WorldState::step.
+        let mut config = CooperativeMctsConfig {
+            num_agents: 5,
+            comm_vocab_size: TEST_COMM_VOCAB,
+            ..CooperativeMctsConfig::default()
+        };
+        config.mcts.num_simulations = 4;
+        let model = DefaultForwardModel::new(TEST_COMM_VOCAB);
+        let action_space = model.action_space_size();
+        let critic = Critic::from_config(UniformPolicy::new(action_space), true);
+        let planner = JointMctsPlanner::new(model, critic, config);
+        let world = make_world(2);
+        assert_eq!(planner.plan(&world).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_sampled_zero_budget_falls_back_to_noop() {
+        let mut config = CooperativeMctsConfig {
+            num_agents: 2,
+            joint_strategy: JointStrategy::Sampled,
+            sampled_joint_actions: 0,
+            comm_vocab_size: TEST_COMM_VOCAB,
+            ..CooperativeMctsConfig::default()
+        };
+        config.mcts.num_simulations = 2;
+        let model = DefaultForwardModel::new(TEST_COMM_VOCAB);
+        let action_space = model.action_space_size();
+        let critic = Critic::from_config(UniformPolicy::new(action_space), true);
+        let planner = JointMctsPlanner::new(model, critic, config);
+        let world = make_world(2);
+        let actions = planner.plan(&world).unwrap();
+        assert_eq!(actions, vec![Action::Noop; 2]);
     }
 
     #[test]

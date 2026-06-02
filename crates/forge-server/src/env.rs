@@ -209,6 +209,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_reset_invalid_config_is_bad_request() {
+        // A 1x1 grid is too small for the default vision span, so WorldState::new
+        // fails → ApiError::Config → 400. Covers the reset error/map_err path.
+        let state = test_state();
+        let body = Some(Json(ResetRequest {
+            seed: Some(1),
+            grid_size: Some(1),
+            num_agents: Some(1),
+        }));
+        let err = reset_handler(State(state), body).await.unwrap_err();
+        assert!(matches!(err, ApiError::Config(_)));
+        assert_eq!(
+            err.into_response().status(),
+            axum::http::StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[tokio::test]
     async fn test_reset_with_no_body_uses_defaults() {
         let state = test_state();
         let Json(snapshot) = reset_handler(State(state), None).await.unwrap();
@@ -249,6 +267,23 @@ mod tests {
         assert_eq!(
             err.into_response().status(),
             axum::http::StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+
+    #[tokio::test]
+    async fn test_poisoned_session_world_is_internal_error() {
+        // Covers the lock_world poisoned-lock → ApiError::Internal (500) branch.
+        let state = test_state();
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = state.rest_world.lock().unwrap();
+            panic!("intentional poison");
+        }));
+        assert!(poisoned.is_err());
+        let err = render_handler(State(state)).await.unwrap_err();
+        assert!(matches!(err, ApiError::Internal(_)));
+        assert_eq!(
+            err.into_response().status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
         );
     }
 
