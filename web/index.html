@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FORGE — In-Browser WASM Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0e1116;
+        --panel: #161b22;
+        --fg: #e6edf3;
+        --accent: #58a6ff;
+        --muted: #8b949e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 1.5rem;
+        gap: 1rem;
+      }
+      h1 { font-size: 1.25rem; margin: 0; }
+      p.sub { color: var(--muted); margin: 0; font-size: 0.85rem; }
+      .controls { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+      button {
+        background: var(--panel);
+        color: var(--fg);
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 0.45rem 0.9rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+      }
+      button:hover { border-color: var(--accent); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .layout { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+      .panel {
+        background: var(--panel);
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 1rem;
+      }
+      pre#grid { margin: 0; line-height: 1.05; font-size: 13px; white-space: pre; }
+      #stats { min-width: 12rem; font-size: 0.85rem; }
+      #stats dt { color: var(--muted); }
+      #stats dd { margin: 0 0 0.5rem 0; font-variant-numeric: tabular-nums; }
+      code { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <h1>FORGE — In-Browser WASM Demo</h1>
+    <p class="sub">
+      The entire simulation runs client-side via WebAssembly — no server.
+      Source: <code>crates/forge-wasm</code>.
+    </p>
+
+    <div class="controls">
+      <button id="reset">Reset</button>
+      <button id="step">Step</button>
+      <button id="play">▶ Play</button>
+      <button id="pause" disabled>⏸ Pause</button>
+    </div>
+
+    <div class="layout">
+      <div class="panel"><pre id="grid">loading…</pre></div>
+      <div class="panel">
+        <dl id="stats">
+          <dt>Status</dt><dd id="status">initializing</dd>
+          <dt>Tick</dt><dd id="tick">—</dd>
+          <dt>Last reward</dt><dd id="reward">—</dd>
+          <dt>Action space</dt><dd id="actions">—</dd>
+          <dt>Episode</dt><dd id="episode">—</dd>
+        </dl>
+      </div>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
