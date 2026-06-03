@@ -362,5 +362,5 @@ class BCTrainer:
             raise RuntimeError(msg)
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(str(path), **self._weights)  # type: ignore[arg-type]
+        np.savez(str(path), **self._weights)
         logger.info("BC weights exported to %s", path)
