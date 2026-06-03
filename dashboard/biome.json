@@ -9,7 +9,10 @@
     "ignoreUnknown": false,
     "ignore": [
       "node_modules",
-      "dist"
+      "dist",
+      "vite.config.js",
+      "vite.config.d.ts",
+      "*.tsbuildinfo"
     ]
   },
   "formatter": {

@@ -1,6 +1,11 @@
+import { Dice5, Shuffle } from "lucide-react";
 import { useCallback, useState } from "react";
 import { getConfig } from "../config/environment";
 import { createLogger } from "../utils/logger";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
+import { Slider } from "./ui/slider";
 
 const log = createLogger("ScenarioControls");
 
@@ -47,44 +52,57 @@ export function ScenarioControls({ onRemix }: ScenarioControlsProps) {
   }, [config.apiBaseUrl, seed, gridSize, onRemix]);
 
   return (
-    <div className="bg-gray-900 border border-gray-700 rounded p-3 flex items-center gap-4">
-      <label className="text-sm text-gray-400 flex items-center gap-2">
-        Seed:
-        <input
-          type="number"
-          value={seed}
-          onChange={(e) => setSeed(Number(e.target.value))}
-          aria-label="Random seed"
-          className="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm"
-        />
-      </label>
-      <label className="text-sm text-gray-400 flex items-center gap-2">
-        Grid:
-        <input
-          type="range"
-          min={16}
-          max={256}
-          step={16}
-          value={gridSize}
-          onChange={(e) => setGridSize(Number(e.target.value))}
-          aria-label="Grid size"
-          className="w-24"
-        />
-        <span className="text-white text-sm w-8">{gridSize}</span>
-      </label>
-      <button
-        type="button"
-        onClick={() => void handleRemix()}
-        disabled={loading}
-        className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white text-sm px-4 py-1 rounded transition-colors"
-      >
-        {loading ? "Remixing..." : "Remix"}
-      </button>
-      {error && (
-        <span className="text-red-400 text-xs" role="alert">
-          {error}
-        </span>
-      )}
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Scenario</CardTitle>
+        {error ? (
+          <span className="text-xs text-danger" role="alert">
+            {error}
+          </span>
+        ) : null}
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-end gap-5">
+        <div className="space-y-1.5">
+          <label
+            htmlFor="scenario-seed"
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+          >
+            <Dice5 className="size-3.5" /> Seed
+          </label>
+          <Input
+            id="scenario-seed"
+            type="number"
+            value={seed}
+            onChange={(e) => setSeed(Number(e.target.value))}
+            aria-label="Random seed"
+            className="w-28 font-mono"
+          />
+        </div>
+
+        <div className="min-w-48 flex-1 space-y-1.5">
+          <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+            <span>Grid size</span>
+            <span className="font-mono text-foreground">{gridSize}</span>
+          </div>
+          <Slider
+            min={16}
+            max={256}
+            step={16}
+            value={[gridSize]}
+            onValueChange={([v]) => setGridSize(v)}
+            aria-label="Grid size"
+          />
+        </div>
+
+        <Button
+          type="button"
+          onClick={() => void handleRemix()}
+          disabled={loading}
+        >
+          <Shuffle />
+          {loading ? "Remixing…" : "Remix"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
