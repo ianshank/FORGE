@@ -32,6 +32,10 @@
     --input: 217 33% 15%;
     --ring: 196 90% 55%;
 
+    /* Chart-specific tokens (consumed by the Recharts theme helper). */
+    --chart-grid: 217 33% 15%;
+    --chart-axis: 217 33% 18%;
+
     --primary: 196 90% 55%;
     --primary-foreground: 222 47% 6%;
 

@@ -1,17 +1,19 @@
-import { Cpu, Users, Zap } from "lucide-react";
-import { useState } from "react";
+import { Clock, Cpu, Users, Zap } from "lucide-react";
+import { useCallback, useState } from "react";
 import { AgentInspector } from "../components/AgentInspector";
 import { DecisionTracePanel } from "../components/DecisionTracePanel";
 import { ScenarioControls } from "../components/ScenarioControls";
 import { SimulationCanvas } from "../components/SimulationCanvas";
 import { StatCard } from "../components/ui/stat-card";
+import { getConfig } from "../config/environment";
 import { useSimulation } from "../context/SimulationContext";
 import { useMetrics } from "../hooks/useMetrics";
-import { formatNumber } from "../lib/utils";
+import { formatDuration, formatNumber } from "../lib/utils";
 import type { AgentState, DecisionTraceEntry } from "../types/simulation";
 
 /** Live simulation view: world canvas, agent inspector, traces, controls. */
 export function LivePage() {
+  const config = getConfig();
   const { state } = useSimulation();
   const { metrics } = useMetrics();
   const [selectedAgent, setSelectedAgent] = useState<AgentState | null>(null);
@@ -19,6 +21,9 @@ export function LivePage() {
   const traces: DecisionTraceEntry[] = [];
 
   const aliveAgents = state?.agents.filter((a) => a.alive).length ?? 0;
+
+  // Remixing the scenario invalidates the current world, so drop any selection.
+  const handleRemix = useCallback(() => setSelectedAgent(null), []);
 
   return (
     <div className="space-y-6">
@@ -43,13 +48,15 @@ export function LivePage() {
           tone="warning"
         />
         <StatCard
-          label="WS Clients"
-          value={formatNumber(metrics?.wsConnections ?? 0)}
-          icon={Users}
+          label="Server Uptime"
+          value={
+            metrics ? formatDuration(metrics.uptimeSeconds) : "—"
+          }
+          icon={Clock}
         />
       </div>
 
-      <ScenarioControls />
+      <ScenarioControls onRemix={handleRemix} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
@@ -61,7 +68,10 @@ export function LivePage() {
           <AgentInspector agent={selectedAgent} />
         </div>
         <div className="min-h-[24rem] xl:h-[calc(100vh-22rem)]">
-          <DecisionTracePanel traces={traces} />
+          <DecisionTracePanel
+            traces={traces}
+            maxEntries={config.maxTraceEntries}
+          />
         </div>
       </div>
     </div>

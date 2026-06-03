@@ -1,20 +1,13 @@
 import { Pause, Play, PlayCircle, SkipBack, SkipForward, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { AreaTrend } from "../components/ui/area-trend";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { EmptyState } from "../components/ui/empty-state";
 import { Slider } from "../components/ui/slider";
 import { StatCard } from "../components/ui/stat-card";
+import { CHART_SERIES } from "../lib/chartTheme";
 import {
   cumulativeReward,
   parseTrajectory,
@@ -144,44 +137,14 @@ export function ReplayPage() {
             <StatCard label="Actions" value={`${trajectory.actionCount}`} />
           </div>
 
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={rewardSeries} margin={{ top: 4, right: 8, bottom: 0, left: -12 }}>
-              <defs>
-                <linearGradient id="replay-grad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#39ff7e" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#39ff7e" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="index"
-                tick={{ fontSize: 10, fill: "hsl(215 18% 58%)" }}
-                stroke="hsl(217 33% 18%)"
-              />
-              <YAxis
-                tick={{ fontSize: 10, fill: "hsl(215 18% 58%)" }}
-                stroke="hsl(217 33% 18%)"
-                width={44}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(222 44% 6%)",
-                  border: "1px solid hsl(217 33% 15%)",
-                  borderRadius: 8,
-                  fontSize: 12,
-                }}
-                labelStyle={{ color: "hsl(215 18% 58%)" }}
-              />
-              <Area
-                type="monotone"
-                dataKey="cumulative"
-                stroke="#39ff7e"
-                strokeWidth={2}
-                fill="url(#replay-grad)"
-                dot={false}
-              />
-              <ReferenceLine x={cursor} stroke="#38bdf8" strokeWidth={1.5} />
-            </AreaChart>
-          </ResponsiveContainer>
+          <AreaTrend
+            data={rewardSeries}
+            xKey="index"
+            dataKey="cumulative"
+            color={CHART_SERIES.cumulative}
+            height={180}
+            referenceX={cursor}
+          />
 
           {/* Transport controls. */}
           <div className="flex items-center gap-4">

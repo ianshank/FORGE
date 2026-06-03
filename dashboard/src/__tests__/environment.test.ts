@@ -7,6 +7,7 @@ describe("DashboardConfig", () => {
     const config = getConfig();
     expect(config.wsUrl).toBeDefined();
     expect(config.apiBaseUrl).toBeDefined();
+    expect(config.demoApiBaseUrl).toBeDefined();
     expect(config.metricsPollingInterval).toBeGreaterThan(0);
     expect(config.maxTraceEntries).toBeGreaterThan(0);
     expect(typeof config.showGridLines).toBe("boolean");
@@ -40,5 +41,9 @@ describe("DashboardConfig", () => {
 
   it("default apiBaseUrl points to localhost", () => {
     expect(DEFAULT_CONFIG.apiBaseUrl).toContain("localhost");
+  });
+
+  it("default demoApiBaseUrl points to localhost", () => {
+    expect(DEFAULT_CONFIG.demoApiBaseUrl).toContain("localhost");
   });
 });

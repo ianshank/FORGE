@@ -2,24 +2,14 @@ import { useEffect, useRef, type MouseEvent } from "react";
 import { Boxes } from "lucide-react";
 import type { AgentState, SimulationState } from "../types/simulation";
 import { getConfig } from "../config/environment";
+import {
+  factionColor,
+  INACTIVE_AGENT_COLOR,
+  TERRAIN_COLORS,
+} from "../lib/domainColors";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { EmptyState } from "./ui/empty-state";
-
-/** Terrain type → hex color mapping. */
-const TERRAIN_COLORS: Record<string, string> = {
-  Ground: "#8B9556",
-  Water: "#4A90D9",
-  Wall: "#6B6B6B",
-  Lava: "#D94A4A",
-  Ice: "#B0D4E8",
-  Sand: "#D4C07A",
-  Forest: "#2D6B3F",
-  Mountain: "#8B7355",
-};
-
-/** Faction → color mapping. */
-const FACTION_COLORS: string[] = ["#3B82F6", "#EF4444", "#10B981", "#F59E0B"];
 
 interface SimulationCanvasProps {
   state: SimulationState | null;
@@ -161,8 +151,9 @@ function drawAgent(
     ctx.stroke();
   }
 
-  const colorIdx = (agent.teamId ?? agent.id) % FACTION_COLORS.length;
-  ctx.fillStyle = agent.alive ? FACTION_COLORS[colorIdx] : "#666";
+  ctx.fillStyle = agent.alive
+    ? factionColor(agent.teamId ?? agent.id)
+    : INACTIVE_AGENT_COLOR;
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.fill();
