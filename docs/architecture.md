@@ -760,6 +760,12 @@ ML frameworks) without the live WebSocket ticker:
   400, step/render before reset -> 409, out-of-range action -> 422, lock
   poisoning / internal -> 500. No hard-coded sim params — `reset` falls back to
   `ForgeConfig::default()` for omitted fields.
+- **Single-agent gym contract.** Like `ForgeEnv`/Gymnasium, this surface is
+  single-agent: `step` takes one action and returns one reward, so `reset`
+  rejects `num_agents > 1` with a 400 (multi-agent control is served by the
+  PettingZoo / WebSocket surfaces). The session world's `comm_vocab_size` is
+  pinned to the REST action decoder so valid action ids are never spuriously
+  rejected.
 
 #### 3.6.2 WebAssembly demo (forge-wasm -> GitHub Pages)
 

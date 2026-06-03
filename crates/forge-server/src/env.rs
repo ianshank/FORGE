@@ -55,7 +55,7 @@ pub struct ResetRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StepRequest {
-    /// Discrete action id applied to agent 0 (other agents idle).
+    /// Discrete action id for the single gym agent.
     pub action: u32,
 }
 
@@ -108,7 +108,26 @@ pub async fn reset_handler(
         config.world.width = grid_size;
         config.world.height = grid_size;
     }
-    config.agents.num_agents = req.num_agents.unwrap_or(DEFAULT_REST_NUM_AGENTS);
+    // This REST surface is a single-agent gym env (mirroring `ForgeEnv` /
+    // Gymnasium): `step` takes one action and the response carries one reward,
+    // so a multi-agent world would silently drop the other agents' control and
+    // rewards. Reject `num_agents > 1` with a clear pointer to the PettingZoo /
+    // WebSocket surfaces for multi-agent control. Lifting this later is a clean
+    // additive vectorisation of `StepRequest`/`StepResponse`.
+    let num_agents = req.num_agents.unwrap_or(DEFAULT_REST_NUM_AGENTS);
+    if num_agents != DEFAULT_REST_NUM_AGENTS {
+        return Err(ApiError::Config(format!(
+            "REST env is a single-agent gym surface; num_agents must be \
+             {DEFAULT_REST_NUM_AGENTS} (got {num_agents}). Use the PettingZoo / \
+             WebSocket API for multi-agent control."
+        )));
+    }
+    config.agents.num_agents = num_agents;
+    // Keep the world's action space aligned with the REST action decoder
+    // (`step_handler` decodes with REST_COMM_VOCAB_SIZE / REST_DRONE_ACTIONS_ENABLED),
+    // so action ids valid for the constructed world are never spuriously
+    // rejected as `InvalidAction`.
+    config.agents.comm_vocab_size = REST_COMM_VOCAB_SIZE;
     let seed = config.world.seed;
 
     let world = forge_core::WorldState::new(config).map_err(|e| ApiError::Config(e.to_string()))?;
@@ -199,13 +218,44 @@ mod tests {
         let body = Some(Json(ResetRequest {
             seed: Some(7),
             grid_size: Some(16),
-            num_agents: Some(2),
+            num_agents: Some(1),
         }));
         let Json(snapshot) = reset_handler(State(state.clone()), body).await.unwrap();
-        assert_eq!(snapshot.agents.len(), 2);
+        assert_eq!(snapshot.agents.len(), 1);
         assert_eq!(snapshot.grid_width, 16);
         assert_eq!(snapshot.schema_version, crate::SCHEMA_VERSION);
         assert!(state.rest_world.lock().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_reset_rejects_multi_agent() {
+        // The gym surface is single-agent; >1 must be a clear 400, not a silent
+        // multi-agent world that drops rewards.
+        let state = test_state();
+        let body = Some(Json(ResetRequest {
+            seed: Some(7),
+            grid_size: Some(16),
+            num_agents: Some(2),
+        }));
+        let err = reset_handler(State(state.clone()), body).await.unwrap_err();
+        assert!(matches!(err, ApiError::Config(_)));
+        assert_eq!(
+            err.into_response().status(),
+            axum::http::StatusCode::BAD_REQUEST
+        );
+        // No world should have been created on rejection.
+        assert!(state.rest_world.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_reset_world_comm_vocab_matches_decoder() {
+        // Regression: the session world's action space must align with the REST
+        // action decoder so valid ids are never rejected as InvalidAction.
+        let state = test_state();
+        let Json(_) = reset_handler(State(state.clone()), None).await.unwrap();
+        let guard = state.rest_world.lock().unwrap();
+        let world = guard.as_ref().unwrap();
+        assert_eq!(world.config.agents.comm_vocab_size, REST_COMM_VOCAB_SIZE);
     }
 
     #[tokio::test]

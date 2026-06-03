@@ -1,8 +1,10 @@
-//! Swarm protocol trait for multi-drone coordination.
+//! Swarm protocol trait for multi-agent coordination.
 //!
-//! Defines the interface that a swarm coordination strategy must implement.
-//! This is a Phase 6 stub — implementations will be added when
-//! multi-agent coordination is developed.
+//! Defines the [`SwarmProtocol`] interface that a coordination strategy must
+//! implement. [`IndependentProtocol`] is the no-coordination baseline; a real
+//! cooperative CTDE planner lives in
+//! [`cooperative_mcts`](super::cooperative_mcts::CooperativeMctsProtocol) and is
+//! swappable with the baseline behind `dyn SwarmProtocol`.
 
 use forge_core::WorldState;
 use forge_types::action::Action;

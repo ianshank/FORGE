@@ -173,9 +173,14 @@ impl SwarmProtocol for CooperativeMctsProtocol {
         observations: &[Observation],
         _comm_tokens: &[Vec<u16>],
     ) -> Vec<Action> {
+        let _ = observations;
         self.plan(world).unwrap_or_else(|e| {
             warn!(error = %e, "joint plan failed; falling back to Noop");
-            vec![Action::Noop; observations.len()]
+            // Size the fallback by the world's authoritative agent count (not the
+            // observations slice) so the result always satisfies the
+            // `WorldState::step` contract, even if a caller passes a mismatched
+            // observations slice.
+            vec![Action::Noop; world.agents.len()]
         })
     }
 
