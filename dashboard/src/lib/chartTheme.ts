@@ -34,6 +34,7 @@ const TOKEN_VARS = {
   tooltipBg: "--popover",
   tooltipBorder: "--border",
   tooltipText: "--muted-foreground",
+  cursor: "--primary",
 } as const;
 
 /** Token defaults — last-resort fallbacks mirroring `index.css`. */
@@ -44,6 +45,7 @@ const FALLBACK_CHANNELS: Record<keyof typeof TOKEN_VARS, string> = {
   tooltipBg: "222 44% 6%",
   tooltipBorder: "217 33% 15%",
   tooltipText: "215 18% 58%",
+  cursor: "196 90% 55%",
 };
 
 /** Resolved, ready-to-use color strings for chart primitives. */
@@ -54,6 +56,8 @@ export interface ChartTheme {
   tooltipBg: string;
   tooltipBorder: string;
   tooltipText: string;
+  /** Accent for cursor/reference markers. */
+  cursor: string;
 }
 
 /**
@@ -96,5 +100,6 @@ export function resolveChartTheme(root?: Element | null): ChartTheme {
     tooltipBg: `hsl(${channel("tooltipBg")})`,
     tooltipBorder: `hsl(${channel("tooltipBorder")})`,
     tooltipText: `hsl(${channel("tooltipText")})`,
+    cursor: `hsl(${channel("cursor")})`,
   };
 }

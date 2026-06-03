@@ -5,13 +5,14 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { EmptyState } from "../components/ui/empty-state";
 import { getConfig } from "../config/environment";
+import { isStreamEnd, parseSseBuffer } from "../lib/sse";
 import { cn } from "../lib/utils";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger("DemosPage");
 
-/** Marker the demo backend emits to signal end-of-stream. */
-const STREAM_END = "__STREAM_END__";
+/** Default parameters sent when launching a demo run. */
+const DEMO_RUN_DEFAULTS = { seed: 42, quick: true } as const;
 
 interface DemoSection {
   key: string;
@@ -73,7 +74,7 @@ export function DemosPage() {
         const res = await fetch(`${config.demoApiBaseUrl}/api/run/${section.key}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ seed: 42, quick: true }),
+          body: JSON.stringify(DEMO_RUN_DEFAULTS),
           signal: controller.signal,
         });
 
@@ -92,22 +93,10 @@ export function DemosPage() {
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
-          // Parse SSE frames: "data: <json>\n\n".
-          const frames = buffer.split("\n\n");
-          buffer = frames.pop() ?? "";
-          for (const frame of frames) {
-            const dataLine = frame
-              .split("\n")
-              .find((l) => l.startsWith("data:"));
-            if (!dataLine) continue;
-            const raw = dataLine.slice(5).trim();
-            let payload: string;
-            try {
-              payload = JSON.parse(raw) as string;
-            } catch {
-              payload = raw;
-            }
-            if (payload === STREAM_END || payload === "__DONE__") {
+          const { events, rest } = parseSseBuffer(buffer);
+          buffer = rest;
+          for (const payload of events) {
+            if (isStreamEnd(payload)) {
               setRunning(false);
               continue;
             }

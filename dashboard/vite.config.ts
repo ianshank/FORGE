@@ -21,6 +21,26 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
-    setupFiles: [],
+    setupFiles: ["./src/test/setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary", "html"],
+      // Only the application source is graded — exclude entry/bootstrap,
+      // type-only modules, the test harness, and generated assets.
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/main.tsx",
+        "src/test/**",
+        "src/**/*.d.ts",
+        "src/types/**",
+        "src/**/__tests__/**",
+      ],
+      thresholds: {
+        statements: 85,
+        branches: 85,
+        functions: 85,
+        lines: 85,
+      },
+    },
   },
 });

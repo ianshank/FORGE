@@ -9,6 +9,15 @@ import { Slider } from "./ui/slider";
 
 const log = createLogger("ScenarioControls");
 
+/** Default + bounds for the scenario controls (no magic numbers inline). */
+export const SCENARIO_DEFAULTS = {
+  seed: 42,
+  gridSize: 64,
+  gridMin: 16,
+  gridMax: 256,
+  gridStep: 16,
+} as const;
+
 interface ScenarioControlsProps {
   onRemix?: (seed: number) => void;
 }
@@ -16,8 +25,8 @@ interface ScenarioControlsProps {
 /** Controls for scenario remixing and parameter adjustment. */
 export function ScenarioControls({ onRemix }: ScenarioControlsProps) {
   const config = getConfig();
-  const [seed, setSeed] = useState(42);
-  const [gridSize, setGridSize] = useState(64);
+  const [seed, setSeed] = useState<number>(SCENARIO_DEFAULTS.seed);
+  const [gridSize, setGridSize] = useState<number>(SCENARIO_DEFAULTS.gridSize);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,9 +94,9 @@ export function ScenarioControls({ onRemix }: ScenarioControlsProps) {
             <span className="font-mono text-foreground">{gridSize}</span>
           </div>
           <Slider
-            min={16}
-            max={256}
-            step={16}
+            min={SCENARIO_DEFAULTS.gridMin}
+            max={SCENARIO_DEFAULTS.gridMax}
+            step={SCENARIO_DEFAULTS.gridStep}
             value={[gridSize]}
             onValueChange={([v]) => setGridSize(v)}
             aria-label="Grid size"

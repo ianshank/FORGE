@@ -3,6 +3,13 @@ import { Boxes } from "lucide-react";
 import type { AgentState, SimulationState } from "../types/simulation";
 import { getConfig } from "../config/environment";
 import {
+  CANVAS_COLORS,
+  findNearestAgent,
+  healthFraction,
+  HEALTH_HIGH_FRACTION,
+  RENDER_GEOMETRY,
+} from "../lib/canvasRender";
+import {
   factionColor,
   INACTIVE_AGENT_COLOR,
   TERRAIN_COLORS,
@@ -45,14 +52,14 @@ export function SimulationCanvas({
     canvas.height = height;
 
     // Clear + base terrain (no per-tile data in SimulationState yet).
-    ctx.fillStyle = "#0d1525";
+    ctx.fillStyle = CANVAS_COLORS.background;
     ctx.fillRect(0, 0, width, height);
     ctx.fillStyle = TERRAIN_COLORS.Ground;
     ctx.fillRect(0, 0, width, height);
 
     if (gridLines) {
-      ctx.strokeStyle = "rgba(255,255,255,0.08)";
-      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = CANVAS_COLORS.gridLine;
+      ctx.lineWidth = RENDER_GEOMETRY.gridLineWidth;
       for (let x = 0; x <= state.gridWidth; x++) {
         ctx.beginPath();
         ctx.moveTo(x * cellSize, 0);
@@ -82,19 +89,8 @@ export function SimulationCanvas({
     const px = (event.clientX - rect.left) * scaleX;
     const py = (event.clientY - rect.top) * scaleY;
 
-    let nearest: AgentState | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const agent of state.agents) {
-      const cx = agent.x * cellSize + cellSize / 2;
-      const cy = agent.y * cellSize + cellSize / 2;
-      const dist = (cx - px) ** 2 + (cy - py) ** 2;
-      if (dist < bestDist) {
-        bestDist = dist;
-        nearest = agent;
-      }
-    }
-    // Only select within a reasonable radius of the click.
-    if (nearest && bestDist <= (cellSize * 2) ** 2) {
+    const nearest = findNearestAgent(state.agents, { x: px, y: py }, cellSize);
+    if (nearest) {
       onSelectAgent(nearest);
     }
   };
@@ -141,13 +137,13 @@ function drawAgent(
 ) {
   const cx = agent.x * cellSize + cellSize / 2;
   const cy = agent.y * cellSize + cellSize / 2;
-  const radius = cellSize * 0.35;
+  const radius = cellSize * RENDER_GEOMETRY.agentRadiusFactor;
 
   if (selected) {
-    ctx.strokeStyle = "#38bdf8";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = CANVAS_COLORS.selection;
+    ctx.lineWidth = RENDER_GEOMETRY.selectionLineWidth;
     ctx.beginPath();
-    ctx.arc(cx, cy, radius + 3, 0, Math.PI * 2);
+    ctx.arc(cx, cy, radius + RENDER_GEOMETRY.selectionRingPadding, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -159,21 +155,28 @@ function drawAgent(
   ctx.fill();
 
   if (agent.alive && agent.health > 0) {
-    const barWidth = cellSize * 0.8;
-    const barHeight = 2;
+    const barWidth = cellSize * RENDER_GEOMETRY.healthBarWidthFactor;
+    const barHeight = RENDER_GEOMETRY.healthBarHeight;
     const barX = agent.x * cellSize + (cellSize - barWidth) / 2;
-    const barY = agent.y * cellSize - 3;
-    const healthFrac = Math.min(agent.health / 655360, 1); // 10.0 fixed-point
+    const barY = agent.y * cellSize - RENDER_GEOMETRY.healthBarOffsetY;
+    const healthFrac = healthFraction(agent.health);
 
-    ctx.fillStyle = "#333";
+    ctx.fillStyle = CANVAS_COLORS.healthTrack;
     ctx.fillRect(barX, barY, barWidth, barHeight);
-    ctx.fillStyle = healthFrac > 0.5 ? "#22c55e" : "#ef4444";
+    ctx.fillStyle =
+      healthFrac > HEALTH_HIGH_FRACTION
+        ? CANVAS_COLORS.healthHigh
+        : CANVAS_COLORS.healthLow;
     ctx.fillRect(barX, barY, barWidth * healthFrac, barHeight);
   }
 
   if (agent.intent) {
-    ctx.fillStyle = "#fff";
-    ctx.font = `${Math.max(8, cellSize * 0.6)}px monospace`;
+    ctx.fillStyle = CANVAS_COLORS.intentLabel;
+    const fontSize = Math.max(
+      RENDER_GEOMETRY.minFontSize,
+      cellSize * RENDER_GEOMETRY.fontSizeFactor,
+    );
+    ctx.font = `${fontSize}px monospace`;
     ctx.textAlign = "center";
     ctx.fillText(agent.intent, cx, cy + cellSize + 2);
   }

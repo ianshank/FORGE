@@ -88,7 +88,7 @@ export function AreaTrend({
           dot={false}
         />
         {typeof referenceX === "number" ? (
-          <ReferenceLine x={referenceX} stroke="#38bdf8" strokeWidth={1.5} />
+          <ReferenceLine x={referenceX} stroke={theme.cursor} strokeWidth={1.5} />
         ) : null}
       </AreaChart>
     </ResponsiveContainer>
