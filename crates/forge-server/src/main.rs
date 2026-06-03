@@ -54,6 +54,7 @@ async fn main() {
         metrics_collector: metrics_collector.clone(),
         start_time: Instant::now(),
         world_replacement_tx: Arc::new(world_tx),
+        rest_world: forge_server::env::new_session_world(),
     };
 
     // Create initial world
@@ -108,6 +109,9 @@ async fn main() {
         .route("/api/scenario/remix", post(remix_handler))
         .route("/api/training-metrics", post(training_metrics_handler))
         .route("/api/decision-traces", post(decision_traces_handler))
+        .route("/api/env/reset", post(forge_server::env::reset_handler))
+        .route("/api/env/step", post(forge_server::env::step_handler))
+        .route("/api/env/render", get(forge_server::env::render_handler))
         .route("/ws", get(ws_upgrade_handler))
         .layer(cors)
         .with_state(app_state);

@@ -16,6 +16,8 @@ A high-performance simulation platform for training and evaluating AI agents, bu
 - **Topology-aware worlds**: Configurable square and hex grids via `forge-civ`, with shared line-of-sight, distance, and pathfinding primitives
 - **Rich interaction**: 6 resource types, 9 crafting recipes, combat, push mechanics, day/night cycle
 - **Multi-agent**: PettingZoo Parallel API for cooperative/competitive scenarios with communication
+- **Cooperative swarm planning**: CTDE cooperative MCTS (`forge-mangomas::swarm`) that reuses the single-agent PUCT search to produce coordinated joint actions, with a centralized/independent critic and deterministic seeded sampling — a drop-in swap for the no-coordination baseline. See [`docs/architecture.md` §3.8.1](docs/architecture.md)
+- **REST + WASM env API**: drive the simulation over HTTP (`POST /api/env/{reset,step}`, `GET /api/env/render`) or fully in-browser via WebAssembly — the two surfaces mirror the same JSON shapes
 - **Task curriculum**: Composable task DSL with 6 difficulty tiers and adaptive difficulty scaling
 - **MCTS planning**: Built-in Monte Carlo Tree Search agent with configurable PUCT exploration
 - **MangoMAS bridge**: Config-driven curriculum, constitutional pre-training, curiosity-weight search, batch episode collection, and MCTS sweep utilities under `python/forge/mangomas/`
@@ -370,6 +372,23 @@ for agent_id in env.agents:
     # ... select action per agent
 ```
 
+For **coordinated** multi-agent control, the Rust `forge-mangomas::swarm`
+module provides a cooperative CTDE MCTS planner that produces a joint action
+vector for all agents:
+
+```rust
+use forge_mangomas::swarm::{CooperativeMctsConfig, CooperativeMctsProtocol, SwarmProtocol};
+
+let protocol = CooperativeMctsProtocol::new(CooperativeMctsConfig {
+    num_agents: 3,
+    ..CooperativeMctsConfig::default()
+});
+// `coordinate_stateful` returns one Action per agent; swap in
+// `IndependentProtocol` for the no-coordination baseline behind `dyn SwarmProtocol`.
+let actions = protocol.coordinate_stateful(&world, &observations, &comm_tokens);
+let result = world.step(&actions);
+```
+
 ## MCTS Planning
 
 ```python
@@ -411,6 +430,17 @@ console.log(env.render_ascii());
 ```
 
 All WASM I/O uses JSON strings for JavaScript compatibility.
+
+### Live in-browser demo (GitHub Pages)
+
+`.github/workflows/gh-pages.yml` builds `crates/forge-wasm` with `wasm-pack`
+and deploys the static client in [`web/`](web/) — a fully client-side,
+server-free simulation. Build it locally with:
+
+```bash
+wasm-pack build --target web --out-dir web/pkg crates/forge-wasm
+# then serve web/ statically, e.g.:  python -m http.server -d web 8000
+```
 
 ## Interactive Demo UI
 

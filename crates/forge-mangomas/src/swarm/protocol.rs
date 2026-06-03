@@ -1,9 +1,12 @@
-//! Swarm protocol trait for multi-drone coordination.
+//! Swarm protocol trait for multi-agent coordination.
 //!
-//! Defines the interface that a swarm coordination strategy must implement.
-//! This is a Phase 6 stub — implementations will be added when
-//! multi-agent coordination is developed.
+//! Defines the [`SwarmProtocol`] interface that a coordination strategy must
+//! implement. [`IndependentProtocol`] is the no-coordination baseline; a real
+//! cooperative CTDE planner lives in
+//! [`cooperative_mcts`](super::cooperative_mcts::CooperativeMctsProtocol) and is
+//! swappable with the baseline behind `dyn SwarmProtocol`.
 
+use forge_core::WorldState;
 use forge_types::action::Action;
 use forge_types::observation::Observation;
 use tracing::instrument;
@@ -26,6 +29,27 @@ pub trait SwarmProtocol: Send + Sync {
     /// # Returns
     /// Per-agent actions to execute.
     fn coordinate(&self, observations: &[Observation], comm_tokens: &[Vec<u16>]) -> Vec<Action>;
+
+    /// Produces coordinated actions given access to the full simulation state.
+    ///
+    /// This is an **additive, non-breaking** extension: the default delegates to
+    /// the world-less [`Self::coordinate`], so existing implementations need no
+    /// changes. Stateful protocols (e.g. cooperative MCTS, which needs to
+    /// simulate) override this to use the [`WorldState`] directly.
+    ///
+    /// # Arguments
+    /// * `world` - The shared simulation state for all agents.
+    /// * `observations` - Per-agent observations from the environment.
+    /// * `comm_tokens` - Communication tokens received from other agents.
+    fn coordinate_stateful(
+        &self,
+        world: &WorldState,
+        observations: &[Observation],
+        comm_tokens: &[Vec<u16>],
+    ) -> Vec<Action> {
+        let _ = world;
+        self.coordinate(observations, comm_tokens)
+    }
 
     /// Returns the number of agents in the swarm.
     fn swarm_size(&self) -> usize;

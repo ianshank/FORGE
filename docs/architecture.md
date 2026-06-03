@@ -737,6 +737,44 @@ The core engine executes a deterministic pipeline of systems every tick.
          └────────────────────────────────────────┘
 ```
 
+#### 3.6.1 Environment REST API (v0.5.0)
+
+A request/response surface for driving a world from external tools (notebooks,
+ML frameworks) without the live WebSocket ticker:
+
+```
+  POST /api/env/reset    {seed?, grid_size?, num_agents?}  -> SimulationSnapshot
+  POST /api/env/step     {action}                          -> SimulationSnapshot
+  GET  /api/env/render                                     -> {ascii, snapshot}
+```
+
+- **Session world isolation.** The REST endpoints operate on a dedicated
+  `rest_world: Arc<Mutex<Option<WorldState>>>` held in `AppState`, decoupled
+  from the background demo ticker (which owns its own world and is mutable only
+  via the whole-world replacement channel). This gives clean request/response
+  semantics without racing the broadcast loop, and keeps the live demo
+  backwards-compatible.
+- **Reuse.** Responses serialize the existing `SimulationSnapshot` /
+  `AgentSnapshot` DTOs (camelCase, `schema_version`) — no new wire types.
+- **Errors.** `ApiError` (`thiserror` + axum `IntoResponse`): invalid config ->
+  400, step/render before reset -> 409, out-of-range action -> 422, lock
+  poisoning / internal -> 500. No hard-coded sim params — `reset` falls back to
+  `ForgeConfig::default()` for omitted fields.
+- **Single-agent gym contract.** Like `ForgeEnv`/Gymnasium, this surface is
+  single-agent: `step` takes one action and returns one reward, so `reset`
+  rejects `num_agents > 1` with a 400 (multi-agent control is served by the
+  PettingZoo / WebSocket surfaces). The session world's `comm_vocab_size` is
+  pinned to the REST action decoder so valid action ids are never spuriously
+  rejected.
+
+#### 3.6.2 WebAssembly demo (forge-wasm -> GitHub Pages)
+
+`crates/forge-wasm` exposes the same reset/step/render surface to the browser
+via `wasm-bindgen` (`ForgeWasmEnv`). `.github/workflows/gh-pages.yml` builds it
+with `wasm-pack` and deploys the static `web/` client — a fully client-side,
+server-free demo. The REST and WASM surfaces deliberately mirror each other so
+the same observation/action JSON shapes work in both.
+
 ### 3.7 Python Bindings — Data Flow
 
 ```
@@ -844,6 +882,46 @@ The core engine executes a deterministic pipeline of systems every tick.
 ```
 
 This control-plane split is intentional: branch-specific coverage work focuses on keeping config resolution, optional imports, and fallback behavior stable even when native extensions or heavyweight ML packages are unavailable.
+
+#### 3.8.1 Swarm Coordination — Cooperative CTDE MCTS (v0.5.0)
+
+`forge-mangomas::swarm` provides multi-agent coordination on top of the
+single-agent planner in `forge-agent` (no dependency cycle: `forge-mangomas`
+already depends on `forge-agent`; the reuse is upward).
+
+```
+  SwarmProtocol (trait)                       ActionPolicy (batch_runner)
+    ├── name() / swarm_size()                    └── select_action(obs, idx)
+    ├── coordinate(obs, comm)        ┌──────────────────┐   (cheap cache lookup)
+    └── coordinate_stateful(         │ Cooperative      │
+          world, obs, comm)  ───────▶│ MctsProtocol     │── impls BOTH faces
+          (ADDITIVE default,         └────────┬─────────┘
+           delegates to coordinate)           │ plan(world)
+                                              ▼
+                                  ┌────────────────────────┐
+                                  │ JointMctsPlanner<F, C> │
+                                  │  SequentialFactored ────┼─▶ per-agent
+                                  │   (best-response @root) │   MctsSearch
+                                  │  Sampled ───────────────┼─▶ seeded Pcg64
+                                  └───────────┬─────────────┘   joint sampling
+                                              │ JointPolicyValue
+                                  ┌───────────▼─────────────┐
+                                  │ Critic: Centralized|Ind │ (CTDE value agg.)
+                                  └─────────────────────────┘
+```
+
+- **Backwards compatible.** `coordinate_stateful` is an additive default method;
+  `IndependentProtocol` (the no-coordination baseline) inherits it unchanged and
+  remains swappable with the cooperative protocol behind `dyn SwarmProtocol`.
+- **Reuse, not reinvention.** PUCT search, `MctsConfig`, `ForwardModel`, and
+  `PolicyValue` come straight from `forge-agent`. The action space is derived
+  from the world's comm vocab (no hard-coded width).
+- **Determinism.** Tree selection is pure argmax; the only RNG is a seeded
+  `Pcg64Mcg` in the `Sampled` strategy ⇒ same seed + world ⇒ identical joint
+  action. Verified by `tests/rust/integration_swarm.rs` and crate proptests.
+- **Known limit (documented).** `SequentialFactored` is simultaneous
+  best-response, not full coordinate-ascent conditioning — that would need a
+  joint forward model holding partial commitments without advancing a tick.
 
 ### 3.9 Cognitive Teacher Pipeline — Offline BC / SFT
 

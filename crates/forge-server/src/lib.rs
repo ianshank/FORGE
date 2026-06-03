@@ -7,6 +7,8 @@
 
 pub mod api;
 pub mod config;
+pub mod env;
+pub mod error;
 pub mod metrics;
 pub mod state;
 pub mod ws_handler;

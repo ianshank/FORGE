@@ -282,5 +282,5 @@ class ConstitutionalPreTrainer:
             raise RuntimeError("No trained weights. Call train() first.")
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(str(path), **self._weights)  # type: ignore[arg-type]
+        np.savez(str(path), **self._weights)
         logger.info("Constitutional weights exported to %s", path)

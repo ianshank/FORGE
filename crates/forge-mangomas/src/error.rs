@@ -44,6 +44,11 @@ pub enum MangoMasError {
     #[error("curriculum error: {0}")]
     Curriculum(String),
 
+    /// A multi-agent swarm coordination error occurred (e.g. agent/observation
+    /// count mismatch, out-of-range agent index, or joint-planner failure).
+    #[error("swarm coordination error: {0}")]
+    SwarmCoordination(String),
+
     /// A weight export error occurred.
     #[error("export error: {0}")]
     Export(String),
@@ -104,6 +109,10 @@ mod tests {
             (
                 MangoMasError::Curriculum("invalid tier".into()),
                 "curriculum error: invalid tier",
+            ),
+            (
+                MangoMasError::SwarmCoordination("agent count mismatch".into()),
+                "swarm coordination error: agent count mismatch",
             ),
             (
                 MangoMasError::Export("io error".into()),

@@ -13,6 +13,7 @@ forge-types = { workspace = true }
 forge-core = { path = "../forge-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 # Inherits version + features ("env-filter", "json") from the workspace
 # definition in the root Cargo.toml so the whole workspace builds against a
