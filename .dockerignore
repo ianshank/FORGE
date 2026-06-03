@@ -6,6 +6,9 @@ demo_ui/.mypy_cache/
 build/
 dist/
 
+# wasm-pack output for the GitHub Pages demo (built in CI from crates/forge-wasm)
+web/pkg/
+
 # Python build artefacts that should never enter the container image
 *.egg-info/
 .eggs/

@@ -1310,6 +1310,7 @@ dependencies = [
  "forge-data",
  "forge-edge",
  "forge-integration-layer",
+ "forge-mangomas",
  "forge-memory",
  "forge-proposal",
  "forge-replay",

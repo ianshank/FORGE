@@ -2,6 +2,23 @@
 
 Post-demo-UI priorities, roughly in order of impact.
 
+## v0.5.0 — non-Minecraft tracks LANDED
+
+Three non-Minecraft tracks shipped in the `0.5.0` release-hygiene cut:
+
+- **Cooperative multi-agent MCTS** (`forge-mangomas::swarm`) — fills the former
+  Phase-6 stub with a CTDE planner reusing `forge-agent`'s PUCT search
+  (`CooperativeMctsProtocol`, `JointMctsPlanner`, centralized/independent
+  critic). Regression coverage in `tests/rust/integration_swarm.rs`.
+- **REST env API** — Section 9 below (`[STATUS: LANDED v0.5.0]`).
+- **WASM GitHub Pages demo** — Section 6 below (`[STATUS: LANDED v0.5.0]`).
+
+Plus release hygiene: workspace `0.1.0` → `0.5.0` and reconciliation of stale
+tech-debt rows against verified source (see the Technical Debt table).
+
+Still deferred (documented): OpenAPI/utoipa generation for the REST surface;
+the `torch.jit.trace` → `torch.export` migration (needs a torch-capable env).
+
 ---
 
 ## Minecraft RL Integration — Remaining Phases (PR #53)
@@ -337,7 +354,13 @@ scope" + the first-real-run report's next-steps):
 - **DPO / preference-trainer consuming teacher decision traces.** The trace schema already carries `top_k_probs` / `value_hat`. A DPO-style trainer would consume them as an alternative to the current value+policy distillation loss. `[STATUS: not-started]`
 - **Replay-compression level tuning sweep.** Completed. Trajectory compression sweep benchmarks are documented in `docs/results/replay-compression-sweep.md`. `[STATUS: COMPLETED]`
 
-### 6. GitHub Pages / WASM Live Demo  `[STATUS: not-started]`
+### 6. GitHub Pages / WASM Live Demo  `[STATUS: LANDED v0.5.0]`
+
+Landed: `.github/workflows/gh-pages.yml` builds `crates/forge-wasm` with
+`wasm-pack` and deploys the static `web/` client (fully in-browser, no server).
+`forge-wasm` gained the `getrandom/js` + wasm-target wiring for the browser
+build. The REST env API (Section 9) mirrors the same reset/step/render JSON
+shapes. Original description retained below for history.
 
 Compile `forge-wasm` and serve a **fully-static** demo directly from `gh-pages`:
 
@@ -369,7 +392,14 @@ PR #45). Remaining work is the demo UI integration:
 
 ## Longer-term (v1.0)
 
-### 9. REST API for External Integrations  `[STATUS: not-started]`
+### 9. REST API for External Integrations  `[STATUS: LANDED v0.5.0]`
+
+Landed on `forge-server`: `POST /api/env/reset`, `POST /api/env/step`,
+`GET /api/env/render`, reusing the `SimulationSnapshot`/`AgentSnapshot` DTOs and
+isolating a session world (`rest_world: Arc<Mutex<Option<WorldState>>>`) from
+the live demo ticker. `ApiError` maps Config→400 / NotReset→409 /
+InvalidAction→422 / Internal→500. OpenAPI/utoipa generation remains deferred
+(documented). Original sketch retained below.
 
 Expose FORGE as a proper REST service so external tools (notebooks, ML frameworks) can drive it:
 

@@ -11,10 +11,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] — 2026-06-02
 
-Release-hygiene cut: the workspace version is moved off the stale `0.1.0`
-placeholder to `0.5.0`, reflecting the v0.2–v0.5 features already shipped
-(Minecraft RL self-improving loop, block-grid encoder, first-real-run
-validation, TypeScript migration). No functional change in this bump itself.
+Release-hygiene cut plus three non-Minecraft feature tracks. The workspace
+version is moved off the stale `0.1.0` placeholder to `0.5.0`, reflecting the
+v0.2–v0.5 features already shipped.
+
+### Added — Cooperative multi-agent MCTS (`forge-mangomas::swarm`)
+
+Fills the former Phase-6 stub with a real Centralized-Training /
+Decentralized-Execution (CTDE) planner that reuses FORGE's single-agent PUCT
+search rather than reinventing it:
+
+- `CooperativeMctsProtocol` implements the existing `SwarmProtocol` trait (a
+  drop-in swap for `IndependentProtocol`) **and** `batch_runner::ActionPolicy`.
+- Additive, non-breaking `SwarmProtocol::coordinate_stateful(world, obs, comm)`
+  default method carries the `WorldState` the search needs; `IndependentProtocol`
+  inherits the default unchanged.
+- `JointMctsPlanner` with two config-selected strategies: `SequentialFactored`
+  (per-agent search at the shared root — simultaneous best-response, linear in
+  agent count) and `Sampled` (seeded joint-action sampling scored by the
+  centralized critic). Determinism via `rand_pcg` seeding.
+- `JointPolicyValue` critic abstraction: `CentralizedCritic` (CTDE value
+  aggregation) and `IndependentCritic`, behind the `Critic` enum.
+- New `MangoMasError::SwarmCoordination` variant. No hard-coded values — the
+  action space is derived from the model's comm vocab.
+
+### Added — REST API for the environment (`forge-server`)
+
+- `POST /api/env/reset`, `POST /api/env/step`, `GET /api/env/render` over the
+  existing axum 0.7 server, reusing `SimulationSnapshot`/`AgentSnapshot` DTOs.
+- Session world isolated in `AppState` (`Arc<Mutex<Option<WorldState>>>`),
+  decoupled from the live demo ticker — request/response semantics without
+  racing the broadcast loop.
+- New `ApiError` (`thiserror` + axum `IntoResponse`): Config→400, NotReset→409,
+  InvalidAction→422, Internal→500.
+
+### Added — WebAssembly GitHub Pages demo
+
+- `.github/workflows/gh-pages.yml` builds `crates/forge-wasm` with `wasm-pack`
+  and deploys a fully client-side demo (`web/`) — no server, shareable link.
+- `crates/forge-wasm` gains the `getrandom/js` + wasm-target wiring needed for a
+  browser build.
+
+### Changed
+
+- Workspace version `0.1.0` → `0.5.0` (`Cargo.toml`, `python/forge_env`,
+  `dashboard`); `Cargo.lock` regenerated.
+- Reconciled four stale `docs/next_steps.md` rows against verified source
+  (false-positive panic!/unwrap debt, an already-fixed demo bug, and an
+  untestable-here torch deprecation).
+
+### Tests
+
+- New cross-crate regression suite `tests/rust/integration_swarm.rs`
+  (step-compatibility, determinism, baseline swappability, sampled strategy).
+- New-code coverage: `forge-server` env/error at 100%; swarm modules 88.9–96%.
 
 ### Added — Minecraft RL Integration: v0.5 Phase 2 — Production Stability, TypeScript Migration & Hardening
 
