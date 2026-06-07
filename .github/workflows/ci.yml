@@ -512,6 +512,78 @@ jobs:
           python -c "import httpx, os; port = os.environ['FORGE_DEMO_UI_PORT']; r = httpx.get(f'http://127.0.0.1:{port}/health'); assert r.status_code == 200, f'Health check failed: {r.status_code}'; print('Health check passed:', r.json())"
           kill $SERVER_PID
 
+  dashboard:
+    name: Dashboard Build + Lint + Coverage
+    runs-on: ubuntu-latest
+    # The FORGE Control Center (React/Vite) ships unit + component tests with
+    # an enforced 85% coverage threshold (configured in vite.config.ts). This
+    # job builds, lints (Biome), and runs the coverage gate on every push.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm ci
+      - name: Type-check + production build
+        working-directory: dashboard
+        run: npm run build
+      - name: Lint with Biome
+        working-directory: dashboard
+        run: npm run lint
+      - name: Run tests with 85% coverage gate
+        working-directory: dashboard
+        run: npm run test:coverage
+
+  dashboard-e2e:
+    name: Dashboard E2E + AQA (Playwright)
+    runs-on: ubuntu-latest
+    # Playwright drives the production build (vite preview) in Chromium with all
+    # backends mocked, plus axe-core accessibility scans. NON-BLOCKING for now:
+    # not in any job's needs[] and not a required check — promote once stable.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm ci
+      - name: Type-check E2E sources
+        working-directory: dashboard
+        run: npm run typecheck:e2e
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('dashboard/package-lock.json') }}
+          restore-keys: pw-${{ runner.os }}-
+      - name: Install Playwright Chromium
+        working-directory: dashboard
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E + accessibility suite
+        working-directory: dashboard
+        run: npm run test:e2e
+      - name: Upload Playwright HTML report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: dashboard/playwright-report/
+          retention-days: 7
+      - name: Upload Playwright traces/videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: dashboard/test-results/
+          retention-days: 7
+
   docker:
     name: Docker Build & Publish (GHCR + optional Docker Hub)
     runs-on: ubuntu-latest

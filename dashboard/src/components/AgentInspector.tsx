@@ -1,51 +1,71 @@
+import { MousePointerClick } from "lucide-react";
 import type { AgentState } from "../types/simulation";
+import { Badge } from "./ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { EmptyState } from "./ui/empty-state";
 
 interface AgentInspectorProps {
   agent: AgentState | null;
 }
 
+interface FieldProps {
+  label: string;
+  value: string;
+  mono?: boolean;
+  accent?: boolean;
+}
+
+function Field({ label, value, mono, accent }: FieldProps) {
+  return (
+    <div className="flex items-center justify-between border-b border-border/60 py-1.5 last:border-0">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd
+        className={`text-xs ${mono ? "font-mono" : ""} ${
+          accent ? "text-primary" : "text-foreground"
+        }`}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 /** Detailed inspector panel for a single agent. */
 export function AgentInspector({ agent }: AgentInspectorProps) {
-  if (!agent) {
-    return (
-      <div className="bg-gray-900 border border-gray-700 rounded p-3">
-        <p className="text-gray-500 text-sm italic">
-          Click an agent to inspect
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-gray-900 border border-gray-700 rounded p-3 text-sm">
-      <h3 className="font-bold text-gray-300 mb-2">
-        Agent {agent.id}
-        <span
-          className={`ml-2 text-xs px-1 rounded ${
-            agent.alive ? "bg-green-900 text-green-300" : "bg-red-900 text-red-300"
-          }`}
-        >
-          {agent.alive ? "ALIVE" : "DEAD"}
-        </span>
-      </h3>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-400">
-        <dt>Position</dt>
-        <dd className="text-white">
-          ({agent.x}, {agent.y})
-        </dd>
-        <dt>Health</dt>
-        <dd className="text-white">{agent.health}</dd>
-        <dt>Team</dt>
-        <dd className="text-white">{agent.teamId ?? "None"}</dd>
-        <dt>Vision</dt>
-        <dd className="text-white">{agent.visionRadius}</dd>
-        {agent.intent && (
-          <>
-            <dt>Intent</dt>
-            <dd className="text-yellow-400">{agent.intent}</dd>
-          </>
+    <Card>
+      <CardHeader>
+        <CardTitle>Agent Inspector</CardTitle>
+        {agent ? (
+          <Badge variant={agent.alive ? "success" : "danger"}>
+            {agent.alive ? "Alive" : "Dead"}
+          </Badge>
+        ) : null}
+      </CardHeader>
+      <CardContent>
+        {agent ? (
+          <dl>
+            <Field label="ID" value={`#${agent.id}`} mono />
+            <Field
+              label="Position"
+              value={`(${agent.x}, ${agent.y})`}
+              mono
+            />
+            <Field label="Health" value={String(agent.health)} mono />
+            <Field label="Team" value={agent.teamId?.toString() ?? "None"} />
+            <Field label="Vision" value={String(agent.visionRadius)} mono />
+            {agent.intent ? (
+              <Field label="Intent" value={agent.intent} accent />
+            ) : null}
+          </dl>
+        ) : (
+          <EmptyState
+            icon={MousePointerClick}
+            title="No agent selected"
+            description="Click an agent in the world view to inspect its state."
+          />
         )}
-      </dl>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

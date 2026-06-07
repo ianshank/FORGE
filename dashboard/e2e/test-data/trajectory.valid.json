@@ -1,0 +1,18 @@
+{
+  "format_version": 2,
+  "env_id": "minecraft",
+  "schema_id": "e2e-schema",
+  "episode_id": "ep-e2e",
+  "seed": 12345,
+  "obs_dim": 2,
+  "action_count": 3,
+  "final_reward": 4,
+  "started_at": "2026-01-15T10:30:00Z",
+  "ended_at": "2026-01-15T10:35:00Z",
+  "steps": [
+    { "tick": 0, "obs": [0.1, 0.2], "action_id": 0, "policy_target": [0.8, 0.1, 0.1], "value_target": 0.5, "reward": 1, "terminated": false, "truncated": false },
+    { "tick": 1, "obs": [0.2, 0.3], "action_id": 1, "policy_target": [0.1, 0.8, 0.1], "value_target": 1.0, "reward": 1, "terminated": false, "truncated": false },
+    { "tick": 2, "obs": [0.3, 0.4], "action_id": 2, "policy_target": [0.1, 0.1, 0.8], "value_target": 1.5, "reward": 1, "terminated": false, "truncated": false },
+    { "tick": 3, "obs": [0.4, 0.5], "action_id": 0, "policy_target": [0.9, 0.05, 0.05], "value_target": 2.0, "reward": 1, "terminated": true, "truncated": false }
+  ]
+}

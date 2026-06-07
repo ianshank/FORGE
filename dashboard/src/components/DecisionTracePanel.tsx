@@ -1,4 +1,8 @@
+import { ListTree } from "lucide-react";
 import type { DecisionTraceEntry } from "../types/simulation";
+import { Badge } from "./ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { EmptyState } from "./ui/empty-state";
 
 interface DecisionTracePanelProps {
   traces: DecisionTraceEntry[];
@@ -10,37 +14,53 @@ export function DecisionTracePanel({
   traces,
   maxEntries = 100,
 }: DecisionTracePanelProps) {
-  const displayed = traces.slice(-maxEntries);
+  const displayed = traces.slice(-maxEntries).reverse();
 
   return (
-    <div className="bg-gray-900 border border-gray-700 rounded p-3 h-full overflow-hidden flex flex-col">
-      <h3 className="text-sm font-bold text-gray-300 mb-2">
-        Decision Traces ({traces.length})
-      </h3>
-      <div className="flex-1 overflow-y-auto text-xs font-mono space-y-1">
+    <Card className="flex h-full flex-col">
+      <CardHeader>
+        <CardTitle>Decision Traces</CardTitle>
+        <Badge variant="outline" className="font-mono">
+          {traces.length}
+        </Badge>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-y-auto p-0">
         {displayed.length === 0 ? (
-          <p className="text-gray-500 italic">No traces yet</p>
+          <EmptyState
+            icon={ListTree}
+            title="No traces yet"
+            description="MCTS decision traces stream here as agents act."
+          />
         ) : (
-          displayed.map((trace, i) => (
-            <div
-              key={`${trace.tick}-${trace.agentId}-${i}`}
-              className="flex items-center gap-2 text-gray-400 hover:bg-gray-800 px-1 rounded"
-            >
-              <span className="text-gray-600 w-12">t={trace.tick}</span>
-              <span className="text-blue-400 w-8">A{trace.agentId}</span>
-              <span className="text-yellow-400 w-16 truncate">
-                {trace.intentLabel}
-              </span>
-              <span className="text-green-400 w-12">
-                {(trace.confidence * 100).toFixed(0)}%
-              </span>
-              <span className="text-gray-500 w-10">
-                d={trace.searchDepth}
-              </span>
-            </div>
-          ))
+          <ul
+            data-testid="decision-trace-list"
+            className="divide-y divide-border/60 font-mono text-xs"
+          >
+            {displayed.map((trace, i) => (
+              <li
+                key={`${trace.tick}-${trace.agentId}-${i}`}
+                className="flex items-center gap-3 px-4 py-1.5 transition-colors hover:bg-accent/40"
+              >
+                <span className="w-14 shrink-0 text-muted-foreground">
+                  t{trace.tick}
+                </span>
+                <span className="w-8 shrink-0 text-primary">
+                  A{trace.agentId}
+                </span>
+                <span className="flex-1 truncate text-warning">
+                  {trace.intentLabel}
+                </span>
+                <span className="w-10 shrink-0 text-right text-success">
+                  {(trace.confidence * 100).toFixed(0)}%
+                </span>
+                <span className="w-10 shrink-0 text-right text-muted-foreground">
+                  d{trace.searchDepth}
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

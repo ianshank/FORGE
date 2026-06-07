@@ -1,66 +1,93 @@
-import { useState } from "react";
-import { SimulationCanvas } from "./components/SimulationCanvas";
-import { DecisionTracePanel } from "./components/DecisionTracePanel";
-import { MetricsDashboard } from "./components/MetricsDashboard";
-import { ScenarioControls } from "./components/ScenarioControls";
-import { AgentInspector } from "./components/AgentInspector";
-import { useSimulationState } from "./hooks/useSimulationState";
-import type {
-  AgentState,
-  TrainingMetrics,
-} from "./types/simulation";
+import { lazy, Suspense, type ReactNode } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AppShell } from "./components/layout/AppShell";
+import { Skeleton } from "./components/ui/skeleton";
+import { SimulationProvider } from "./context/SimulationContext";
 
-/** Root application component — FORGE Dashboard. */
-export function App() {
-  const { state, connectionStatus } = useSimulationState();
-  const [selectedAgent, _setSelectedAgent] = useState<AgentState | null>(null);
-  const [metricsHistory] = useState<TrainingMetrics[]>([]);
+// Route-level code splitting keeps heavy deps (Recharts) off the initial bundle.
+const LivePage = lazy(() =>
+  import("./pages/LivePage").then((m) => ({ default: m.LivePage })),
+);
+const TrainingPage = lazy(() =>
+  import("./pages/TrainingPage").then((m) => ({ default: m.TrainingPage })),
+);
+const RunsPage = lazy(() =>
+  import("./pages/RunsPage").then((m) => ({ default: m.RunsPage })),
+);
+const ReplayPage = lazy(() =>
+  import("./pages/ReplayPage").then((m) => ({ default: m.ReplayPage })),
+);
+const DemosPage = lazy(() =>
+  import("./pages/DemosPage").then((m) => ({ default: m.DemosPage })),
+);
+const SettingsPage = lazy(() =>
+  import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
 
+interface PageMeta {
+  title: string;
+  subtitle: string;
+}
+
+/** Per-route top-bar metadata. */
+const PAGE_META = {
+  live: { title: "Live", subtitle: "Real-time simulation state and agents" },
+  training: { title: "Training", subtitle: "Metric curves and run comparison" },
+  runs: { title: "Runs", subtitle: "Training and evaluation history" },
+  replay: { title: "Replay", subtitle: "Scrub recorded episode trajectories" },
+  demos: { title: "Demos", subtitle: "Run FORGE engine demos live" },
+  settings: { title: "Settings", subtitle: "Dashboard configuration" },
+} satisfies Record<string, PageMeta>;
+
+/** Loading fallback shown while a route chunk is fetched. */
+function PageFallback() {
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
-      {/* Header */}
-      <header className="border-b border-gray-800 px-4 py-2 flex items-center justify-between">
-        <h1 className="text-lg font-bold">FORGE Dashboard</h1>
-        <div className="flex items-center gap-3 text-sm">
-          <span
-            className={`inline-block w-2 h-2 rounded-full ${connectionStatus === "connected"
-                ? "bg-green-500"
-                : connectionStatus === "connecting"
-                  ? "bg-yellow-500"
-                  : "bg-red-500"
-              }`}
-          />
-          <span className="text-gray-400">
-            {connectionStatus === "connected"
-              ? `Tick ${state?.tick ?? 0} | ${state?.agents.length ?? 0} agents`
-              : connectionStatus}
-          </span>
-        </div>
-      </header>
-
-      {/* Controls */}
-      <div className="px-4 py-2">
-        <ScenarioControls />
-      </div>
-
-      {/* Main content */}
-      <div className="flex-1 flex gap-4 px-4 pb-4 overflow-hidden">
-        {/* Left: Canvas + Agent Inspector */}
-        <div className="flex-1 flex flex-col gap-4 min-w-0">
-          <SimulationCanvas state={state} />
-          <AgentInspector agent={selectedAgent} />
-        </div>
-
-        {/* Right: Decision Traces */}
-        <div className="w-80 flex-shrink-0">
-          <DecisionTracePanel traces={[]} />
-        </div>
-      </div>
-
-      {/* Bottom: Metrics */}
-      <div className="px-4 pb-4">
-        <MetricsDashboard history={metricsHistory} />
-      </div>
+    <div className="space-y-4">
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-64 w-full" />
     </div>
+  );
+}
+
+/** Wrap a page in the app shell with its title metadata. */
+function Page({
+  id,
+  children,
+}: {
+  id: keyof typeof PAGE_META;
+  children: ReactNode;
+}) {
+  const meta = PAGE_META[id];
+  return (
+    <AppShell title={meta.title} subtitle={meta.subtitle}>
+      <Suspense fallback={<PageFallback />}>{children}</Suspense>
+    </AppShell>
+  );
+}
+
+/** Root application component — FORGE Control Center. */
+export function App() {
+  return (
+    <SimulationProvider>
+      <Routes>
+        <Route path="/" element={<Navigate to="/live" replace />} />
+        <Route path="/live" element={<Page id="live"><LivePage /></Page>} />
+        <Route
+          path="/training"
+          element={<Page id="training"><TrainingPage /></Page>}
+        />
+        <Route path="/runs" element={<Page id="runs"><RunsPage /></Page>} />
+        <Route
+          path="/replay"
+          element={<Page id="replay"><ReplayPage /></Page>}
+        />
+        <Route path="/demos" element={<Page id="demos"><DemosPage /></Page>} />
+        <Route
+          path="/settings"
+          element={<Page id="settings"><SettingsPage /></Page>}
+        />
+        <Route path="*" element={<Navigate to="/live" replace />} />
+      </Routes>
+    </SimulationProvider>
   );
 }

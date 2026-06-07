@@ -131,9 +131,10 @@ tarpaulin-report.json
 # wasm-pack output for the GitHub Pages demo (built in CI from crates/forge-wasm)
 web/pkg/
 
-# Playwright artefacts (demo_ui/tests/test_e2e_browser.py)
+# Playwright artefacts (demo_ui/tests/test_e2e_browser.py + dashboard/e2e)
 playwright-report/
 .playwright/
+blob-report/
 
 # Minecraft integration runtime artefacts
 # - replays/minecraft/  : TrajectoryV2 JSONL files written by forge-mc-runner

@@ -10,6 +10,8 @@ export interface DashboardConfig {
   wsUrl: string;
   /** Base URL for REST API calls. */
   apiBaseUrl: string;
+  /** Base URL for the demo_ui FastAPI backend (SSE demo streaming). */
+  demoApiBaseUrl: string;
   /** Polling interval for metrics (ms). */
   metricsPollingInterval: number;
   /** Maximum trace entries to keep in memory. */
@@ -49,6 +51,7 @@ function parseIntWithDefault(raw: string | undefined, fallback: number): number 
 export const DEFAULT_CONFIG: DashboardConfig = {
   wsUrl: import.meta.env.VITE_WS_URL ?? "ws://localhost:8080/ws",
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080",
+  demoApiBaseUrl: import.meta.env.VITE_DEMO_API_BASE_URL ?? "http://localhost:8000",
   metricsPollingInterval: clamp(
     parseIntWithDefault(import.meta.env.VITE_METRICS_INTERVAL, 2000),
     MIN_POLLING_INTERVAL,
