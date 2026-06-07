@@ -1,0 +1,11 @@
+{
+  "format_version": 2,
+  "env_id": "minecraft",
+  "schema_id": "e2e-schema",
+  "episode_id": "ep-empty",
+  "obs_dim": 2,
+  "action_count": 3,
+  "final_reward": 0,
+  "started_at": "2026-01-15T10:30:00Z",
+  "steps": []
+}

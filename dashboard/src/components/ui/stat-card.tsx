@@ -34,6 +34,8 @@ export function StatCard({
 }: StatCardProps) {
   return (
     <div
+      data-testid="stat-card"
+      data-stat-label={label}
       className={cn(
         "rounded-lg border border-border bg-card px-4 py-3",
         className,

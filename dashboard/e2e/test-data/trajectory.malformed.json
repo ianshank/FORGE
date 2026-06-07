@@ -1,0 +1,4 @@
+{
+  "env_id": "minecraft",
+  "note": "intentionally missing the required `steps` array"
+}

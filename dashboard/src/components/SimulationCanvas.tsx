@@ -111,6 +111,7 @@ export function SimulationCanvas({
           <canvas
             ref={canvasRef}
             onClick={handleClick}
+            data-testid="world-canvas"
             className="max-w-full rounded border border-border"
             style={{
               imageRendering: "pixelated",

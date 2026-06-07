@@ -32,7 +32,10 @@ export function DecisionTracePanel({
             description="MCTS decision traces stream here as agents act."
           />
         ) : (
-          <ul className="divide-y divide-border/60 font-mono text-xs">
+          <ul
+            data-testid="decision-trace-list"
+            className="divide-y divide-border/60 font-mono text-xs"
+          >
             {displayed.map((trace, i) => (
               <li
                 key={`${trace.tick}-${trace.agentId}-${i}`}

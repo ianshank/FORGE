@@ -189,6 +189,7 @@ export function DemosPage() {
           ) : (
             <div
               ref={outputRef}
+              data-testid="demo-output"
               className="h-full overflow-y-auto bg-background/60 p-4 font-mono text-xs leading-relaxed text-foreground/90"
             >
               {lines.map((line, i) => (

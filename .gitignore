@@ -128,9 +128,10 @@ cobertura.xml
 tarpaulin-report.html
 tarpaulin-report.json
 
-# Playwright artefacts (demo_ui/tests/test_e2e_browser.py)
+# Playwright artefacts (demo_ui/tests/test_e2e_browser.py + dashboard/e2e)
 playwright-report/
 .playwright/
+blob-report/
 
 # Minecraft integration runtime artefacts
 # - replays/minecraft/  : TrajectoryV2 JSONL files written by forge-mc-runner
