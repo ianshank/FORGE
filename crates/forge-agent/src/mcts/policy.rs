@@ -27,7 +27,7 @@ pub struct PolicyValueOutput {
 }
 
 /// Uniform random policy: all actions get equal probability.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct UniformPolicy {
     action_space: u32,
 }
@@ -51,7 +51,7 @@ impl PolicyValue for UniformPolicy {
 }
 
 /// Heuristic policy: gives higher probability to movement actions.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HeuristicPolicy {
     action_space: u32,
 }

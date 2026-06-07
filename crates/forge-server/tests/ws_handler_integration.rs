@@ -44,6 +44,7 @@ fn build_state() -> (AppState, broadcast::Sender<WsMessage>) {
         metrics_collector: Arc::new(Mutex::new(MetricsCollector::default())),
         start_time: Instant::now(),
         world_replacement_tx: Arc::new(replacement_tx),
+        rest_world: forge_server::env::new_session_world(),
     };
     (state, tx)
 }

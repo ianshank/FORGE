@@ -21,5 +21,11 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 wasm-bindgen = "0.2"
 
+# On wasm32 the transitive `getrandom` (via rand 0.8 → rand_core) needs the
+# "js" feature to source entropy from the browser Crypto API. This block only
+# applies to wasm builds, so native builds are unaffected.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

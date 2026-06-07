@@ -1070,7 +1070,7 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
 name = "forge-agent"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "forge-core",
@@ -1089,7 +1089,7 @@ dependencies = [
 
 [[package]]
 name = "forge-bench"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "criterion",
  "dhat",
@@ -1106,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "forge-civ"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-types",
  "proptest",
@@ -1119,7 +1119,7 @@ dependencies = [
 
 [[package]]
 name = "forge-cloud"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "bincode",
  "chrono",
@@ -1140,7 +1140,7 @@ dependencies = [
 
 [[package]]
 name = "forge-cognitive"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-memory",
  "forge-types",
@@ -1154,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "forge-core"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "bincode",
  "fixed",
@@ -1175,7 +1175,7 @@ dependencies = [
 
 [[package]]
 name = "forge-data"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-agent",
  "forge-core",
@@ -1196,7 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "forge-edge"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1212,7 +1212,7 @@ dependencies = [
 
 [[package]]
 name = "forge-env"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "proptest",
  "serde",
@@ -1223,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "forge-env-forge"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-core",
  "forge-env",
@@ -1236,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "forge-env-mc"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-env",
  "proptest",
@@ -1253,7 +1253,7 @@ dependencies = [
 
 [[package]]
 name = "forge-eval"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1284,7 +1284,7 @@ dependencies = [
 
 [[package]]
 name = "forge-integration-layer"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-cognitive",
  "forge-memory",
@@ -1300,7 +1300,7 @@ dependencies = [
 
 [[package]]
 name = "forge-integration-tests"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "bincode",
  "forge-agent",
@@ -1310,6 +1310,7 @@ dependencies = [
  "forge-data",
  "forge-edge",
  "forge-integration-layer",
+ "forge-mangomas",
  "forge-memory",
  "forge-proposal",
  "forge-replay",
@@ -1326,7 +1327,7 @@ dependencies = [
 
 [[package]]
 name = "forge-mangomas"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-agent",
  "forge-core",
@@ -1345,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "forge-mc-runner"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1370,7 +1371,7 @@ dependencies = [
 
 [[package]]
 name = "forge-memory"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "bincode",
  "forge-types",
@@ -1383,7 +1384,7 @@ dependencies = [
 
 [[package]]
 name = "forge-procgen"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-types",
  "proptest",
@@ -1396,7 +1397,7 @@ dependencies = [
 
 [[package]]
 name = "forge-proposal"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-types",
  "proptest",
@@ -1409,7 +1410,7 @@ dependencies = [
 
 [[package]]
 name = "forge-python"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-core",
  "forge-task",
@@ -1424,7 +1425,7 @@ dependencies = [
 
 [[package]]
 name = "forge-replay"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "arrow",
  "bincode",
@@ -1446,7 +1447,7 @@ dependencies = [
 
 [[package]]
 name = "forge-scenario"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-types",
  "proptest",
@@ -1459,7 +1460,7 @@ dependencies = [
 
 [[package]]
 name = "forge-server"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "axum",
  "forge-core",
@@ -1469,6 +1470,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite",
  "toml",
@@ -1479,7 +1481,7 @@ dependencies = [
 
 [[package]]
 name = "forge-social"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-types",
  "proptest",
@@ -1491,7 +1493,7 @@ dependencies = [
 
 [[package]]
 name = "forge-task"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-types",
  "proptest",
@@ -1504,7 +1506,7 @@ dependencies = [
 
 [[package]]
 name = "forge-types"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "bincode",
  "fixed",
@@ -1519,10 +1521,11 @@ dependencies = [
 
 [[package]]
 name = "forge-wasm"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-core",
  "forge-types",
+ "getrandom 0.2.17",
  "serde",
  "serde_json",
  "tracing",
@@ -1532,7 +1535,7 @@ dependencies = [
 
 [[package]]
 name = "forge-worldgen"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "forge-types",
  "proptest",
