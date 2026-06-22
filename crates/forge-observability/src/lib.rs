@@ -122,6 +122,10 @@ pub fn try_init_tracing(
     opts: TracingOptions,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     let filter = opts.build_filter();
+    // `try_init()` already yields `Result<(), Box<dyn Error + Send + Sync>>` in
+    // this tracing-subscriber version, so the match expression is the function
+    // result directly (adding a `.map_err(Into::into)` would be a useless
+    // same-type conversion that clippy rejects under `-D warnings`).
     match opts.resolve_format() {
         LogFormat::Json => tracing_subscriber::fmt()
             .json()
@@ -133,10 +137,6 @@ pub fn try_init_tracing(
             .with_env_filter(filter)
             .try_init(),
     }
-    // `try_init()` yields `Result<(), TryInitError>`; convert the error into
-    // the boxed trait object this function exposes so callers don't depend on
-    // the concrete subscriber error type.
-    .map_err(Into::into)
 }
 
 #[cfg(test)]
