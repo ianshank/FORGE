@@ -1,13 +1,49 @@
 //! REST API route definitions and handler functions.
 
-use axum::extract::State;
+use axum::extract::{Query, State};
+use axum::http::HeaderMap;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
+use crate::history::{RunSummary, TraceRecord, TrainingRecord};
 use crate::state::{AgentSnapshot, SimulationSnapshot};
 use crate::ws_handler::{AppState, WsMessage};
 use crate::SCHEMA_VERSION;
+
+/// HTTP header a client may set to tag pushed metrics/traces with a run id.
+const RUN_ID_HEADER: &str = "x-forge-run-id";
+
+/// Query parameters shared by the history GET endpoints.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryQuery {
+    /// Restrict results to a single run id.
+    pub run_id: Option<String>,
+    /// Maximum records to return (defaults to the server's configured limit).
+    pub limit: Option<usize>,
+}
+
+/// Resolve the effective run id for a write: `?runId=` wins, then the
+/// `X-Forge-Run-Id` header, then the server-session run id on `AppState`.
+fn resolve_run_id(state: &AppState, headers: &HeaderMap, query: &HistoryQuery) -> String {
+    if let Some(id) = query.run_id.as_deref().filter(|s| !s.is_empty()) {
+        return id.to_string();
+    }
+    if let Some(id) = headers
+        .get(RUN_ID_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| !s.is_empty())
+    {
+        return id.to_string();
+    }
+    state.run_id.to_string()
+}
+
+/// Clamp a request's `limit` to the configured default when absent.
+fn effective_limit(state: &AppState, query: &HistoryQuery) -> usize {
+    query.limit.unwrap_or(state.history_query_limit)
+}
 
 /// Response payload for the `/api/config` endpoint.
 #[derive(Debug, Serialize)]
@@ -172,13 +208,23 @@ pub async fn remix_handler(
 #[instrument(skip_all)]
 pub async fn training_metrics_handler(
     State(state): State<AppState>,
+    Query(query): Query<HistoryQuery>,
+    headers: HeaderMap,
     Json(metrics): Json<crate::metrics::TrainingMetrics>,
 ) -> Json<AckResponse> {
+    let run_id = resolve_run_id(&state, &headers, &query);
     tracing::debug!(
+        run_id = %run_id,
         episode = metrics.episode,
         mean_reward = metrics.mean_reward,
         "Received training metrics"
     );
+
+    // Persist first so the history reflects the sample even if no clients are
+    // currently subscribed; persistence errors are logged, never fatal.
+    if let Err(e) = state.history.append_training(&run_id, &metrics) {
+        tracing::warn!(error = %e, "Failed to persist training metrics");
+    }
 
     if state.tx.send(WsMessage::TrainingMetrics(metrics)).is_err() {
         tracing::trace!("No active subscribers for training metrics broadcast");
@@ -187,20 +233,76 @@ pub async fn training_metrics_handler(
     Json(AckResponse { accepted: true })
 }
 
+/// Returns stored training-metric history, optionally filtered by `runId` and
+/// capped at `limit` (defaults to the server's configured query limit).
+#[instrument(skip_all)]
+pub async fn training_history_handler(
+    State(state): State<AppState>,
+    Query(query): Query<HistoryQuery>,
+) -> Json<Vec<TrainingRecord>> {
+    let limit = effective_limit(&state, &query);
+    match state
+        .history
+        .training_history(query.run_id.as_deref(), limit)
+    {
+        Ok(records) => Json(records),
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to read training history");
+            Json(Vec::new())
+        }
+    }
+}
+
 /// Accepts decision trace entries from agent planning and broadcasts
 /// them to all WebSocket clients.
 #[instrument(skip_all)]
 pub async fn decision_traces_handler(
     State(state): State<AppState>,
+    Query(query): Query<HistoryQuery>,
+    headers: HeaderMap,
     Json(traces): Json<Vec<crate::metrics::DecisionTraceEntry>>,
 ) -> Json<AckResponse> {
-    tracing::debug!(count = traces.len(), "Received decision traces");
+    let run_id = resolve_run_id(&state, &headers, &query);
+    tracing::debug!(run_id = %run_id, count = traces.len(), "Received decision traces");
+
+    if let Err(e) = state.history.append_traces(&run_id, &traces) {
+        tracing::warn!(error = %e, "Failed to persist decision traces");
+    }
 
     if state.tx.send(WsMessage::DecisionTraces(traces)).is_err() {
         tracing::trace!("No active subscribers for decision traces broadcast");
     }
 
     Json(AckResponse { accepted: true })
+}
+
+/// Returns stored decision-trace history, optionally filtered by `runId` and
+/// capped at `limit` (defaults to the server's configured query limit).
+#[instrument(skip_all)]
+pub async fn traces_history_handler(
+    State(state): State<AppState>,
+    Query(query): Query<HistoryQuery>,
+) -> Json<Vec<TraceRecord>> {
+    let limit = effective_limit(&state, &query);
+    match state.history.traces_history(query.run_id.as_deref(), limit) {
+        Ok(records) => Json(records),
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to read trace history");
+            Json(Vec::new())
+        }
+    }
+}
+
+/// Returns a summary of all runs seen across stored training/trace history.
+#[instrument(skip_all)]
+pub async fn runs_handler(State(state): State<AppState>) -> Json<Vec<RunSummary>> {
+    match state.history.runs() {
+        Ok(runs) => Json(runs),
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to read run summaries");
+            Json(Vec::new())
+        }
+    }
 }
 
 /// Simple acknowledgement response for POST endpoints.
@@ -253,6 +355,16 @@ mod tests {
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("schemaVersion"));
+    }
+
+    #[test]
+    fn test_history_query_deserializes_camel_case() {
+        let q: HistoryQuery = serde_json::from_str(r#"{"runId":"r1","limit":5}"#).unwrap();
+        assert_eq!(q.run_id.as_deref(), Some("r1"));
+        assert_eq!(q.limit, Some(5));
+        // Both fields are optional.
+        let empty: HistoryQuery = serde_json::from_str("{}").unwrap();
+        assert!(empty.run_id.is_none() && empty.limit.is_none());
     }
 
     #[test]

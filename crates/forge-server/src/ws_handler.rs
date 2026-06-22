@@ -119,6 +119,15 @@ pub struct AppState {
     /// REST session world, decoupled from the demo broadcast loop
     /// (see [`crate::env`]). `None` until `/api/env/reset` is called.
     pub rest_world: crate::env::SessionWorld,
+    /// Persistent store for training metrics and decision traces (see
+    /// [`crate::history`]). Shared behind the trait object so the backend
+    /// (JSONL today) can be swapped without touching handlers.
+    pub history: Arc<dyn crate::history::HistoryStore>,
+    /// Server-session run id used when a request supplies none (the
+    /// `X-Forge-Run-Id` header or `?runId=` query override it per request).
+    pub run_id: Arc<str>,
+    /// Default cap on records returned by the history GET endpoints.
+    pub history_query_limit: usize,
 }
 
 /// Serializes a `WsMessage` to a JSON string for sending over WebSocket.

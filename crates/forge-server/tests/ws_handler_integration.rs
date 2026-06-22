@@ -45,6 +45,9 @@ fn build_state() -> (AppState, broadcast::Sender<WsMessage>) {
         start_time: Instant::now(),
         world_replacement_tx: Arc::new(replacement_tx),
         rest_world: forge_server::env::new_session_world(),
+        history: Arc::new(forge_server::history::InMemoryHistoryStore::new(1000)),
+        run_id: Arc::from("test-run"),
+        history_query_limit: 500,
     };
     (state, tx)
 }

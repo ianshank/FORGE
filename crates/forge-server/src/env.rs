@@ -209,6 +209,9 @@ mod tests {
             start_time: Instant::now(),
             world_replacement_tx: Arc::new(world_tx),
             rest_world: new_session_world(),
+            history: Arc::new(crate::history::InMemoryHistoryStore::new(100)),
+            run_id: Arc::from("test-run"),
+            history_query_limit: 500,
         }
     }
 

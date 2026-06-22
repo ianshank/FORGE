@@ -18,7 +18,8 @@ use tracing::{info, warn};
 
 use forge_server::api::{
     build_snapshot_from_world, config_handler, decision_traces_handler, health_handler,
-    metrics_handler, remix_handler, training_metrics_handler,
+    metrics_handler, remix_handler, runs_handler, traces_history_handler, training_history_handler,
+    training_metrics_handler,
 };
 use forge_server::config::ServerConfig;
 use forge_server::metrics::MetricsCollector;
@@ -42,6 +43,30 @@ async fn main() {
     let (tx, _rx) = broadcast::channel::<WsMessage>(config.broadcast_capacity);
     let (world_tx, world_rx) = tokio::sync::mpsc::channel::<forge_core::WorldState>(1);
 
+    // Persistent training/trace history. A failure to open the store is
+    // non-fatal: fall back to an in-memory store so the server still serves.
+    let history: Arc<dyn forge_server::history::HistoryStore> =
+        match forge_server::history::JsonlHistoryStore::open(
+            &config.history_dir,
+            config.history_retention,
+        ) {
+            Ok(store) => Arc::new(store),
+            Err(e) => {
+                warn!(error = %e, "Failed to open history store; using in-memory fallback");
+                Arc::new(forge_server::history::InMemoryHistoryStore::new(
+                    config.history_retention,
+                ))
+            }
+        };
+    // Server-session run id (ms since epoch) used when a request supplies none.
+    let run_id: Arc<str> = Arc::from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis().to_string())
+            .unwrap_or_else(|_| "0".to_string())
+            .as_str(),
+    );
+
     let app_state = AppState {
         tx: tx.clone(),
         subscriptions: Arc::new(Mutex::new(SubscriptionManager::new())),
@@ -51,6 +76,9 @@ async fn main() {
         start_time: Instant::now(),
         world_replacement_tx: Arc::new(world_tx),
         rest_world: forge_server::env::new_session_world(),
+        history,
+        run_id,
+        history_query_limit: config.history_query_limit,
     };
 
     // Create initial world
@@ -104,7 +132,13 @@ async fn main() {
         .route("/api/metrics", get(metrics_handler))
         .route("/api/scenario/remix", post(remix_handler))
         .route("/api/training-metrics", post(training_metrics_handler))
+        .route(
+            "/api/training-metrics/history",
+            get(training_history_handler),
+        )
         .route("/api/decision-traces", post(decision_traces_handler))
+        .route("/api/decision-traces/history", get(traces_history_handler))
+        .route("/api/runs", get(runs_handler))
         .route("/api/env/reset", post(forge_server::env::reset_handler))
         .route("/api/env/step", post(forge_server::env::step_handler))
         .route("/api/env/render", get(forge_server::env::render_handler))
