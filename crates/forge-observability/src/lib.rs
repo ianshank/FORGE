@@ -133,6 +133,10 @@ pub fn try_init_tracing(
             .with_env_filter(filter)
             .try_init(),
     }
+    // `try_init()` yields `Result<(), TryInitError>`; convert the error into
+    // the boxed trait object this function exposes so callers don't depend on
+    // the concrete subscriber error type.
+    .map_err(Into::into)
 }
 
 #[cfg(test)]

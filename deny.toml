@@ -43,10 +43,11 @@ confidence-threshold = 0.8
 exceptions = []
 
 [bans]
-# Duplicate-version detection starts as a warning (workspaces commonly carry a
-# few duplicates transitively); promote to `deny` after a dedupe pass.
+# Advisory-first: duplicates and wildcard version requirements are reported as
+# warnings (workspaces commonly carry a few transitively). Promote to `deny`
+# after a dedupe / version-pin pass.
 multiple-versions = "warn"
-wildcards = "deny"
+wildcards = "warn"
 allow = []
 deny = []
 

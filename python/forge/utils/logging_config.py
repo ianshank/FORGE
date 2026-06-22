@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+from typing import TextIO
 
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -42,7 +43,8 @@ def setup_logging_from_env(
     default_level: str = DEFAULT_LOG_LEVEL,
     default_json: bool = False,
     log_file: str | None = None,
-    stream: "object | None" = None,
+    stream: TextIO | None = None,
+    clear_existing: bool = False,
 ) -> None:
     """Configure logging using environment-driven defaults.
 
@@ -51,6 +53,11 @@ def setup_logging_from_env(
     ``FORGE_LOG_FORMAT=json`` (falling back to ``default_json``). ``stream``
     optionally overrides the console destination (e.g. ``sys.stderr``) so
     callers that must keep ``stdout`` clean can route logs elsewhere.
+
+    ``clear_existing`` defaults to ``False`` here (unlike :func:`setup_logging`)
+    because this helper targets CLI entrypoints: a fresh process has no root
+    handlers, and preserving any pre-installed handler keeps test capture
+    (``caplog``) working.
     """
     effective_level = level or os.environ.get(LOG_LEVEL_ENV) or default_level
     setup_logging(
@@ -58,6 +65,7 @@ def setup_logging_from_env(
         json_format=json_format_from_env(default_json),
         log_file=log_file,
         stream=stream,
+        clear_existing=clear_existing,
     )
 
 
@@ -81,7 +89,8 @@ def setup_logging(
     level: str = DEFAULT_LOG_LEVEL,
     json_format: bool = False,
     log_file: str | None = None,
-    stream: "object | None" = None,
+    stream: TextIO | None = None,
+    clear_existing: bool = True,
 ) -> None:
     """Configure the root logger for the FORGE framework.
 
@@ -91,12 +100,18 @@ def setup_logging(
         log_file: Optional path to a log file.
         stream: Optional console stream (defaults to ``sys.stderr``). Lets
             callers that must keep ``stdout`` clean route logs explicitly.
+        clear_existing: When True (default) remove pre-existing root handlers
+            before installing ours. CLI entrypoints pass ``False`` so they do
+            not tear down externally-installed handlers (e.g. pytest's
+            ``caplog``); in a fresh process the root logger has no handlers, so
+            this is behaviourally identical to clearing.
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
 
-    # Remove existing handlers
-    root_logger.handlers.clear()
+    # Remove existing handlers unless the caller opts to preserve them.
+    if clear_existing:
+        root_logger.handlers.clear()
 
     if json_format:
         formatter: logging.Formatter = JsonFormatter()

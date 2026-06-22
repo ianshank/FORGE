@@ -17,8 +17,8 @@
 /** Environment variable selecting the log output format (`text` | `json`). */
 export const LOG_FORMAT_ENV = 'FORGE_LOG_FORMAT';
 
-/** Payload accepted by a log method: a plain string or a structured object. */
-export type LogPayload = string | Record<string, unknown>;
+/** Payload accepted by a log method: a string, an Error, or a structured object. */
+export type LogPayload = string | Error | Record<string, unknown>;
 
 /** Minimal logger surface used across the bridge. */
 export interface Logger {
@@ -46,8 +46,17 @@ function emitJson(level: Level, payload: LogPayload | undefined, sink: (line: st
   };
   if (typeof payload === 'string') {
     entry.message = payload;
+  } else if (payload instanceof Error) {
+    // Error properties (message/stack/name) are non-enumerable, so Object.assign
+    // would drop them — copy them explicitly.
+    entry.message = payload.message;
+    entry.stack = payload.stack;
+    entry.name = payload.name;
   } else if (payload && typeof payload === 'object') {
-    Object.assign(entry, payload);
+    // Strip caller-supplied `timestamp`/`level` so they cannot clobber the
+    // system-generated metadata above (avoids log spoofing).
+    const { timestamp: _ts, level: _lvl, ...rest } = payload as Record<string, unknown>;
+    Object.assign(entry, rest);
   }
   sink(JSON.stringify(entry));
 }

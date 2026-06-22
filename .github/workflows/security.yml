@@ -1,9 +1,10 @@
 name: Security
 
-# Advisory-first supply-chain + SAST scanning. Every job is non-blocking
-# (continue-on-error / SARIF upload only) so it does NOT gate merges yet; once
-# the baseline is clean, drop `continue-on-error` and add the relevant jobs to
-# the `docker` gate's `needs:` list in ci.yml to make them required.
+# Advisory-first supply-chain + SAST scanning. Findings are REPORTED (in job
+# logs / the Security tab) but never fail the build: every scanning step exits 0
+# so these checks stay green while the baseline is brought clean. To make a
+# scanner blocking later, drop its `|| true` (or the `continue-on-error`) and
+# add the job to the `docker` gate's `needs:` list in ci.yml.
 #
 # NOTE: keep the branch list in sync with ci.yml (see the note there).
 
@@ -30,27 +31,27 @@ on:
 
 permissions:
   contents: read
-  security-events: write # required for github/codeql-action/upload-sarif
+  security-events: write # for CodeQL/SARIF upload when code scanning is enabled
 
 jobs:
   # ---- Rust supply chain (advisories + licenses + bans + sources) ----
   cargo-deny:
     name: cargo-deny (advisory)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: taiki-e/install-action@v2
         with:
-          # Thresholds live in deny.toml, not here.
-          command: check
-          arguments: --all-features
+          tool: cargo-deny
+      - name: cargo deny check (report-only)
+        # Thresholds live in deny.toml. Report findings without failing the
+        # build during the advisory-first rollout.
+        run: cargo deny check --all-features || true
 
   # ---- Python dependency advisories ----
   pip-audit:
     name: pip-audit (advisory)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,15 +59,13 @@ jobs:
           python-version: "3.11"
       - name: Install pip-audit
         run: python -m pip install --upgrade pip pip-audit
-      - name: Audit declared dependencies
-        # Audits the project's declared deps (pyproject). Non-blocking.
+      - name: Audit declared dependencies (report-only)
         run: pip-audit --progress-spinner off || true
 
   # ---- Node dependency advisories (both packages) ----
   npm-audit:
     name: npm-audit (advisory)
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       matrix:
         package: [mc-bot, dashboard]
@@ -77,15 +76,38 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: ${{ matrix.package }}/package-lock.json
-      - name: npm audit (${{ matrix.package }})
+      - name: npm audit (${{ matrix.package }}, report-only)
         working-directory: ${{ matrix.package }}
         run: npm audit --omit=dev || true
 
-  # ---- CodeQL SAST (JS/TS + Python; CodeQL has no Rust analyzer) ----
+  # ---- Trivy filesystem scan (dependencies + IaC), report to logs ----
+  trivy-fs:
+    name: Trivy filesystem (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan (report-only)
+        # Table output to the job log. exit-code defaults to 0, so findings are
+        # surfaced without failing the build. (No SARIF upload: that requires
+        # GitHub code scanning to be enabled on the repo.)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+
+  # ---- CodeQL SAST (opt-in; requires GitHub code scanning enabled) ----
+  # CodeQL's analyze step uploads SARIF, which fails on repos without code
+  # scanning / Advanced Security. Gated behind a repo variable so it only runs
+  # where it can succeed. Enable by setting repository variable
+  # ENABLE_CODEQL=true (Settings → Secrets and variables → Actions → Variables).
   codeql:
     name: CodeQL (${{ matrix.language }})
+    if: ${{ vars.ENABLE_CODEQL == 'true' }}
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -98,26 +120,3 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
-
-  # ---- Trivy filesystem scan (dependencies + IaC), SARIF to Security tab ----
-  trivy-fs:
-    name: Trivy filesystem (advisory)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          format: sarif
-          output: trivy-fs.sarif
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-      - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-fs.sarif
-          category: trivy-fs

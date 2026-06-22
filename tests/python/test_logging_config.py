@@ -183,9 +183,11 @@ class TestEnvDrivenSetup:
     def test_setup_logging_from_env_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """FORGE_LOG_FORMAT=json wires a JsonFormatter."""
         monkeypatch.setenv(LOG_FORMAT_ENV, "json")
-        setup_logging_from_env()
+        # clear_existing=True so the assertion is not confused by pytest's own
+        # live-logging handler (default clear_existing=False preserves it).
+        setup_logging_from_env(clear_existing=True)
         root = logging.getLogger()
-        assert isinstance(root.handlers[0].formatter, JsonFormatter)
+        assert any(isinstance(h.formatter, JsonFormatter) for h in root.handlers)
 
     def test_explicit_level_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """An explicit level argument wins over FORGE_LOG_LEVEL."""
@@ -198,3 +200,11 @@ class TestEnvDrivenSetup:
         monkeypatch.setenv(LOG_LEVEL_ENV, "WARNING")
         setup_logging_from_env()
         assert logging.getLogger().level == logging.WARNING
+
+    def test_clear_existing_false_preserves_external_handlers(self) -> None:
+        """clear_existing=False keeps externally-installed handlers (e.g. caplog)."""
+        root = logging.getLogger()
+        sentinel = logging.NullHandler()
+        root.addHandler(sentinel)
+        setup_logging_from_env(clear_existing=False)
+        assert sentinel in root.handlers
