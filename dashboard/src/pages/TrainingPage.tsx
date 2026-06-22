@@ -1,9 +1,8 @@
-import { useState } from "react";
 import { MetricsDashboard } from "../components/MetricsDashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { EmptyState } from "../components/ui/empty-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import type { TrainingMetrics } from "../types/simulation";
+import { useTrainingHistory } from "../hooks/useTrainingHistory";
 import { GitCompare } from "lucide-react";
 
 /**
@@ -11,9 +10,9 @@ import { GitCompare } from "lucide-react";
  * multi-run comparison (wired once the runs API lands).
  */
 export function TrainingPage() {
-  // Training metrics are pushed to the server by training jobs; until a
-  // history endpoint exists the dashboard renders an honest empty state.
-  const [history] = useState<TrainingMetrics[]>([]);
+  // Training metrics are persisted server-side by training jobs and polled via
+  // the history endpoint; MetricsDashboard renders an empty state when none.
+  const { history } = useTrainingHistory();
 
   return (
     <Tabs defaultValue="curves" className="space-y-2">

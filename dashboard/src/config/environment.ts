@@ -14,6 +14,12 @@ export interface DashboardConfig {
   demoApiBaseUrl: string;
   /** Polling interval for metrics (ms). */
   metricsPollingInterval: number;
+  /** Polling interval for training-metrics history (ms). */
+  trainingHistoryInterval: number;
+  /** Polling interval for the runs list (ms). */
+  runsInterval: number;
+  /** Maximum records requested from history GET endpoints. */
+  historyLimit: number;
   /** Maximum trace entries to keep in memory. */
   maxTraceEntries: number;
   /** Whether to show grid lines on the canvas. */
@@ -56,6 +62,21 @@ export const DEFAULT_CONFIG: DashboardConfig = {
     parseIntWithDefault(import.meta.env.VITE_METRICS_INTERVAL, 2000),
     MIN_POLLING_INTERVAL,
     60000,
+  ),
+  trainingHistoryInterval: clamp(
+    parseIntWithDefault(import.meta.env.VITE_TRAINING_HISTORY_INTERVAL, 5000),
+    MIN_POLLING_INTERVAL,
+    60000,
+  ),
+  runsInterval: clamp(
+    parseIntWithDefault(import.meta.env.VITE_RUNS_INTERVAL, 10000),
+    MIN_POLLING_INTERVAL,
+    60000,
+  ),
+  historyLimit: clamp(
+    parseIntWithDefault(import.meta.env.VITE_HISTORY_LIMIT, 500),
+    1,
+    10000,
   ),
   maxTraceEntries: parseIntWithDefault(import.meta.env.VITE_MAX_TRACES, 500),
   showGridLines: import.meta.env.VITE_SHOW_GRID !== "false",

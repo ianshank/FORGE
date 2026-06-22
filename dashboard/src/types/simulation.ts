@@ -75,6 +75,49 @@ export interface DecisionTraceEntry {
   intentLabel: string;
 }
 
+/**
+ * A persisted training-metrics record as returned by
+ * `GET /api/training-metrics/history` (server `TrainingRecord` wire shape).
+ */
+export interface TrainingHistoryRecord {
+  runId: string;
+  recordedAtMs: number;
+  episode: number;
+  totalSteps: number;
+  meanReward: number;
+  winRate: number;
+  curriculumDifficulty: number;
+  stepsPerSecond: number;
+  lossPolicy: number;
+  lossValue: number;
+  entropy: number;
+}
+
+/**
+ * A persisted decision-trace record as returned by
+ * `GET /api/decision-traces/history` (server `TraceRecord` wire shape).
+ */
+export interface TraceHistoryRecord {
+  runId: string;
+  recordedAtMs: number;
+  agentId: number;
+  tick: number;
+  intentLabel: string;
+  confidence: number;
+  searchDepth: number;
+  ucb1Score: number;
+  alternativesConsidered: number;
+}
+
+/** Summary of a single run as returned by `GET /api/runs`. */
+export interface RunSummary {
+  runId: string;
+  startedAtMs: number;
+  lastSeenMs: number;
+  episodes: number;
+  latestMeanReward: number;
+}
+
 /** Server health response. */
 export interface HealthResponse {
   status: string;
