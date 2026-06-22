@@ -293,6 +293,9 @@ export async function main(options: any = {}): Promise<any> {
   const bot = await botManager.createInitialBot();
   await startViewer(bot, bundle.env.viewer, options);
   const server = await startProtocolServer({ botManager, bundle, WebSocketServer, logger });
+  // Background stale-detection: reconnect if the server stops ticking while the
+  // socket stays half-open. Interval is the config-driven env.heartbeat_ms.
+  botManager.startHeartbeat(bundle.env.heartbeat_ms);
   logger.info?.(`mc-bot listening at ${bundle.env.ws_url}`);
   return { bot: botManager.getBot(), botManager, server, bundle };
 }
