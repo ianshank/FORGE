@@ -1,0 +1,12 @@
+# Grafana datasource provisioning — auto-registers the Prometheus service so
+# the stack is usable on first boot with no manual clicking.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # Compose service DNS name + the in-container Prometheus port (9090).
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
