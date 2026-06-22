@@ -1355,6 +1355,7 @@ dependencies = [
  "forge-agent",
  "forge-env",
  "forge-env-mc",
+ "forge-observability",
  "forge-replay",
  "prometheus",
  "rand 0.8.5",
@@ -1366,7 +1367,6 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1380,6 +1380,14 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "forge-observability"
+version = "0.5.0"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1464,6 +1472,7 @@ version = "0.5.0"
 dependencies = [
  "axum",
  "forge-core",
+ "forge-observability",
  "forge-types",
  "futures",
  "proptest",
@@ -1476,7 +1485,6 @@ dependencies = [
  "toml",
  "tower-http 0.5.2",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

@@ -41,6 +41,7 @@ mc-live-bundled = ["mc-live", "onnx-reload", "forge-agent/onnx-bundled"]
 forge-agent = { workspace = true }
 forge-env = { workspace = true }
 forge-env-mc = { workspace = true, optional = true }
+forge-observability = { workspace = true }
 forge-replay = { workspace = true }
 anyhow = { workspace = true }
 axum = "0.7"
@@ -55,7 +56,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync"] }
 toml = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

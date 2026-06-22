@@ -11,10 +11,10 @@ use std::time::{Duration, Instant};
 
 use axum::routing::{get, post};
 use axum::Router;
+use forge_observability::{init_tracing, TracingOptions};
 use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
-use tracing_subscriber::EnvFilter;
 
 use forge_server::api::{
     build_snapshot_from_world, config_handler, decision_traces_handler, health_handler,
@@ -28,13 +28,9 @@ use forge_server::ws_handler::{ws_upgrade_handler, AppState, SubscriptionManager
 #[tokio::main]
 async fn main() {
     // Initialize tracing first so ServerConfig::from_env() logs are captured.
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("forge_server=info,forge_core=info")),
-        )
-        .with_target(true)
-        .init();
+    // Format (text/JSON) is env-driven via FORGE_LOG_FORMAT; the default filter
+    // preserves the historical per-binary directive.
+    init_tracing(TracingOptions::new("forge_server=info,forge_core=info"));
 
     let config = ServerConfig::from_env();
 

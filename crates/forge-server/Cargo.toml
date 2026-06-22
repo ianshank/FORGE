@@ -11,14 +11,13 @@ description = "WebSocket and REST server for FORGE simulation visualization"
 [dependencies]
 forge-types = { workspace = true }
 forge-core = { path = "../forge-core" }
+forge-observability = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-# Inherits version + features ("env-filter", "json") from the workspace
-# definition in the root Cargo.toml so the whole workspace builds against a
-# single version of tracing-subscriber (no duplicate copies in the dep graph).
-tracing-subscriber = { workspace = true }
+# Tracing subscriber init is centralized in forge-observability (init_tracing),
+# so this crate no longer depends on tracing-subscriber directly.
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["ws"] }
 tower-http = { version = "0.5", features = ["cors"] }

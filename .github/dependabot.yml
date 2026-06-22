@@ -1,0 +1,54 @@
+# Dependabot — automated dependency update PRs across all four ecosystems.
+# Minor/patch updates are grouped to reduce PR noise; majors stay individual
+# so breaking bumps get reviewed in isolation.
+version: 2
+updates:
+  # Rust workspace (root Cargo.toml + Cargo.lock).
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Python (root pyproject.toml).
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      pip-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Node — mc-bot bridge.
+  - package-ecosystem: npm
+    directory: "/mc-bot"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      mc-bot-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Node — dashboard frontend.
+  - package-ecosystem: npm
+    directory: "/dashboard"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dashboard-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions used by the workflows themselves.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]

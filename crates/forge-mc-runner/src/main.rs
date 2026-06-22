@@ -19,9 +19,9 @@ use clap::Parser;
 use forge_mc_runner::{
     serve_metrics, HotReloadWatcher, MetricsRecorder, Runner, RunnerConfig, TrajectoryWriter,
 };
+use forge_observability::{init_tracing, TracingOptions};
 use tokio::runtime::Builder as TokioBuilder;
 use tracing::{error, info, warn};
-use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -64,13 +64,9 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("forge_mc_runner=info,forge_agent=info")),
-        )
-        .with_target(true)
-        .init();
+    // Format (text/JSON) is env-driven via FORGE_LOG_FORMAT; the default filter
+    // preserves the historical per-binary directive.
+    init_tracing(TracingOptions::new("forge_mc_runner=info,forge_agent=info"));
 
     let cli = Cli::parse();
 

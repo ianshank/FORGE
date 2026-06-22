@@ -1,0 +1,123 @@
+name: Security
+
+# Advisory-first supply-chain + SAST scanning. Every job is non-blocking
+# (continue-on-error / SARIF upload only) so it does NOT gate merges yet; once
+# the baseline is clean, drop `continue-on-error` and add the relevant jobs to
+# the `docker` gate's `needs:` list in ci.yml to make them required.
+#
+# NOTE: keep the branch list in sync with ci.yml (see the note there).
+
+on:
+  push:
+    branches:
+      - claude/plan-forge-environment-htAoK
+      - claude/codebase-quality-assessment-xuqwyc
+      - main
+      - master
+      - develop
+      - v0.2/implementation
+  pull_request:
+    branches:
+      - claude/plan-forge-environment-htAoK
+      - main
+      - master
+      - develop
+      - v0.2/implementation
+  schedule:
+    # Weekly re-scan so newly-published advisories surface even without a push.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write # required for github/codeql-action/upload-sarif
+
+jobs:
+  # ---- Rust supply chain (advisories + licenses + bans + sources) ----
+  cargo-deny:
+    name: cargo-deny (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          # Thresholds live in deny.toml, not here.
+          command: check
+          arguments: --all-features
+
+  # ---- Python dependency advisories ----
+  pip-audit:
+    name: pip-audit (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+      - name: Audit declared dependencies
+        # Audits the project's declared deps (pyproject). Non-blocking.
+        run: pip-audit --progress-spinner off || true
+
+  # ---- Node dependency advisories (both packages) ----
+  npm-audit:
+    name: npm-audit (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      matrix:
+        package: [mc-bot, dashboard]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
+      - name: npm audit (${{ matrix.package }})
+        working-directory: ${{ matrix.package }}
+        run: npm audit --omit=dev || true
+
+  # ---- CodeQL SAST (JS/TS + Python; CodeQL has no Rust analyzer) ----
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  # ---- Trivy filesystem scan (dependencies + IaC), SARIF to Security tab ----
+  trivy-fs:
+    name: Trivy filesystem (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
