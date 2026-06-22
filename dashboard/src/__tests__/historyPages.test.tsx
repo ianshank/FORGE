@@ -9,7 +9,9 @@ function jsonResponse(data: unknown): Response {
 }
 
 describe("RunsPage (populated)", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it("renders a table row per run when the runs API returns data", async () => {
     const runs: RunSummary[] = [
@@ -31,7 +33,9 @@ describe("RunsPage (populated)", () => {
 });
 
 describe("TrainingPage (populated)", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it("renders metric charts once history is available", async () => {
     const records: TrainingHistoryRecord[] = [

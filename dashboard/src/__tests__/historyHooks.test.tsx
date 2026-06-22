@@ -14,7 +14,9 @@ function jsonResponse(data: unknown): Response {
 }
 
 describe("useTrainingHistory", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   const record: TrainingHistoryRecord = {
     runId: "run-a",
@@ -53,7 +55,9 @@ describe("useTrainingHistory", () => {
 });
 
 describe("useRuns", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   const run: RunSummary = {
     runId: "run-a",
@@ -77,7 +81,9 @@ describe("useRuns", () => {
 });
 
 describe("useDecisionTraces", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   const trace: TraceHistoryRecord = {
     runId: "run-a",
