@@ -184,6 +184,11 @@ models/v*/
 #                                   itzg/minecraft-server world data
 docker/compose.minecraft.env
 minecraft-server-data/
+# forge-server persistent history: append-only JSONL files (training metrics +
+# decision traces) written at runtime under FORGE_SERVER_HISTORY_DIR
+# (default `forge-history/`). Operator/runtime state — never tracked.
+forge-history/
+**/forge-history/
 # Atomic-save .tmp siblings — should never persist past a successful write
 # but pin in .gitignore so a crashed save during dev doesn't get committed.
 **/.*.json.tmp

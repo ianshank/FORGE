@@ -9,6 +9,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Production-hardening & gap-closure track (PR #64): operational hardening
+(security scanning, observability, deploy limits) plus closure of the
+documented functional gaps (server history, dashboard wiring, mc-bot
+reconnect). All additions are config/env-driven with `Default`s and
+backwards-compatible.
+
+### Added — `forge-observability` crate (shared tracing init)
+
+- New lightweight crate `crates/forge-observability` exposing
+  `init_tracing(TracingOptions)` / `try_init_tracing` — the single home for
+  `tracing-subscriber` setup. Output format is env-driven via
+  `FORGE_LOG_FORMAT` (`text` default, `json` for structured aggregation);
+  `RUST_LOG` still controls the filter with a caller-supplied default.
+- `forge-server` and `forge-mc-runner` now call it, removing the duplicated
+  subscriber bootstrap and their direct `tracing-subscriber` dependency.
+
+### Added — structured logging parity (Python + Node)
+
+- `forge.utils.logging_config`: `setup_logging_from_env()` +
+  `json_format_from_env()` honour the same `FORGE_LOG_FORMAT` / `FORGE_LOG_LEVEL`
+  switch; `setup_logging()` gains an optional `stream` and `clear_existing`.
+  `forge.training.muzero_mc.cli` uses it (preserving `--log-level`/`--quiet`).
+- mc-bot `src/logger.ts`: `createLogger()` emits one JSON object per line when
+  `FORGE_LOG_FORMAT=json` (else delegates to `console`); serializes `Error`s
+  and guards system metadata from caller spoofing.
+
+### Added — supply-chain & SAST scanning (advisory-first)
+
+- `.github/workflows/security.yml`: report-only `cargo-deny`, `pip-audit`,
+  `npm-audit` (mc-bot + dashboard), Trivy filesystem scan, and CodeQL (gated
+  behind the `ENABLE_CODEQL` repo variable since SARIF upload needs GitHub code
+  scanning). Non-blocking during rollout.
+- `.github/dependabot.yml` (cargo/pip/npm×2/github-actions, weekly, grouped) +
+  workspace `deny.toml` (advisories/licenses/bans/sources thresholds).
+
+### Added — observability stack & deploy resource limits
+
+- Opt-in `monitoring` Compose profile in `docker/compose.minecraft.yml`
+  (Prometheus + Grafana) with `docker/monitoring/` scrape config, datasource +
+  dashboard provisioning, and a starter dashboard for the eight `forge_mc_*`
+  signals. Default `up` is unaffected.
+- Env-driven `deploy.resources` (CPU/memory limits + reservations) on every
+  service across `docker/docker-compose.yml`, `compose.minecraft.yml`,
+  `docker-compose.distributed.yml`; documented in `compose.minecraft.env.example`.
+
+### Added — `forge-server` persistent history + query endpoints
+
+- `crates/forge-server/src/history.rs`: a `HistoryStore` trait with a
+  file-backed `JsonlHistoryStore` (append-only, bounded retention) and an
+  `InMemoryHistoryStore` for tests. `POST /api/training-metrics` and
+  `/api/decision-traces` now persist (run id from `?runId=` →
+  `X-Forge-Run-Id` → server-session id) in addition to broadcasting.
+- New `GET /api/training-metrics/history`, `GET /api/decision-traces/history`,
+  `GET /api/runs` (camelCase, `runId`/`limit` query params). New config
+  `FORGE_SERVER_HISTORY_DIR` / `_RETENTION` / `_QUERY_LIMIT`.
+
+### Added — dashboard Training/Runs/Live wiring
+
+- `useTrainingHistory`, `useRuns`, `useDecisionTraces` hooks (mirroring
+  `useMetrics`) poll the new endpoints; `TrainingPage`, `RunsPage`, `LivePage`
+  now render real data (empty states preserved). New `VITE_TRAINING_HISTORY_INTERVAL`,
+  `VITE_RUNS_INTERVAL`, `VITE_HISTORY_LIMIT`.
+
+### Added — mc-bot background heartbeat
+
+- `BotManager.startHeartbeat()/stopHeartbeat()` wire the previously-unused
+  `EnvConfig.heartbeat_ms`: a monitor that triggers the existing coalesced
+  `reconnect()` when the bot goes stale, closing the half-open-socket gap.
+
+### Changed
+
+- Rust tracing initialization is centralized in `forge-observability` (was
+  duplicated in both binaries).
+- Dashboard slider (`components/ui/slider.tsx`) forwards `aria-label` to the
+  Radix Thumb, fixing the axe `aria-input-field-name` violation on `/live`.
+
+### Tests
+
+- Rust: `history.rs` unit tests + `tests/history_endpoints_integration.rs`
+  (driven via `tower::oneshot`); `config.rs` history-env coverage;
+  `forge-observability` unit/doctests.
+- Dashboard: `historyHooks` + `historyPages` + `environment` additions
+  (coverage ≥85%). mc-bot: `bot_manager` heartbeat + `logger` suites. Python:
+  `test_logging_config` env-helper coverage.
+
 ## [0.5.0] — 2026-06-02
 
 Release-hygiene cut plus three non-Minecraft feature tracks. The workspace

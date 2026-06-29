@@ -139,7 +139,8 @@ Shows the major containers (deployable units) within FORGE.
 | **forge-task** | Rust crate | Composable task DSL with 7 operators, 10 predicates, 6 tiers, and adaptive curriculum. |
 | **forge-agent** | Rust crate | MCTS planner with PUCT selection, forward model, baseline agents, and a LatentMctsSearch for `.onnx` PyTorch MuZero models via `ort`. |
 | **forge-procgen** | Rust crate | Procedural content generation: map generator, objective generator, team composer, curriculum controller with configurable difficulty scaling. |
-| **forge-server** | Rust crate | HTTP/WebSocket API server: REST endpoints, metrics collection, live simulation state streaming. |
+| **forge-server** | Rust crate | HTTP/WebSocket API server: REST endpoints, metrics collection, live simulation state streaming, and persistent training/trace history (`HistoryStore`/JSONL) served via `/api/{training-metrics,decision-traces}/history` + `/api/runs`. |
+| **forge-observability** | Rust crate | Shared tracing/log initialization (`init_tracing`/`TracingOptions`); env-driven text/JSON output via `FORGE_LOG_FORMAT`. No FORGE deps; reused by `forge-server` + `forge-mc-runner`. |
 | **forge-python** | Rust crate (PyO3) | Python bindings exposing `ForgeEnv` with numpy observations, GIL release during step. |
 | **forge-wasm** | Rust crate (wasm-bindgen) | WebAssembly bindings with JSON-string I/O for browser environments. |
 | **forge-bench** | Rust crate (Criterion) | Performance benchmarks: step throughput, world creation, serialization. |
@@ -261,6 +262,20 @@ The production deployment packages FORGE as three Docker containers orchestrated
 A second compose stack at `docker/compose.minecraft.yml` packages
 the Minecraft RL integration. Independent of §2.1 — runs on its
 own `docker_default` network with its own volumes.
+
+**Resource governance.** Every service declares env-driven
+`deploy.resources` (CPU/memory limits + reservations) with conservative
+defaults — all `${VAR:-default}` (e.g. `RUNNER_CPU_LIMIT`, `MC_MEM_LIMIT`),
+documented in `docker/compose.minecraft.env.example`. The GPU overlay
+(`compose.minecraft.gpu.yml`) deep-merges its device reservation into the same
+`deploy.resources` block.
+
+**Opt-in monitoring (`--profile monitoring`).** Profile-gated `prometheus`
+(`:9091`→9090) + `grafana` (`:3001`→3000) services, off by default. Prometheus
+scrapes the runner's `forge_mc_*` metrics over the compose network
+(`docker/monitoring/prometheus.yml`); Grafana auto-provisions a datasource +
+starter dashboard from `docker/monitoring/grafana/`. Requires
+`metrics_bind = "0.0.0.0"` in `runner.toml` (container-internal only).
 
 ```
   RL Operator                  Browser (prismarine-viewer)
@@ -766,6 +781,36 @@ ML frameworks) without the live WebSocket ticker:
   PettingZoo / WebSocket surfaces). The session world's `comm_vocab_size` is
   pinned to the REST action decoder so valid action ids are never spuriously
   rejected.
+
+#### 3.6.3 Persistent History Endpoints (post-0.5.0)
+
+Training jobs and planners already `POST` metrics/traces to the server for live
+broadcast; these are now also **persisted** so the dashboard can query history
+and list runs:
+
+```
+  POST /api/training-metrics    TrainingMetrics       -> {accepted:true}  (broadcast + persist)
+  POST /api/decision-traces     [DecisionTraceEntry]  -> {accepted:true}  (broadcast + persist)
+  GET  /api/training-metrics/history?runId=&limit=    -> [TrainingRecord]
+  GET  /api/decision-traces/history?runId=&limit=     -> [TraceRecord]
+  GET  /api/runs                                      -> [RunSummary]
+```
+
+- **Storage.** `crate::history::HistoryStore` trait with a file-backed
+  `JsonlHistoryStore` (append-only `training.jsonl` / `traces.jsonl` under
+  `FORGE_SERVER_HISTORY_DIR`, bounded by `FORGE_SERVER_HISTORY_RETENTION` via a
+  temp-file + rename trim) and an `InMemoryHistoryStore` for tests. The trait
+  keeps the backend swappable (e.g. SQLite later) with no handler change.
+- **Reuse / wire shape.** Records `#[serde(flatten)]` the existing
+  `TrainingMetrics` / `DecisionTraceEntry` DTOs (camelCase preserved) and add
+  `runId` + `recordedAtMs`; the dashboard types need no change.
+- **Run id.** Resolved per write as `?runId=` → `X-Forge-Run-Id` header →
+  a server-session id minted at startup (no DTO mutation, no `uuid` dep).
+- **Resilience.** Persistence errors are logged (`tracing::warn!`) and never
+  fail the request; the broadcast path is unchanged. `limit` defaults to
+  `FORGE_SERVER_HISTORY_QUERY_LIMIT`. Tests:
+  `crates/forge-server/tests/history_endpoints_integration.rs` (via
+  `tower::oneshot`) + `history.rs` unit tests.
 
 #### 3.6.2 WebAssembly demo (forge-wasm -> GitHub Pages)
 
@@ -2286,7 +2331,8 @@ Observation
 | forge-task | forge-types, rand, tracing |
 | forge-agent | forge-types, forge-core, rand, rand_pcg, serde, tracing |
 | forge-procgen | forge-types, forge-core, rand, rand_pcg, serde, tracing |
-| forge-server | forge-types, forge-core, serde, serde_json, tracing, tracing-subscriber (workspace) |
+| forge-server | forge-types, forge-core, forge-observability, serde, serde_json, thiserror, tracing, axum, tower-http (tracing-subscriber init is now delegated to forge-observability) |
+| forge-observability | tracing, tracing-subscriber (no FORGE deps) |
 | forge-python | forge-types, forge-core, forge-worldgen, forge-task, pyo3, numpy, serde_json, tracing |
 | forge-wasm | forge-types, forge-core, serde, serde_json, wasm-bindgen, tracing |
 | forge-bench | forge-types, forge-core, rand, rand_pcg, criterion |

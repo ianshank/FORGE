@@ -180,3 +180,21 @@ ruff format --check .
 # Type safety
 mypy python/
 ```
+
+## 📊 Observability & Server Infrastructure
+
+### Structured logging (`FORGE_LOG_FORMAT`)
+One env var flips text↔JSON logging across all three languages — keep them in lock-step:
+- **Rust**: binaries call `forge_observability::init_tracing(TracingOptions::new("<default-filter>"))` — never re-implement `tracing_subscriber` setup. `RUST_LOG` overrides the filter.
+- **Python**: `forge.utils.logging_config.setup_logging_from_env()` (honours `FORGE_LOG_FORMAT` + `FORGE_LOG_LEVEL`).
+- **Node (mc-bot)**: inject `createLogger()` at the wiring seam (no static side-effects).
+- Values: `text` (default) or `json`. Unknown values fall back to `text`.
+
+### `forge-server` REST + persistent history
+- Run: `FORGE_SERVER_HISTORY_DIR=/tmp/forge-history cargo run -p forge-server`.
+- Writes append-only JSONL under `FORGE_SERVER_HISTORY_DIR` (default `forge-history/`, gitignored). Storage is behind the `HistoryStore` trait (`JsonlHistoryStore` default, `InMemoryHistoryStore` for tests) — swap impls without touching handlers.
+- Endpoints: `POST /api/training-metrics`, `POST /api/decision-traces` (persist + broadcast); `GET /api/training-metrics/history`, `GET /api/decision-traces/history`, `GET /api/runs` (`runId`/`limit` query params). Run id: `?runId=` → `X-Forge-Run-Id` header → server-session id.
+- Config knobs: `FORGE_SERVER_HISTORY_DIR` / `_RETENTION` (default 10000) / `_QUERY_LIMIT` (default 500). Add any new `FORGE_SERVER_*` key to `ALL_KEYS` in `config.rs` tests or env tests flake.
+
+### Monitoring stack (opt-in)
+`docker compose -f docker/compose.minecraft.yml --profile monitoring up -d prometheus grafana` — Prometheus (`:9091`) scrapes the runner's `forge_mc_*` metrics; Grafana (`:3001`) auto-provisions from `docker/monitoring/`. Requires `metrics_bind = "0.0.0.0"` in `runner.toml` (container-internal). Default `up` is unaffected.
