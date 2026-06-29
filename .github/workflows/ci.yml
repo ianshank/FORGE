@@ -606,7 +606,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract GHCR metadata
         id: meta_ghcr
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -647,7 +647,7 @@ jobs:
       - name: Extract Docker Hub metadata
         if: vars.DOCKERHUB_NAMESPACE != ''
         id: meta_dockerhub
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: docker.io/${{ vars.DOCKERHUB_NAMESPACE }}/forge
           tags: |
