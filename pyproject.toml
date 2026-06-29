@@ -23,7 +23,7 @@ sb3        = ["stable-baselines3>=2.0", "torch>=2.0"]
 cleanrl    = ["torch>=2.0"]
 wandb      = ["wandb>=0.16"]
 mlflow     = ["mlflow>=2.0"]
-mousedroid = ["huggingface-hub>=0.20", "torch>=2.0"]
+mousedroid = ["huggingface-hub>=1.21.0", "torch>=2.0"]
 # LM Studio offline-teacher pipeline (cognitive providers + structured BC):
 #   - openai SDK    -> sync/async OpenAI-compatible HTTP client
 #   - jsonschema    -> validates few-shot exemplars against the action schema
@@ -40,7 +40,7 @@ all        = [
     "torch>=2.0",
     "wandb>=0.16",
     "mlflow>=2.0",
-    "huggingface-hub>=0.20",
+    "huggingface-hub>=1.21.0",
     "openai>=1.0,<2.0",
     "jsonschema>=4.0,<5.0",
     "onnx>=1.16",
