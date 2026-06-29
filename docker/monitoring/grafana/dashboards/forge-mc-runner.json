@@ -1,0 +1,91 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "schemaVersion": 39,
+  "title": "FORGE MC Runner",
+  "tags": ["forge", "minecraft", "runner"],
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "15s",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Episodes completed (rate)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "rate(forge_mc_episode_total[5m])", "legendFormat": "episodes/s" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latest episode reward sum",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "forge_mc_episode_reward_sum", "legendFormat": "reward sum" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Planning latency (p50/p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, rate(forge_mc_planning_latency_seconds_bucket[5m]))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, rate(forge_mc_planning_latency_seconds_bucket[5m]))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Episode length (p50/p95 steps)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, rate(forge_mc_episode_length_steps_bucket[5m]))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, rate(forge_mc_episode_length_steps_bucket[5m]))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Model version",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 16 },
+      "targets": [{ "expr": "forge_mc_model_version", "legendFormat": "version" }]
+    },
+    {
+      "id": 6,
+      "title": "Model reloads (total)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 16 },
+      "targets": [{ "expr": "forge_mc_model_reload_count", "legendFormat": "reloads" }]
+    },
+    {
+      "id": 7,
+      "title": "Protocol errors by reason (rate)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 16 },
+      "targets": [
+        { "expr": "rate(forge_mc_protocol_error_total[5m])", "legendFormat": "{{reason}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Reward components",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "targets": [
+        { "expr": "forge_mc_episode_reward_components", "legendFormat": "{{component}}" }
+      ]
+    }
+  ]
+}

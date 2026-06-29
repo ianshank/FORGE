@@ -9,15 +9,24 @@ services:
       - ../forge.toml:/app/forge.toml:ro
       - ../configs:/app/configs:ro
     environment:
-      - FORGE_SIMULATION_GRID_SIZE=64
-      - FORGE_HARDWARE_NUM_WORKERS=4
-      - RUST_LOG=info
+      - FORGE_SIMULATION_GRID_SIZE=${FORGE_SIMULATION_GRID_SIZE:-64}
+      - FORGE_HARDWARE_NUM_WORKERS=${FORGE_HARDWARE_NUM_WORKERS:-4}
+      - RUST_LOG=${RUST_LOG:-info}
+      - FORGE_LOG_FORMAT=${FORGE_LOG_FORMAT:-text}
     healthcheck:
       test: [ "CMD", "curl", "-sf", "http://localhost:${FORGE_SERVER_PORT:-8080}/health" ]
       interval: ${FORGE_HEALTHCHECK_INTERVAL:-15s}
       timeout: ${FORGE_HEALTHCHECK_TIMEOUT:-3s}
       start_period: ${FORGE_HEALTHCHECK_START_PERIOD:-10s}
       retries: ${FORGE_HEALTHCHECK_RETRIES:-3}
+    deploy:
+      resources:
+        limits:
+          cpus: ${FORGE_SIM_CPU_LIMIT:-2.0}
+          memory: ${FORGE_SIM_MEM_LIMIT:-2G}
+        reservations:
+          cpus: ${FORGE_SIM_CPU_RESERVATION:-0.5}
+          memory: ${FORGE_SIM_MEM_RESERVATION:-512M}
     networks:
       - forge-net
     restart: unless-stopped
@@ -31,6 +40,14 @@ services:
     depends_on:
       simulation:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: ${FORGE_DASHBOARD_CPU_LIMIT:-1.0}
+          memory: ${FORGE_DASHBOARD_MEM_LIMIT:-256M}
+        reservations:
+          cpus: ${FORGE_DASHBOARD_CPU_RESERVATION:-0.1}
+          memory: ${FORGE_DASHBOARD_MEM_RESERVATION:-64M}
     networks:
       - forge-net
     restart: unless-stopped
@@ -46,6 +63,14 @@ services:
     depends_on:
       simulation:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: ${FORGE_DEMO_CPU_LIMIT:-1.0}
+          memory: ${FORGE_DEMO_MEM_LIMIT:-512M}
+        reservations:
+          cpus: ${FORGE_DEMO_CPU_RESERVATION:-0.1}
+          memory: ${FORGE_DEMO_MEM_RESERVATION:-128M}
     networks:
       - forge-net
     restart: unless-stopped

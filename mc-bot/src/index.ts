@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { executeAction } from './actions/index.js';
 import { BotManager } from './bot_manager.js';
 import { loadConfigBundle, type ConfigBundle, type EnvConfig } from './config.js';
+import { createLogger } from './logger.js';
 import { snapshotObservation, computeObsDim, type Snapshot } from './observation.js';
 import { gridShapePayload } from './observation_grid.js';
 import { errorMsg, helloMsg, observationMsg, parseClientMsg } from './protocol.js';
@@ -47,7 +48,7 @@ export function createConnectionHandler(options: {
   bundle: ConfigBundle;
   logger?: any;
 }): (socket: any) => void {
-  const { bot, botManager, bundle, logger = console } = options;
+  const { bot, botManager, bundle, logger = createLogger() } = options;
   // Support both legacy `bot` param and new `botManager` param.
   // When botManager is provided, always dereference via getBot() for live reference.
   const resolveBot = botManager ? () => botManager.getBot() : () => bot;
@@ -228,7 +229,7 @@ export async function startProtocolServer(options: {
   WebSocketServer: any;
   logger?: any;
 }): Promise<any> {
-  const { bot, botManager, bundle, WebSocketServer, logger = console } = options;
+  const { bot, botManager, bundle, WebSocketServer, logger = createLogger() } = options;
   const server = new WebSocketServer({
     host: bundle.env.websocket?.host,
     port: bundle.env.websocket?.port,
@@ -261,7 +262,7 @@ export async function main(options: any = {}): Promise<any> {
     throw new Error('ws module does not expose WebSocketServer');
   }
 
-  const logger = options.logger ?? console;
+  const logger = options.logger ?? createLogger();
 
   // When an explicit bot stub is provided (e.g. tests), skip BotManager.
   if (options.bot) {
@@ -292,6 +293,9 @@ export async function main(options: any = {}): Promise<any> {
   const bot = await botManager.createInitialBot();
   await startViewer(bot, bundle.env.viewer, options);
   const server = await startProtocolServer({ botManager, bundle, WebSocketServer, logger });
+  // Background stale-detection: reconnect if the server stops ticking while the
+  // socket stays half-open. Interval is the config-driven env.heartbeat_ms.
+  botManager.startHeartbeat(bundle.env.heartbeat_ms);
   logger.info?.(`mc-bot listening at ${bundle.env.ws_url}`);
   return { bot: botManager.getBot(), botManager, server, bundle };
 }

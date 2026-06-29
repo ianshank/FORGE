@@ -20,6 +20,18 @@ services:
     image: ${MC_SERVER_IMAGE:-itzg/minecraft-server:latest}
     container_name: forge-mc-server
     restart: ${MC_RESTART_POLICY:-unless-stopped}
+    # Resource governance — every limit/reservation is env-driven so operators
+    # tune them per host without editing this file (defaults are conservative,
+    # never zero). `deploy.resources.limits` is enforced by `docker compose up`
+    # on Compose v2+.
+    deploy:
+      resources:
+        limits:
+          cpus: ${MC_CPU_LIMIT:-2.0}
+          memory: ${MC_MEM_LIMIT:-3G}
+        reservations:
+          cpus: ${MC_CPU_RESERVATION:-0.5}
+          memory: ${MC_MEM_RESERVATION:-1G}
     ports:
       - "${MC_SERVER_PORT:-25565}:25565"
     environment:
@@ -58,6 +70,14 @@ services:
     image: ${MC_BOT_IMAGE:-forge-mc-bot:dev}
     container_name: forge-mc-bot
     restart: ${MC_BOT_RESTART_POLICY:-on-failure}
+    deploy:
+      resources:
+        limits:
+          cpus: ${MC_BOT_CPU_LIMIT:-1.0}
+          memory: ${MC_BOT_MEM_LIMIT:-1G}
+        reservations:
+          cpus: ${MC_BOT_CPU_RESERVATION:-0.25}
+          memory: ${MC_BOT_MEM_RESERVATION:-256M}
     depends_on:
       minecraft:
         condition: service_healthy
@@ -115,6 +135,14 @@ services:
     image: ${FORGE_MC_RUNNER_IMAGE:-forge-mc-runner:dev}
     container_name: forge-mc-runner
     restart: ${RUNNER_RESTART_POLICY:-on-failure}
+    deploy:
+      resources:
+        limits:
+          cpus: ${RUNNER_CPU_LIMIT:-2.0}
+          memory: ${RUNNER_MEM_LIMIT:-2G}
+        reservations:
+          cpus: ${RUNNER_CPU_RESERVATION:-0.5}
+          memory: ${RUNNER_MEM_RESERVATION:-512M}
     depends_on:
       mc-bot:
         condition: service_healthy
@@ -153,6 +181,17 @@ services:
     container_name: forge-mc-trainer
     profiles: ["self-play"]
     restart: ${TRAINER_RESTART_POLICY:-on-failure}
+    # CPU/memory limits live here; the GPU overlay
+    # (compose.minecraft.gpu.yml) deep-merges its device *reservation* into
+    # this same `deploy.resources` block, so the two compose cleanly.
+    deploy:
+      resources:
+        limits:
+          cpus: ${TRAINER_CPU_LIMIT:-4.0}
+          memory: ${TRAINER_MEM_LIMIT:-8G}
+        reservations:
+          cpus: ${TRAINER_CPU_RESERVATION:-1.0}
+          memory: ${TRAINER_MEM_RESERVATION:-2G}
     depends_on:
       runner:
         condition: service_started
@@ -226,4 +265,63 @@ services:
     entrypoint: ["python", "-u", "-m", "forge.training.muzero_mc.cli"]
     command: ["--help"]
 
-volumes: {}
+  # ---- Opt-in monitoring stack (Prometheus + Grafana) ----
+  # Guarded by `profiles: ["monitoring"]`, so a plain `docker compose up` is
+  # completely unaffected. Bring it up with:
+  #   docker compose -f docker/compose.minecraft.yml --profile monitoring up -d
+  # Prometheus scrapes the runner's /metrics over the compose network. For that
+  # to work the runner must bind its metrics server to 0.0.0.0 inside the
+  # container (set `metrics_bind = "0.0.0.0"` in runner.toml — container-internal
+  # only, see the LOW-2 note in docker/compose.minecraft.env.example).
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:latest}
+    container_name: forge-prometheus
+    profiles: ["monitoring"]
+    restart: ${MONITORING_RESTART_POLICY:-unless-stopped}
+    deploy:
+      resources:
+        limits:
+          cpus: ${PROMETHEUS_CPU_LIMIT:-1.0}
+          memory: ${PROMETHEUS_MEM_LIMIT:-1G}
+        reservations:
+          cpus: ${PROMETHEUS_CPU_RESERVATION:-0.25}
+          memory: ${PROMETHEUS_MEM_RESERVATION:-256M}
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}"
+    ports:
+      - "${PROMETHEUS_PORT:-9091}:9090"
+    volumes:
+      - ${MONITORING_DIR:-./monitoring}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:latest}
+    container_name: forge-grafana
+    profiles: ["monitoring"]
+    restart: ${MONITORING_RESTART_POLICY:-unless-stopped}
+    deploy:
+      resources:
+        limits:
+          cpus: ${GRAFANA_CPU_LIMIT:-1.0}
+          memory: ${GRAFANA_MEM_LIMIT:-512M}
+        reservations:
+          cpus: ${GRAFANA_CPU_RESERVATION:-0.25}
+          memory: ${GRAFANA_MEM_RESERVATION:-128M}
+    depends_on:
+      prometheus:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ${MONITORING_DIR:-./monitoring}/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${MONITORING_DIR:-./monitoring}/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  prometheus-data: {}
+  grafana-data: {}

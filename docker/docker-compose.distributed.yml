@@ -40,6 +40,14 @@ services:
       timeout: ${FORGE_HEALTHCHECK_TIMEOUT:-3s}
       start_period: ${FORGE_HEALTHCHECK_START_PERIOD:-10s}
       retries: ${FORGE_HEALTHCHECK_RETRIES:-3}
+    deploy:
+      resources:
+        limits:
+          cpus: ${FORGE_COORDINATOR_CPU_LIMIT:-2.0}
+          memory: ${FORGE_COORDINATOR_MEM_LIMIT:-2G}
+        reservations:
+          cpus: ${FORGE_COORDINATOR_CPU_RESERVATION:-0.5}
+          memory: ${FORGE_COORDINATOR_MEM_RESERVATION:-512M}
     networks:
       - forge-net
     restart: unless-stopped
@@ -85,6 +93,13 @@ services:
     restart: unless-stopped
     deploy:
       replicas: ${FORGE_CLOUD_NUM_WORKERS:-4}
+      resources:
+        limits:
+          cpus: ${FORGE_WORKER_CPU_LIMIT:-2.0}
+          memory: ${FORGE_WORKER_MEM_LIMIT:-2G}
+        reservations:
+          cpus: ${FORGE_WORKER_CPU_RESERVATION:-0.5}
+          memory: ${FORGE_WORKER_MEM_RESERVATION:-512M}
 
 volumes:
   replay-storage:

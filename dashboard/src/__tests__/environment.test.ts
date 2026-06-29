@@ -35,6 +35,13 @@ describe("DashboardConfig", () => {
     expect(DEFAULT_CONFIG.cellSize).toBeLessThanOrEqual(64);
   });
 
+  it("history polling config has valid clamped defaults", () => {
+    expect(DEFAULT_CONFIG.trainingHistoryInterval).toBeGreaterThanOrEqual(500);
+    expect(DEFAULT_CONFIG.runsInterval).toBeGreaterThanOrEqual(500);
+    expect(DEFAULT_CONFIG.historyLimit).toBeGreaterThanOrEqual(1);
+    expect(DEFAULT_CONFIG.historyLimit).toBeLessThanOrEqual(10000);
+  });
+
   it("default wsUrl points to localhost", () => {
     expect(DEFAULT_CONFIG.wsUrl).toContain("localhost");
   });

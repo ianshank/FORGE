@@ -16,8 +16,33 @@ Three non-Minecraft tracks shipped in the `0.5.0` release-hygiene cut:
 Plus release hygiene: workspace `0.1.0` → `0.5.0` and reconciliation of stale
 tech-debt rows against verified source (see the Technical Debt table).
 
-Still deferred (documented): OpenAPI/utoipa generation for the REST surface;
-the `torch.jit.trace` → `torch.export` migration (needs a torch-capable env).
+### Production-hardening & gap-closure track (PR #64, post-0.5.0) — LANDED
+
+Closes the operational-hardening and functional-gap items from the codebase
+quality assessment. All `[STATUS: LANDED]`:
+
+- **`forge-observability` crate** — shared `init_tracing`; env-driven text/JSON
+  logging (`FORGE_LOG_FORMAT`) across Rust/Python/Node; removes the duplicated
+  subscriber bootstrap in `forge-server` + `forge-mc-runner`.
+- **Security scanning (advisory-first)** — `.github/workflows/security.yml`
+  (cargo-deny, pip-audit, npm-audit, Trivy; CodeQL gated by `ENABLE_CODEQL`),
+  `.github/dependabot.yml`, `deny.toml`.
+- **Observability stack** — opt-in Prometheus/Grafana `monitoring` Compose
+  profile + `docker/monitoring/` provisioning.
+- **Deploy hardening** — env-driven `deploy.resources` limits across all
+  compose files.
+- **`forge-server` persistent history** — `HistoryStore`/JSONL backend, the
+  `/api/{training-metrics,decision-traces}/history` + `/api/runs` endpoints,
+  and `FORGE_SERVER_HISTORY_*` config.
+- **Dashboard Training/Runs/Live wiring** — the placeholder pages now render
+  real data via `useTrainingHistory`/`useRuns`/`useDecisionTraces`; AQA slider
+  a11y fixed.
+- **mc-bot heartbeat** — wires `EnvConfig.heartbeat_ms` to close the
+  half-open-socket reconnect gap.
+
+Still deferred (documented): OpenAPI/utoipa generation for the REST surface
+(a default-off `openapi` feature is the planned shape); the
+`torch.jit.trace` → `torch.export` migration (needs a torch-capable env).
 
 ---
 

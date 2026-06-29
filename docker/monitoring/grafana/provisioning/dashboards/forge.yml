@@ -1,0 +1,13 @@
+# Grafana dashboard provider — loads JSON dashboards from the mounted
+# dashboards directory so the FORGE starter dashboard appears automatically.
+apiVersion: 1
+
+providers:
+  - name: forge
+    orgId: 1
+    folder: FORGE
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

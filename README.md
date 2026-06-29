@@ -18,13 +18,14 @@ A high-performance simulation platform for training and evaluating AI agents, bu
 - **Multi-agent**: PettingZoo Parallel API for cooperative/competitive scenarios with communication
 - **Cooperative swarm planning**: CTDE cooperative MCTS (`forge-mangomas::swarm`) that reuses the single-agent PUCT search to produce coordinated joint actions, with a centralized/independent critic and deterministic seeded sampling — a drop-in swap for the no-coordination baseline. See [`docs/architecture.md` §3.8.1](docs/architecture.md)
 - **REST + WASM env API**: drive the simulation over HTTP (`POST /api/env/{reset,step}`, `GET /api/env/render`) or fully in-browser via WebAssembly — the two surfaces mirror the same JSON shapes
+- **Live dashboard + persistent history**: `forge-server` accepts training metrics / decision traces (`POST /api/training-metrics`, `/api/decision-traces`), persists them to JSONL (configurable via `FORGE_SERVER_HISTORY_*`), and serves them back for the dashboard's Training/Runs/Live views via `GET /api/training-metrics/history`, `/api/decision-traces/history`, and `/api/runs` (with `runId`/`limit` filters)
 - **Task curriculum**: Composable task DSL with 6 difficulty tiers and adaptive difficulty scaling
 - **MCTS planning**: Built-in Monte Carlo Tree Search agent with configurable PUCT exploration
 - **MangoMAS bridge**: Config-driven curriculum, constitutional pre-training, curiosity-weight search, batch episode collection, and MCTS sweep utilities under `python/forge/mangomas/`
 - **LM Studio offline teacher**: Behavioural-cloning data pipeline driven by a locally-served Gemma 4 e4b / Qwen 2.5 14B (or any OpenAI-compatible endpoint). Every URL, timeout, retry-backoff base, init scale, numerical epsilon, and shard size flows through `TeacherConfig` / `BCTrainerConfig` / `OpenAIProvider` kwargs — no hard-coded values. See [`docs/architecture.md` §3.9](docs/architecture.md) for the full pipeline + config surface.
 - **Cross-platform**: Native Python bindings (PyO3/maturin) and WebAssembly bindings (wasm-bindgen)
 - **Zero allocation hot path**: `WorldState::step_into(&mut StepResult)` performs no heap allocations after warmup — verified in CI by `crates/forge-bench/src/bin/allocation_audit.rs` (a `dhat`-gated harness) and `benchmarks/runner/check_zero_alloc.py`. The audit sweeps `1,8,16,32,64,128` agents per action variant (override via `--agents` or `FORGE_BENCH_AGENT_COUNTS`) so the contract holds under fan-out, not just at `num_agents=1`. The convenience `step()` wrapper allocates a fresh `StepResult`; pass a reused buffer via `step_into` to honour the contract
-- **Structured tracing**: `#[instrument]` on public functions throughout with `tracing` crate
+- **Structured logging & observability**: `#[instrument]` on public functions throughout with `tracing`. Log init is centralized in the `forge-observability` crate (`init_tracing`), and the output format is env-driven via `FORGE_LOG_FORMAT` (`text` default, `json` for aggregation) — the same switch flips structured logging across Rust, Python (`forge.utils.logging_config`), and the Node mc-bot (`createLogger`). An opt-in Prometheus + Grafana stack (`docker compose --profile monitoring`) scrapes the runner's `forge_mc_*` metrics
 - **Coverage-hardened surfaces**: focused regression tests cover Python fallback imports, vector envs, feature extractors, MangoMAS bridge modules, and Rust edge paths in planning/task evaluation
 - **Coverage-gated Python CI**: `pytest` now enforces `--cov-fail-under=85` for the Python package surface
 
@@ -186,7 +187,8 @@ graph TD
     subgraph "Bindings & Deployment"
         forge_python["forge-python<br/><i>PyO3 / Gymnasium</i>"]
         forge_wasm["forge-wasm<br/><i>wasm-bindgen / JS</i>"]
-        forge_server["forge-server<br/><i>HTTP & WebSocket</i>"]
+        forge_server["forge-server<br/><i>HTTP & WS + history</i>"]
+        forge_observability["forge-observability<br/><i>tracing/log init</i>"]
         forge_bench["forge-bench<br/><i>benchmarks</i>"]
     end
 
@@ -216,6 +218,7 @@ graph TD
     forge_core --> forge_wasm
     forge_core --> forge_server
     forge_core --> forge_bench
+    forge_observability --> forge_server
 ```
 
 ```text
@@ -308,6 +311,22 @@ config = {
 }
 env = ForgeEnv(config=config)
 ```
+
+#### Server & observability environment variables
+
+`forge-server` is configured entirely via environment variables (all with
+defaults):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `FORGE_LOG_FORMAT` | `text` | Log output format (`text` or `json`); shared by Rust, Python, and the Node mc-bot |
+| `FORGE_SERVER_BIND` / `FORGE_SERVER_PORT` | `0.0.0.0:8080` | HTTP/WebSocket bind address |
+| `FORGE_SERVER_TICK_MS` | `100` | Simulation broadcast tick interval |
+| `FORGE_SERVER_BROADCAST_CAPACITY` | `64` | WebSocket fan-out channel capacity |
+| `FORGE_SERVER_ALLOWED_ORIGINS` | `http://localhost:5173` | CORS allow-list (comma-separated) |
+| `FORGE_SERVER_HISTORY_DIR` | `forge-history` | Directory for persisted training/trace JSONL |
+| `FORGE_SERVER_HISTORY_RETENTION` | `10000` | Max records kept per history file |
+| `FORGE_SERVER_HISTORY_QUERY_LIMIT` | `500` | Default cap on history GET responses |
 
 ## Crafting System
 
@@ -835,6 +854,24 @@ curl http://localhost:8765/health  # → {"status":"ok"}
 ```
 
 Ports are bound to `127.0.0.1` by default for security. The dashboard's nginx instance reverse-proxies `/api/` and `/ws` to the simulation service, so all traffic can be addressed through port 3000.
+
+**Resource limits:** every service in the compose files declares env-driven
+`deploy.resources` (CPU/memory limits + reservations) with conservative
+defaults — override per host via the documented `*_CPU_LIMIT` / `*_MEM_LIMIT`
+variables (see `docker/compose.minecraft.env.example`).
+
+**Opt-in monitoring (Prometheus + Grafana):** the Minecraft stack ships a
+profile-gated monitoring stack that scrapes the runner's `forge_mc_*` metrics.
+It is off by default; bring it up with:
+
+```bash
+docker compose -f docker/compose.minecraft.yml --profile monitoring up -d prometheus grafana
+# Prometheus → http://localhost:9091, Grafana → http://localhost:3001 (admin/admin)
+```
+
+Provisioning (scrape config, datasource, starter dashboard) lives under
+`docker/monitoring/`. For Prometheus to reach the runner, set
+`metrics_bind = "0.0.0.0"` in `configs/minecraft/runner.toml` (container-internal only).
 
 **Build individual images:**
 

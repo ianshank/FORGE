@@ -1,0 +1,122 @@
+name: Security
+
+# Advisory-first supply-chain + SAST scanning. Findings are REPORTED (in job
+# logs / the Security tab) but never fail the build: every scanning step exits 0
+# so these checks stay green while the baseline is brought clean. To make a
+# scanner blocking later, drop its `|| true` (or the `continue-on-error`) and
+# add the job to the `docker` gate's `needs:` list in ci.yml.
+#
+# NOTE: keep the branch list in sync with ci.yml (see the note there).
+
+on:
+  push:
+    branches:
+      - claude/plan-forge-environment-htAoK
+      - claude/codebase-quality-assessment-xuqwyc
+      - main
+      - master
+      - develop
+      - v0.2/implementation
+  pull_request:
+    branches:
+      - claude/plan-forge-environment-htAoK
+      - main
+      - master
+      - develop
+      - v0.2/implementation
+  schedule:
+    # Weekly re-scan so newly-published advisories surface even without a push.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write # for CodeQL/SARIF upload when code scanning is enabled
+
+jobs:
+  # ---- Rust supply chain (advisories + licenses + bans + sources) ----
+  cargo-deny:
+    name: cargo-deny (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo deny check (report-only)
+        # Thresholds live in deny.toml. Report findings without failing the
+        # build during the advisory-first rollout.
+        run: cargo deny check --all-features || true
+
+  # ---- Python dependency advisories ----
+  pip-audit:
+    name: pip-audit (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+      - name: Audit declared dependencies (report-only)
+        run: pip-audit --progress-spinner off || true
+
+  # ---- Node dependency advisories (both packages) ----
+  npm-audit:
+    name: npm-audit (advisory)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [mc-bot, dashboard]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
+      - name: npm audit (${{ matrix.package }}, report-only)
+        working-directory: ${{ matrix.package }}
+        run: npm audit --omit=dev || true
+
+  # ---- Trivy filesystem scan (dependencies + IaC), report to logs ----
+  trivy-fs:
+    name: Trivy filesystem (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Trivy
+        # Install via the official script rather than a pinned marketplace
+        # action tag (those move/disappear). Report-only.
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b "$RUNNER_TEMP/bin"
+      - name: Trivy filesystem scan (report-only)
+        # Table output to the job log; exit 0 so findings surface without
+        # failing the build. (No SARIF upload: that needs GitHub code scanning.)
+        run: |
+          "$RUNNER_TEMP/bin/trivy" fs --scanners vuln,misconfig \
+            --severity CRITICAL,HIGH --ignore-unfixed --exit-code 0 . || true
+
+  # ---- CodeQL SAST (opt-in; requires GitHub code scanning enabled) ----
+  # CodeQL's analyze step uploads SARIF, which fails on repos without code
+  # scanning / Advanced Security. Gated behind a repo variable so it only runs
+  # where it can succeed. Enable by setting repository variable
+  # ENABLE_CODEQL=true (Settings → Secrets and variables → Actions → Variables).
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    if: ${{ vars.ENABLE_CODEQL == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

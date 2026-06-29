@@ -522,4 +522,81 @@ describe('BotManager', () => {
     assert.ok(infoEvents.includes('reconnected'), 'should log reconnected');
     assert.ok(infoEvents.includes('bot_manager_destroyed'), 'should log destroy');
   });
+
+  // ---- Heartbeat (stale-detection) ----
+  describe('heartbeat', () => {
+    it('reconnects a stale bot with no manual reconnect call', async () => {
+      const factory = createBotFactory();
+      const manager = new BotManager({ host: '127.0.0.1' }, factory, {
+        logger,
+        reconnectConfig: FAST_RECONNECT, // stale_timeout_ms: 50
+      });
+      await manager.createInitialBot();
+      assert.equal(factory.getCallCount(), 1);
+
+      let reconnected = false;
+      manager.on('reconnected', () => {
+        reconnected = true;
+      });
+
+      // Start a fast heartbeat and let the bot go stale (never call
+      // updateTickAge). Within stale_timeout + a couple of poll intervals the
+      // heartbeat must trigger a reconnect on its own.
+      manager.startHeartbeat(15);
+      await delay(150);
+      manager.destroy();
+
+      assert.ok(reconnected, 'heartbeat should have emitted reconnected');
+      assert.ok(factory.getCallCount() >= 2, 'a new bot should have been built');
+    });
+
+    it('does not reconnect while the bot stays healthy', async () => {
+      const factory = createBotFactory();
+      const manager = new BotManager({ host: '127.0.0.1' }, factory, {
+        logger,
+        reconnectConfig: FAST_RECONNECT,
+      });
+      await manager.createInitialBot();
+      manager.startHeartbeat(15);
+
+      // Keep the bot fresh across several heartbeat intervals.
+      for (let i = 0; i < 8; i++) {
+        manager.updateTickAge(0);
+        await delay(15);
+      }
+      manager.destroy();
+
+      assert.equal(factory.getCallCount(), 1, 'no reconnect should occur while healthy');
+    });
+
+    it('destroy() stops the heartbeat (no reconnect afterwards)', async () => {
+      const factory = createBotFactory();
+      const manager = new BotManager({ host: '127.0.0.1' }, factory, {
+        logger,
+        reconnectConfig: FAST_RECONNECT,
+      });
+      await manager.createInitialBot();
+      manager.startHeartbeat(15);
+      manager.destroy(); // should clear the timer immediately
+
+      await delay(150); // would have fired several times if not cleared
+      assert.equal(factory.getCallCount(), 1, 'destroyed manager must not reconnect');
+    });
+
+    it('startHeartbeat is idempotent and ignores non-positive intervals', async () => {
+      const factory = createBotFactory();
+      const manager = new BotManager({ host: '127.0.0.1' }, factory, {
+        logger,
+        reconnectConfig: FAST_RECONNECT,
+      });
+      await manager.createInitialBot();
+      // A disabled heartbeat (0) is a no-op; calling twice must not leak timers.
+      manager.startHeartbeat(0);
+      manager.startHeartbeat(15);
+      manager.startHeartbeat(15);
+      manager.stopHeartbeat();
+      manager.destroy();
+      assert.equal(factory.getCallCount(), 1);
+    });
+  });
 });

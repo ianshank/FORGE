@@ -1,6 +1,7 @@
 //! Server configuration with sensible defaults and env-var overrides.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 
 use forge_types::constants::{DEFAULT_FRONTEND_DEV_PORT, DEFAULT_SERVER_PORT};
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,12 @@ const DEFAULT_BROADCAST_CAPACITY: usize = 64;
 const DEFAULT_TICK_INTERVAL_MS: u64 = 100;
 /// Default tracing filter for the server.
 const DEFAULT_LOG_FILTER: &str = "forge_server=info,forge_core=info";
+/// Default directory for persisted training/trace history (JSONL files).
+const DEFAULT_HISTORY_DIR: &str = "forge-history";
+/// Default maximum number of records retained per history file.
+const DEFAULT_HISTORY_RETENTION: usize = 10_000;
+/// Default maximum number of records returned by a history GET endpoint.
+const DEFAULT_HISTORY_QUERY_LIMIT: usize = 500;
 
 /// Configuration for the FORGE server binary.
 ///
@@ -33,6 +40,15 @@ pub struct ServerConfig {
     /// Allowed CORS origins (comma-separated).
     #[serde(default = "default_allowed_origins")]
     pub allowed_origins: Vec<String>,
+    /// Directory where training/trace history JSONL files are persisted.
+    #[serde(default = "default_history_dir")]
+    pub history_dir: PathBuf,
+    /// Maximum number of records retained per history file (oldest pruned).
+    #[serde(default = "default_history_retention")]
+    pub history_retention: usize,
+    /// Default maximum number of records returned by a history GET endpoint.
+    #[serde(default = "default_history_query_limit")]
+    pub history_query_limit: usize,
 }
 
 fn default_bind_addr() -> SocketAddr {
@@ -59,6 +75,18 @@ fn default_allowed_origins() -> Vec<String> {
     vec![default_allowed_origins_str()]
 }
 
+fn default_history_dir() -> PathBuf {
+    PathBuf::from(DEFAULT_HISTORY_DIR)
+}
+
+fn default_history_retention() -> usize {
+    DEFAULT_HISTORY_RETENTION
+}
+
+fn default_history_query_limit() -> usize {
+    DEFAULT_HISTORY_QUERY_LIMIT
+}
+
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
@@ -67,6 +95,9 @@ impl Default for ServerConfig {
             tick_interval_ms: DEFAULT_TICK_INTERVAL_MS,
             log_filter: DEFAULT_LOG_FILTER.to_string(),
             allowed_origins: default_allowed_origins(),
+            history_dir: default_history_dir(),
+            history_retention: DEFAULT_HISTORY_RETENTION,
+            history_query_limit: DEFAULT_HISTORY_QUERY_LIMIT,
         }
     }
 }
@@ -81,6 +112,9 @@ impl ServerConfig {
     /// - `FORGE_SERVER_BROADCAST_CAPACITY` — WS channel size (default `64`)
     /// - `FORGE_SERVER_LOG_FILTER` — tracing filter (default `forge_server=info,forge_core=info`)
     /// - `FORGE_SERVER_ALLOWED_ORIGINS` — allowed CORS origins, comma-separated (default `http://localhost:5173`)
+    /// - `FORGE_SERVER_HISTORY_DIR` — history JSONL directory (default `forge-history`)
+    /// - `FORGE_SERVER_HISTORY_RETENTION` — max records kept per history file (default `10000`)
+    /// - `FORGE_SERVER_HISTORY_QUERY_LIMIT` — default GET history limit (default `500`)
     #[tracing::instrument]
     pub fn from_env() -> Self {
         let mut config = Self::default();
@@ -141,6 +175,36 @@ impl ServerConfig {
 
         if let Ok(val) = std::env::var("FORGE_SERVER_ALLOWED_ORIGINS") {
             config.allowed_origins = val.split(',').map(|s| s.trim().to_string()).collect();
+        }
+
+        if let Ok(val) = std::env::var("FORGE_SERVER_HISTORY_DIR") {
+            config.history_dir = PathBuf::from(val);
+        }
+
+        if let Ok(val) = std::env::var("FORGE_SERVER_HISTORY_RETENTION") {
+            match val.parse() {
+                Ok(n) => config.history_retention = n,
+                Err(e) => {
+                    tracing::warn!(
+                        value = %val,
+                        error = %e,
+                        "Invalid FORGE_SERVER_HISTORY_RETENTION, using default"
+                    );
+                }
+            }
+        }
+
+        if let Ok(val) = std::env::var("FORGE_SERVER_HISTORY_QUERY_LIMIT") {
+            match val.parse() {
+                Ok(n) => config.history_query_limit = n,
+                Err(e) => {
+                    tracing::warn!(
+                        value = %val,
+                        error = %e,
+                        "Invalid FORGE_SERVER_HISTORY_QUERY_LIMIT, using default"
+                    );
+                }
+            }
         }
 
         tracing::debug!(?config, "Server config loaded from environment");
@@ -318,6 +382,9 @@ mod tests {
         "FORGE_SERVER_BROADCAST_CAPACITY",
         "FORGE_SERVER_LOG_FILTER",
         "FORGE_SERVER_ALLOWED_ORIGINS",
+        "FORGE_SERVER_HISTORY_DIR",
+        "FORGE_SERVER_HISTORY_RETENTION",
+        "FORGE_SERVER_HISTORY_QUERY_LIMIT",
     ];
 
     #[test]
@@ -328,6 +395,36 @@ mod tests {
         let cfg = ServerConfig::from_env();
         assert_eq!(cfg.bind_addr.port(), 7777);
         assert_eq!(cfg.bind_addr.ip().to_string(), "127.0.0.1");
+    }
+
+    #[test]
+    fn test_history_defaults() {
+        let cfg = ServerConfig::default();
+        assert_eq!(cfg.history_dir, default_history_dir());
+        assert_eq!(cfg.history_retention, DEFAULT_HISTORY_RETENTION);
+        assert_eq!(cfg.history_query_limit, DEFAULT_HISTORY_QUERY_LIMIT);
+    }
+
+    #[test]
+    fn test_from_env_history_overrides() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_HISTORY_DIR", "/tmp/forge-hist");
+        std::env::set_var("FORGE_SERVER_HISTORY_RETENTION", "42");
+        std::env::set_var("FORGE_SERVER_HISTORY_QUERY_LIMIT", "7");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(cfg.history_dir, PathBuf::from("/tmp/forge-hist"));
+        assert_eq!(cfg.history_retention, 42);
+        assert_eq!(cfg.history_query_limit, 7);
+    }
+
+    #[test]
+    fn test_from_env_history_invalid_falls_back() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _scope = EnvScope::new(ALL_KEYS);
+        std::env::set_var("FORGE_SERVER_HISTORY_RETENTION", "not-a-number");
+        let cfg = ServerConfig::from_env();
+        assert_eq!(cfg.history_retention, DEFAULT_HISTORY_RETENTION);
     }
 
     #[test]

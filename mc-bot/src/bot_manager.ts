@@ -36,6 +36,7 @@ export class BotManager extends EventEmitter {
   #destroyed = false;
   #reconnectConfig: { backoff_ms: number[]; max_attempts: number; stale_timeout_ms: number };
   #logger: any;
+  #heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     botConfig: any,
@@ -113,11 +114,52 @@ export class BotManager extends EventEmitter {
     }
   }
 
+  /**
+   * Start a background heartbeat that polls {@link isHealthy} every
+   * `intervalMs` and triggers a {@link reconnect} when the bot has gone stale.
+   *
+   * This closes the half-open-socket gap: when the Minecraft server stops
+   * sending ticks but the TCP socket stays open, mineflayer emits no
+   * `error`/`end`, so nothing would otherwise call `reconnect()`. The monitor
+   * reuses the existing (coalesced) `reconnect()` and the existing health
+   * check — no new reconnection logic. Idempotent: a prior timer is cleared
+   * first. A non-positive `intervalMs` disables the heartbeat.
+   *
+   * @param intervalMs poll interval in milliseconds (e.g. `env.heartbeat_ms`).
+   */
+  startHeartbeat(intervalMs: number): void {
+    this.stopHeartbeat();
+    if (this.#destroyed || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+      return;
+    }
+    this.#heartbeatTimer = setInterval(() => {
+      if (this.#destroyed || this.#reconnecting || this.isHealthy()) {
+        return;
+      }
+      this.#logger.warn?.({ event: 'heartbeat_stale', msg: 'bot stale, triggering reconnect' });
+      this.reconnect().catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.#logger.warn?.({ event: 'heartbeat_reconnect_error', error: message });
+      });
+    }, intervalMs);
+    // Don't let the heartbeat keep the Node process alive on its own.
+    this.#heartbeatTimer.unref?.();
+  }
+
+  /** Stop the background heartbeat if running. */
+  stopHeartbeat(): void {
+    if (this.#heartbeatTimer !== null) {
+      clearInterval(this.#heartbeatTimer);
+      this.#heartbeatTimer = null;
+    }
+  }
+
   /** Tear down the current bot and stop accepting reconnection attempts. */
   destroy(): void {
     this.#destroyed = true;
     this.#reconnecting = false;
     this.#reconnectPromise = null;
+    this.stopHeartbeat();
     this.#teardownBot();
     this.#logger.info?.({ event: 'bot_manager_destroyed' });
   }

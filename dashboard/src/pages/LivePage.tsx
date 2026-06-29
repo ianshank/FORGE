@@ -7,9 +7,10 @@ import { SimulationCanvas } from "../components/SimulationCanvas";
 import { StatCard } from "../components/ui/stat-card";
 import { getConfig } from "../config/environment";
 import { useSimulation } from "../context/SimulationContext";
+import { useDecisionTraces } from "../hooks/useDecisionTraces";
 import { useMetrics } from "../hooks/useMetrics";
 import { formatDuration, formatNumber } from "../lib/utils";
-import type { AgentState, DecisionTraceEntry } from "../types/simulation";
+import type { AgentState } from "../types/simulation";
 
 /** Live simulation view: world canvas, agent inspector, traces, controls. */
 export function LivePage() {
@@ -17,8 +18,9 @@ export function LivePage() {
   const { state } = useSimulation();
   const { metrics } = useMetrics();
   const [selectedAgent, setSelectedAgent] = useState<AgentState | null>(null);
-  // Live decision traces are not yet streamed over the wire; show empty state.
-  const traces: DecisionTraceEntry[] = [];
+  // Decision traces are persisted server-side and polled via the history
+  // endpoint; the panel shows the most recent entries.
+  const { traces } = useDecisionTraces();
 
   const aliveAgents = state?.agents.filter((a) => a.alive).length ?? 0;
 

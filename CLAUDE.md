@@ -10,6 +10,9 @@
 - `cd mc-bot && npm test` — Run Node-side mc-bot unit/integration/security tests in strict TS using `tsx --test`
 - `cd mc-bot && npm run lint` — Biome lint + format check on the TypeScript source
 - `cargo run -p forge-mc-runner -- --dry-run --episodes 1` — Smoke-test the runner binary without docker / Minecraft (CI: `forge-mc-runner-bin` job)
+- `cargo test -p forge-server -p forge-observability` — Server REST/WebSocket + history-endpoint tests (incl. `tests/history_endpoints_integration.rs` driven via `tower::oneshot`) and the shared tracing-init unit/doctests
+- `FORGE_SERVER_HISTORY_DIR=/tmp/forge-history cargo run -p forge-server` — Run the visualization server (REST + WebSocket). All knobs are `FORGE_SERVER_*` env vars (bind `0.0.0.0:8080`, history dir `forge-history/`, retention 10000, query limit 500); `FORGE_LOG_FORMAT=json` switches structured logging on
+- `docker compose -f docker/compose.minecraft.yml --profile monitoring up -d prometheus grafana` — Opt-in Prometheus (`:9091`) + Grafana (`:3001`) stack scraping the runner's `forge_mc_*` metrics (needs `metrics_bind = "0.0.0.0"` in runner.toml; default `up` is unaffected)
 - `cargo test -p forge-agent --features onnx` + `cargo test -p forge-mc-runner --features onnx-reload` — Exercise the `OnnxMuZeroModel::reload()` + `into_reload_fn` ONNX hot-reload surface
 - `curl http://127.0.0.1:9090/metrics` — Scrape the runner's Prometheus endpoint (disabled by setting `metrics_port = 0` in the runner config; `metrics_bind` defaults to `127.0.0.1`)
 - `python -m forge.training.muzero_mc.cli bootstrap --obs-dim N --action-dim M --schema-id <sha> --out models/` — Phase-5 random-init bundle
@@ -48,7 +51,9 @@
 - **forge-env-mc**: Sync WebSocket client to a Node `mc-bot` exposing a Minecraft env via `Env` + `FlatObsEnv`.
 - **forge-mc-runner**: End-to-end episode runner. `RunnerConfig` (TOML + validate; opt-in `trajectory_compression = "gzip"` + `trajectory_gzip_level` + `metrics_bind` + `metrics_histogram_buckets` fields), `ModelManifest` (atomic save, sha256-per-role, monotonic version, pinned `MANIFEST_SCHEMA_VERSION = 1`), `HotReloadWatcher` (between-episode poll-only contract; no downgrade), `TrajectoryWriter` (atomic `TrajectoryV2` save, opt-in `with_compression()` for `.json.gz`), `Runner<E, M>` (the episode loop with optional `MetricsRecorder` via `with_metrics()`), and `metrics.rs` (axum + prometheus server exposing the five v2-plan §3.6 signals). The `forge-mc-runner` binary is `#[tokio::main]` with SIGINT graceful shutdown joining the runner + metrics tasks. ONNX hot-reload integration (`OnnxMuZeroModel::reload()` + `onnx_reload::into_reload_fn`) is feature-gated behind `onnx-reload` so the runner stays buildable without ONNX Runtime.
 - **forge-replay::v2**: Env-agnostic flat-tensor trajectory format (additive; v1 untouched).
-- **mc-bot/**: Node bridge (mineflayer + reward registry + reset + viewer), out of the Cargo workspace.
+- **forge-observability**: Shared tracing/log init (`init_tracing(TracingOptions)` / `try_init_tracing`). The single home for `tracing-subscriber` setup; `forge-server` + `forge-mc-runner` reuse it (no duplicated bootstrap). Output format is env-driven via `FORGE_LOG_FORMAT` (`text` default, `json`), filter via `RUST_LOG` with a per-binary default.
+- **forge-server**: Axum HTTP + WebSocket server. REST env API (`/api/env/{reset,step,render}`), live broadcast, and a `history` module (`HistoryStore` trait + append-only `JsonlHistoryStore` + `InMemoryHistoryStore`) backing `POST`+persist on `/api/training-metrics` & `/api/decision-traces` and `GET /api/{training-metrics,decision-traces}/history` + `/api/runs`. Config via `FORGE_SERVER_*` env vars (incl. `HISTORY_DIR`/`_RETENTION`/`_QUERY_LIMIT`); run id resolved from `?runId=` → `X-Forge-Run-Id` → server-session id.
+- **mc-bot/**: Node bridge (mineflayer + reward registry + reset + viewer + `createLogger` + `BotManager` heartbeat), out of the Cargo workspace.
 
 ## Key Principles
 - **No hard-coded values**: All constants flow through config structs with `Default` impls

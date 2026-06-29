@@ -31,6 +31,7 @@ from forge.training.muzero_mc.manifest import (
     ManifestError,
     load_manifest,
 )
+from forge.utils.logging_config import setup_logging_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -488,14 +489,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     # `compute-schema-id --quiet` routes logs to stderr only so stdout
-    # carries the hash and nothing else. Other subcommands keep the
-    # existing INFO-to-stdout default.
+    # carries the hash and nothing else. Other subcommands keep the existing
+    # stderr default. The output format (text/JSON) is env-driven via
+    # FORGE_LOG_FORMAT; the CLI `--log-level` still wins over FORGE_LOG_LEVEL.
     log_stream = sys.stderr if getattr(args, "quiet", False) else None
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        stream=log_stream,
-    )
+    setup_logging_from_env(level=args.log_level, stream=log_stream)
 
     if args.cmd == "bootstrap":
         return _run_bootstrap(args)

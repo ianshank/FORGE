@@ -88,6 +88,10 @@ wandb/
 mlruns/
 artifacts/
 
+# forge-server persistent history (dev/runtime JSONL under
+# FORGE_SERVER_HISTORY_DIR, default `forge-history/`) — never in the image.
+forge-history/
+
 # Playwright artefacts (demo_ui/tests/test_e2e_browser.py)
 playwright-report/
 .playwright/

@@ -1,0 +1,25 @@
+# Prometheus scrape configuration for the FORGE Minecraft stack.
+#
+# Mounted read-only into the `prometheus` service (see compose.minecraft.yml,
+# `monitoring` profile). The runner exposes the eight `forge_mc_*` signals on
+# its metrics port (default 9090). The target uses the compose service DNS name
+# `runner`, so the runner must bind its metrics server to 0.0.0.0 inside the
+# container (`metrics_bind = "0.0.0.0"` in runner.toml) for this scrape to reach
+# it — that bind is container-internal only.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: forge-mc-runner
+    static_configs:
+      - targets:
+          - "runner:9090"
+        labels:
+          stack: forge-minecraft
+
+  # Prometheus self-monitoring.
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - "localhost:9090"

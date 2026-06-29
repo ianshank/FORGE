@@ -22,6 +22,13 @@ forge-types          (foundation — no FORGE dependencies)
     |         +---> forge-wasm    (wasm-bindgen browser bindings — depends on types, core)
     |         |
     |         +---> forge-bench   (Criterion benchmarks — depends on types, core, agent)
+    |         |
+    |         +---> forge-server  (HTTP/WS + persistent history — depends on types, core, observability)
+
+forge-observability  (foundation — no FORGE dependencies)
+    |                 shared tracing/log init (init_tracing); env-driven
+    |                 text/JSON via FORGE_LOG_FORMAT
+    +---> forge-server, forge-mc-runner   (binaries reuse it; no duplicated subscriber setup)
 ```
 
 ## Data Flow
@@ -68,7 +75,7 @@ StepResult (forge-types)  -->  Observations + Rewards
 - **Fixed-point arithmetic**: All physics quantities use `i32` with 16 fractional bits (`FIXED_POINT_ONE = 65536`)
 - **No hard-coded values**: All constants flow through config structs with `Default` impls
 - **Zero allocation on hot path**: `WorldState::step_into(&mut StepResult)` must not heap-allocate after warmup. The convenience `step()` allocates a fresh `StepResult`; reuse a buffer via `step_into` for the zero-alloc contract. Verified in CI by `crates/forge-bench/src/bin/allocation_audit.rs`.
-- **Structured logging**: Use `tracing` crate throughout, `#[instrument]` on public functions
+- **Structured logging**: Use `tracing` crate throughout, `#[instrument]` on public functions. Binaries initialize logging via `forge_observability::init_tracing` (never duplicate `tracing_subscriber` setup); `FORGE_LOG_FORMAT=json` switches text→JSON across Rust, Python, and the Node mc-bot
 - **Property-based tests**: Use `proptest` for invariant verification alongside unit tests
 
 ## Per-Crate Agent.md Files
@@ -84,6 +91,8 @@ StepResult (forge-types)  -->  Observations + Rewards
 | `forge-python` | `crates/forge-python/Agent.md` | Python Bridge — Gymnasium-compatible PyO3 bindings |
 | `forge-bench` | `crates/forge-bench/Agent.md` | Performance Guardian — Criterion benchmarks |
 | `forge-wasm` | `crates/forge-wasm/Agent.md` | Web Presenter — wasm-bindgen browser bindings |
+| `forge-observability` | (this file) | Observability Foundation — `init_tracing`/`TracingOptions`, env-driven text/JSON log format (`FORGE_LOG_FORMAT`); reused by `forge-server` + `forge-mc-runner` (no FORGE deps) |
+| `forge-server` | `crates/forge-server/Agent.md` | API Server — Axum HTTP/WebSocket, REST env API, and persistent training/trace history (`HistoryStore`/JSONL) with `/api/{training-metrics,decision-traces}/history` + `/api/runs` |
 | `forge-env` | (this file §Env-trait crates) | Env Abstractor — generic `Env` / `FlatObsEnv` traits with buffer-filling reset/step, zero FORGE deps |
 | `forge-env-forge` | (this file §Env-trait crates) | FORGE Shim — single-agent `Env` impl over `WorldState` for backwards-compat |
 | `forge-env-mc` | (this file §Env-trait crates) | Minecraft Bridge — sync WebSocket client to mc-bot, JSON protocol v1 |
