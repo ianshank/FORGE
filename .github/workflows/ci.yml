@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Build allocation_audit (dhat-heap)
@@ -175,7 +175,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install lint tools
@@ -202,7 +202,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Create + activate virtualenv
@@ -266,7 +266,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Create + activate virtualenv
@@ -315,7 +315,7 @@ jobs:
           cp docker/compose.minecraft.env.example docker/compose.minecraft.env
           sed -i 's/^MC_EULA=FALSE/MC_EULA=TRUE/' docker/compose.minecraft.env
           grep '^MC_EULA' docker/compose.minecraft.env
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install pytest (no other deps needed — test uses stdlib urllib)
@@ -354,7 +354,7 @@ jobs:
           cp docker/compose.minecraft.env.example docker/compose.minecraft.env
           sed -i 's/^MC_EULA=FALSE/MC_EULA=TRUE/' docker/compose.minecraft.env
           grep '^MC_EULA' docker/compose.minecraft.env
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install pytest + matplotlib
@@ -407,7 +407,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install dependencies
@@ -488,7 +488,7 @@ jobs:
       FORGE_STARTUP_WAIT_SECS: "3"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
