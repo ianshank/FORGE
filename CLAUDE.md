@@ -1,5 +1,9 @@
 # FORGE Development Conventions
 
+> These are the day-to-day operational conventions. For the project's durable
+> mission, scope boundaries, and Seven Core Invariants, see
+> [`docs/CHARTER.md`](docs/CHARTER.md) — read it before planning work.
+
 ## Build & Test Commands
 - `cargo build --workspace` — Build all crates
 - `cargo test --workspace` — Run all Rust tests
