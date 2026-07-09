@@ -120,9 +120,9 @@ def test_load_from_hf_happy_path(fake_hub: _FakeHub, tmp_path: Path) -> None:
     assert manifest.schema_id == SCHEMA_ID
     assert manifest.version == 3
     subdir = format_bundle_version_dir(3)
-    assert manifest.files.representation.path == f"{subdir}/representation.onnx"
-    assert manifest.files.dynamics.path == f"{subdir}/dynamics.onnx"
-    assert manifest.files.prediction.path == f"{subdir}/prediction.onnx"
+    for role in ("representation", "dynamics", "prediction"):
+        expected = f"{subdir}/{DEFAULT_BUNDLE_FILENAMES[role]}"
+        assert getattr(manifest.files, role).path == expected
 
     # Exactly one download per role, no subfolder, symlinks disabled.
     assert len(fake_hub.calls) == len(DEFAULT_BUNDLE_FILENAMES)
