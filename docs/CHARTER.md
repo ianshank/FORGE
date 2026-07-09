@@ -108,7 +108,7 @@ inconsistency:
 3. **`--random-actions` bypasses MCTS and ONNX entirely.** The random branch is
    taken before any manifest/bundle/ORT load, so the baseline runs on a host
    with no ONNX Runtime installed.
-   (`crates/forge-mc-runner/src/live.rs`, `src/random_baseline.rs`.)
+   (`crates/forge-mc-runner/src/live.rs`, `crates/forge-mc-runner/src/random_baseline.rs`.)
 
 ---
 
@@ -128,7 +128,7 @@ effects (factories are injected, avoiding ESM TDZ traps).
 
 *Enforced by:* the named-factory reward registry
 (`mc-bot/src/reward/index.ts`), the shared action/reward config
-(`configs/minecraft/action_map.toml`, `rewards.toml`), and the generic
+(`configs/minecraft/action_map.toml`, `configs/minecraft/rewards.toml`), and the generic
 `Env` / `FlatObsEnv` traits (`crates/forge-env/src/env.rs`).
 
 ### 2. Versioned, backward-compatible wire protocols
@@ -140,14 +140,14 @@ wire-compatible.
 *Enforced by:* `TRAJECTORY_FORMAT_VERSION` with a one-way `from_v1` migrator
 (v1 untouched) in `crates/forge-replay/src/v2.rs`; `MANIFEST_SCHEMA_VERSION`
 plus the monotonic, no-downgrade `HotReloadWatcher`
-(`crates/forge-mc-runner/src/manifest.rs`, `hot_reload.rs`); and the WS
+(`crates/forge-mc-runner/src/manifest.rs`, `crates/forge-mc-runner/src/hot_reload.rs`); and the WS
 `Hello` / `GridShape` messages whose `serde(default)` fields keep legacy
 flat-only bots compatible (`crates/forge-env-mc/src/protocol.rs`).
 
 **FORGE-specific strengthening:** configs shared between Rust and JS compute
 the same canonical `schema_id` sha256, pinned on both sides by paired
 `xlang_*_pinned_to_known_good` tests
-(`crates/forge-env-mc/src/action_map.rs`, `reward_config.rs` ↔
+(`crates/forge-env-mc/src/action_map.rs`, `crates/forge-env-mc/src/reward_config.rs` ↔
 `mc-bot/test/*`). Drift on either side fails both test suites simultaneously.
 
 ### 3. Dependency injection enabling testability without hardware
