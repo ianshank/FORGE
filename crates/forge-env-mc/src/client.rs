@@ -3,7 +3,6 @@
 //! Sync (not async) because `Env::step` is a blocking call. The
 //! underlying transport is `tungstenite` 0.24.
 
-use std::io::Read;
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -86,10 +85,6 @@ fn message_kind(m: &ClientMsg) -> &'static str {
         ClientMsg::Close => "close",
     }
 }
-
-// Avoid unused-import warning when `tungstenite::stream` not otherwise used.
-#[allow(dead_code)]
-fn _force_unused_read_stays_available<R: Read>(_: &mut R) {}
 
 #[cfg(test)]
 mod tests {
