@@ -21,8 +21,13 @@ use crate::traits::{SeedAssignment, WorkerInfo, WorkerManager, WorkerMetadata, W
 /// Mirrors the graceful policy in `forge-server`'s `JsonlHistoryStore`
 /// (`.lock().unwrap_or_else(|e| e.into_inner())`): a worker thread that
 /// panicked while holding the registry lock must not poison the whole pool
-/// into an unusable, panic-on-every-call state. The recovered guard still
-/// exposes the consistent `HashMap` / seed counter.
+/// into an unusable, panic-on-every-call state. This trades a bounded risk for
+/// availability — a poisoned `Mutex` signals the guarded data *may* have been
+/// left mid-update by the panicking thread, so recovery does NOT guarantee the
+/// `HashMap` / seed counter is internally consistent; it only keeps the
+/// registry serving instead of aborting every caller. Each registry operation
+/// holds the lock for a single self-contained insert/remove/get-mut, so any
+/// partial update is bounded to one entry.
 ///
 /// Recovery is silent, like the history store. A std `Mutex` stays poisoned
 /// once poisoned, and `Mutex::clear_poison` is only stable from Rust 1.77
