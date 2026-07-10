@@ -152,6 +152,11 @@ trajectories/
 trajectories.random/
 trajectories.trained/
 _smoke_traj/
+# Local baseline-capture outputs: `capture-baseline` / `mc_plot_baseline` /
+# `v05_manual_baseline` write `baseline_<variant>.json` at the repo root. The
+# committed report snapshots live under `docs/results/` and are unaffected by
+# this root-anchored rule.
+/baseline_*.json
 # Gzip-compressed sibling of the .json trajectory output. Now opt-in
 # via RunnerConfig.trajectory_compression = "gzip" (v0.3-pre); same
 # .gitignore policy as plain .json — never tracked.

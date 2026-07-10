@@ -59,11 +59,8 @@ pub fn astar<T: GridTopology>(
     }
 
     // Check goal is walkable
-    if let Some(tile) = grid.get_pos(&goal) {
-        if !tile.terrain.is_walkable() {
-            return None;
-        }
-    } else {
+    let tile = grid.get_pos(&goal)?;
+    if !tile.terrain.is_walkable() {
         return None;
     }
 

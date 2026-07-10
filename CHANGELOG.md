@@ -78,12 +78,32 @@ backwards-compatible.
   `EnvConfig.heartbeat_ms`: a monitor that triggers the existing coalesced
   `reconnect()` when the bot goes stale, closing the half-open-socket gap.
 
+### Added — project charter + documentation governance (PR #89)
+
+- `docs/CHARTER.md`: durable governance charter — mission, scope boundaries
+  (Included / Deferred / Permanent non-goals / Deliberate Exceptions) and the
+  Seven Core Invariants, each anchored to the code or CI that enforces it.
+  Cross-linked from `README.md` and `CLAUDE.md`.
+- `forge-civ` now carries `#![deny(missing_docs)]` — it was the only workspace
+  crate without the lint; all public items were already documented, so this
+  enforces the convention going forward with zero code churn.
+
 ### Changed
 
 - Rust tracing initialization is centralized in `forge-observability` (was
   duplicated in both binaries).
 - Dashboard slider (`components/ui/slider.tsx`) forwards `aria-label` to the
   Radix Thumb, fixing the axe `aria-input-field-name` violation on `/live`.
+- `forge-cloud` in-memory worker registry recovers from a poisoned mutex via a
+  shared `lock_recover` helper instead of panicking the whole pool — mirroring
+  `forge-server`'s `JsonlHistoryStore` policy. Backwards-compatible; the
+  recovered guard still exposes the consistent map/seed state (PR #89).
+- Python typing hygiene: removed a version-fragile
+  `# type: ignore[no-any-return]` in `social/trust_tracker.py` (via an
+  ndarray-annotated local, keeping strict checking) and a movable `[arg-type]`
+  ignore in `memory/memory_store.py` (PR #89).
+- `forge-civ` pathfinding goal-walkability check simplified to the `?` operator,
+  clearing a `clippy::question_mark` warning (PR #89).
 
 ### Tests
 
@@ -93,6 +113,11 @@ backwards-compatible.
 - Dashboard: `historyHooks` + `historyPages` + `environment` additions
   (coverage ≥85%). mc-bot: `bot_manager` heartbeat + `logger` suites. Python:
   `test_logging_config` env-helper coverage.
+- Python: `test_muzero_mc_checkpoint_loader` covers the HuggingFace warm-start
+  loader end-to-end via a fake `huggingface_hub` — happy path, `filename_map` /
+  `subfolder` pass-through, `str` output_dir, download-failure (no partial
+  manifest), and structured-logging lines (0% → 100% line coverage). Rust:
+  `forge-cloud` worker-registry poison-recovery regression test (PR #89).
 
 ## [0.5.0] — 2026-06-02
 

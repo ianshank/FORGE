@@ -8,6 +8,8 @@ Fast Open-source Runtime for Generalist Environments
 
 A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python.
 
+See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope boundaries, and Seven Core Invariants.
+
 ## Key Features
 
 - **Blazing fast**: 130K+ steps/sec from Python, <8 μs/step including PyO3 overhead

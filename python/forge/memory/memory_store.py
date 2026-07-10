@@ -69,7 +69,7 @@ class Preference:
         """Return the action with the highest weight."""
         if not self.action_weights:
             return None
-        return max(self.action_weights, key=self.action_weights.get)  # type: ignore[arg-type]
+        return max(self.action_weights, key=lambda a: self.action_weights[a])
 
 
 DEFAULT_SEMANTIC_CAPACITY: int = 10_000

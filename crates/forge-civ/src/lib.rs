@@ -13,6 +13,11 @@
 //! The active topology is selected via [`GridType`](forge_types::config::GridType)
 //! in configuration and dispatched at zero cost through [`GridTopologyKind`].
 
+// Enforce the workspace-wide documentation convention (every other crate uses
+// `#![deny(missing_docs)]`; forge-civ was the lone exception). All public items
+// must carry doc comments.
+#![deny(missing_docs)]
+
 pub mod grid_topology;
 pub mod hex;
 pub mod hex_direction;

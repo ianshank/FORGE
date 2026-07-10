@@ -29,7 +29,6 @@
 //! structured fields.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -246,14 +245,6 @@ impl AgentInterface for NoopEvalAgent {
 /// returns a fresh boxed agent per call.
 fn noop_agent_factory() -> impl Fn() -> Box<dyn AgentInterface> + Send + Sync {
     || Box::new(NoopEvalAgent) as Box<dyn AgentInterface>
-}
-
-// Silence the unused `Arc`/`Mutex` imports when only the public `Cli`
-// surface is consumed — keeps the future hook for richer agent factories
-// without an extra import line.
-#[allow(dead_code)]
-fn _silence_arc_mutex() -> (Arc<()>, Mutex<()>) {
-    (Arc::new(()), Mutex::new(()))
 }
 
 #[cfg(test)]

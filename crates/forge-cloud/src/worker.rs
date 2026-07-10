@@ -5,7 +5,7 @@
 //! single-node deployments.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use chrono::Utc;
 use forge_types::config::ForgeConfig;
@@ -15,6 +15,29 @@ use tracing::{debug, info, instrument, warn};
 use crate::config::WorkerConfig;
 use crate::error::{CloudResult, WorkerError};
 use crate::traits::{SeedAssignment, WorkerInfo, WorkerManager, WorkerMetadata, WorkerStatus};
+
+/// Acquire `lock`, recovering from poisoning instead of panicking.
+///
+/// Mirrors the graceful policy in `forge-server`'s `JsonlHistoryStore`
+/// (`.lock().unwrap_or_else(|e| e.into_inner())`): a worker thread that
+/// panicked while holding the registry lock must not poison the whole pool
+/// into an unusable, panic-on-every-call state. This trades a bounded risk for
+/// availability — a poisoned `Mutex` signals the guarded data *may* have been
+/// left mid-update by the panicking thread, so recovery does NOT guarantee the
+/// `HashMap` / seed counter is internally consistent; it only keeps the
+/// registry serving instead of aborting every caller. Each registry operation
+/// holds the lock for a single self-contained insert/remove/get-mut, so any
+/// partial update is bounded to one entry.
+///
+/// Recovery is silent, like the history store. A std `Mutex` stays poisoned
+/// once poisoned, and `Mutex::clear_poison` is only stable from Rust 1.77
+/// (this workspace's MSRV is 1.75), so there is no cheap way to reset the flag
+/// here — logging on recovery would therefore fire on *every* subsequent
+/// acquisition, not once. Callers that need to surface the underlying panic
+/// should do so at the panic site.
+fn lock_recover<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
+    lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// Generates a unique worker ID from hostname and current timestamp.
 ///
@@ -80,7 +103,7 @@ impl InMemoryWorkerRegistry {
     /// Returns the number of currently registered workers.
     #[instrument(skip(self))]
     pub fn worker_count(&self) -> usize {
-        let workers = self.workers.lock().expect("lock poisoned");
+        let workers = lock_recover(&self.workers);
         workers.len()
     }
 
@@ -93,7 +116,7 @@ impl InMemoryWorkerRegistry {
 impl WorkerManager for InMemoryWorkerRegistry {
     #[instrument(skip(self, metadata))]
     fn register(&self, worker_id: &str, metadata: WorkerMetadata) -> CloudResult<()> {
-        let mut workers = self.workers.lock().expect("lock poisoned");
+        let mut workers = lock_recover(&self.workers);
 
         if workers.contains_key(worker_id) {
             warn!(worker_id, "attempted to register duplicate worker");
@@ -128,7 +151,7 @@ impl WorkerManager for InMemoryWorkerRegistry {
 
     #[instrument(skip(self))]
     fn deregister(&self, worker_id: &str) -> CloudResult<()> {
-        let mut workers = self.workers.lock().expect("lock poisoned");
+        let mut workers = lock_recover(&self.workers);
         if workers.remove(worker_id).is_none() {
             warn!(worker_id, "attempted to deregister unknown worker");
             return Err(WorkerError::NotFound(worker_id.to_string()).into());
@@ -139,7 +162,7 @@ impl WorkerManager for InMemoryWorkerRegistry {
 
     #[instrument(skip(self))]
     fn heartbeat(&self, worker_id: &str) -> CloudResult<()> {
-        let mut workers = self.workers.lock().expect("lock poisoned");
+        let mut workers = lock_recover(&self.workers);
         let entry = workers
             .get_mut(worker_id)
             .ok_or_else(|| WorkerError::NotFound(worker_id.to_string()))?;
@@ -150,7 +173,7 @@ impl WorkerManager for InMemoryWorkerRegistry {
 
     #[instrument(skip(self))]
     fn active_workers(&self) -> CloudResult<Vec<WorkerInfo>> {
-        let workers = self.workers.lock().expect("lock poisoned");
+        let workers = lock_recover(&self.workers);
         let now_ms = chrono::Utc::now().timestamp_millis() as u64;
         let infos = workers
             .iter()
@@ -178,12 +201,12 @@ impl WorkerManager for InMemoryWorkerRegistry {
 
     #[instrument(skip(self))]
     fn assign_seeds(&self, worker_id: &str, count: u32) -> CloudResult<SeedAssignment> {
-        let mut workers = self.workers.lock().expect("lock poisoned");
+        let mut workers = lock_recover(&self.workers);
         let entry = workers
             .get_mut(worker_id)
             .ok_or_else(|| WorkerError::NotFound(worker_id.to_string()))?;
 
-        let mut next = self.next_seed.lock().expect("lock poisoned");
+        let mut next = lock_recover(&self.next_seed);
         let start = *next;
         let seed_capacity = || WorkerError::CapacityExceeded {
             current: start
@@ -403,5 +426,33 @@ mod tests {
         // Second assignment of 5 seeds would need 8..13, exceeding range_end=10.
         let result = registry.assign_seeds("w-001", 5);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_registry_recovers_from_poisoned_lock() {
+        use std::sync::Arc;
+
+        let registry = Arc::new(InMemoryWorkerRegistry::new(test_config()));
+        registry.register("w-001", test_metadata()).unwrap();
+
+        // Poison the `workers` mutex: panic while holding the guard on another
+        // thread. `join()` returns Err, and the mutex is now poisoned.
+        let poison = Arc::clone(&registry);
+        let handle = std::thread::spawn(move || {
+            let _guard = poison.workers.lock().unwrap();
+            panic!("intentional panic to poison the registry lock");
+        });
+        assert!(handle.join().is_err());
+
+        // Before this fix the next `.lock().expect(...)` would panic, taking
+        // down the whole registry. With `lock_recover`, every operation still
+        // works against the pre-poison state.
+        assert_eq!(registry.worker_count(), 1);
+        registry.register("w-002", test_metadata()).unwrap();
+        assert_eq!(registry.worker_count(), 2);
+
+        // `assign_seeds` locks both mutexes; it must recover too.
+        let assignment = registry.assign_seeds("w-001", 2).unwrap();
+        assert_eq!(assignment.seeds.len(), 2);
     }
 }

@@ -2,6 +2,8 @@
 
 This document describes the FORGE architecture using the [C4 model](https://c4model.com/) — four levels of abstraction from system context down to code-level detail.
 
+See [`CHARTER.md`](CHARTER.md) for the project's durable mission, scope boundaries, and the Seven Core Invariants that every change is expected to preserve — the "why" layer above this "how".
+
 ---
 
 ## Level 1: System Context
