@@ -87,7 +87,12 @@ authors = ["Ian Shank"]
 license = "Apache-2.0"
 repository = "https://github.com/ianshank/FORGE"
 description = "Fast Open-source Runtime for Generalist Environments"
-rust-version = "1.75"
+# Known MSRV floor: the workspace pulls edition-2024 dependencies (e.g.
+# `fixed` >= 1.30), which require cargo/rustc >= 1.85. (The previous "1.75" was
+# stale and unbuildable.) This is the highest floor confirmed from a dependency
+# manifest; it is not enforced by a CI job yet, so treat it as a documented
+# lower bound rather than a verified guarantee.
+rust-version = "1.85"
 keywords = ["simulation", "reinforcement-learning", "multi-agent", "game-engine"]
 categories = ["simulation", "game-engines"]
 

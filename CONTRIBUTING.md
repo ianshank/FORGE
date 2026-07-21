@@ -7,9 +7,11 @@ and the Seven Core Invariants every change must preserve, and
 
 ## Prerequisites
 
-- **Rust** — the toolchain is pinned via `rust-toolchain.toml` (channel `stable`
-  with the `rustfmt`, `clippy` components and the `wasm32-unknown-unknown` target).
-  The declared MSRV is in `Cargo.toml` (`rust-version`).
+- **Rust** — CI installs the `stable` toolchain via `dtolnay/rust-toolchain@stable`,
+  adding the `rustfmt`/`clippy` components (and the `wasm32-unknown-unknown` target
+  for the WASM demo) per workflow. Locally, install `stable` with those components.
+  The declared MSRV floor is in `Cargo.toml` (`rust-version`): the workspace needs
+  cargo/rustc **≥ 1.85** because of edition-2024 dependencies.
 - **Python** 3.11 recommended (`requires-python >= 3.9`), with `maturin` to build
   the native `forge_env` extension.
 - **Node** 22+ for `mc-bot/` and `dashboard/`.
