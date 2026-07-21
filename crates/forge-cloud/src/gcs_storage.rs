@@ -765,7 +765,7 @@ impl forge_types::transport::ReplayTransport for GcsReplayTransport {
                 }
                 if oldest
                     .as_ref()
-                    .map_or(true, |o| meta.last_modified < o.last_modified)
+                    .is_none_or(|o| meta.last_modified < o.last_modified)
                 {
                     oldest = Some(meta);
                 }

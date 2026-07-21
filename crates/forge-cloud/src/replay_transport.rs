@@ -204,7 +204,7 @@ pub fn decompress_replay(data: &[u8]) -> CloudResult<Vec<u8>> {
             }
             let byte = rle_data[i];
             i += 1;
-            decompressed.extend(std::iter::repeat(byte).take(repeat_len));
+            decompressed.extend(std::iter::repeat_n(byte, repeat_len));
         }
 
         if decompressed.len() > MAX_DECOMPRESSED_SIZE {
