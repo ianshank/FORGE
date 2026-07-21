@@ -8,6 +8,9 @@ on:
   push:
     branches:
       - claude/plan-forge-environment-htAoK
+      # Glob so any claude/* working branch (and future default renames under
+      # that prefix) keeps CI wired up without editing this list each time.
+      - "claude/**"
       - main
       - master
       - develop
@@ -15,6 +18,7 @@ on:
   pull_request:
     branches:
       - claude/plan-forge-environment-htAoK
+      - "claude/**"
       - main
       - master
       - develop

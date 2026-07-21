@@ -12,7 +12,9 @@ on:
   push:
     branches:
       - claude/plan-forge-environment-htAoK
-      - claude/codebase-quality-assessment-xuqwyc
+      # Glob covers all claude/* working branches (replaces one-off entries like
+      # the codebase-quality-assessment branch that previously drifted here).
+      - "claude/**"
       - main
       - master
       - develop
@@ -20,6 +22,7 @@ on:
   pull_request:
     branches:
       - claude/plan-forge-environment-htAoK
+      - "claude/**"
       - main
       - master
       - develop
