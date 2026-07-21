@@ -22,11 +22,12 @@
 //!
 //! ## Logging
 //!
-//! Initialises `tracing_subscriber::fmt` with `EnvFilter::from_default_env()`,
-//! so `RUST_LOG=forge_eval=debug,info ./forge-eval-longrun ...` works as
-//! expected. Every stage boundary (parsing, suite load, eval start, eval
-//! complete, scorecard write) emits a `tracing::info!` event with
-//! structured fields.
+//! Delegates to `forge_observability::try_init_tracing`, which honours
+//! `RUST_LOG` (falling back to an `info,forge_eval=info` default) and resolves
+//! text/JSON output from `FORGE_LOG_FORMAT` — so
+//! `RUST_LOG=forge_eval=debug,info ./forge-eval-longrun ...` works as expected.
+//! Every stage boundary (parsing, suite load, eval start, eval complete,
+//! scorecard write) emits a `tracing::info!` event with structured fields.
 
 use std::path::PathBuf;
 
@@ -42,7 +43,6 @@ use forge_eval::scenario::ScenarioSuite;
 use forge_types::agent_interface::{AgentInterface, AgentMetadata, AgentResponse};
 use forge_types::observation::Observation;
 use tracing::{info, instrument};
-use tracing_subscriber::EnvFilter;
 
 /// Long-running e2e evaluation driver: loads a scenario suite, runs the
 /// harness against a `NoopEvalAgent` (or any pluggable factory in future
@@ -156,13 +156,14 @@ fn main() -> Result<()> {
     std::process::exit(exit);
 }
 
-/// Init `tracing_subscriber` with the `RUST_LOG` env filter and a `info`
-/// default. Idempotent: a second call (from tests) no-ops via
-/// `try_init`.
+/// Initialise tracing via the shared `forge-observability` bootstrap (honours
+/// `RUST_LOG` with an `info,forge_eval=info` default and `FORGE_LOG_FORMAT`
+/// for text/JSON). Idempotent: a second call (from tests) returns `Err`
+/// instead of panicking, so the `#[must_use]` `Result` is discarded here.
 fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,forge_eval=info"));
-    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    let _ = forge_observability::try_init_tracing(forge_observability::TracingOptions::new(
+        "info,forge_eval=info",
+    ));
 }
 
 /// Run the evaluation end-to-end. Split from `main` so unit tests can

@@ -3,7 +3,7 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadActionMap, type ActionMap } from './action_map.js';
-import { DEFAULT_RECONNECT_CONFIG } from './bot_manager.js';
+import { DEFAULT_RECONNECT_CONFIG, DEFAULT_SPAWN_TIMEOUT_MS } from './bot_manager.js';
 import { buildReward } from './reward/index.js';
 import { buildRewardConfig, combinedSchemaId, loadRewardConfig, type RewardConfig } from './reward_config.js';
 
@@ -23,6 +23,7 @@ export interface EnvConfig {
     username: string;
     version: string;
     auth: string;
+    spawn_timeout_ms: number;
     [key: string]: any;
   };
   episode: {
@@ -111,6 +112,7 @@ export const DEFAULT_ENV_CONFIG = Object.freeze({
     username: 'ForgeBot',
     version: '1.20.4',
     auth: 'offline',
+    spawn_timeout_ms: DEFAULT_SPAWN_TIMEOUT_MS,
   }),
   episode: Object.freeze({
     max_ticks: 6000,

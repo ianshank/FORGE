@@ -11,6 +11,12 @@ export const DEFAULT_RECONNECT_CONFIG = Object.freeze({
   stale_timeout_ms: 10_000,
 });
 
+/**
+ * Default timeout (ms) to wait for the initial mineflayer `spawn` event when
+ * creating a bot. Overridable via `[bot] spawn_timeout_ms` in env.toml.
+ */
+export const DEFAULT_SPAWN_TIMEOUT_MS = 30_000;
+
 export interface ReconnectConfig {
   backoff_ms?: number[];
   max_attempts?: number;
@@ -204,11 +210,12 @@ export class BotManager extends EventEmitter {
   /** Wait for the bot's `spawn` event (or resolve immediately if already spawned). */
   #waitForSpawn(bot: any): Promise<void> {
     if (bot.entity) return Promise.resolve();
+    const timeoutMs = this.#botConfig?.spawn_timeout_ms ?? DEFAULT_SPAWN_TIMEOUT_MS;
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new Error('Spawn timeout: bot failed to spawn within 30000ms'));
-      }, 30000);
+        reject(new Error(`Spawn timeout: bot failed to spawn within ${timeoutMs}ms`));
+      }, timeoutMs);
 
       const onSpawn = () => {
         cleanup();

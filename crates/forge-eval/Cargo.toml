@@ -17,7 +17,7 @@ default = []
 # `forge-eval-longrun` bin and the testcontainers integration test require
 # this feature; the existing filesystem-only MlflowExporter does not.
 #
-# clap + anyhow + tracing-subscriber are pulled in by the same gate so the
+# clap + anyhow + forge-observability are pulled in by the same gate so the
 # default `cargo build` doesn't compile the CLI surface unnecessarily; the
 # bin below declares `required-features = ["http-mlflow"]` to enforce this
 # at the cargo-target level.
@@ -27,7 +27,9 @@ http-mlflow = [
     "dep:scopeguard",
     "dep:clap",
     "dep:anyhow",
-    "dep:tracing-subscriber",
+    # Shared tracing init used by the forge-eval-longrun bin; pulls
+    # tracing-subscriber transitively (see [dependencies] note).
+    "dep:forge-observability",
 ]
 
 # CLI binary — the long-running e2e driver. Only built when the
@@ -65,7 +67,11 @@ scopeguard = { workspace = true, optional = true }
 # consumes them is `forge-eval-longrun`).
 clap = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
-tracing-subscriber = { workspace = true, optional = true }
+# Shared tracing/log init (text/JSON, RUST_LOG-driven), replacing the bin's
+# hand-rolled tracing_subscriber setup. Optional + gated on http-mlflow because
+# only the forge-eval-longrun bin needs it; it pulls tracing-subscriber
+# transitively so this crate no longer declares that dependency directly.
+forge-observability = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
