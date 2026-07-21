@@ -210,7 +210,15 @@ export class BotManager extends EventEmitter {
   /** Wait for the bot's `spawn` event (or resolve immediately if already spawned). */
   #waitForSpawn(bot: any): Promise<void> {
     if (bot.entity) return Promise.resolve();
-    const timeoutMs = this.#botConfig?.spawn_timeout_ms ?? DEFAULT_SPAWN_TIMEOUT_MS;
+    // Guard against 0/negative/non-finite/non-numeric overrides: `??` alone
+    // would pass a `0` straight to setTimeout and fire an immediate timeout
+    // before the bot could spawn. Fall back to the default unless the value is
+    // a positive, finite number.
+    const rawTimeout = this.#botConfig?.spawn_timeout_ms;
+    const timeoutMs =
+      typeof rawTimeout === 'number' && Number.isFinite(rawTimeout) && rawTimeout > 0
+        ? rawTimeout
+        : DEFAULT_SPAWN_TIMEOUT_MS;
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();

@@ -38,6 +38,13 @@ on:
         type: boolean
         default: false
 
+# Dedupe runs: a push to a feature branch that also has an open PR would
+# otherwise start two CI runs (push + pull_request). Group by the head branch
+# (head_ref for PRs, ref_name for pushes) and cancel superseded in-progress runs.
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
