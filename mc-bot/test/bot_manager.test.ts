@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BotManager, DEFAULT_RECONNECT_CONFIG } from '../src/bot_manager.js';
+import { BotManager, DEFAULT_RECONNECT_CONFIG, DEFAULT_SPAWN_TIMEOUT_MS } from '../src/bot_manager.js';
 
 // ---------------------------------------------------------------------------
 // Helpers / Stubs
@@ -111,6 +111,39 @@ describe('BotManager', () => {
     assert.ok(bot.entity, 'bot should have entity after spawn');
     assert.equal(factory.getCallCount(), 1, 'createBot called once');
     manager.destroy();
+  });
+
+  // ---- 1b. spawn-timeout config: valid value used, no warning ----
+  it('uses a valid configured spawn_timeout_ms without warning', async () => {
+    const factory = createBotFactory({ noEntity: true }); // deferred spawn → timeout path
+    const manager = new BotManager({ host: '127.0.0.1', spawn_timeout_ms: 5000 }, factory, {
+      logger,
+    });
+    await manager.createInitialBot();
+
+    const warned = logger.entries.find((e: any) => e.msg?.event === 'invalid_spawn_timeout');
+    assert.equal(warned, undefined, 'a valid timeout must not warn');
+    manager.destroy();
+  });
+
+  // ---- 1c. spawn-timeout config: invalid value warns + falls back to default ----
+  it('warns and falls back to the default when spawn_timeout_ms is invalid', async () => {
+    for (const bad of [0, -1, Number.NaN, 'nope' as unknown as number]) {
+      const localLogger = silentLogger();
+      const factory = createBotFactory({ noEntity: true }); // deferred spawn → timeout path
+      const manager = new BotManager({ host: '127.0.0.1', spawn_timeout_ms: bad }, factory, {
+        logger: localLogger,
+      });
+      await manager.createInitialBot();
+
+      const warned = localLogger.entries.find(
+        (e: any) => e.level === 'warn' && e.msg?.event === 'invalid_spawn_timeout'
+      );
+      assert.ok(warned, `invalid spawn_timeout_ms=${String(bad)} must warn`);
+      assert.equal(warned.msg.configured, bad, 'warning logs the configured value');
+      assert.equal(warned.msg.fallback_ms, DEFAULT_SPAWN_TIMEOUT_MS, 'warning logs the fallback');
+      manager.destroy();
+    }
   });
 
   // ---- 2. getBot() returns current bot after creation ----

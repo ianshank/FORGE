@@ -207,18 +207,33 @@ export class BotManager extends EventEmitter {
     bot.on('end', (reason: any) => onDisconnect(`end: ${reason ?? 'unknown'}`));
   }
 
+  /**
+   * Resolve the spawn timeout (ms) from `bot.spawn_timeout_ms`, guarding against
+   * 0 / negative / non-finite / non-numeric overrides — `??` alone would pass a
+   * `0` straight to setTimeout and fire an immediate timeout before the bot
+   * could spawn. Emits a `warn` (for debuggability) when a value is *configured
+   * but invalid*, then falls back to {@link DEFAULT_SPAWN_TIMEOUT_MS}. An unset
+   * value is the normal default path and is not warned about.
+   */
+  #resolveSpawnTimeoutMs(): number {
+    const raw = this.#botConfig?.spawn_timeout_ms;
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+      return raw;
+    }
+    if (raw !== undefined && raw !== null) {
+      this.#logger.warn?.({
+        event: 'invalid_spawn_timeout',
+        configured: raw,
+        fallback_ms: DEFAULT_SPAWN_TIMEOUT_MS,
+      });
+    }
+    return DEFAULT_SPAWN_TIMEOUT_MS;
+  }
+
   /** Wait for the bot's `spawn` event (or resolve immediately if already spawned). */
   #waitForSpawn(bot: any): Promise<void> {
     if (bot.entity) return Promise.resolve();
-    // Guard against 0/negative/non-finite/non-numeric overrides: `??` alone
-    // would pass a `0` straight to setTimeout and fire an immediate timeout
-    // before the bot could spawn. Fall back to the default unless the value is
-    // a positive, finite number.
-    const rawTimeout = this.#botConfig?.spawn_timeout_ms;
-    const timeoutMs =
-      typeof rawTimeout === 'number' && Number.isFinite(rawTimeout) && rawTimeout > 0
-        ? rawTimeout
-        : DEFAULT_SPAWN_TIMEOUT_MS;
+    const timeoutMs = this.#resolveSpawnTimeoutMs();
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
