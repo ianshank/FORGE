@@ -140,7 +140,6 @@ Shows the major containers (deployable units) within FORGE.
 | **forge-worldgen** | Rust crate | Procedural world generation: Perlin noise terrain, biome classification, resource/object placement. |
 | **forge-task** | Rust crate | Composable task DSL with 7 operators, 10 predicates, 6 tiers, and adaptive curriculum. |
 | **forge-agent** | Rust crate | MCTS planner with PUCT selection, forward model, baseline agents, and a LatentMctsSearch for `.onnx` PyTorch MuZero models via `ort`. |
-| **forge-procgen** | Rust crate | Procedural content generation: map generator, objective generator, team composer, curriculum controller with configurable difficulty scaling. |
 | **forge-server** | Rust crate | HTTP/WebSocket API server: REST endpoints, metrics collection, live simulation state streaming, and persistent training/trace history (`HistoryStore`/JSONL) served via `/api/{training-metrics,decision-traces}/history` + `/api/runs`. |
 | **forge-observability** | Rust crate | Shared tracing/log initialization (`init_tracing`/`TracingOptions`); env-driven text/JSON output via `FORGE_LOG_FORMAT`. No FORGE deps; reused by `forge-server` + `forge-mc-runner`. |
 | **forge-python** | Rust crate (PyO3) | Python bindings exposing `ForgeEnv` with numpy observations, GIL release during step. |
@@ -686,45 +685,6 @@ The core engine executes a deterministic pipeline of systems every tick.
          │ Uniform  │ │ toward target │ │ PickUp if avail│ │Always│
          │ sampling │ │               │ │ else random    │ │Noop  │
          └──────────┘ └───────────────┘ └────────────────┘ └──────┘
-```
-
-### 3.5 forge-procgen — Procedural Content Generation
-
-```
-         ┌──────────────────────────────────────┐
-         │          forge-procgen                 │
-         │                                        │
-         │  ┌──────────────┐  ┌───────────────┐  │
-         │  │MapGenerator  │  │ObjectiveGen   │  │
-         │  │              │  │               │  │
-         │  │ generate()   │  │ generate()    │  │
-         │  │ → Grid with  │  │ → Task tree   │  │
-         │  │   terrain,   │  │   from tier + │  │
-         │  │   resources, │  │   seed        │  │
-         │  │   spawns     │  │               │  │
-         │  └──────────────┘  └───────────────┘  │
-         │                                        │
-         │  ┌──────────────┐  ┌───────────────┐  │
-         │  │TeamComposer  │  │CurriculumCtrl │  │
-         │  │              │  │               │  │
-         │  │ compose()    │  │ update_params │  │
-         │  │ → Agent team │  │ Adaptive      │  │
-         │  │   layout,    │  │ difficulty    │  │
-         │  │   roles,     │  │ scaling with  │  │
-         │  │   loadouts   │  │ configurable  │  │
-         │  │              │  │ thresholds    │  │
-         │  └──────────────┘  └───────────────┘  │
-         │                                        │
-         │  ┌──────────────┐  ┌───────────────┐  │
-         │  │GrammarSystem │  │SeedManager    │  │
-         │  │              │  │               │  │
-         │  │ L-system     │  │ Deterministic │  │
-         │  │ rules for    │  │ seed chain    │  │
-         │  │ structure    │  │ for           │  │
-         │  │ generation   │  │ reproducible  │  │
-         │  │              │  │ content       │  │
-         │  └──────────────┘  └───────────────┘  │
-         └────────────────────────────────────────┘
 ```
 
 ### 3.6 forge-server — API Server
@@ -2332,7 +2292,6 @@ Observation
 | forge-core | forge-types, forge-worldgen, rand, rand_pcg, fixed, serde, bincode, smallvec, tracing |
 | forge-task | forge-types, rand, tracing |
 | forge-agent | forge-types, forge-core, rand, rand_pcg, serde, tracing |
-| forge-procgen | forge-types, forge-core, rand, rand_pcg, serde, tracing |
 | forge-server | forge-types, forge-core, forge-observability, serde, serde_json, thiserror, tracing, axum, tower-http (tracing-subscriber init is now delegated to forge-observability) |
 | forge-observability | tracing, tracing-subscriber (no FORGE deps) |
 | forge-python | forge-types, forge-core, forge-worldgen, forge-task, pyo3, numpy, serde_json, tracing |
@@ -2450,11 +2409,6 @@ ForgeError
     ├── HexActionUnsupported { hex_actions_enabled }
     └── ParameterOutOfRange { action_name, value, max }
 ```
-
-`ScenarioConfigError` (in `forge-scenario::config`) wraps the underlying
-`toml::de::Error` / `toml::ser::Error` rather than collapsing to `String`, so
-callers can pattern-match on the parse vs. serialize failure mode and
-preserve span / line context for diagnostics.
 
 The fallible encoders (`try_to_discrete`, `try_to_discrete_full`,
 `try_to_discrete_configured`) are the preferred entrypoints for any code that
