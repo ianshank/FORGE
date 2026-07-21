@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a capability or improvement for FORGE.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please skim docs/CHARTER.md (scope & invariants) and
+        docs/next_steps.md (roadmap) — the idea may already be tracked or may
+        cross a scope boundary that needs a charter amendment.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do that FORGE makes hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to see? Note any new registry entry, Env impl, or config surface it would add.
+    validations:
+      required: true
+  - type: dropdown
+    id: invariants
+    attributes:
+      label: Does this touch a Core Invariant?
+      description: See docs/CHARTER.md — determinism, versioned protocols, no hard-coded values, etc.
+      options:
+        - "No — additive within existing boundaries"
+        - "Maybe — needs discussion"
+        - "Yes — would need a charter amendment / Deliberate Exception"
+    validations:
+      required: true

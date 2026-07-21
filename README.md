@@ -168,8 +168,6 @@ graph TD
 
     subgraph "Agent & Planning"
         forge_agent["forge-agent<br/><i>MCTS planner</i>"]
-        forge_procgen["forge-procgen<br/><i>procedural content</i>"]
-        forge_scenario["forge-scenario<br/><i>scenario registry</i>"]
     end
 
     subgraph "Advanced Cognitive"
@@ -199,8 +197,6 @@ graph TD
     forge_types --> forge_civ
     forge_types --> forge_memory
     forge_types --> forge_social
-    forge_types --> forge_procgen
-    forge_types --> forge_scenario
 
     forge_civ --> forge_core
     forge_worldgen --> forge_core

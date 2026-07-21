@@ -280,14 +280,7 @@ value = 1.0
     /// against typos that would break runner startup.
     #[test]
     fn ships_default_rewards_config_parses() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("configs/minecraft/rewards.toml");
-        let raw = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let raw = crate::test_support::read_workspace_config("configs/minecraft/rewards.toml");
         let cfg = RewardConfig::parse_toml(&raw).expect("parse default rewards");
         cfg.validate().unwrap();
         assert!(!cfg.entries.is_empty());

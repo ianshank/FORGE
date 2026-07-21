@@ -1,110 +1,45 @@
-# FORGE Test Coverage Report
+# FORGE — Coverage Policy & How to Read It
 
-**Generated:** 2026-03-07
-**Tool:** cargo-tarpaulin v0.35.2
-**Overall Coverage:** 91.13% (1809/1985 lines)
+> This file previously pinned a hand-picked 6-crate snapshot ("91.13%") that was
+> **not** the number CI enforces and drifted from reality. It has been replaced
+> with an honest description of the actual gates. **Live coverage numbers come
+> from the CI `coverage` job's uploaded artifact, not from a committed file.**
 
-## Per-Crate Coverage
+## The gates that actually run (source of truth = CI, not this doc)
 
-### forge-types (Shared Types & Config)
-| File | Covered | Total | % |
-|------|---------|-------|---|
-| action.rs | 38 | 38 | 100.0% |
-| config.rs | 6 | 6 | 100.0% |
-| entity.rs | 52 | 53 | 98.1% |
-| grid.rs | 66 | 71 | 93.0% |
-| observation.rs | 31 | 31 | 100.0% |
-| resource.rs | 72 | 72 | 100.0% |
-| task.rs | 4 | 4 | 100.0% |
-| validation.rs | 44 | 54 | 81.5% |
-| **Crate Total** | **313** | **329** | **95.1%** |
+| Runtime | Gate | Where |
+|---|---|---|
+| Rust | `cargo tarpaulin --workspace --exclude forge-python --exclude forge-wasm --features forge-cloud/gcs --fail-under 85` | `.github/workflows/ci.yml` (`coverage` job) |
+| Python | `pytest --cov=forge --cov=forge_env --cov-fail-under=85` | `ci.yml` (`python-test`), `.coveragerc` |
+| Dashboard (Vitest) | 85% statements/branches/functions/lines | `dashboard/vite.config.ts` |
+| mc-bot | see note ¹ | `mc-bot/package.json` |
+| demo_ui | see note ² | `ci.yml` (`demo-ui`) |
 
-### forge-core (Simulation Engine)
-| File | Covered | Total | % |
-|------|---------|-------|---|
-| combat.rs | 42 | 45 | 93.3% |
-| communication.rs | 30 | 30 | 100.0% |
-| crafting.rs | 27 | 30 | 90.0% |
-| day_night.rs | 21 | 21 | 100.0% |
-| physics.rs | 90 | 93 | 96.8% |
-| resource.rs | 36 | 38 | 94.7% |
-| rng.rs | 31 | 33 | 93.9% |
-| systems.rs | 85 | 87 | 97.7% |
-| visibility.rs | 60 | 61 | 98.4% |
-| world.rs | 179 | 182 | 98.4% |
-| **Crate Total** | **601** | **620** | **96.9%** |
+¹ mc-bot: a `c8`-based coverage floor is being introduced (it owns first-class
+  wire-contract logic — `schema_id.ts`, `protocol.ts`, `bot_manager.ts`).
+² demo_ui: its pytest job runs without a `--cov-fail-under` floor; this is a
+  known, deliberate gap pending a decision — not an accident.
 
-### forge-worldgen (Procedural Generation)
-| File | Covered | Total | % |
-|------|---------|-------|---|
-| biome.rs | 24 | 24 | 100.0% |
-| entities.rs | 29 | 29 | 100.0% |
-| lib.rs | 23 | 24 | 95.8% |
-| noise.rs | 66 | 69 | 95.7% |
-| objects.rs | 26 | 26 | 100.0% |
-| resources.rs | 22 | 22 | 100.0% |
-| terrain.rs | 33 | 39 | 84.6% |
-| **Crate Total** | **223** | **233** | **95.7%** |
+## What the Rust gate does and does not measure
 
-### forge-task (Task DSL & Curriculum)
-| File | Covered | Total | % |
-|------|---------|-------|---|
-| composer.rs | 39 | 43 | 90.7% |
-| curriculum.rs | 59 | 63 | 93.7% |
-| difficulty.rs | 34 | 35 | 97.1% |
-| evaluator.rs | 31 | 31 | 100.0% |
-| generator.rs | 161 | 189 | 85.2% |
-| predicate.rs | 105 | 133 | 78.9% |
-| **Crate Total** | **429** | **494** | **86.8%** |
+- **Excluded** from the tarpaulin run: `forge-python` (needs a Python runtime) and
+  `forge-wasm` (wasm target). Everything else in the workspace is measured as a
+  single aggregate against the 85% floor.
+- The number is an **aggregate over the measured crates**, so per-crate figures are
+  not enforced individually. Removing a well-tested crate can *lower* the aggregate
+  and a poorly-tested one can *raise* it — treat the aggregate accordingly.
 
-### forge-agent (MCTS & Baselines)
-| File | Covered | Total | % |
-|------|---------|-------|---|
-| baselines.rs | 54 | 63 | 85.7% |
-| forward_model.rs | 12 | 12 | 100.0% |
-| mcts/policy.rs | 16 | 16 | 100.0% |
-| mcts/search.rs | 43 | 52 | 82.7% |
-| mcts/tree.rs | 65 | 65 | 100.0% |
-| **Crate Total** | **190** | **208** | **91.3%** |
+## Getting the current numbers locally
 
-### forge-wasm (WebAssembly)
-| File | Covered | Total | % |
-|------|---------|-------|---|
-| lib.rs | 53 | 53 | 100.0% |
-| **Crate Total** | **53** | **53** | **100.0%** |
+Mirror the CI invocation exactly (install a tarpaulin version that builds under the
+current toolchain first):
 
-## Excluded Crates
+```sh
+cargo install cargo-tarpaulin --locked
+cargo tarpaulin --workspace --exclude forge-python --exclude forge-wasm \
+  --features forge-cloud/gcs --skip-clean --fail-under 85 --print-summary
+```
 
-- **forge-python**: PyO3 bindings require Python runtime; excluded from tarpaulin coverage
-- **forge-bench**: Benchmark crate; no business logic to cover
-
-## Gap Analysis
-
-All crates exceed the 80% coverage target:
-
-| Crate | Coverage | Status |
-|-------|----------|--------|
-| forge-types | 95.1% | PASS |
-| forge-core | 96.9% | PASS |
-| forge-worldgen | 95.7% | PASS |
-| forge-task | 86.8% | PASS |
-| forge-agent | 91.3% | PASS |
-| forge-wasm | 100.0% | PASS |
-| **Overall** | **91.13%** | **PASS** |
-
-### Areas Below 90% (Improvement Opportunities)
-
-1. **forge-task/predicate.rs** (78.9%): Some predicate evaluation branches untested
-2. **forge-task/generator.rs** (85.2%): Edge cases in task generation
-3. **forge-agent/baselines.rs** (85.7%): Some baseline agent paths untested
-4. **forge-agent/mcts/search.rs** (82.7%): Deep MCTS search paths
-5. **forge-types/validation.rs** (81.5%): Some validation boundary conditions
-6. **forge-worldgen/terrain.rs** (84.6%): Terrain generation edge cases
-
-### Summary
-
-The FORGE codebase achieves **91.13% overall line coverage**, significantly exceeding
-the 80% target. All 6 measured crates individually exceed 80%. The strongest coverage
-is in forge-wasm (100%) and forge-core (96.9%), reflecting the thorough testing of the
-core simulation engine. The lowest individual file coverage is forge-task/predicate.rs
-at 78.9%, which contains complex branching logic for 10 different predicate types.
+The HTML/XML reports (`tarpaulin-report.html`, `cobertura.xml`) are build
+side-effects and are **git-ignored** — download them from the CI run's
+`coverage-report` artifact rather than committing them.

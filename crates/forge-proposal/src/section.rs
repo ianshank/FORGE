@@ -1,9 +1,8 @@
 //! Composable proposal section model.
 //!
 //! [`SectionComposition`] follows the recursive tree pattern established by
-//! `TaskComposition` in `forge-task` and `Objective` in `forge-procgen`.
-//! This allows agency-adaptive proposal structures where different agencies
-//! require different section arrangements.
+//! `TaskComposition` in `forge-task`. This allows agency-adaptive proposal
+//! structures where different agencies require different section arrangements.
 
 use serde::{Deserialize, Serialize};
 use tracing::instrument;

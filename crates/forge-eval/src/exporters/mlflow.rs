@@ -1,4 +1,4 @@
-// WIP-preserved (commit a91b3fa) â€” see exporters/huggingface.rs header for
+// WIP-preserved (commit a91b3fa) — see exporters/huggingface.rs header for
 // rationale on the module-level clippy allow.
 #![allow(clippy::field_reassign_with_default)]
 

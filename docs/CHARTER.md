@@ -48,6 +48,10 @@ breakdown — it is the single source of truth for that list, not this charter):
 | Training & runner | `forge-agent`, `forge-mc-runner`, `forge-replay` | MCTS/MuZero planning, the end-to-end episode runner, versioned trajectory storage |
 | Serving & bindings | `forge-server`, `forge-python`, `forge-wasm` | REST/WebSocket server, PyO3/Gymnasium bindings, WASM module |
 | Observability | `forge-observability` | Shared `tracing` init (text/JSON), metrics |
+| Evaluation & data | `forge-eval`, `forge-data` | Agent-agnostic evaluation harness + benchmark suite (MLflow/HF exporters) and the training-data pipeline |
+| Cloud & edge | `forge-cloud`, `forge-edge` | Distributed cloud/edge storage + worker orchestration for training artifacts |
+| Control plane | `forge-mangomas` | MangoMAS multi-agent curriculum / sweep / transfer control plane (Rust twin of `python/forge/mangomas`) |
+| Proposal generation | `forge-proposal` | Composable proposal / document-template engine |
 
 ---
 

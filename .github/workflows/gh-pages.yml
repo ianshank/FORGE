@@ -9,6 +9,9 @@ on:
     # Mirror the repository's release/default branches so Pages keeps deploying
     # if the default branch changes (e.g. a merge to `main`). `workflow_dispatch`
     # below allows a manual deploy from any branch.
+    # Deploy workflow: build/publish Pages only from the release/default
+    # branches, NOT from every feature branch (a `claude/**` glob would build
+    # the WASM demo on unrelated PRs and surface unrelated toolchain breakage).
     branches: [main, claude/plan-forge-environment-htAoK]
     paths:
       - "crates/forge-wasm/**"

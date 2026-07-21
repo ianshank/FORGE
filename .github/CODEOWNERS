@@ -1,0 +1,54 @@
+# CODEOWNERS — default reviewers for FORGE.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Grouped to mirror docs/architecture.md (the single source of truth for the
+# crate list) and docs/CHARTER.md. Update ownership here when the crate groups
+# change so the reconciled crate table stays enforceable, not just documentary.
+
+# Default owner for everything not matched below.
+*                                   @ianshank
+
+# --- Core simulation ---------------------------------------------------------
+/crates/forge-core/                 @ianshank
+/crates/forge-types/                @ianshank
+/crates/forge-worldgen/             @ianshank
+/crates/forge-civ/                  @ianshank
+
+# --- Env traits & impls ------------------------------------------------------
+/crates/forge-env/                  @ianshank
+/crates/forge-env-forge/            @ianshank
+/crates/forge-env-mc/               @ianshank
+
+# --- Training & runner -------------------------------------------------------
+/crates/forge-agent/                @ianshank
+/crates/forge-mc-runner/            @ianshank
+/crates/forge-replay/               @ianshank
+
+# --- Serving & bindings ------------------------------------------------------
+/crates/forge-server/               @ianshank
+/crates/forge-python/               @ianshank
+/crates/forge-wasm/                 @ianshank
+
+# --- Observability -----------------------------------------------------------
+/crates/forge-observability/        @ianshank
+
+# --- Cloud / edge distribution ----------------------------------------------
+/crates/forge-cloud/                @ianshank
+/crates/forge-edge/                 @ianshank
+
+# --- MangoMAS control plane + evaluation ------------------------------------
+/crates/forge-mangomas/             @ianshank
+/crates/forge-eval/                 @ianshank
+/crates/forge-data/                 @ianshank
+/crates/forge-proposal/             @ianshank
+
+# --- Language surfaces outside the Cargo workspace --------------------------
+/mc-bot/                            @ianshank
+/python/                           @ianshank
+/dashboard/                        @ianshank
+/demo_ui/                          @ianshank
+
+# --- CI / infra / governance -------------------------------------------------
+/.github/                          @ianshank
+/docker/                           @ianshank
+/docs/CHARTER.md                    @ianshank

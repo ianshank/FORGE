@@ -1259,6 +1259,7 @@ dependencies = [
  "chrono",
  "clap",
  "forge-core",
+ "forge-observability",
  "forge-replay",
  "forge-types",
  "mockito",
@@ -1277,7 +1278,6 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "tracing",
- "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -1391,19 +1391,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "forge-procgen"
-version = "0.5.0"
-dependencies = [
- "forge-types",
- "proptest",
- "rand 0.8.5",
- "rand_pcg",
- "serde",
- "serde_json",
- "tracing",
-]
-
-[[package]]
 name = "forge-proposal"
 version = "0.5.0"
 dependencies = [
@@ -1448,19 +1435,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.18",
- "toml",
- "tracing",
-]
-
-[[package]]
-name = "forge-scenario"
-version = "0.5.0"
-dependencies = [
- "forge-types",
- "proptest",
- "serde",
- "serde_json",
  "thiserror 2.0.18",
  "toml",
  "tracing",

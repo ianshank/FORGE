@@ -143,8 +143,7 @@ where
             trace!(sample, score, "sampled joint candidate");
 
             // Strictly-greater keeps the lowest sample index on ties → deterministic.
-            // (`map_or` rather than `is_none_or`: MSRV is 1.75, the latter is 1.82.)
-            if best.as_ref().map_or(true, |(b, _)| score > *b) {
+            if best.as_ref().is_none_or(|(b, _)| score > *b) {
                 best = Some((score, joint));
             }
         }

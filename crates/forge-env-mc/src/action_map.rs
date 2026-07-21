@@ -414,14 +414,7 @@ ticks = 1
     /// canonical config that downstream test/build configs depend on.
     #[test]
     fn ships_default_action_map_parses() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("configs/minecraft/action_map.toml");
-        let raw = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let raw = crate::test_support::read_workspace_config("configs/minecraft/action_map.toml");
         let map = ActionMap::parse_toml(&raw).expect("parse default action_map");
         map.validate().unwrap();
         assert!(map.action_count() >= 1);

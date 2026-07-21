@@ -11,6 +11,12 @@ export const DEFAULT_RECONNECT_CONFIG = Object.freeze({
   stale_timeout_ms: 10_000,
 });
 
+/**
+ * Default timeout (ms) to wait for the initial mineflayer `spawn` event when
+ * creating a bot. Overridable via `[bot] spawn_timeout_ms` in env.toml.
+ */
+export const DEFAULT_SPAWN_TIMEOUT_MS = 30_000;
+
 export interface ReconnectConfig {
   backoff_ms?: number[];
   max_attempts?: number;
@@ -201,14 +207,38 @@ export class BotManager extends EventEmitter {
     bot.on('end', (reason: any) => onDisconnect(`end: ${reason ?? 'unknown'}`));
   }
 
+  /**
+   * Resolve the spawn timeout (ms) from `bot.spawn_timeout_ms`, guarding against
+   * 0 / negative / non-finite / non-numeric overrides — `??` alone would pass a
+   * `0` straight to setTimeout and fire an immediate timeout before the bot
+   * could spawn. Emits a `warn` (for debuggability) when a value is *configured
+   * but invalid*, then falls back to {@link DEFAULT_SPAWN_TIMEOUT_MS}. An unset
+   * value is the normal default path and is not warned about.
+   */
+  #resolveSpawnTimeoutMs(): number {
+    const raw = this.#botConfig?.spawn_timeout_ms;
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+      return raw;
+    }
+    if (raw !== undefined && raw !== null) {
+      this.#logger.warn?.({
+        event: 'invalid_spawn_timeout',
+        configured: raw,
+        fallback_ms: DEFAULT_SPAWN_TIMEOUT_MS,
+      });
+    }
+    return DEFAULT_SPAWN_TIMEOUT_MS;
+  }
+
   /** Wait for the bot's `spawn` event (or resolve immediately if already spawned). */
   #waitForSpawn(bot: any): Promise<void> {
     if (bot.entity) return Promise.resolve();
+    const timeoutMs = this.#resolveSpawnTimeoutMs();
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new Error('Spawn timeout: bot failed to spawn within 30000ms'));
-      }, 30000);
+        reject(new Error(`Spawn timeout: bot failed to spawn within ${timeoutMs}ms`));
+      }, timeoutMs);
 
       const onSpawn = () => {
         cleanup();

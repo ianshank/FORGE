@@ -213,16 +213,7 @@ mod tests {
         // any future drift in the TOML field names or layout will
         // fail this test before it can ship.
         //
-        // CARGO_MANIFEST_DIR == .../crates/forge-env-mc; the workspace
-        // root is two directories up.
-        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace_root = manifest_dir
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("workspace root");
-        let env_toml = workspace_root.join("configs/minecraft/env.toml");
-        let raw = std::fs::read_to_string(&env_toml)
-            .unwrap_or_else(|e| panic!("read {}: {e}", env_toml.display()));
+        let raw = crate::test_support::read_workspace_config("configs/minecraft/env.toml");
         let cfg: MinecraftEnvConfig = toml::from_str(&raw).expect("parse env.toml");
 
         assert!(cfg.observation.include_block_grid);

@@ -7,7 +7,13 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Rust builder
 # ---------------------------------------------------------------------------
-FROM rust:1.82-bookworm AS rust-builder
+# Shared Rust toolchain image tag for all builder stages. Must be >= 1.85 so
+# cargo can parse edition-2024 dependency manifests (e.g. `fixed` >= 1.30, which
+# declares edition = "2024"); older cargo fails with "failed to parse manifest".
+# Kept in sync with docker/mc-runner.Dockerfile. Override at build time with
+# `--build-arg RUST_IMAGE_TAG=...`.
+ARG RUST_IMAGE_TAG=1.93-bookworm
+FROM rust:${RUST_IMAGE_TAG} AS rust-builder
 ARG FEATURES=""
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
@@ -29,7 +35,7 @@ RUN if [ -n "$FEATURES" ]; then \
 # Stage 2: Python wheel builder (separate from runtime to avoid Rust toolchain
 # and build-essential ending up in the final image — Gemini review: critical)
 # ---------------------------------------------------------------------------
-FROM rust:1.82-bookworm AS wheel-builder
+FROM rust:${RUST_IMAGE_TAG} AS wheel-builder
 WORKDIR /app
 
 RUN apt-get update && \
