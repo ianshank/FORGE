@@ -8,7 +8,7 @@ This document provides a comprehensive report of the code review, analysis, tria
 
 All CodeRabbit and peer review feedback blocks have been successfully triaged and resolved with zero remaining errors, compiler warnings, type check errors, format warnings, or lint failures across the three core ecosystems (Rust, Python, and TypeScript/ESM).
 
-### Key Issues Resolved & Hardened:
+### Key Issues Resolved & Hardened
 1. **Experiment Logger Resilience (`trainer.py`)**:
    - Wrapped `self._experiment_logger.log(...)` inside `train_step()` in a robust `try...except Exception as e:` block. If logging/network transport fails, the system logs a warning instead of aborting a training run.
    - Wrapped `.close()` in `MuzeroMcTrainer.close()` in a `try...except...finally` block to prevent log-teardown exceptions from masking actual training failures inside `finally` blocks.
