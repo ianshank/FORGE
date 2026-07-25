@@ -87,20 +87,19 @@ jobs:
   machete:
     name: Unused Dependencies (advisory)
     runs-on: ubuntu-latest
-    # Advisory-only: cargo-machete's static scan produces false positives on
-    # this derive-heavy workspace (serde / thiserror / fixed etc. are used
-    # only through derive macros it cannot see). `--with-metadata` reduces but
-    # does not eliminate them, so findings are reported in the log for human
-    # review rather than failing the build. Promote to blocking once the
-    # remaining false positives are pinned via each crate's
-    # `[package.metadata.cargo-machete] ignored = [...]`.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-machete
-      - run: cargo machete --with-metadata
+      # Advisory-only, matching security.yml's `|| true` scanners: cargo-machete's
+      # static scan false-positives on this derive-heavy workspace (serde /
+      # thiserror / fixed are used only through derive macros it cannot see).
+      # `--with-metadata` reduces but does not eliminate them, so `|| true` keeps
+      # the check green while surfacing findings in the log. Promote to blocking
+      # (drop `|| true`) once the remaining false positives are pinned via each
+      # crate's `[package.metadata.cargo-machete] ignored = [...]`.
+      - run: cargo machete --with-metadata || true
 
   markdownlint:
     name: Markdown Lint
