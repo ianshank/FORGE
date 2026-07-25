@@ -17,8 +17,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 forge-types = { workspace = true }
 forge-core = { workspace = true }
-forge-worldgen = { workspace = true }
-forge-task = { workspace = true }
 pyo3 = { workspace = true }
 numpy = { workspace = true }
 serde = { workspace = true }
@@ -27,3 +25,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

@@ -368,7 +368,7 @@ without the feature pass cleanly (85/85 unit tests).
 
 Peer-review revisions folded in: gaps #1 (vec3 plumbing, dropped in
 favor of plain `{x,y,z}` objects so `test:no-deps` still passes),
-#2 (OBS_DIM=31 defaults), #3 (Hello.grid_shape), #4
+\#2 (OBS_DIM=31 defaults), #3 (Hello.grid_shape), #4
 (`radius` → `grid_radius` rename), #5 (per-variant trajectory dirs
 to avoid eviction), #7 (`finiteNumber` coercion), #8 (no Cargo
 feature gate on random-baseline), #9 (drop `RandomAgent` reuse

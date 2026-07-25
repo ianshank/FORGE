@@ -44,7 +44,7 @@ forge-env-mc = { workspace = true, optional = true }
 forge-observability = { workspace = true }
 forge-replay = { workspace = true }
 anyhow = { workspace = true }
-axum = "0.7"
+axum = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
 prometheus = "0.13"
@@ -58,9 +58,12 @@ toml = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
 
 [[bin]]
 name = "forge-mc-runner"
 path = "src/main.rs"
+
+[lints]
+workspace = true

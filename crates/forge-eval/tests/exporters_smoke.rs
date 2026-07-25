@@ -1,10 +1,3 @@
-// WIP-preserved test file (commit a91b3fa). The pre-existing init style uses
-// `let mut cfg = EvalConfig::default(); cfg.field = ...;` which clippy flags
-// as `field_reassign_with_default`. Allow at module scope so the WIP author's
-// original pattern is preserved; can be revisited as part of a dedicated
-// cleanup commit later without distorting the rebase or e2e work.
-#![allow(clippy::field_reassign_with_default)]
-
 //! Phase B SMOKE test: drive `EvalHarness::evaluate_suite` end-to-end
 //! with **both** exporters configured, then assert the on-disk trees
 //! exist with the structurally important files.
@@ -76,14 +69,16 @@ fn smoke_both_exporters_produce_expected_files_via_harness() {
     let mlruns = tmp.path().join("mlruns");
     let hf_root = tmp.path().join("hf_export");
 
-    let mut config = EvalConfig::default();
-    config.episodes_per_scenario = 2;
-    config.max_steps_per_episode = 10;
-    config.parallelism = 1;
-    config.run_id = Some("phase-b-smoke-001".to_string());
-    config.experiment_name = Some("phase-b-smoke".to_string());
-    config.mlflow_tracking_uri = Some(mlruns.clone());
-    config.huggingface_export_root = Some(hf_root.clone());
+    let config = EvalConfig {
+        episodes_per_scenario: 2,
+        max_steps_per_episode: 10,
+        parallelism: 1,
+        run_id: Some("phase-b-smoke-001".to_string()),
+        experiment_name: Some("phase-b-smoke".to_string()),
+        mlflow_tracking_uri: Some(mlruns.clone()),
+        huggingface_export_root: Some(hf_root.clone()),
+        ..Default::default()
+    };
 
     let harness = EvalHarness::new(config);
     let suite = tiny_suite();
@@ -193,10 +188,12 @@ fn smoke_default_config_skips_both_exporters() {
     // Phase 1 byte-for-byte: with both exporter fields None (the default),
     // no mlruns/ or hf_export/ tree is created.
     let tmp = TempDir::new().expect("tempdir");
-    let mut config = EvalConfig::default();
-    config.episodes_per_scenario = 1;
-    config.max_steps_per_episode = 5;
-    config.parallelism = 1;
+    let config = EvalConfig {
+        episodes_per_scenario: 1,
+        max_steps_per_episode: 5,
+        parallelism: 1,
+        ..Default::default()
+    };
     // mlflow_tracking_uri and huggingface_export_root left as None.
     assert!(config.mlflow_tracking_uri.is_none());
     assert!(config.huggingface_export_root.is_none());

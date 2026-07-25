@@ -50,13 +50,13 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 toml = { workspace = true }
-rayon = "1"
+rayon = { workspace = true }
 # Phase B exporters: MLflow meta.yaml + HF dataset card frontmatter
 # both require YAML; serde_json won't round-trip the format mlflow ui parses.
 serde_yaml = "0.9"
 # Phase B: SHA-256 over scenario TOML files for RunManifest and
 # deterministic child-run IDs.
-sha2 = "0.10"
+sha2 = { workspace = true }
 # Phase B: run_id generation when EvalConfig.run_id is None.
 uuid = { version = "1", features = ["v4"] }
 # HTTP-only optional deps (enabled by `http-mlflow` feature).
@@ -77,9 +77,12 @@ forge-observability = { workspace = true, optional = true }
 proptest = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }
 # Always-present dev dep so test files keep compiling even when
 # `--features http-mlflow` is omitted; the http_unit tests are gated
 # on the feature via `#![cfg(feature = "http-mlflow")]`.
 mockito = { workspace = true }
 testcontainers = { workspace = true }
+
+[lints]
+workspace = true

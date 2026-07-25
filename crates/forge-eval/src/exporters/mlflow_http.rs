@@ -967,7 +967,6 @@ fn upload_dir_recursively(
 /// [`ExportError::Retryable`]; everything else is [`ExportError::Http`].
 /// Slice 2b's REST methods all funnel through this.
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn map_reqwest_err(e: reqwest::Error) -> ExportError {
     if e.is_timeout() || e.is_connect() {
         ExportError::Retryable(format!("transport: {e}"))
@@ -982,7 +981,6 @@ pub(crate) fn map_reqwest_err(e: reqwest::Error) -> ExportError {
 /// Slice 2b's REST methods all funnel through this. Covered by the
 /// `classify_status_distinguishes_retryable_from_terminal` test below.
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn classify_status(status: StatusCode, body_hint: &str) -> Result<(), ExportError> {
     if status.is_success() {
         return Ok(());

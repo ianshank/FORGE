@@ -61,7 +61,7 @@ describe('action_map — buildActionMap', () => {
 
   it('rejects non-finite look angles', () => {
     assert.throws(() => buildActionMap({ action: [
-      { id: 0, kind: 'look', yaw_deg: NaN, pitch_deg: 0 },
+      { id: 0, kind: 'look', yaw_deg: Number.NaN, pitch_deg: 0 },
     ] }));
   });
 

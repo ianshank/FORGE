@@ -6,7 +6,7 @@ This playbook serves as a developer reference for working with the Monte Carlo T
 
 ## 🚀 CLI Subcommands & Operations
 
-The `forge.training.muzero_mc.cli` module serves as the primary entry point for managing models, manifests, baselines, and active training loops. 
+The `forge.training.muzero_mc.cli` module serves as the primary entry point for managing models, manifests, baselines, and active training loops.
 
 ```bash
 python -m forge.training.muzero_mc.cli [SUBCOMMAND] [ARGS]
@@ -111,7 +111,7 @@ To achieve high throughput, the core simulation loop enforces a **zero-allocatio
 - **Buffer Reuse**: Instead of returning newly allocated structs, the engine requires caller-owned mutable buffers.
   - **Allocating (Slow)**: `state.step(action) -> StepResult`
   - **Zero-Alloc (Fast)**: `state.step_into(action, &mut step_result_buffer)`
-- ** Warmup Allocation**: All memory required for tree search and trajectory storage is pre-allocated during initialization. The tree reuse logic resets node structures in place rather than dropping and re-allocating them.
+- **Warmup Allocation**: All memory required for tree search and trajectory storage is pre-allocated during initialization. The tree reuse logic resets node structures in place rather than dropping and re-allocating them.
 - **Verification**: Zero-allocation compliance is strictly enforced in Rust CI via Criterion allocation audits:
   ```bash
   cargo run -p forge-bench --bin allocation_audit

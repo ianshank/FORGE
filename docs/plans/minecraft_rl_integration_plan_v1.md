@@ -47,7 +47,7 @@ Each new crate enforces these without exception. Items map 1:1 to audited patter
 | Errors | `#[derive(thiserror::Error, Debug)]` for libs; `anyhow::Result` only in `bin/` | `forge-agent` and root-crate convention |
 | Config | `#[derive(Debug, Clone, Default, Serialize, Deserialize)]` + `#[serde(default)]`; defaults in `impl Default` | `forge-types/config.rs:26-51` |
 | Tests | `#[test]` unit; `proptest! { #[test] ... }` properties; `criterion` benches | `forge-replay/trajectory.rs:323-371`, `forge-bench/benches/step_throughput.rs` |
-| PyO3 | `#[pyclass]` + `#[pymethods]` + `py.allow_threads(|| ...)` around Rust compute; numpy via `numpy::PyArray*` | `forge-python/src/env.rs` |
+| PyO3 | `#[pyclass]` + `#[pymethods]` + `py.allow_threads(\|\| ...)` around Rust compute; numpy via `numpy::PyArray*` | `forge-python/src/env.rs` |
 | ONNX | `ort` v2.x; `Mutex<Session>` per net; load via `Session::builder().commit_from_file(path)` | `forge-agent/src/latent_mcts/onnx_model.rs:81-101` |
 | Workspace registration | Add new crate to `crates/` + workspace `members` + `[workspace.dependencies]` | Root `Cargo.toml` |
 | Public doc comments | Every public item documented (CLAUDE.md hard rule) | CLAUDE.md |

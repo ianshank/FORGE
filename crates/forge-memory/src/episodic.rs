@@ -97,7 +97,7 @@ impl EpisodicMemory {
                 .episodes
                 .iter()
                 .enumerate()
-                .min_by(|(_, a), (_, b)| a.strength.partial_cmp(&b.strength).unwrap())
+                .min_by(|(_, a), (_, b)| a.strength.total_cmp(&b.strength))
                 .map(|(i, _)| i)
             {
                 self.episodes.swap_remove(min_idx);

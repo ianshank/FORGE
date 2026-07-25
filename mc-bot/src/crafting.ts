@@ -1,4 +1,4 @@
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 const recipeCache = new Map<string, any>();
@@ -30,7 +30,7 @@ export class CraftingPlanner {
 
   // Basic DFS for crafting plan. Returns an array of Recipe objects to execute in order.
   // Returns null if it cannot be crafted with current inventory.
-  plan(targetItemId: number, count: number = 1): number[] | null {
+  plan(targetItemId: number, count = 1): number[] | null {
     const inventory = this.getInventoryState();
     const plan: number[] = [];
 
@@ -86,7 +86,7 @@ export class CraftingPlanner {
 
         // Try to resolve each requirement
         for (const [reqIdStr, reqCount] of Object.entries(requirements)) {
-          const reqId = parseInt(reqIdStr, 10);
+          const reqId = Number.parseInt(reqIdStr, 10);
           if (!resolve(reqId, reqCount * executions)) {
             possible = false;
             break;
@@ -103,16 +103,15 @@ export class CraftingPlanner {
           const remainder = (executions * yields) - stillNeeded;
           inventory[itemId] = (inventory[itemId] || 0) + remainder;
           return true;
-        } else {
-          // Revert state and try next recipe
-          Object.assign(inventory, stateSnapshot);
-          for (const keyStr of Object.keys(inventory)) {
-             const key = parseInt(keyStr, 10);
-             if (!(key in stateSnapshot)) delete inventory[key];
-          }
-          plan.length = planSnapshot.length;
-          for (let i = 0; i < planSnapshot.length; i++) plan[i] = planSnapshot[i];
         }
+        // Revert state and try next recipe
+        Object.assign(inventory, stateSnapshot);
+        for (const keyStr of Object.keys(inventory)) {
+          const key = Number.parseInt(keyStr, 10);
+          if (!(key in stateSnapshot)) delete inventory[key];
+        }
+        plan.length = planSnapshot.length;
+        for (let i = 0; i < planSnapshot.length; i++) plan[i] = planSnapshot[i];
       }
       return false; // All recipes failed
     };

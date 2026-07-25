@@ -1123,7 +1123,6 @@ version = "0.5.0"
 dependencies = [
  "bincode",
  "chrono",
- "forge-core",
  "forge-data",
  "forge-replay",
  "forge-types",
@@ -1180,9 +1179,7 @@ dependencies = [
  "forge-agent",
  "forge-core",
  "forge-replay",
- "forge-task",
  "forge-types",
- "forge-worldgen",
  "proptest",
  "rand 0.8.5",
  "rand_pcg",
@@ -1408,9 +1405,7 @@ name = "forge-python"
 version = "0.5.0"
 dependencies = [
  "forge-core",
- "forge-task",
  "forge-types",
- "forge-worldgen",
  "numpy",
  "pyo3",
  "serde",

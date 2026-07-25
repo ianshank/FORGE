@@ -18,7 +18,7 @@ serde_json = { workspace = true }
 bincode = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
-chrono = "0.4"
+chrono = { workspace = true }
 # Gzip compression for the opt-in `TrajectoryV2::save_json_gz` path
 # (RunnerConfig.trajectory_compression = "gzip"). Always available;
 # the on-disk file extension drives the codec choice in `load_json`.
@@ -41,5 +41,8 @@ hf = ["dep:arrow", "dep:parquet"]
 proptest = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }
 toml = { workspace = true }
+
+[lints]
+workspace = true

@@ -40,7 +40,7 @@ Same as v1 with one explicit clarification:
 | Errors | `#[derive(thiserror::Error, Debug)]` for libs; `anyhow::Result` only in `bin/` | `forge-agent` convention |
 | Config | `#[derive(Debug, Clone, Default, Serialize, Deserialize)]` + `#[serde(default)]` | `forge-types/config.rs:26-51` |
 | Tests | `#[test]` unit; `proptest! { #[test] ... }`; `criterion` benches | `forge-replay/trajectory.rs:323-371`, `forge-bench/benches/step_throughput.rs` |
-| PyO3 | `#[pyclass]` + `#[pymethods]` + `py.allow_threads(|| ...)`; numpy via `numpy::PyArray*` | `forge-python/src/env.rs` |
+| PyO3 | `#[pyclass]` + `#[pymethods]` + `py.allow_threads(\|\| ...)`; numpy via`numpy::PyArray*` | `forge-python/src/env.rs` |
 | ONNX | `ort` v2.x; `Mutex<Session>` per net; `Session::builder().commit_from_file(path)` | `forge-agent/src/latent_mcts/onnx_model.rs:81-101` |
 | Zero-alloc | Hot-path Rust paths only; wire-bound envs exempt with documented carve-out | This document §1 |
 | Workspace registration | Add new crate to `crates/` + workspace `members` + `[workspace.dependencies]` | Root `Cargo.toml` |

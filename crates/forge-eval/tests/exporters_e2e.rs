@@ -1,7 +1,3 @@
-// WIP-preserved test file (commit a91b3fa). See exporters_smoke.rs header for
-// rationale on the module-level clippy allow.
-#![allow(clippy::field_reassign_with_default)]
-
 //! Phase B E2E test: drives the full harness with both exporters and
 //! then shells out to **Python `mlflow` + `datasets`** to validate that
 //! the on-disk trees actually load via the consumer tools — not just
@@ -131,14 +127,16 @@ fn run_eval_and_export(tmp: &Path) -> (PathBuf, PathBuf, String) {
     let hf_root = tmp.join("hf_export");
     let run_id = "phase-b-e2e-001".to_string();
 
-    let mut config = EvalConfig::default();
-    config.episodes_per_scenario = 2;
-    config.max_steps_per_episode = 10;
-    config.parallelism = 1;
-    config.run_id = Some(run_id.clone());
-    config.experiment_name = Some("phase-b-e2e".to_string());
-    config.mlflow_tracking_uri = Some(mlruns.clone());
-    config.huggingface_export_root = Some(hf_root.clone());
+    let config = EvalConfig {
+        episodes_per_scenario: 2,
+        max_steps_per_episode: 10,
+        parallelism: 1,
+        run_id: Some(run_id.clone()),
+        experiment_name: Some("phase-b-e2e".to_string()),
+        mlflow_tracking_uri: Some(mlruns.clone()),
+        huggingface_export_root: Some(hf_root.clone()),
+        ..Default::default()
+    };
 
     let harness = EvalHarness::new(config);
     let _ = harness.evaluate_suite(&tiny_suite(), &|| Box::new(NoopEvalAgent));

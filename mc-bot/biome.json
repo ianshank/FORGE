@@ -27,12 +27,20 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": false,
+      "recommended": true,
       "security": {
         "noGlobalEval": "error"
       },
       "suspicious": {
-        "noDebugger": "error"
+        "noDebugger": "error",
+        "noExplicitAny": "off",
+        "noImplicitAnyLet": "off"
+      },
+      "performance": {
+        "noDelete": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off"
       }
     }
   }

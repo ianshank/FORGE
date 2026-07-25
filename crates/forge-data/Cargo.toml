@@ -13,8 +13,6 @@ description = "Training data loaders, dataset adapters, and expert demo generati
 [dependencies]
 forge-types = { workspace = true }
 forge-core = { workspace = true }
-forge-worldgen = { workspace = true }
-forge-task = { workspace = true }
 forge-agent = { workspace = true }
 forge-replay = { workspace = true }
 serde = { workspace = true }
@@ -23,9 +21,12 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
-rayon = "1"
+rayon = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

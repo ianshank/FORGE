@@ -15,3 +15,6 @@ tracing = { workspace = true }
 # Inherits the workspace features ("env-filter", "json") so JSON output needs no
 # extra feature plumbing and the whole workspace shares one subscriber version.
 tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

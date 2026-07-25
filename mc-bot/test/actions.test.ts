@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const registry = require('prismarine-registry')('1.20.4');
@@ -243,7 +243,7 @@ describe('executeAction', () => {
     const bot = stubBot();
     bot.version = '1.20.4';
     bot.registry = registry;
-    bot.inventory = { items: () => [{ type: registry.itemsByName['oak_log'].id, count: 1 }] };
+    bot.inventory = { items: () => [{ type: registry.itemsByName.oak_log.id, count: 1 }] };
     let craftedRecipe = null;
     let craftedAmount = 0;
     bot.recipesFor = (id: any, metadata: any, count: any, table: any) => {
@@ -269,8 +269,8 @@ describe('executeAction', () => {
     bot.registry = registry;
     bot.inventory = { 
       items: () => [
-        { type: registry.itemsByName['oak_planks'].id, count: 3 },
-        { type: registry.itemsByName['stick'].id, count: 2 }
+        { type: registry.itemsByName.oak_planks.id, count: 3 },
+        { type: registry.itemsByName.stick.id, count: 2 }
       ] 
     };
     let tableFoundId = null;
@@ -290,7 +290,7 @@ describe('executeAction', () => {
 
     const result = await executeAction(bot, { kind: 'craft_wooden_pickaxe' });
     assert.equal(result.crafted, true);
-    assert.equal(tableFoundId, registry.blocksByName['crafting_table'].id);
+    assert.equal(tableFoundId, registry.blocksByName.crafting_table.id);
     assert.ok(recipesQueryTable);
     assert.deepEqual(craftedRecipe, { id: 'recipe-pickaxe' });
   });

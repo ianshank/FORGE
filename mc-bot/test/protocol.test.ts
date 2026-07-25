@@ -110,7 +110,7 @@ describe('protocol — observationMsg', () => {
 
   it('rejects non-finite reward', () => {
     assert.throws(() =>
-      observationMsg({ tick: 0, obs: [], reward: NaN, terminated: false, truncated: false }),
+      observationMsg({ tick: 0, obs: [], reward: Number.NaN, terminated: false, truncated: false }),
     );
   });
 
@@ -181,7 +181,7 @@ describe('protocol — parseClientMsg', () => {
     );
     // NaN / Infinity.
     assert.throws(() => parseClientMsg({ type: 'reset', seed: Number.NaN }));
-    assert.throws(() => parseClientMsg({ type: 'reset', seed: Infinity }));
+    assert.throws(() => parseClientMsg({ type: 'reset', seed: Number.POSITIVE_INFINITY }));
   });
 
   it('accepts seed at the safe-integer boundary', () => {

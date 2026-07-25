@@ -48,7 +48,7 @@ export function buildReward(cfg: any): RewardFn {
     for (const { kind, fn } of fns) {
       const val = fn(ctx);
       sum += val;
-      if (ctx && ctx.breakdown) {
+      if (ctx?.breakdown) {
         ctx.breakdown[kind] = (ctx.breakdown[kind] || 0) + val;
       }
     }
