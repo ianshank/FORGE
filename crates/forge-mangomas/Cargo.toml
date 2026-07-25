@@ -22,7 +22,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
-rayon = "1"
+rayon = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

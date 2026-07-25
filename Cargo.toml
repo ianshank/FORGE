@@ -147,11 +147,21 @@ smallvec = { version = "1", features = ["serde"] }
 
 # Testing
 proptest = "1"
+tempfile = "3"
 
 # Cloud storage (GCS/S3/Azure — Apache Arrow object_store)
 object_store = "0.11"
 tokio = { version = "1", features = ["rt", "macros"] }
 futures = "0.3"
+
+# HTTP server framework (forge-server enables the `ws` feature; forge-mc-runner does not)
+axum = { version = "0.7" }
+
+# Data-parallelism
+rayon = "1"
+
+# Hashing (schema_id / manifest digests)
+sha2 = "0.10"
 
 # MLflow HTTP exporter (opt-in via forge-eval's `http-mlflow` feature).
 # default-features=false + rustls-tls avoids OpenSSL on Windows CI; blocking

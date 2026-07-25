@@ -23,9 +23,9 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
-rayon = "1"
+rayon = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }
 serde_json = { workspace = true }

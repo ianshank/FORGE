@@ -33,4 +33,4 @@ futures = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }
