@@ -16,7 +16,6 @@ gcs = ["dep:object_store", "dep:tokio", "dep:futures"]
 
 [dependencies]
 forge-types = { workspace = true }
-forge-core = { workspace = true }
 forge-replay = { workspace = true }
 forge-data = { workspace = true }
 serde = { workspace = true }

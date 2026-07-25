@@ -84,6 +84,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --features forge-cloud/gcs --verbose
 
+  machete:
+    name: Unused Dependencies (advisory)
+    runs-on: ubuntu-latest
+    # Advisory-only: cargo-machete's static scan produces false positives on
+    # this derive-heavy workspace (serde / thiserror / fixed etc. are used
+    # only through derive macros it cannot see). `--with-metadata` reduces but
+    # does not eliminate them, so findings are reported in the log for human
+    # review rather than failing the build. Promote to blocking once the
+    # remaining false positives are pinned via each crate's
+    # `[package.metadata.cargo-machete] ignored = [...]`.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+      - run: cargo machete --with-metadata
+
   bench:
     name: Benchmarks
     runs-on: ubuntu-latest
