@@ -58,6 +58,9 @@ tempfile = { workspace = true }
 toml = { workspace = true }
 bincode = { workspace = true }
 
+[lints]
+workspace = true
+
 [[test]]
 name = "integration_tests"
 path = "tests/rust/integration_tests.rs"
@@ -188,6 +191,14 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # Python bindings
 pyo3 = { version = "0.22", features = ["extension-module"] }
 numpy = "0.22"
+
+# Workspace-wide lint policy. Each member crate opts in with
+# `[lints]\nworkspace = true`. Denying the `clippy::all` group here codifies
+# CI's `-D warnings` locally (so `cargo clippy` matches CI) and closes the
+# gap for the few crates that lacked a crate-level `#![deny(clippy::all)]`.
+# `priority = -1` keeps targeted `#[allow(clippy::..)]` in code effective.
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
 
 [profile.release]
 lto = true

@@ -34,3 +34,6 @@ futures = { workspace = true, optional = true }
 [dev-dependencies]
 proptest = { workspace = true }
 tempfile = { workspace = true }
+
+[lints]
+workspace = true

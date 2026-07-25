@@ -57,3 +57,6 @@ path = "src/bin/allocation_audit.rs"
 # The binary only exists when the feature is enabled; normal `cargo build
 # -p forge-bench` leaves it out so we don't pay the dhat allocator cost.
 required-features = ["dhat-heap"]
+
+[lints]
+workspace = true

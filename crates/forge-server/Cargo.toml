@@ -35,3 +35,6 @@ toml = { workspace = true }
 tokio-tungstenite = "0.24"
 tempfile = { workspace = true }
 tower = { version = "0.5", features = ["util"] }
+
+[lints]
+workspace = true

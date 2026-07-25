@@ -64,3 +64,6 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"
 [[bin]]
 name = "forge-mc-runner"
 path = "src/main.rs"
+
+[lints]
+workspace = true

@@ -29,3 +29,6 @@ rayon = { workspace = true }
 proptest = { workspace = true }
 tempfile = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

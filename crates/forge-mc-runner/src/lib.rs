@@ -26,7 +26,7 @@
 //! episodes* — is enforced by the caller, not the watcher. A doc
 //! comment on `HotReloadWatcher::poll` calls this out.
 
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod config;
 pub mod error;

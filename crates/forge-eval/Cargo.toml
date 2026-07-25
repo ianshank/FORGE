@@ -83,3 +83,6 @@ tempfile = { workspace = true }
 # on the feature via `#![cfg(feature = "http-mlflow")]`.
 mockito = { workspace = true }
 testcontainers = { workspace = true }
+
+[lints]
+workspace = true
