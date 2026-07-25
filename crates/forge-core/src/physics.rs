@@ -287,7 +287,9 @@ pub(crate) fn process_movements_with_scratch(
         };
 
         // Terrain and collision checks depend on morphology and altitude
-        let target_tile = grid.get(target.x, target.y).unwrap();
+        let target_tile = grid
+            .get(target.x, target.y)
+            .expect("invariant: target position is bounds-checked by neighbor()");
 
         if is_airborne {
             // Airborne Aerial: ignore ground terrain, only collide with agents at same altitude

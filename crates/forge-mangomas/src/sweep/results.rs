@@ -36,7 +36,7 @@ impl SweepReport {
     pub fn from_results(results: Vec<SweepResult>, total_time_secs: f64) -> Self {
         let best = results
             .iter()
-            .max_by(|a, b| a.mean_reward.partial_cmp(&b.mean_reward).unwrap())
+            .max_by(|a, b| a.mean_reward.total_cmp(&b.mean_reward))
             .cloned();
         Self {
             results,

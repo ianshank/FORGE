@@ -67,7 +67,7 @@ impl Preference {
     pub fn preferred_action(&self) -> Option<u32> {
         self.action_weights
             .iter()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(id, _)| *id)
     }
 
@@ -113,7 +113,7 @@ impl PreferenceMemory {
                 .preferences
                 .iter()
                 .enumerate()
-                .min_by(|(_, a), (_, b)| a.strength.partial_cmp(&b.strength).unwrap())
+                .min_by(|(_, a), (_, b)| a.strength.total_cmp(&b.strength))
                 .map(|(i, _)| i)
             {
                 self.preferences.swap_remove(min_idx);

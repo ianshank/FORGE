@@ -399,7 +399,10 @@ impl WorldState {
                 };
 
                 if in_disk {
-                    let tile = self.grid.get(wx as u16, wy as u16).unwrap();
+                    let tile = self
+                        .grid
+                        .get(wx as u16, wy as u16)
+                        .expect("invariant: in_disk implies in_bounds");
                     out.grid_view.push(TileObservation {
                         terrain: tile.terrain as u8,
                         elevation: tile.elevation,
@@ -537,7 +540,10 @@ impl WorldState {
 
         for y in 0..self.grid.height {
             for x in 0..self.grid.width {
-                let tile = self.grid.get(x, y).unwrap();
+                let tile = self
+                    .grid
+                    .get(x, y)
+                    .expect("invariant: x and y iterate within grid dimensions");
                 let ch = if tile.agent_id.is_some() {
                     'A'
                 } else if tile.object_id.is_some() {
