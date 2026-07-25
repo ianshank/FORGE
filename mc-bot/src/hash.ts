@@ -10,7 +10,7 @@ const DEFAULT_HASH_MOD = 4096;
  * field-read boundary in the observation pipeline so a corrupt
  * mineflayer payload doesn't NaN-propagate through to the trainer.
  */
-export function finiteNumber(value: unknown, fallback: number = 0): number {
+export function finiteNumber(value: unknown, fallback = 0): number {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : fallback;
 }

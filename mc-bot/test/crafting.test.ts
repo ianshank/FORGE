@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { CraftingPlanner } from '../src/crafting.js';
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const registry = require('prismarine-registry')('1.20.4');
@@ -13,13 +13,13 @@ test('CraftingPlanner resolves wooden pickaxe from logs', (t) => {
     registry: registry,
     inventory: {
       items: () => [
-        { type: registry.itemsByName['oak_log'].id, count: 3 }
+        { type: registry.itemsByName.oak_log.id, count: 3 }
       ]
     }
   };
 
   const planner = new CraftingPlanner(bot);
-  const pickaxeId = registry.itemsByName['wooden_pickaxe'].id;
+  const pickaxeId = registry.itemsByName.wooden_pickaxe.id;
   
   const plan = planner.plan(pickaxeId, 1);
   assert.ok(plan !== null, 'Plan should not be null');
@@ -53,12 +53,12 @@ test('CraftingPlanner fails if not enough logs', (t) => {
     registry: registry,
     inventory: {
       items: () => [
-        { type: registry.itemsByName['oak_log'].id, count: 1 } // only 1 log = 4 planks -> 2 planks + 4 sticks -> pickaxe needs 3 planks, impossible.
+        { type: registry.itemsByName.oak_log.id, count: 1 } // only 1 log = 4 planks -> 2 planks + 4 sticks -> pickaxe needs 3 planks, impossible.
       ]
     }
   };
   const planner = new CraftingPlanner(bot);
-  const pickaxeId = registry.itemsByName['wooden_pickaxe'].id;
+  const pickaxeId = registry.itemsByName.wooden_pickaxe.id;
   const plan = planner.plan(pickaxeId, 1);
   assert.strictEqual(plan, null);
 });

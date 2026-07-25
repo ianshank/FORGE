@@ -27,7 +27,6 @@ export const macroHandlers: Record<string, (bot: any, action: ActionEntry, actio
           }
           return { ticks: DEFAULT_TICKS, crafted: true, item: name };
         } catch (err) {
-          continue;
         }
       }
     }
@@ -49,7 +48,7 @@ export const macroHandlers: Record<string, (bot: any, action: ActionEntry, actio
       throw new Error('bot must expose findBlock() and dig()');
     }
     const registry = bot.registry;
-    const targetId = registry.blocksByName['stone']?.id;
+    const targetId = registry.blocksByName.stone?.id;
     if (targetId === undefined) return { ticks: DEFAULT_TICKS, mined: false };
     const block = bot.findBlock({ matching: targetId, maxDistance: 4 });
     if (!block) return { ticks: DEFAULT_TICKS, mined: false };
@@ -66,7 +65,7 @@ export const macroHandlers: Record<string, (bot: any, action: ActionEntry, actio
       throw new Error('bot must expose findBlock and openFurnace');
     }
     const registry = bot.registry;
-    const furnaceId = registry.blocksByName['furnace']?.id;
+    const furnaceId = registry.blocksByName.furnace?.id;
     if (furnaceId === undefined) return { ticks: DEFAULT_TICKS, smelted: false };
     const furnaceBlock = bot.findBlock({ matching: furnaceId, maxDistance: 4 });
     if (!furnaceBlock) return { ticks: DEFAULT_TICKS, smelted: false };
@@ -150,7 +149,7 @@ async function craftItemHandler(bot: any, action: ActionEntry, actionOptions: an
       let stepTableBlock = null;
       const stepItemName = registry.items[stepItemId]?.name || '';
       if (stepItemName.includes('pickaxe') || stepItemName === 'furnace') {
-        const tableId = registry.blocksByName['crafting_table']?.id;
+        const tableId = registry.blocksByName.crafting_table?.id;
         if (tableId !== undefined && typeof bot.findBlock === 'function') {
           stepTableBlock = bot.findBlock({ matching: tableId, maxDistance: 4 });
         }

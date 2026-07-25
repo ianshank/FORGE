@@ -233,7 +233,7 @@ describe('reward — composite + buildReward', () => {
 
   it('composite rejects non-finite weight', () => {
     assert.throws(
-      () => buildOne({ kind: 'composite', weights: { survival: NaN } }),
+      () => buildOne({ kind: 'composite', weights: { survival: Number.NaN } }),
       /must be finite/,
     );
   });

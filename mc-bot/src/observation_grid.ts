@@ -231,7 +231,7 @@ function blockTypeEmbeddingIndex(block: any, name: string, config: any): number 
   }
 
   const mappings = config.block_embeddings ?? {};
-  const bareName = name && name.includes(':') ? name.split(':').pop()! : name;
+  const bareName = name?.includes(':') ? name.split(':').pop()! : name;
   
   if (bareName && mappings[bareName] !== undefined) {
     return mappings[bareName];

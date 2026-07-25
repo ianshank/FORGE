@@ -12,10 +12,10 @@ import { BotManager, DEFAULT_RECONNECT_CONFIG, DEFAULT_SPAWN_TIMEOUT_MS } from '
 class FakeBot extends EventEmitter {
   entity: any = null;
   time: { age: number } = { age: 0 };
-  health: number = 20;
-  food: number = 20;
-  oxygenLevel: number = 20;
-  username: string = 'ForgeBot';
+  health = 20;
+  food = 20;
+  oxygenLevel = 20;
+  username = 'ForgeBot';
   end: () => void = () => {};
 }
 
@@ -48,7 +48,7 @@ function createFakeBot(options: any = {}) {
  */
 function createBotFactory(options: any = {}) {
   const calls: any[] = [];
-  let failUntilAttempt = options.failUntilAttempt ?? 0;
+  const failUntilAttempt = options.failUntilAttempt ?? 0;
   let callCount = 0;
 
   function createBot(config: any) {
