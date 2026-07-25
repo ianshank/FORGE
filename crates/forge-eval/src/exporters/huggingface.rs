@@ -1,7 +1,3 @@
-// WIP-preserved (commit a91b3fa) — see exporters/mlflow.rs / tests headers for
-// rationale on the module-level clippy allow.
-#![allow(clippy::field_reassign_with_default)]
-
 //! HuggingFace `datasets`-compatible exporter.
 //!
 //! Writes a Hugging-Face-friendly JSONL export under
@@ -488,8 +484,10 @@ mod tests {
     fn exporter_writes_per_tier_jsonl_splits_plus_card_and_manifest() {
         let tmp = TempDir::new().unwrap();
         let scorecard = fixture_scorecard();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("hf-test-001".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("hf-test-001".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         HuggingFaceExporter::new(tmp.path().to_path_buf())
@@ -511,8 +509,10 @@ mod tests {
     fn per_tier_split_counts_sum_to_all_split() {
         let tmp = TempDir::new().unwrap();
         let scorecard = fixture_scorecard();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("counts".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("counts".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         HuggingFaceExporter::new(tmp.path().to_path_buf())
@@ -543,8 +543,10 @@ mod tests {
         // infers Features from these. If a contributor renames a field,
         // every downstream Hub dataset breaks. Lock the surface here.
         let tmp = TempDir::new().unwrap();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("schema".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("schema".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         HuggingFaceExporter::new(tmp.path().to_path_buf())
@@ -587,9 +589,11 @@ mod tests {
     #[test]
     fn readme_starts_with_yaml_frontmatter_and_required_keys() {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("card".to_string());
-        cfg.experiment_name = Some("phase-b-smoke".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("card".to_string()),
+            experiment_name: Some("phase-b-smoke".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         HuggingFaceExporter::new(tmp.path().to_path_buf())
@@ -639,8 +643,10 @@ mod tests {
     #[test]
     fn card_configs_block_lists_every_split() {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("marker".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("marker".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         HuggingFaceExporter::new(tmp.path().to_path_buf())
@@ -663,8 +669,10 @@ mod tests {
     #[test]
     fn handles_empty_scorecard_with_only_all_split() {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("empty".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("empty".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         let empty = Scorecard {
@@ -697,8 +705,10 @@ mod tests {
     #[test]
     fn jsonl_records_are_denormalised_with_run_and_scenario_context() {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("denorm".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("denorm".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         HuggingFaceExporter::new(tmp.path().to_path_buf())

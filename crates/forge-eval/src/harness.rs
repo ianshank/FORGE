@@ -337,7 +337,7 @@ impl EvalHarness {
     /// with a synthetic scenario id of `"default"` and the harness-level
     /// `max_steps_per_episode`. Persistence still respects
     /// [`OutputConfig::enabled`].
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn run_single_episode<F>(
         &self,
         seed: u64,

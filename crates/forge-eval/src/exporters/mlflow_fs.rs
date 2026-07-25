@@ -1,7 +1,3 @@
-// WIP-preserved (commit a91b3fa) — see exporters/huggingface.rs header for
-// rationale on the module-level clippy allow.
-#![allow(clippy::field_reassign_with_default)]
-
 //! MLflow filesystem sink — consumes a transport-agnostic [`RunPayload`]
 //! and writes the on-disk `mlruns/` layout that
 //! `mlflow ui --backend-store-uri <dir>` reads natively.

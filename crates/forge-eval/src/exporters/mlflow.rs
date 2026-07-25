@@ -1,7 +1,3 @@
-// WIP-preserved (commit a91b3fa) — see exporters/huggingface.rs header for
-// rationale on the module-level clippy allow.
-#![allow(clippy::field_reassign_with_default)]
-
 //! MLflow filesystem-layout exporter.
 //!
 //! Writes the exact `mlruns/<experiment_id>/<run_id>/` tree that
@@ -253,8 +249,10 @@ mod tests {
     fn exporter_writes_experiment_and_parent_run_layout() {
         let tmp = TempDir::new().unwrap();
         let scorecard = fixture_scorecard();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("test-run-001".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("test-run-001".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         let exporter = MlflowExporter::new(tmp.path().to_path_buf());
@@ -298,8 +296,10 @@ mod tests {
     fn exporter_writes_one_child_run_per_scenario_with_parent_tag() {
         let tmp = TempDir::new().unwrap();
         let scorecard = fixture_scorecard();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("test-parent".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("test-parent".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         MlflowExporter::new(tmp.path().to_path_buf())
@@ -323,8 +323,10 @@ mod tests {
     fn child_run_metrics_are_step_indexed_per_episode() {
         let tmp = TempDir::new().unwrap();
         let scorecard = fixture_scorecard();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("step-test".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("step-test".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         MlflowExporter::new(tmp.path().to_path_buf())
@@ -350,8 +352,10 @@ mod tests {
     fn per_scenario_named_metrics_appear_on_parent_run() {
         let tmp = TempDir::new().unwrap();
         let scorecard = fixture_scorecard();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("named-test".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("named-test".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         MlflowExporter::new(tmp.path().to_path_buf())
@@ -404,8 +408,10 @@ mod tests {
         std::fs::write(artifacts.join("trajectories/ep0.jsonl"), b"{}").unwrap();
 
         let scorecard = fixture_scorecard();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("copy-test".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("copy-test".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         MlflowExporter::new(tmp.path().join("mlruns"))
@@ -467,8 +473,10 @@ mod tests {
     fn re_exporting_same_scorecard_is_idempotent() {
         let tmp = TempDir::new().unwrap();
         let scorecard = fixture_scorecard();
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("idem".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("idem".to_string()),
+            ..Default::default()
+        };
         let manifest = RunManifest::capture(&cfg, &[]);
 
         let exporter = MlflowExporter::new(tmp.path().to_path_buf());

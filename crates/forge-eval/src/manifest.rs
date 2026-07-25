@@ -1,9 +1,3 @@
-// WIP-preserved test patterns (commit a91b3fa) trigger
-// `field_reassign_with_default` and `single_element_loop` here. Allow at
-// module scope to preserve the WIP author's intent; revisit in a dedicated
-// cleanup commit.
-#![allow(clippy::field_reassign_with_default)]
-
 //! Reproducibility manifest captured alongside every [`Scorecard`].
 //!
 //! A [`RunManifest`] is the minimal record needed to re-execute an
@@ -227,9 +221,11 @@ mod tests {
 
     #[test]
     fn capture_uses_explicit_run_id_and_experiment_name_when_provided() {
-        let mut cfg = EvalConfig::default();
-        cfg.run_id = Some("explicit-run-001".to_string());
-        cfg.experiment_name = Some("my-experiment".to_string());
+        let cfg = EvalConfig {
+            run_id: Some("explicit-run-001".to_string()),
+            experiment_name: Some("my-experiment".to_string()),
+            ..Default::default()
+        };
 
         let manifest = RunManifest::capture(&cfg, &[]);
 
@@ -277,8 +273,10 @@ mod tests {
     #[test]
     fn config_hash_differs_when_a_field_changes() {
         let cfg_a = EvalConfig::default();
-        let mut cfg_b = EvalConfig::default();
-        cfg_b.episodes_per_scenario = 999;
+        let cfg_b = EvalConfig {
+            episodes_per_scenario: 999,
+            ..Default::default()
+        };
 
         let h_a = RunManifest::capture(&cfg_a, &[]).config_hash;
         let h_b = RunManifest::capture(&cfg_b, &[]).config_hash;
