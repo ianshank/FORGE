@@ -57,6 +57,18 @@
 - **forge-replay::v2**: Env-agnostic flat-tensor trajectory format (additive; v1 untouched).
 - **forge-observability**: Shared tracing/log init (`init_tracing(TracingOptions)` / `try_init_tracing`). The single home for `tracing-subscriber` setup; `forge-server` + `forge-mc-runner` reuse it (no duplicated bootstrap). Output format is env-driven via `FORGE_LOG_FORMAT` (`text` default, `json`), filter via `RUST_LOG` with a per-binary default.
 - **forge-server**: Axum HTTP + WebSocket server. REST env API (`/api/env/{reset,step,render}`), live broadcast, and a `history` module (`HistoryStore` trait + append-only `JsonlHistoryStore` + `InMemoryHistoryStore`) backing `POST`+persist on `/api/training-metrics` & `/api/decision-traces` and `GET /api/{training-metrics,decision-traces}/history` + `/api/runs`. Config via `FORGE_SERVER_*` env vars (incl. `HISTORY_DIR`/`_RETENTION`/`_QUERY_LIMIT`); run id resolved from `?runId=` → `X-Forge-Run-Id` → server-session id.
+- **forge-civ**: Grid topology abstraction + pathfinding — square/hex `neighbor`/`distance` consumed by `forge-core`.
+- **forge-memory**: Persistent agent memory — episodic, semantic, and preference stores with strength decay/eviction.
+- **forge-social**: Social interaction primitives — trust + reputation models.
+- **forge-cognitive**: LLM-backed cognitive agent — completion-provider abstraction + configs.
+- **forge-proposal**: SBIR proposal template system — agency profiles, cost volumes, technical/validation sections, cover pages.
+- **forge-mangomas**: MangoMAS agent-training integration — parameter sweeps, swarm, curriculum, adapters, transfer.
+- **forge-eval**: Agent-agnostic evaluation harness — `Scorecard` + reproducibility manifest + MLflow / HuggingFace exporters (HTTP exporter behind the `http-mlflow` feature).
+- **forge-data**: Training-data loaders, dataset adapters, and expert-demo generation.
+- **forge-integration** (package `forge-integration-layer`): Cross-layer integration orchestrator wiring the subsystems together.
+- **forge-cloud**: Cloud training pipeline + edge deployment — workers, replay transport, storage backends (GCS via the `gcs` feature), model registry.
+- **forge-edge**: Edge deployment runtime — inference + telemetry.
+- **forge-wasm**: WebAssembly visualization module for the browser demo.
 - **mc-bot/**: Node bridge (mineflayer + reward registry + reset + viewer + `createLogger` + `BotManager` heartbeat), out of the Cargo workspace.
 
 ## Key Principles
