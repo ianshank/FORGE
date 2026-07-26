@@ -183,7 +183,7 @@ clap = { version = "4", features = ["derive", "env"] }
 mockito = "1"
 # Test-only ephemeral container runner; the testcontainers e2e test
 # (gated #[ignore]) spins up a real `ghcr.io/mlflow/mlflow:vX.Y.Z` server.
-testcontainers = { version = "0.23", features = ["blocking"] }
+testcontainers = { version = "0.27", features = ["blocking"] }
 
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
