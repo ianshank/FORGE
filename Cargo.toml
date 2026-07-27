@@ -158,7 +158,7 @@ tokio = { version = "1", features = ["rt", "macros"] }
 futures = "0.3"
 
 # HTTP server framework (forge-server enables the `ws` feature; forge-mc-runner does not)
-axum = { version = "0.7" }
+axum = { version = "0.8" }
 
 # Data-parallelism
 rayon = "1"
