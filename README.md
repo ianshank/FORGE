@@ -221,7 +221,7 @@ graph TD
 
 ```text
 FORGE/
-├── crates/          # 23 Rust crates (see diagram above)
+├── crates/          # 26 Rust crates (see diagram above)
 ├── python/          # forge_env wrappers, forge training package
 ├── configs/         # TOML configuration files
 ├── scripts/         # CLI tools (train, evaluate, demo, replay, export)

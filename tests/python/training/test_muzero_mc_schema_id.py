@@ -8,8 +8,8 @@ Rust counterparts:
 
 - ``crates/forge-env-mc/src/action_map.rs::xlang_schema_id_pinned_to_known_good``
 - ``crates/forge-env-mc/src/reward_config.rs::xlang_rewards_schema_id_pinned_to_known_good``
-- ``mc-bot/test/schema_id.test.js`` (action map JS twin)
-- ``mc-bot/test/reward_config.test.js`` (rewards JS twin)
+- ``mc-bot/test/schema_id.test.ts`` (action map JS twin)
+- ``mc-bot/test/reward_config.test.ts`` (rewards JS twin)
 
 If you change ANY of: ``ACTION_KIND_FIELD_ORDER`` (Python /
 ``CANONICAL_FIELD_ORDER`` in JS), the Rust ``ActionKind`` enum

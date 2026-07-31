@@ -421,8 +421,8 @@ mod tests {
     #[test]
     fn build_reload_fn_with_metrics_returns_callable_box() {
         // Lightweight type-shape assertion — the actual reload path
-        // needs real ONNX files; covered by the live-stub smoke test
-        // in T7.
+        // needs real ONNX files, so it is exercised end-to-end by the
+        // compose-stack E2E rather than by a unit test.
         let _fn: ReloadFn<OnnxMuZeroModel> =
             build_reload_fn_with_metrics(PathBuf::from("."), 4, 8, 1, None);
     }

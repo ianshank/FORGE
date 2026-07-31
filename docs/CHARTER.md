@@ -73,22 +73,28 @@ the README's "What's still out of scope" list:
   (today's `reload(&mut self)` is borrow-checker-safe for the single-owner
   runner).
 - DPO / preference trainer consuming teacher decision traces.
-- Complex learned block embeddings.
+- Complex learned block embeddings (T3 Phase 2 candidate). A simple learned
+  table ships today (`nn.Embedding` over the curated index map in
+  `configs/minecraft/block_embeddings.toml`, default-on via `use_raw_block_id`);
+  the richer representation is what remains deferred.
 
 See [`docs/next_steps.md`](next_steps.md) for live status.
 
-### Permanent non-goals (proposed — pending maintainer confirmation)
+### Permanent non-goals (ratified)
 
-Derived only from already-stated principles, listed here to be ratified rather
-than asserted:
+Confirmed by the maintainers. Unlike the deferred list above, these are not
+"not yet" — they are out of scope by design:
 
-- **Non-deterministic core physics** — would violate Invariant 6
-  (determinism is the platform's defining guarantee).
-- **Hard-coded, non-config-driven behavior** on any surface — violates
-  Invariant 5.
+- **Non-deterministic core physics** — would violate Invariant 6 (determinism is
+  the platform's defining guarantee). Backed by the fixed-point physics and
+  `rand_pcg` RNG, and by the determinism tests in `crates/forge-core`.
+- **Hard-coded, non-config-driven behavior** on any surface — violates Invariant
+  5. Backed by the `Default`-impl / `serde`-derived config-struct convention and
+  the periodic sweep recorded in
+  [`docs/hardcoded-values-audit.md`](hardcoded-values-audit.md). Note this one is
+  a review convention, not a CI gate: no job detects a hard-coded literal.
 
-These are candidates for the maintainers to confirm or amend via PR; the
-charter does not unilaterally settle scope.
+Amending either is a deliberate charter change, made in a PR that says so.
 
 ### Deliberate Exceptions
 
@@ -141,18 +147,30 @@ Any change to a trajectory, manifest, or WebSocket schema bumps a version and
 preserves the old reader. New format work is additive; older readers must stay
 wire-compatible.
 
-*Enforced by:* `TRAJECTORY_FORMAT_VERSION` with a one-way `from_v1` migrator
-(v1 untouched) in `crates/forge-replay/src/v2.rs`; `MANIFEST_SCHEMA_VERSION`
-plus the monotonic, no-downgrade `HotReloadWatcher`
-(`crates/forge-mc-runner/src/manifest.rs`, `crates/forge-mc-runner/src/hot_reload.rs`); and the WS
-`Hello` / `GridShape` messages whose `serde(default)` fields keep legacy
-flat-only bots compatible (`crates/forge-env-mc/src/protocol.rs`).
+*Enforced by:* three independent version constants, each guarding a different
+contract — `TRAJECTORY_FORMAT_VERSION` with a one-way `from_v1` migrator (v1
+untouched) in `crates/forge-replay/src/v2.rs`; `MANIFEST_SCHEMA_VERSION` plus the
+monotonic, no-downgrade `HotReloadWatcher`
+(`crates/forge-mc-runner/src/manifest.rs`, `crates/forge-mc-runner/src/hot_reload.rs`);
+and `SCHEMA_VERSION` for the WebSocket wire shape
+(`crates/forge-env-mc/src/protocol.rs`), checked on handshake in
+`crates/forge-env-mc/src/mc_env.rs`. The WS `Hello` / `GridShape` messages use
+`serde(default)` fields so legacy flat-only bots stay compatible.
 
-**FORGE-specific strengthening:** configs shared between Rust and JS compute
-the same canonical `schema_id` sha256, pinned on both sides by paired
-`xlang_*_pinned_to_known_good` tests
-(`crates/forge-env-mc/src/action_map.rs`, `crates/forge-env-mc/src/reward_config.rs` ↔
-`mc-bot/test/*`). Drift on either side fails both test suites simultaneously.
+**FORGE-specific strengthening:** configs and wire constants shared across Rust,
+JS, and Python compute the same canonical sha256, pinned on every side by paired
+`xlang_*_pinned_to_known_good` tests. Drift in one language fails all of the
+suites that pin the value, simultaneously:
+
+| Pinned value | Rust | Node | Python |
+|---|---|---|---|
+| action-map `schema_id` | `crates/forge-env-mc/src/action_map.rs` | `mc-bot/test/schema_id.test.ts` | `tests/python/training/test_muzero_mc_schema_id.py` |
+| rewards `schema_id` | `crates/forge-env-mc/src/reward_config.rs` | `mc-bot/test/reward_config.test.ts` | `tests/python/training/test_muzero_mc_schema_id.py` |
+| protocol `SCHEMA_VERSION` | `crates/forge-env-mc/src/protocol.rs` | `mc-bot/src/protocol.ts` | — |
+| `BLOCK_FEATURE_CHANNELS` | `crates/forge-env-mc/src/protocol.rs` | `mc-bot/src/observation_grid.ts` | — |
+
+Bumping a hash in only two of the three languages breaks CI — update every row
+that pins the value in the same change.
 
 ### 3. Dependency injection enabling testability without hardware
 
@@ -160,11 +178,12 @@ Every path that touches Minecraft, Docker, or ONNX Runtime must be exercisable
 without them. Collaborators are injected, not reached for globally.
 
 *Enforced by:* `--dry-run` with an in-process `StubEnv`
-(`crates/forge-mc-runner/src/main.rs`), the `live-test-stub` feature (real
-`OnnxMuZeroModel` against a mock env), a scripted mock WebSocket server
-(`crates/forge-env-mc/tests/mc_env_mock.rs`), the generic `Runner<E, M>` with
-injected env / search / writer / reload-fn (`crates/forge-mc-runner/src/live.rs`),
-and the `forge-mc-runner-bin` CI smoke job.
+(`crates/forge-mc-runner/src/main.rs`), a scripted mock WebSocket server
+(`crates/forge-env-mc/tests/mc_env_mock.rs`), the generic `Runner<E, M>`
+(defined in `crates/forge-mc-runner/src/runner.rs`, with env / search / writer /
+reload-fn injected at its construction site in
+`crates/forge-mc-runner/src/live.rs`), and the `forge-mc-runner-bin` CI smoke
+job.
 
 ### 4. Stateful I/O isolated to transports; the core stays zero-allocation
 
@@ -198,8 +217,18 @@ that must stay green.
 / `python-test` (ruff + mypy, pytest), `mc-bot-test` (tsc + Biome +
 `node:test`), and the `forge-mc-runner-bin` smoke. Coverage thresholds and
 lint rules are defined in CI and its config (`.coveragerc`, `pyproject.toml`,
-`dashboard/vite.config.ts`, `deny.toml`) — those files are the source of truth, so this
+`dashboard/vite.config.ts`) — those files are the source of truth, so this
 charter names the gates without pinning numbers that would drift.
+
+`ci.yml` also runs jobs this list deliberately omits, because they are not
+blocking gates: advisory checks (`machete`), `workflow_dispatch`-only opt-ins
+(`python-test-lmstudio`, `python-test-minecraft-e2e`), and explicitly
+non-required jobs (`dashboard-e2e`). Alongside them,
+[`.github/workflows/security.yml`](../.github/workflows/security.yml) runs the
+supply-chain and static-analysis layer — `cargo-deny` (policy in `deny.toml`),
+`pip-audit`, `npm-audit`, `trivy-fs`, and CodeQL. `cargo-deny` is **advisory
+today** (it runs with `|| true` until its baseline is clean); treat a finding
+there as work to schedule, not as a broken gate.
 
 ### 7. Credentials excluded from repositories
 

@@ -91,7 +91,7 @@ fn default_action_repeat() -> u32 {
 /// Field naming follows the JS-side `[observation]` table so a single
 /// `env.toml` parses on both ends of the WebSocket — `grid_radius`,
 /// `grid_height_radius`, `grid_channels`, etc. all match
-/// `mc-bot/src/observation_grid.js`.
+/// `mc-bot/src/observation_grid.ts`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObservationConfig {
     /// Ego-centric block radius in the X/Z plane. Plumbed through to

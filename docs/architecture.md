@@ -66,12 +66,12 @@ Shows the major containers (deployable units) within FORGE.
 │  │  └────────────┘  └────────────┘  └────────────┘  └───────────┘  │   │
 │  │                                                                  │   │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌───────────┐  │   │
-│  │  │forge-agent │  │forge-      │  │forge-server│  │forge-bench│  │   │
-│  │  │            │  │procgen     │  │            │  │           │  │   │
-│  │  │ MCTS       │  │            │  │ HTTP/WS    │  │ Criterion │  │   │
-│  │  │ planner,   │  │ Maps,      │  │ API,       │  │ benchmarks│  │   │
-│  │  │ baselines, │  │ objectives,│  │ metrics,   │  │ step      │  │   │
-│  │  │ policies   │  │ curriculum │  │ live state │  │ throughput│  │   │
+│  │  │forge-agent │  │forge-env   │  │forge-server│  │forge-bench│  │   │
+│  │  │            │  │            │  │            │  │           │  │   │
+│  │  │ MCTS       │  │ Env /      │  │ HTTP/WS    │  │ Criterion │  │   │
+│  │  │ planner,   │  │ FlatObsEnv │  │ API,       │  │ benchmarks│  │   │
+│  │  │ baselines, │  │ traits,    │  │ metrics,   │  │ step      │  │   │
+│  │  │ policies   │  │ impls      │  │ live state │  │ throughput│  │   │
 │  │  └────────────┘  └────────────┘  └────────────┘  └───────────┘  │   │
 │  │                                                                  │   │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌───────────┐  │   │
@@ -144,7 +144,22 @@ Shows the major containers (deployable units) within FORGE.
 | **forge-observability** | Rust crate | Shared tracing/log initialization (`init_tracing`/`TracingOptions`); env-driven text/JSON output via `FORGE_LOG_FORMAT`. No FORGE deps; reused by `forge-server` + `forge-mc-runner`. |
 | **forge-python** | Rust crate (PyO3) | Python bindings exposing `ForgeEnv` with numpy observations, GIL release during step. |
 | **forge-wasm** | Rust crate (wasm-bindgen) | WebAssembly bindings with JSON-string I/O for browser environments. |
-| **forge-bench** | Rust crate (Criterion) | Performance benchmarks: step throughput, world creation, serialization. |
+| **forge-bench** | Rust crate (Criterion) | Performance benchmarks: step throughput, world creation, serialization; hosts the `allocation_audit` binary behind the `dhat-heap` feature. |
+| **forge-env** | Rust crate | Generic `Env` / `FlatObsEnv` traits with the buffer-filling `reset_into` / `step_into` contract. No FORGE dependencies. |
+| **forge-env-forge** | Rust crate | Single-agent `Env` implementation over `WorldState`. Additive shim; does not replace `forge-python::ForgeEnv` or classical `mcts`. |
+| **forge-env-mc** | Rust crate | Sync WebSocket client to the Node `mc-bot`, exposing Minecraft as an `Env` + `FlatObsEnv`. Owns the wire `SCHEMA_VERSION` and the xlang `schema_id` pins. |
+| **forge-mc-runner** | Rust crate (binary) | End-to-end episode runner: `RunnerConfig`, `ModelManifest`, `HotReloadWatcher`, `TrajectoryWriter`, generic `Runner<E, M>`, and the Prometheus metrics endpoint. |
+| **forge-replay** | Rust crate | Versioned trajectory storage: v1 plus the env-agnostic flat-tensor `v2::TrajectoryV2`, compact replay, and HuggingFace export. |
+| **forge-eval** | Rust crate | Agent-agnostic evaluation harness: `Scorecard`, reproducibility manifest, MLflow / HuggingFace exporters (HTTP exporter behind `http-mlflow`). |
+| **forge-data** | Rust crate | Training-data loaders, dataset adapters, and expert-demonstration generation. |
+| **forge-memory** | Rust crate | Persistent agent memory: episodic, semantic, and preference stores with strength decay and eviction. |
+| **forge-social** | Rust crate | Social interaction primitives: trust and reputation models. |
+| **forge-cognitive** | Rust crate | LLM-backed cognitive agent: completion-provider abstraction plus configs. |
+| **forge-integration** | Rust crate (`forge-integration-layer`) | Cross-layer orchestrator wiring memory, social, and cognitive subsystems together. |
+| **forge-mangomas** | Rust crate | MangoMAS control plane: parameter sweeps, swarm, curriculum, adapters, transfer. Rust twin of `python/forge/mangomas`. |
+| **forge-cloud** | Rust crate | Cloud training pipeline: workers, replay transport, storage backends (GCS behind the `gcs` feature), model registry. |
+| **forge-edge** | Rust crate | Edge deployment runtime: inference, telemetry, adaptive MCTS, latency estimation. |
+| **forge-proposal** | Rust crate | Composable proposal / document-template engine: agency profiles, cost volumes, technical and validation sections. |
 | **Python wrappers** | Python package (forge_env) | Gymnasium, PettingZoo, JAX wrappers, observation/reward transforms. |
 | **Python framework** | Python package (forge) | Training pipeline, agent implementations, policy networks, MangoMAS bridge modules, decision traces, TOML config loader, utility modules. |
 
@@ -479,8 +494,6 @@ The core engine executes a deterministic pipeline of systems every tick.
                 │  → StepResult                      │
                 └───────────────────────────────────┘
 ```
-
-### 3.2 forge-worldgen — World Generation Pipeline
 
 ### 3.1a forge-civ — Topology & Pathfinding
 
@@ -1832,10 +1845,13 @@ forge-mc-runner binary (cargo build --features mc-live)
 - `default = []` — runner builds without ONNX / `forge-env-mc`.
 - `onnx-reload = ["forge-agent/onnx"]` — wraps `OnnxMuZeroModel::reload`
   into the runner's `ReloadFn<M>` callback shape. Lib-only.
-- `mc-live = ["onnx-reload", "dep:forge-env-mc"]` — pulls the live
-  wiring; runner binary's else-branch becomes operational.
-- `live-test-stub = ["onnx-reload"]` — placeholder for the T7
-  follow-up that wires a `MockMinecraftEnv` for fast CI smoke.
+- `mc-live = ["dep:forge-env-mc"]` — pulls the live wiring; runner
+  binary's else-branch becomes operational. As of v0.5 this does **not**
+  imply `onnx-reload` (the random-baseline path needs only the WS
+  client); see CHARTER Deliberate Exception 2.
+- `mc-live-bundled = ["mc-live", "onnx-reload", "forge-agent/onnx-bundled"]` —
+  trained mode plus the runtime ONNX library via `ort/load-dynamic`, used by
+  the runner Docker image.
 
 **Backwards-compat**: `--dry-run` continues to use
 `StubLatentModel` (no live deps). `RunnerConfig.mc_env_config_path`
@@ -2271,17 +2287,17 @@ Observation
 ```
                     forge-types
                    (shared types)
-                ╱   │   │    ╲    ╲
-               ╱    │   │     ╲    ╲
-              ▼     ▼   ▼      ▼    ▼
-        forge-  forge- forge- forge- forge-
-        worldgen core   task  agent  procgen
-             ╲    │    ╱     ╱    ╱
-              ╲   │   ╱     ╱    ╱
-               ▼  ▼  ▼    ╱    ╱
-             forge-python ╱    ╱
-             forge-wasm  ╱    ╱
-             forge-server    ╱
+                ╱   │   │    ╲
+               ╱    │   │     ╲
+              ▼     ▼   ▼      ▼
+        forge-  forge- forge- forge-
+        worldgen core   task  agent
+             ╲    │    ╱     ╱
+              ╲   │   ╱     ╱
+               ▼  ▼  ▼    ╱
+             forge-python ╱
+             forge-wasm  ╱
+             forge-server
              forge-bench ───╱
 ```
 

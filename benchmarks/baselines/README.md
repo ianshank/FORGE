@@ -11,6 +11,14 @@ the CI alloc-audit job uses
 against the `total_bytes == 0` invariant, and the throughput numbers are
 human-readable evidence for the README's performance claims.
 
+> **Coverage gap (current):** only `reference_a/alloc_audit.json` is committed.
+> `multi_agent_scaling.json` — the artefact that would back the README's
+> "130,000+ steps/second" headline — is **not committed for either profile**, so
+> that claim currently rests on the benchmark code
+> (`crates/forge-bench/benches/multi_agent_scaling.rs`) being run locally rather
+> than on a checked-in measurement. Regenerate with the command in the table
+> below and commit the result to close it.
+
 ## Profiles
 
 The two abstract profiles are referenced in

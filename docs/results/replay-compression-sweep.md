@@ -30,4 +30,4 @@ We recommend using **`Gzip` with `NamedGzipLevel::Default` (or Fastest)** for li
 - The Rust runner's `TrajectoryWriter` is equipped with `.with_compression(TrajectoryCompression::Gzip, ...)` to write gzipped files directly.
 - The Python `TrajectoryReader` automatically detects gzipped inputs by inspecting the file suffix and decompresses them using standard `gzip` library utilities, matching the Rust reader's custom `.json.gz` auto-detection logic.
 
-The benchmarking test has been fully integrated into the test suite at [runner.rs](file:///c:/Users/iansh/OneDrive/Documents/FORGE/crates/forge-mc-runner/src/runner.rs#L1095) to prevent future regression and ensure cross-crate compression compatibility.
+The benchmarking test has been fully integrated into the test suite at [runner.rs](../../crates/forge-mc-runner/src/runner.rs) to prevent future regression and ensure cross-crate compression compatibility.
