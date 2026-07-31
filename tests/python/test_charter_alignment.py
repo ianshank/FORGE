@@ -35,6 +35,7 @@ Stdlib and ``pytest`` only, by design: the ``python-test`` CI job installs
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -45,7 +46,7 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 CHARTER: Path = REPO_ROOT / "docs" / "CHARTER.md"
 ARCHITECTURE: Path = REPO_ROOT / "docs" / "architecture.md"
 WORKSPACE_MANIFEST: Path = REPO_ROOT / "Cargo.toml"
-CI_WORKFLOW: Path = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+WORKFLOWS_DIR: Path = REPO_ROOT / ".github" / "workflows"
 
 #: Directory prefixes that mark a backticked token as a repository path rather
 #: than a type name, a shell fragment, or prose. Anchoring on these avoids
@@ -119,6 +120,11 @@ _DANGLING_FORGE = re.compile(r"forge-(?![a-z0-9])")
 _LEADING_IDENT = re.compile(r"[a-z][a-z0-9_-]*")
 _CI_JOB_KEY = re.compile(r"^  ([a-z][a-z0-9-]*):\s*$")
 _FEATURE_ENTRY = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*\[")
+#: A feature name selected by a `--features` CLI flag inside a backticked
+#: command span, e.g. `` `--features onnx-reload` `` or
+#: `` `cargo build -p forge-mc-runner --features mc-live-bundled` ``. Catches
+#: citations a plain "is this whole span a bare feature name" check misses.
+_FEATURES_FLAG_ARG = re.compile(r"--features\s+([A-Za-z][A-Za-z0-9_-]*)")
 
 #: Box-drawing and padding characters to strip when reading a column out of an
 #: ASCII diagram. Built from code points so the source stays free of characters
@@ -142,9 +148,31 @@ _BOX_CHARS = "|/\\ \t" + "".join(
     )
 )
 
+#: Lookahead width (chars) into the line below a dangling `forge-` when
+#: reconstructing a name ASCII art split across two lines. Comfortably covers
+#: the longest crate name (`forge-mc-runner`, 16 chars) plus box-art padding.
+_COLUMN_LOOKAHEAD: int = 40
+
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _line_hint(text: str, needle: str) -> str:
+    """Best-effort ``:<line>`` suffix for the first occurrence of ``needle``.
+
+    Imprecise by design: it's a "look here first" pointer, not a guarantee —
+    it can land on a plain-prose mention instead of a citation, or resolve to
+    nothing (empty string) if the token only exists reconstructed from a
+    diagram split across two lines. Never asserted on.
+    """
+    idx = text.find(needle)
+    return f":{text.count(chr(10), 0, idx) + 1}" if idx != -1 else ""
+
+
+def _crate_manifest(crate: str) -> Path:
+    """Path to a workspace crate's manifest."""
+    return REPO_ROOT / "crates" / crate / "Cargo.toml"
 
 
 def workspace_members() -> list[str]:
@@ -159,7 +187,7 @@ def declared_features() -> dict[str, str]:
     """Map every feature declared in a workspace crate to its owning crate."""
     features: dict[str, str] = {}
     for crate in workspace_members():
-        manifest = REPO_ROOT / "crates" / crate / "Cargo.toml"
+        manifest = _crate_manifest(crate)
         if not manifest.is_file():
             continue
         in_features = False
@@ -189,7 +217,7 @@ def features_enabled_by_others() -> set[str]:
     """Return features named inside another feature's dependency list."""
     enabled: set[str] = set()
     for crate in workspace_members():
-        manifest = REPO_ROOT / "crates" / crate / "Cargo.toml"
+        manifest = _crate_manifest(crate)
         if not manifest.is_file():
             continue
         text = _read(manifest)
@@ -245,7 +273,7 @@ def ci_job_names() -> set[str]:
     advisory supply-chain jobs in ``security.yml``, so both must be in scope.
     """
     jobs: set[str] = set()
-    for workflow in sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml")):
+    for workflow in sorted(WORKFLOWS_DIR.glob("*.yml")):
         jobs |= _jobs_in(workflow)
     return jobs
 
@@ -266,7 +294,7 @@ def reconstruct_split_crate_names(text: str) -> set[str]:
             below = lines[index + 1]
             if column >= len(below):
                 continue
-            fragment = below[column : column + 40].lstrip(_BOX_CHARS)
+            fragment = below[column : column + _COLUMN_LOOKAHEAD].lstrip(_BOX_CHARS)
             ident = _LEADING_IDENT.match(fragment)
             if ident is not None:
                 names.add(f"forge-{ident.group(0)}")
@@ -278,6 +306,7 @@ def reconstruct_split_crate_names(text: str) -> set[str]:
 # --------------------------------------------------------------------------
 def test_charter_path_citations_resolve() -> None:
     """Every repository path cited in the charter must exist."""
+    text = _read(CHARTER)
     cited = charter_paths()
     assert cited, "no paths extracted from the charter — the parser is broken"
     # Invariant 7 deliberately cites git-ignored secret files (e.g.
@@ -290,8 +319,8 @@ def test_charter_path_citations_resolve() -> None:
     )
     assert not missing, (
         f"docs/CHARTER.md cites {len(missing)} path(s) that no longer exist: "
-        f"{missing}. Update the charter or restore the path — see the charter's "
-        "Development Guidance."
+        f"{[p + _line_hint(text, p) for p in missing]}. Update the charter or "
+        "restore the path — see the charter's Development Guidance."
     )
 
 
@@ -299,17 +328,28 @@ def test_charter_path_citations_resolve() -> None:
 # Requirement: Charter Feature Citations Are Implemented
 # --------------------------------------------------------------------------
 def test_charter_cited_features_are_declared() -> None:
-    """Cargo features named in the charter must be declared by a workspace crate."""
+    """Cargo features named in the charter must be declared by a workspace crate.
+
+    Two citation shapes are checked: a bare feature name in its own backticks
+    (`` `onnx-reload` ``) and a feature name selected inside a backticked
+    command span (`` `--features onnx-reload` ``). Checking only whether the
+    *whole* backticked span equals a declared name would miss the second
+    shape entirely — command spans never equal a bare feature name — which is
+    exactly how this test previously went blind on `docs/CHARTER.md`'s one
+    `--features onnx-reload` citation.
+    """
     declared = declared_features()
     charter_text = _read(CHARTER)
-    cited = {
-        token
-        for token in _BACKTICKED.findall(charter_text)
-        if token in declared or (("-" in token) and token.replace("`", "") in declared)
-    }
+    cited: set[str] = set()
+    for span in _BACKTICKED.findall(charter_text):
+        stripped = span.strip()
+        if stripped in declared:
+            cited.add(stripped)
+        cited.update(_FEATURES_FLAG_ARG.findall(span))
     undeclared = sorted(t for t in cited if t not in declared)
     assert not undeclared, (
-        f"docs/CHARTER.md cites Cargo feature(s) that no crate declares: {undeclared}"
+        f"docs/CHARTER.md cites Cargo feature(s) that no crate declares: "
+        f"{[t + _line_hint(charter_text, t) for t in undeclared]}"
     )
 
 
@@ -322,6 +362,7 @@ def test_enforcement_cited_features_have_cfg_sites() -> None:
     """
     declared = declared_features()
     gated = cfg_gated_features()
+    charter_text = _read(CHARTER)
     offenders: list[str] = []
     for paragraph in enforcement_paragraphs():
         offenders.extend(
@@ -329,9 +370,11 @@ def test_enforcement_cited_features_have_cfg_sites() -> None:
             for token in _BACKTICKED.findall(paragraph)
             if token in declared and token not in gated and token not in CFG_LESS_FEATURES
         )
+    offenders = sorted(set(offenders))
     assert not offenders, (
         f"docs/CHARTER.md names feature(s) as enforcement that have no "
-        f"`#[cfg(feature = ...)]` site: {sorted(set(offenders))}. Either implement "
+        f"`#[cfg(feature = ...)]` site: "
+        f"{[t + _line_hint(charter_text, t) for t in offenders]}. Either implement "
         "the gate, or stop citing the feature as an enforcement mechanism."
     )
 
@@ -385,9 +428,10 @@ def test_docs_name_no_deleted_crates(doc: str) -> None:
     known = members | ci_job_names() | NON_CRATE_FORGE_IDENTIFIERS
     stale = sorted(n for n in named if n not in known)
     assert not stale, (
-        f"{doc} names crate(s) that are not workspace members: {stale}. If the "
-        "crate was deleted, remove the reference — including any ASCII diagram "
-        "that splits the name across two lines."
+        f"{doc} names crate(s) that are not workspace members: "
+        f"{[n + _line_hint(text, n) for n in stale]}. If the crate was deleted, "
+        "remove the reference — including any ASCII diagram that splits the "
+        "name across two lines (no line hint is available for those)."
     )
 
 
@@ -395,22 +439,118 @@ def test_docs_name_no_deleted_crates(doc: str) -> None:
 # Requirement: Charter CI Job Citations Exist
 # --------------------------------------------------------------------------
 def test_charter_ci_job_citations_exist() -> None:
-    """Every CI job Invariant 6 names must still exist in ``ci.yml``."""
+    """Every CI job the Determinism invariant names must still exist in a workflow."""
     jobs = ci_job_names()
-    assert jobs, "no jobs parsed from ci.yml — the parser is broken"
+    assert jobs, "no jobs parsed from the workflows — the parser is broken"
 
-    invariant_six = re.search(r"### 6\. Determinism.*?(?=\n### |\Z)", _read(CHARTER), re.DOTALL)
-    assert invariant_six is not None, "Invariant 6 not found in docs/CHARTER.md"
+    text = _read(CHARTER)
+    # Matches on the "Determinism" heading text with any `### <digit>. ` prefix
+    # rather than hardcoding "6", so a future charter renumbering doesn't break
+    # this test for a reason unrelated to what it actually checks.
+    determinism = re.search(r"### \d+\. Determinism.*?(?=\n### |\Z)", text, re.DOTALL)
+    assert determinism is not None, "the Determinism invariant was not found in docs/CHARTER.md"
 
     cited = {
         token
-        for token in _BACKTICKED.findall(invariant_six.group(0))
+        for token in _BACKTICKED.findall(determinism.group(0))
         if re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)+", token)
     }
     cited.update(SINGLE_WORD_CI_JOBS)
 
     missing = sorted(job for job in cited if job not in jobs)
     assert not missing, (
-        f"docs/CHARTER.md Invariant 6 names CI job(s) absent from ci.yml: {missing}. "
-        "Update the charter if a job was renamed, or restore the gate."
+        f"docs/CHARTER.md's Determinism invariant names CI job(s) absent from any "
+        f"workflow: {[j + _line_hint(text, j) for j in missing]}. Update the "
+        "charter if a job was renamed, or restore the gate."
     )
+
+
+# ==========================================================================
+# Unit tests for this module's own parsers, in isolation from the live repo.
+#
+# The tests above exercise these helpers only incidentally, through whatever
+# docs/CHARTER.md, docs/architecture.md, and the workflows currently contain.
+# That leaves defensive branches (a workspace member with no Cargo.toml, a
+# workflow with no `jobs:` key) permanently unexercised, since every crate and
+# workflow in this repo happens to be well-formed today, and leaves
+# `reconstruct_split_crate_names` — the function that specifically exists to
+# catch the `forge-procgen` class of drift — with no test pinning its
+# contract independent of what architecture.md happens to contain right now.
+# These tests close that gap with synthetic, hand-traced inputs.
+# ==========================================================================
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("forge-\nprocgen\n", {"forge-procgen"}),
+        ("    forge-\n    │  procgen\n", {"forge-procgen"}),  # box-art stripped
+        ("x forge-\n\n", set()),  # column >= len(below) — bound skipped, not crashed
+        ("forge-mc-runner\nsomething\n", set()),  # not dangling — negative lookahead excludes it
+        ("procgen\nforge-", set()),  # dangling forge- on the *last* line is never checked
+    ],
+)
+def test_reconstruct_split_crate_names(text: str, expected: set[str]) -> None:
+    assert reconstruct_split_crate_names(text) == expected
+
+
+def test_jobs_in_returns_empty_set_when_no_jobs_key(tmp_path: Path) -> None:
+    workflow = tmp_path / "no_jobs.yml"
+    workflow.write_text("name: CI\non: push\n", encoding="utf-8")
+    assert _jobs_in(workflow) == set()
+
+
+def test_workspace_members_asserts_on_malformed_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bad_manifest = tmp_path / "Cargo.toml"
+    bad_manifest.write_text('[package]\nname = "x"\n', encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "WORKSPACE_MANIFEST", bad_manifest)
+    with pytest.raises(AssertionError, match="could not locate"):
+        workspace_members()
+
+
+@pytest.fixture
+def synthetic_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point REPO_ROOT/WORKSPACE_MANIFEST at an isolated, minimal repo tree."""
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text(
+        '[workspace]\nmembers = ["crates/fake-crate", "crates/missing-crate"]\n',
+        encoding="utf-8",
+    )
+    crate_dir = tmp_path / "crates" / "fake-crate"
+    crate_dir.mkdir(parents=True)
+    (crate_dir / "Cargo.toml").write_text(
+        '[package]\nname = "fake-crate"\n\n'
+        "[features]\n"
+        "default = []\n"
+        'alpha = ["dep:something"]\n'
+        'beta = ["fake-crate/alpha", "other-crate/gamma"]\n',
+        encoding="utf-8",
+    )
+    # crates/missing-crate is a workspace member with no Cargo.toml on disk —
+    # exercises the `if not manifest.is_file(): continue` guard.
+    monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sys.modules[__name__], "WORKSPACE_MANIFEST", manifest)
+    return tmp_path
+
+
+def test_declared_features_skips_crates_without_manifest(synthetic_repo: Path) -> None:
+    assert declared_features() == {
+        "default": "fake-crate",
+        "alpha": "fake-crate",
+        "beta": "fake-crate",
+    }
+
+
+def test_features_enabled_by_others_strips_dep_prefix_and_crate_qualifier(
+    synthetic_repo: Path,
+) -> None:
+    assert features_enabled_by_others() == {"something", "alpha", "gamma"}
+
+
+def test_build_command_text_includes_readme_features(synthetic_repo: Path) -> None:
+    (synthetic_repo / "README.md").write_text(
+        "Run `cargo build --features onnx-reload`.\n", encoding="utf-8"
+    )
+    assert "--features onnx-reload" in build_command_text()

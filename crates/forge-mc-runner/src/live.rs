@@ -420,9 +420,9 @@ mod tests {
 
     #[test]
     fn build_reload_fn_with_metrics_returns_callable_box() {
-        // Lightweight type-shape assertion — the actual reload path
-        // needs real ONNX files, so it is exercised end-to-end by the
-        // compose-stack E2E rather than by a unit test.
+        // Type-shape assertion only. The reload path itself is unverified
+        // end-to-end: `--features onnx-reload` does not currently build
+        // (pre-existing forge-agent/`ort` incompatibility, out of scope here).
         let _fn: ReloadFn<OnnxMuZeroModel> =
             build_reload_fn_with_metrics(PathBuf::from("."), 4, 8, 1, None);
     }

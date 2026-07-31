@@ -46,6 +46,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that is no longer a workspace member. Stdlib + pytest only — no new CI
   dependency. Runs under the existing `python-test` gate.
 
+### Fixed — follow-up hardening pass on the charter alignment guard
+
+- **The guard's own feature-citation check was vacuously true.** A dead
+  fallback branch in `test_charter_cited_features_are_declared` made
+  `undeclared` provably empty for any charter text — a typo'd feature name in
+  a `` `--features <name>` `` command citation (the shape `docs/CHARTER.md`
+  actually uses) was silently invisible to the check. Fixed by extracting
+  feature names from both bare-backtick and `--features` command citations;
+  verified with a negative control (an injected typo now fails the test with
+  a `file:line` pointer; reverted).
+- **Corrected an inaccurate comment this same guard-adding change introduced**
+  in `crates/forge-mc-runner/src/live.rs`: it claimed the ONNX hot-reload path
+  "is exercised end-to-end by the compose-stack E2E," which doesn't hold —
+  `--features onnx-reload` doesn't currently build (pre-existing
+  `forge-agent`/`ort` incompatibility), the compose stack's default build uses
+  `mc-live` only, and the actual E2E test never touches reload/manifest logic.
+  The comment now states plainly that the reload path is unverified
+  end-to-end, without claiming coverage that doesn't exist.
+- Added 10 unit tests isolating `test_charter_alignment.py`'s own parser
+  helpers from the live repo via `tmp_path` fixtures and module-global
+  monkeypatching — closing previously-dead defensive branches (a workspace
+  member with no `Cargo.toml`, a workflow with no `jobs:` key) and pinning
+  `reconstruct_split_crate_names`'s column/box-art contract independently of
+  whatever `docs/architecture.md` happens to contain.
+- Added best-effort `file:line` hints to failure messages where the raw
+  charter/doc text is already in scope; factored a `_crate_manifest()` helper
+  and a `WORKFLOWS_DIR` constant to remove path duplication (and deleted
+  `CI_WORKFLOW`, which had become fully unread once job discovery was
+  generalised to scan every workflow); made the Determinism-invariant lookup
+  match on heading text instead of a hardcoded invariant number.
+- `README.md`: two more stale crate counts ("23-crate Rust workspace",
+  "27 crates") corrected to 26, matching `docs/architecture.md`'s table,
+  `CLAUDE.md`, and README's own already-corrected occurrence. (A prior pass in
+  this same `[Unreleased]` cycle fixed only one of the three occurrences.)
+
 ---
 
 Production-hardening & gap-closure track (PR #64): operational hardening

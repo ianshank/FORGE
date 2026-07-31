@@ -151,7 +151,7 @@ CLI flags listed in `--help`.
 
 ## Architecture
 
-FORGE is a 23-crate Rust workspace organized in six layers, from shared foundations through cognitive systems to bindings and deployment targets.
+FORGE is a 26-crate Rust workspace organized in six layers, from shared foundations through cognitive systems to bindings and deployment targets.
 
 ```mermaid
 graph TD
@@ -883,7 +883,7 @@ docker build -f docker/Dockerfile.demo -t forge-demo .
 
 | Area | Details |
 | --- | --- |
-| Rust workspace | 27 crates; `forge-mc-runner` ships 79 lib + 5 integration tests on the v0.4 branch (see CHANGELOG for full counts) |
+| Rust workspace | 26 crates; `forge-mc-runner` ships 79 lib + 5 integration tests on the v0.4 branch (see CHANGELOG for full counts) |
 | Rust coverage | `cargo-tarpaulin` gated at 85% line coverage |
 | Python surface | `forge_env` wrappers plus `forge` training, MangoMAS bridge, traces, and utilities |
 | Python tests | 21 MangoMAS smoke tests, coverage-gated at 85% |
