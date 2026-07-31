@@ -2,7 +2,7 @@
 
 ## Persona
 
-You are the **FORGE Orchestrator** — the top-level coordinator for the Fast Open-source Runtime for Generalist Environments. You oversee a multi-crate Rust workspace that implements a deterministic, high-performance multi-agent simulation platform for reinforcement learning research. You understand how the 8 crates compose into a full system: shared types flow upward from `forge-types`, the simulation engine in `forge-core` orchestrates world generation, task evaluation, and physics, planning agents in `forge-agent` use forward models for MCTS, and binding layers (`forge-python`, `forge-wasm`) expose the engine to external ecosystems.
+You are the **FORGE Orchestrator** — the top-level coordinator for the Fast Open-source Runtime for Generalist Environments. You oversee a multi-crate Rust workspace that implements a deterministic, high-performance multi-agent simulation platform for reinforcement learning research. You understand how the 26 crates compose into a full system: shared types flow upward from `forge-types`, the simulation engine in `forge-core` orchestrates world generation, task evaluation, and physics, planning agents in `forge-agent` use forward models for MCTS, the `forge-env` trait surface lets both `WorldState` and live Minecraft drive the same runner, and binding layers (`forge-python`, `forge-wasm`) expose the engine to external ecosystems. See [`docs/architecture.md`](docs/architecture.md) for the full crate-by-crate breakdown — it is the source of truth for that list, not this file.
 
 ## Crate Dependency Graph
 
@@ -82,7 +82,7 @@ StepResult (forge-types)  -->  Observations + Rewards
 
 | Crate | File | Persona |
 |-------|------|---------|
-| `Workspace` | [ANTIGRAVITY.md](file:///c:/Users/iansh/OneDrive/Documents/FORGE/ANTIGRAVITY.md) | Google DeepMind Coding Companion — system-level refactoring, test-coverage architect, and pair programmer |
+| `Workspace` | [ANTIGRAVITY.md](ANTIGRAVITY.md) | Google DeepMind Coding Companion — system-level refactoring, test-coverage architect, and pair programmer |
 | `forge-types` | `crates/forge-types/Agent.md` | Foundation Architect — type contracts, config, constants |
 | `forge-core` | `crates/forge-core/Agent.md` | Simulation Engine — deterministic step pipeline |
 | `forge-worldgen` | `crates/forge-worldgen/Agent.md` | World Builder — procedural generation |
@@ -209,8 +209,7 @@ Added on the `claude/minecraft-rl-agent-integration-xnJjt` branch.
 | `scripts/mc_run.sh --down` | Tear down the compose stack (idempotent) |
 | `cd mc-bot && npm run typecheck && npm run lint && npm test` | mc-bot Node 22 typecheck + Biome lint + 116-test `node:test` suite |
 | `pytest tests/python/integration/ -m minecraft_e2e -v` | Opt-in E2E driving the compose stack (requires docker; gated by the `python-test-minecraft-e2e` `workflow_dispatch` CI job) |
-| `cargo build -p forge-mc-runner --features mc-live` | **v0.4** — build the live runner binary (transitively pulls `forge-env-mc` + `forge-agent/onnx`; replaces v0.3-pre `ExitCode 64` "not yet integrated" path with `run_live`) |
-| `cargo build -p forge-mc-runner --features live-test-stub` | **v0.4** — opt-in test-stub feature for T7 follow-ups that need ONNX wiring against a mock env |
+| `cargo build -p forge-mc-runner --features mc-live` | **v0.4** — build the live runner binary (pulls `forge-env-mc`; replaces v0.3-pre `ExitCode 64` "not yet integrated" path with `run_live`). As of **v0.5** this does *not* imply `onnx-reload` — add it, or use `--features mc-live-bundled`, for trained mode |
 | `python -m forge.training.muzero_mc.cli compute-schema-id --action-map configs/minecraft/action_map.toml --rewards configs/minecraft/rewards.toml --quiet` | **v0.4** — print canonical 64-hex schema_id to stdout (logs go to stderr) — drives `scripts/mc_self_play.sh`'s `FORGE_MC_SCHEMA_ID` export |
 | `python -m forge.training.muzero_mc.cli train --input trajectories/ --out models/ --schema-id <sha> --obs-dim N --action-dim M --continuous --round-iters 10 --round-poll-sleep 5 --max-trajectories 200 --max-bundle-versions 5 --device cpu` | **v0.4** continuous trainer: yields one round summary per loop iteration; polls trajectories dir for new files (cold-start safe); exports atomic `v{NNNNNNNN}/` bundle subdir + bumps manifest each round; SIGINT-clean shutdown |
 | `scripts/mc_self_play.sh [--gpu] [--detach]` | **v0.4** one-command orchestrator: preflights compose v2, computes schema_id via `trainer-bootstrap` one-shot, exports `FORGE_MC_SCHEMA_ID`, runs `bootstrap` if needed, brings up self-play profile (minecraft + mc-bot + runner + trainer). `--gpu` layers `compose.minecraft.gpu.yml` (requires nvidia-container-toolkit) |

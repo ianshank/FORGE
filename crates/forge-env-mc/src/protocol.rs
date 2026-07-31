@@ -13,11 +13,11 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// Frozen channel order for the block-grid observation prefix.
 ///
 /// MUST stay in sync with the JS-side
-/// `mc-bot/src/observation_grid.js::BLOCK_FEATURE_CHANNELS` —
+/// `mc-bot/src/observation_grid.ts::BLOCK_FEATURE_CHANNELS` —
 /// reordering on either side silently mis-trains the CNN. Coordinated
 /// tests live in `xlang_block_feature_channels_pinned_to_known_good`
 /// (this side) and
-/// `mc-bot/test/observation_grid.test.js::feature channel order pin`
+/// `mc-bot/test/observation_grid.test.ts::feature channel order pin`
 /// (JS side); drift fails both tests simultaneously.
 pub const BLOCK_FEATURE_CHANNELS: [&str; 7] = [
     "block_type_hash",
@@ -245,9 +245,9 @@ mod tests {
     }
 
     /// Pinned cross-language regression gate. This exact value MUST
-    /// equal `mc-bot/src/protocol.js::SCHEMA_VERSION`, verified by the
+    /// equal `mc-bot/src/protocol.ts::SCHEMA_VERSION`, verified by the
     /// JS-side counterpart test:
-    /// `mc-bot/test/protocol.test.js::xlang_schema_version_matches_rust`.
+    /// `mc-bot/test/protocol.test.ts::xlang_schema_version_matches_rust`.
     ///
     /// If you bump the protocol, change BOTH constants in the same PR;
     /// otherwise both this test and the JS-side counterpart will fail.
@@ -255,7 +255,7 @@ mod tests {
     fn xlang_schema_version_pinned_to_known_good() {
         assert_eq!(
             SCHEMA_VERSION, 1,
-            "protocol SCHEMA_VERSION drift — mc-bot/src/protocol.js \
+            "protocol SCHEMA_VERSION drift — mc-bot/src/protocol.ts \
              SCHEMA_VERSION must also be bumped and its xlang test \
              updated in the same PR"
         );
@@ -263,9 +263,9 @@ mod tests {
 
     /// Pinned cross-language channel-order regression gate. This exact
     /// order MUST equal
-    /// `mc-bot/src/observation_grid.js::BLOCK_FEATURE_CHANNELS`;
+    /// `mc-bot/src/observation_grid.ts::BLOCK_FEATURE_CHANNELS`;
     /// the JS-side counterpart pins the same names via
-    /// `mc-bot/test/observation_grid.test.js`.
+    /// `mc-bot/test/observation_grid.test.ts`.
     ///
     /// Reordering on either side silently mis-trains the CNN — drift
     /// fails both this test and the JS-side counterpart simultaneously.
@@ -283,7 +283,7 @@ mod tests {
                 "biome_id_hash",
             ],
             "BLOCK_FEATURE_CHANNELS drift — coordinate with \
-             mc-bot/src/observation_grid.js + its JS-side pin test"
+             mc-bot/src/observation_grid.ts + its JS-side pin test"
         );
         assert_eq!(BLOCK_FEATURE_CHANNELS.len(), 7);
     }

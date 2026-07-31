@@ -319,7 +319,7 @@ mod tests {
 
     /// Pinned-fixture cross-language regression gate. This exact byte
     /// string MUST match the JS-side computation in
-    /// `mc-bot/test/schema_id.test.js` (same fixture, same constant).
+    /// `mc-bot/test/schema_id.test.ts` (same fixture, same constant).
     /// Failing means the canonical form drifted on one side; investigate
     /// both sides before bumping.
     #[test]
@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(
             m.canonical_sha256(),
             "587b13077b8c7cd90503f9ee5e1bae1bb92bdf738c8abc51d2ff6deb1908224f",
-            "schema_id drift — JS test in mc-bot/test/schema_id.test.js will also fail"
+            "schema_id drift — JS test in mc-bot/test/schema_id.test.ts will also fail"
         );
     }
 

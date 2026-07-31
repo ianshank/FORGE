@@ -18,7 +18,7 @@ import { createHash } from 'node:crypto';
  *
  * If you add or reorder a Rust `ActionKind` variant field, update
  * the corresponding entry here AND re-run
- * `mc-bot/test/schema_id.test.js` — the pinned xlang hash will
+ * `mc-bot/test/schema_id.test.ts` — the pinned xlang hash will
  * surface drift on either side.
  */
 const CANONICAL_FIELD_ORDER: Record<string, string[]> = Object.freeze({

@@ -5,7 +5,7 @@
 //! file so a typo is caught at runner startup, and (b) compute a
 //! canonical SHA256 that's folded into the global `schema_id`.
 //!
-//! The bot's JS-side loader (`mc-bot/src/reward_config.js`) MUST
+//! The bot's JS-side loader (`mc-bot/src/reward_config.ts`) MUST
 //! produce the same canonical hash from the same file — enforced by
 //! the `xlang_rewards_schema_id_pinned_to_known_good` test below.
 
@@ -84,7 +84,7 @@ impl RewardConfig {
     ///   `[[reward]]` array order is meaningful).
     ///
     /// Regression-tested via `xlang_rewards_schema_id_pinned_to_known_good`
-    /// and its JS twin in `mc-bot/test/reward_config.test.js`.
+    /// and its JS twin in `mc-bot/test/reward_config.test.ts`.
     pub fn canonical_sha256(&self) -> String {
         let normalised: Vec<serde_json::Value> =
             self.entries.iter().map(toml_to_canonical_json).collect();
@@ -240,14 +240,14 @@ value = 1.0
 
     /// Pinned cross-language regression gate — JS side hash for the
     /// `sample_toml()` fixture above MUST equal this value. Pair test
-    /// in `mc-bot/test/reward_config.test.js`.
+    /// in `mc-bot/test/reward_config.test.ts`.
     #[test]
     fn xlang_rewards_schema_id_pinned_to_known_good() {
         let cfg = RewardConfig::parse_toml(sample_toml()).unwrap();
         let h = cfg.canonical_sha256();
         assert_eq!(
             h, "451b10f995371924a374633e5c42deab35c137fbbc65bc8f551bf2bd7844b478",
-            "rewards-config schema_id drift — JS test in mc-bot/test/reward_config.test.js will also fail. \
+            "rewards-config schema_id drift — JS test in mc-bot/test/reward_config.test.ts will also fail. \
              If you intentionally bumped the format, update BOTH pinned constants together.",
         );
     }

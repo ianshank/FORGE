@@ -511,8 +511,14 @@ surfaced during triage.
 
 ## Technical Debt
 
+> Some in-flight work is additionally tracked as OpenSpec change proposals under
+> [`openspec/changes/`](../openspec/changes/). This file remains the roadmap of
+> record per [`docs/CHARTER.md`](CHARTER.md); the OpenSpec folders carry the
+> requirement-level detail for the changes that use that format.
+
 | Item | Priority | Notes |
 |---|---|---|
+| Committed throughput baseline for the "130,000+ steps/second" claim | Medium | `benchmarks/baselines/*/multi_agent_scaling.json` is uncommitted for **both** profiles, so the README headline rests on `crates/forge-bench/benches/multi_agent_scaling.rs` being run locally rather than on a checked-in measurement. Regenerate per `benchmarks/baselines/README.md` and commit. Related to the `reference_b hardware profile` row below. |
 | Mypy strict mode for `demo_ui/tests/` | Low | Test files have unannotated optional args |
 | `conftest.py` root sys.path approach | Medium | Consider `pyproject.toml` package install instead |
 | `demo_ui` as installable package | Medium | `pip install -e demo_ui/` makes imports cleaner |
@@ -525,7 +531,7 @@ surfaced during triage.
 | Multi-agent allocation audit | ✅ Done | `--agents <list>` flag added (default sweep `1,8,16,32,64,128`, also via `FORGE_BENCH_AGENT_COUNTS`); rows labelled `<base>@n=<count>` with typed `num_agents` field. Surfaced and fixed a real per-step heap allocation in `forge-core::physics::process_movements_with_scratch` (snapshot moved into `PhysicsScratch::agents_snapshot`). Reference baseline regenerated; all 72 rows zero-alloc |
 | `reference_b` hardware profile | Scaffolded | Directory committed with `.gitkeep`; `benchmarks/baselines/README.md` documents the regeneration command (including `--agents` flag and `FORGE_BENCH_AGENT_COUNTS`). User runs locally on workstation hardware and commits the JSON in a follow-up PR |
 | Replace `panic!` on enum variants in non-step crates | ✅ Reconciled (v0.5.0) | **Original "~20 sites" estimate was inaccurate.** Verified state: `forge-proposal`, `forge-mangomas/curriculum/task_mapping.rs`, `forge-types/task.rs`, and `forge-server/src/ws_handler.rs` have **zero** production `panic!` (the ws_handler sites at lines 290–399 are all inside `#[cfg(test)]`, which starts at line 227). The only production `panic!` are the **2 intentional, documented back-compat wrappers** in `forge-types/action.rs:211,355` (`to_discrete()` panics by delegating to the fallible `try_to_discrete()` — preserved on purpose for callers documented to pass base actions only). No action: converting them is a breaking change and counter to the documented design. |
-| Replace `.unwrap()` on TOML parsing in `crates/forge-scenario/src/config.rs` | ✅ Reconciled (v0.5.0) | **False positive.** All `.unwrap()` in `config.rs` are inside `#[cfg(test)]` (test module starts at line 191); **zero** non-test unwraps. Nothing to fix. |
+| Replace `.unwrap()` on TOML parsing in the former `forge-scenario` crate | ✅ Reconciled (v0.5.0) | **False positive, now moot.** All `.unwrap()` in that crate's `config.rs` were inside `#[cfg(test)]`; **zero** non-test unwraps. The crate itself was since deleted as orphaned (`e5eca3d`), so nothing remains to fix. |
 | Real LM Studio integration smoke test | Low | Today CI exercises only the mocked provider path. Add an opt-in `pytest -m lmstudio` job that spins up the `mlc-llm/qwen` Docker image and runs a 1-episode hex_patrol collection end-to-end. |
 | Torch path coverage for `BCTrainer._train_torch` | ✅ Done | KL-only branch (lines 336-339) covered by `test_torch_path_kl_only_branch` (parametrised over `DEFAULT_BC_KL_WEIGHT` active vs. `0.0`, deterministic via `DEFAULT_BC_SEED`); value-loss branch covered by `test_torch_path_uses_value_loss_when_value_hats_supplied` (2026-05-16). Inline `_ToyActorCritic` consolidated into module-scoped `toy_actor_critic_factory` fixture (no duplication across the three torch tests). Local coverage on `bc_trainer.py` rose to 97.45% with all torch-path branches reached. |
 | DAgger / DPO follow-on for the teacher pipeline | Medium | Out of scope for the BC PR but a natural next step. The teacher trace schema (`TeacherDecisionTrace`) already records `top_k_probs` and `value_hat`, which DPO would consume directly. Belongs in a separate `forge.mangomas.dpo_trainer` module. |

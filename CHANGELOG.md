@@ -9,6 +9,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — charter ↔ codebase alignment
+
+- **Removed the unimplemented `live-test-stub` Cargo feature** from
+  `crates/forge-mc-runner`. It was declared and promised a `--live-stub` mode
+  plus a `MockMinecraftEnv` helper, but no `#[cfg(feature = …)]` site, symbol,
+  test, or CI job ever referenced it. `mc-live`, `onnx-reload`, and
+  `mc-live-bundled` are unaffected; no build that worked before can break.
+- `docs/CHARTER.md`: Invariant 2 now describes the `schema_id` contract as
+  three-language (Rust ↔ JS ↔ Python) with a per-value pin table, and names the
+  third wire-version constant (`protocol::SCHEMA_VERSION`). Invariant 3 drops
+  the dead feature and points `Runner<E, M>` at its defining module. Invariant 6
+  recategorises `deny.toml` (a `security.yml` supply-chain policy, advisory
+  today — not a `ci.yml` coverage/lint config) and names the non-blocking jobs
+  it deliberately omits. Permanent non-goals are **ratified**.
+- `docs/architecture.md`: container table extended from 11 to all 26 workspace
+  crates, restoring its role as the declared source of truth for the crate list;
+  removed the deleted `forge-procgen` from two ASCII diagrams that survived the
+  `e5eca3d` sweep (the name was split across lines, defeating a grep); corrected
+  `mc-live` to `["dep:forge-env-mc"]` per CHARTER Deliberate Exception 2.
+- Doc reconciliation: `Agent.md` ("8 crates" → 26, `mc-live` description),
+  `ANTIGRAVITY.md` (80% → 85% coverage target), `README.md` ("23 Rust crates" →
+  26), Windows-absolute `file:///c:/…` links converted to repo-relative, and 20
+  stale `mc-bot/**/*.js` doc-comment paths retargeted to `.ts` after the
+  TypeScript migration.
+- `benchmarks/baselines/README.md` records that `multi_agent_scaling.json` is
+  uncommitted for both profiles, so the "130,000+ steps/second" headline rests
+  on locally-run benchmark code rather than a checked-in measurement.
+
+### Added — charter alignment guard
+
+- `tests/python/test_charter_alignment.py`: fails CI when `docs/CHARTER.md`
+  cites a path that no longer resolves, a Cargo feature that is declared but
+  never gated on, or a CI job that no longer exists; when a workspace crate is
+  missing from `docs/architecture.md`; or when either document names a crate
+  that is no longer a workspace member. Stdlib + pytest only — no new CI
+  dependency. Runs under the existing `python-test` gate.
+
+### Fixed — follow-up hardening pass on the charter alignment guard
+
+- **The guard's own feature-citation check was vacuously true.** A dead
+  fallback branch in `test_charter_cited_features_are_declared` made
+  `undeclared` provably empty for any charter text — a typo'd feature name in
+  a `` `--features <name>` `` command citation (the shape `docs/CHARTER.md`
+  actually uses) was silently invisible to the check. Fixed by extracting
+  feature names from both bare-backtick and `--features` command citations;
+  verified with a negative control (an injected typo now fails the test with
+  a `file:line` pointer; reverted).
+- **Corrected an inaccurate comment this same guard-adding change introduced**
+  in `crates/forge-mc-runner/src/live.rs`: it claimed the ONNX hot-reload path
+  "is exercised end-to-end by the compose-stack E2E," which doesn't hold —
+  `--features onnx-reload` doesn't currently build (pre-existing
+  `forge-agent`/`ort` incompatibility), the compose stack's default build uses
+  `mc-live` only, and the actual E2E test never touches reload/manifest logic.
+  The comment now states plainly that the reload path is unverified
+  end-to-end, without claiming coverage that doesn't exist.
+- Added 10 unit tests isolating `test_charter_alignment.py`'s own parser
+  helpers from the live repo via `tmp_path` fixtures and module-global
+  monkeypatching — closing previously-dead defensive branches (a workspace
+  member with no `Cargo.toml`, a workflow with no `jobs:` key) and pinning
+  `reconstruct_split_crate_names`'s column/box-art contract independently of
+  whatever `docs/architecture.md` happens to contain.
+- Added best-effort `file:line` hints to failure messages where the raw
+  charter/doc text is already in scope; factored a `_crate_manifest()` helper
+  and a `WORKFLOWS_DIR` constant to remove path duplication (and deleted
+  `CI_WORKFLOW`, which had become fully unread once job discovery was
+  generalised to scan every workflow); made the Determinism-invariant lookup
+  match on heading text instead of a hardcoded invariant number.
+- `README.md`: two more stale crate counts ("23-crate Rust workspace",
+  "27 crates") corrected to 26, matching `docs/architecture.md`'s table,
+  `CLAUDE.md`, and README's own already-corrected occurrence. (A prior pass in
+  this same `[Unreleased]` cycle fixed only one of the three occurrences.)
+
+---
+
 Production-hardening & gap-closure track (PR #64): operational hardening
 (security scanning, observability, deploy limits) plus closure of the
 documented functional gaps (server history, dashboard wiring, mc-bot

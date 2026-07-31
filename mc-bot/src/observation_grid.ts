@@ -4,7 +4,7 @@
 // position. Layout matches MuZeroConfig.{grid_height, grid_width,
 // grid_channels} on the Python side; channel order is pinned by
 // BLOCK_FEATURE_CHANNELS and exercised by the cross-language fixture
-// tests in mc-bot/test/observation_grid.test.js and
+// tests in mc-bot/test/observation_grid.test.ts and
 // crates/forge-env-mc/tests/block_grid_channel_order.rs.
 
 import { finiteNumber, stableStringHash } from './hash.js';
@@ -47,7 +47,7 @@ export const DEFAULT_TOP_BLOCK_TYPES_COUNT = 5;
 // Frozen channel order. The Python trainer reads the flattened grid
 // as (channels, height, width) — reordering any entry here silently
 // mis-trains the CNN. Coordinated test pins live in:
-//   mc-bot/test/observation_grid.test.js  (this side)
+//   mc-bot/test/observation_grid.test.ts  (this side)
 //   crates/forge-env-mc/tests/block_grid_channel_order.rs  (Rust side)
 //   tests/python/training/test_muzero_mc_replay.py  (Python side)
 export const BLOCK_FEATURE_CHANNELS = Object.freeze([
