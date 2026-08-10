@@ -1,0 +1,99 @@
+name: HF Space sync (WASM demo)
+
+# Builds the forge-wasm crate to WebAssembly and mirrors the fully static
+# in-browser demo (web/ + web/pkg/) to the Hugging Face Space
+# `ianshank/forge-wasm-demo`. Companion to gh-pages.yml — same build, second
+# publish target. Requires a write-scoped HF_TOKEN repository secret.
+
+on:
+  push:
+    # Publish only from the default branch; workflow_dispatch allows a manual
+    # sync (optionally to a different Space repo) from any branch.
+    branches: [main]
+    paths:
+      - "crates/forge-wasm/**"
+      - "crates/forge-core/**"
+      - "crates/forge-types/**"
+      - "web/**"
+      - ".github/workflows/hf-space.yml"
+  workflow_dispatch:
+    inputs:
+      repo_id:
+        description: "Target Hugging Face Space repo id"
+        required: false
+        default: "ianshank/forge-wasm-demo"
+
+permissions:
+  contents: read
+
+# One sync at a time; new pushes supersede in-flight runs.
+concurrency:
+  group: hf-space
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      HF_SPACE_REPO_ID: ${{ github.event.inputs.repo_id || 'ianshank/forge-wasm-demo' }}
+    steps:
+      - name: Check HF_TOKEN secret
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is not set. Add a write-scoped token under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Build forge-wasm (wasm-pack, web target)
+        # Same invocation as gh-pages.yml: JS bindings + .wasm into web/pkg/.
+        run: wasm-pack build crates/forge-wasm --target web --out-dir "$GITHUB_WORKSPACE/web/pkg" --no-typescript
+      - name: Assemble Space staging directory
+        run: |
+          staging="$RUNNER_TEMP/space"
+          mkdir -p "$staging"
+          cp web/index.html web/app.js "$staging/"
+          cp -r web/pkg "$staging/pkg"
+          # wasm-pack emits pkg/.gitignore, which would exclude the build
+          # artifacts from the Space's git repo — drop it before upload.
+          rm -f "$staging/pkg/.gitignore"
+          # The Space card (HF frontmatter) replaces the repo-dev README.
+          cp web/space/README.md "$staging/README.md"
+          echo "Staged files:" && ls -lR "$staging"
+          echo "wasm size:" && du -h "$staging/pkg/forge_wasm_bg.wasm"
+      - name: Install huggingface_hub
+        run: pip install --upgrade huggingface_hub
+      - name: Upload to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import os
+
+          from huggingface_hub import HfApi
+
+          repo_id = os.environ["HF_SPACE_REPO_ID"]
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          api.create_repo(repo_id, repo_type="space", space_sdk="static", exist_ok=True)
+          # delete_patterns="*" mirrors the staging dir: files removed from
+          # the demo disappear from the Space instead of accumulating.
+          api.upload_folder(
+              repo_id=repo_id,
+              repo_type="space",
+              folder_path=os.path.join(os.environ["RUNNER_TEMP"], "space"),
+              commit_message="Sync from {}@{}".format(
+                  os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"][:12]
+              ),
+              delete_patterns="*",
+          )
+          print(f"Space synced: https://huggingface.co/spaces/{repo_id}")
+          EOF
