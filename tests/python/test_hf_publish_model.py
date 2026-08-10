@@ -161,7 +161,7 @@ def test_card_rendering_untrained_warning(bundle_dir: Path, tmp_path: Path) -> N
     assert "NOT a trained model" in card
     assert SCHEMA_ID in card
     assert "user/forge-muzero" in card
-    assert "__" not in card.replace("__init__", ""), "unsubstituted placeholder left"
+    assert "{{" not in card, "unsubstituted placeholder left"
 
     trained_card = pub.render_card(
         pub.DEFAULT_CARD_TEMPLATE,

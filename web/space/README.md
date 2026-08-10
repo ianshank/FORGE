@@ -16,7 +16,7 @@ tags:
   - gridworld
 ---
 
-# FORGE — Live In-Browser Demo
+## FORGE — Live In-Browser Demo
 
 [FORGE](https://github.com/ianshank/FORGE) (Fast Open-source Runtime for
 Generalist Environments) is a high-performance simulation platform for

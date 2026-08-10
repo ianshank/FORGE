@@ -126,19 +126,21 @@ def render_card(
 ) -> str:
     """Render the model card template with bundle facts substituted."""
     text = template_path.read_text(encoding="utf-8")
+    # {{NAME}} placeholder style: double underscores would be parsed as
+    # Markdown strong emphasis and trip markdownlint (MD036/MD050).
     substitutions = {
-        "__TRAINED_WARNING__": "" if trained else UNTRAINED_WARNING,
-        "__SCHEMA_ID__": manifest.schema_id,
-        "__VERSION__": str(manifest.version),
-        "__CREATED_AT__": manifest.created_at,
-        "__OBS_DIM__": obs_dim,
-        "__ACTION_DIM__": action_dim,
-        "__REPO_ID__": repo_id,
-        "__ONNX_OPSET__": str(ONNX_OPSET_VERSION),
-        "__MANIFEST_SCHEMA_VERSION__": str(MANIFEST_SCHEMA_VERSION),
-        "__REPR_SHA256__": manifest.files.representation.sha256,
-        "__DYN_SHA256__": manifest.files.dynamics.sha256,
-        "__PRED_SHA256__": manifest.files.prediction.sha256,
+        "{{TRAINED_WARNING}}": "" if trained else UNTRAINED_WARNING,
+        "{{SCHEMA_ID}}": manifest.schema_id,
+        "{{VERSION}}": str(manifest.version),
+        "{{CREATED_AT}}": manifest.created_at,
+        "{{OBS_DIM}}": obs_dim,
+        "{{ACTION_DIM}}": action_dim,
+        "{{REPO_ID}}": repo_id,
+        "{{ONNX_OPSET}}": str(ONNX_OPSET_VERSION),
+        "{{MANIFEST_SCHEMA_VERSION}}": str(MANIFEST_SCHEMA_VERSION),
+        "{{REPR_SHA256}}": manifest.files.representation.sha256,
+        "{{DYN_SHA256}}": manifest.files.dynamics.sha256,
+        "{{PRED_SHA256}}": manifest.files.prediction.sha256,
     }
     for key, value in substitutions.items():
         text = text.replace(key, value)

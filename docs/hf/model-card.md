@@ -12,7 +12,7 @@ tags:
 
 # FORGE MuZero (Minecraft) — ONNX bundle
 
-__TRAINED_WARNING__
+{{TRAINED_WARNING}}
 
 MuZero world-model bundle for the
 [FORGE](https://github.com/ianshank/FORGE) self-improving Minecraft loop:
@@ -24,7 +24,7 @@ MCTS between episodes.
 ## Files
 
 The three MuZero networks are exported as separate ONNX graphs (opset
-__ONNX_OPSET__) so the Rust runner can load them independently. The Rust
+{{ONNX_OPSET}}) so the Rust runner can load them independently. The Rust
 runner binds inputs/outputs **by name**:
 
 | File | Inputs | Outputs |
@@ -34,33 +34,33 @@ runner binds inputs/outputs **by name**:
 | `prediction.onnx` | `latent_state` `[B, latent_dim]` | `policy_logits`, `value_logits` |
 
 `model_manifest.json` records per-file SHA-256s, the bundle version, and
-the environment `schema_id` (manifest schema_version __MANIFEST_SCHEMA_VERSION__ —
+the environment `schema_id` (manifest schema_version {{MANIFEST_SCHEMA_VERSION}} —
 byte-compatible with the Rust runner's `ModelManifest`).
 
 ## Contract
 
-- **schema_id**: `__SCHEMA_ID__`
+- **schema_id**: `{{SCHEMA_ID}}`
   (sha256 over the canonical action_map + rewards configs; the runner
   refuses bundles whose schema_id mismatches its env handshake)
-- **obs_dim**: __OBS_DIM__ · **action_dim**: __ACTION_DIM__
-- **Bundle version**: __VERSION__ · exported __CREATED_AT__
+- **obs_dim**: {{OBS_DIM}} · **action_dim**: {{ACTION_DIM}}
+- **Bundle version**: {{VERSION}} · exported {{CREATED_AT}}
 
 ### Checksums
 
 | Role | SHA-256 |
 |---|---|
-| representation | `__REPR_SHA256__` |
-| dynamics | `__DYN_SHA256__` |
-| prediction | `__PRED_SHA256__` |
+| representation | `{{REPR_SHA256}}` |
+| dynamics | `{{DYN_SHA256}}` |
+| prediction | `{{PRED_SHA256}}` |
 
 ## Usage — warm-start a FORGE bundle
 
 ```bash
 pip install -e ".[minecraft]"
 python -m forge.training.muzero_mc.cli bootstrap \
-    --from-hf __REPO_ID__ \
-    --obs-dim __OBS_DIM__ --action-dim __ACTION_DIM__ \
-    --schema-id __SCHEMA_ID__ \
+    --from-hf {{REPO_ID}} \
+    --obs-dim {{OBS_DIM}} --action-dim {{ACTION_DIM}} \
+    --schema-id {{SCHEMA_ID}} \
     --out models/
 ```
 

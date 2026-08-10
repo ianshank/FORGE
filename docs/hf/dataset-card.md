@@ -108,8 +108,8 @@ episodes = ds.to_pandas().groupby(["scenario_id", "seed"])
 
 ## Provenance
 
-- Source: [ianshank/FORGE](https://github.com/ianshank/FORGE) @ `__GIT_SHA__`
+- Source: [ianshank/FORGE](https://github.com/ianshank/FORGE) @ `{{GIT_SHA}}`
 - Generator: `forge-gen-dataset` (see `crates/forge-data/src/bin/forge_gen_dataset.rs`)
-- Invocation: `__CLI_ARGS__`
-- Rows: `__ROW_COUNT__`
+- Invocation: `{{CLI_ARGS}}`
+- Rows: `{{ROW_COUNT}}`
 - License: Apache-2.0 (same as the simulator)

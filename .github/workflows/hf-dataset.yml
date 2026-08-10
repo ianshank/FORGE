@@ -61,9 +61,9 @@ jobs:
       - name: Render dataset card
         run: |
           row_count=$(python3 -c "import json;print(json.load(open('$OUT_DIR/dataset_info.json'))['row_count'])")
-          sed -e "s/__GIT_SHA__/${GITHUB_SHA::12}/" \
-              -e "s/__CLI_ARGS__/--episodes-per-cell $EPISODES_PER_CELL (defaults otherwise)/" \
-              -e "s/__ROW_COUNT__/$row_count/" \
+          sed -e "s/{{GIT_SHA}}/${GITHUB_SHA::12}/" \
+              -e "s/{{CLI_ARGS}}/--episodes-per-cell $EPISODES_PER_CELL (defaults otherwise)/" \
+              -e "s/{{ROW_COUNT}}/$row_count/" \
               docs/hf/dataset-card.md > "$OUT_DIR/README.md"
       - name: Install huggingface_hub + datasets
         run: pip install --upgrade huggingface_hub datasets
