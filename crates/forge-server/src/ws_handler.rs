@@ -179,7 +179,7 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
     let initial_snapshot = state.shared_state.read();
     let initial_msg = WsMessage::StateUpdate(initial_snapshot);
     if let Ok(json) = serialize_ws_message(&initial_msg) {
-        if let Err(e) = ws_tx.send(Message::Text(json)).await {
+        if let Err(e) = ws_tx.send(Message::Text(json.into())).await {
             tracing::warn!(client_id, error = %e, "Failed to send initial snapshot");
         }
     }
@@ -190,7 +190,7 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
             match rx.recv().await {
                 Ok(msg) => match serialize_ws_message(&msg) {
                     Ok(json) => {
-                        if ws_tx.send(Message::Text(json)).await.is_err() {
+                        if ws_tx.send(Message::Text(json.into())).await.is_err() {
                             break;
                         }
                     }
