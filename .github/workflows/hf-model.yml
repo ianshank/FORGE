@@ -59,7 +59,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install "onnx>=1.16" "onnxruntime>=1.17" "onnxscript>=0.1" \
-            "huggingface_hub>=0.20"
+            "huggingface_hub>=0.23,<2.0"
       - name: Compute schema_id
         id: schema
         run: |

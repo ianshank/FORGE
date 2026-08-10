@@ -16,8 +16,8 @@ secret is missing.
 `.github/workflows/hf-space.yml` builds `crates/forge-wasm` with
 wasm-pack and mirrors the static demo (`web/index.html`, `web/app.js`,
 `web/pkg/`, plus the Space card `web/space/README.md`) to a static-SDK
-Space. Runs automatically on pushes to `main` that touch the demo or the
-sim crates (same paths filter as `gh-pages.yml`), or manually via
+Space. Runs automatically on pushes to the release/default branches
+(same branch list and paths filter as `gh-pages.yml`), or manually via
 workflow dispatch.
 
 The demo is fully client-side (no server, no external requests); the

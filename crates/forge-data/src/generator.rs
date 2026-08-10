@@ -70,6 +70,37 @@ pub enum DemoPolicy {
     Random,
 }
 
+impl DemoPolicy {
+    /// Canonical lowercase name — the single source for CLI parsing,
+    /// dataset labels, and the serde representation.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mcts => "mcts",
+            Self::Random => "random",
+        }
+    }
+}
+
+impl std::fmt::Display for DemoPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for DemoPolicy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "mcts" => Ok(Self::Mcts),
+            "random" => Ok(Self::Random),
+            other => Err(format!(
+                "unknown policy {other:?} (expected \"mcts\" or \"random\")"
+            )),
+        }
+    }
+}
+
 /// Configuration for the expert demo generator.
 ///
 /// All constants live here — no hard-coded values elsewhere.
@@ -96,6 +127,11 @@ pub struct ExpertDemoConfig {
     /// episodes fully reproducible.
     #[serde(default = "default_tasks_per_episode")]
     pub tasks_per_episode: u32,
+    /// Base reward per tier-1 task, before the evaluator applies
+    /// `forge_config.task.reward_scale` (kept unscaled here so the scale is
+    /// never applied twice).
+    #[serde(default = "default_task_base_reward")]
+    pub task_base_reward: f32,
     /// Optional scenario label recorded as each trajectory's `scenario_id`.
     ///
     /// When `None`, falls back to the legacy per-episode `expert_seed_{seed}`
@@ -131,6 +167,7 @@ impl Default for ExpertDemoConfig {
             policy: DemoPolicy::default(),
             scenario_label: None,
             tasks_per_episode: default_tasks_per_episode(),
+            task_base_reward: default_task_base_reward(),
         }
     }
 }
@@ -138,6 +175,11 @@ impl Default for ExpertDemoConfig {
 /// Serde default for [`ExpertDemoConfig::tasks_per_episode`].
 fn default_tasks_per_episode() -> u32 {
     1
+}
+
+/// Serde default for [`ExpertDemoConfig::task_base_reward`].
+fn default_task_base_reward() -> f32 {
+    DEFAULT_TASK_BASE_REWARD
 }
 
 /// Generates expert demonstrations using FORGE's MCTS planner.
@@ -223,7 +265,7 @@ impl ExpertDemoGenerator {
                 world_height: episode_config.world.height,
                 num_agents: episode_config.agents.num_agents,
                 max_predicates: episode_config.task.max_predicates,
-                base_reward: DEFAULT_TASK_BASE_REWARD,
+                base_reward: self.config.task_base_reward,
             };
             let mut task_rng = Pcg64Mcg::seed_from_u64(seed ^ TASK_RNG_SALT);
             for task_idx in 0..self.config.tasks_per_episode {
@@ -549,6 +591,46 @@ mod tests {
         assert_eq!(back.policy, DemoPolicy::Mcts);
         assert!(back.scenario_label.is_none());
         assert_eq!(back.tasks_per_episode, 1);
+        assert!((back.task_base_reward - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_config_serde_backward_compat_task_base_reward() {
+        let cfg = ExpertDemoConfig::default();
+        let mut v = serde_json::to_value(&cfg).unwrap();
+        v.as_object_mut().unwrap().remove("task_base_reward");
+        let back: ExpertDemoConfig = serde_json::from_value(v).unwrap();
+        assert!((back.task_base_reward - default_task_base_reward()).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_demo_policy_serde_lowercase() {
+        assert_eq!(
+            serde_json::to_string(&DemoPolicy::Mcts).unwrap(),
+            "\"mcts\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DemoPolicy::Random).unwrap(),
+            "\"random\""
+        );
+        assert_eq!(
+            serde_json::from_str::<DemoPolicy>("\"random\"").unwrap(),
+            DemoPolicy::Random
+        );
+        assert!(serde_json::from_str::<DemoPolicy>("\"MCTS\"").is_err());
+    }
+
+    #[test]
+    fn test_demo_policy_string_forms_agree() {
+        // Display / FromStr / serde must stay a single representation.
+        for policy in [DemoPolicy::Mcts, DemoPolicy::Random] {
+            let display = policy.to_string();
+            assert_eq!(display, policy.as_str());
+            assert_eq!(display.parse::<DemoPolicy>().unwrap(), policy);
+            let serde_form = serde_json::to_string(&policy).unwrap();
+            assert_eq!(serde_form, format!("\"{display}\""));
+        }
+        assert!("llm".parse::<DemoPolicy>().is_err());
     }
 
     #[test]

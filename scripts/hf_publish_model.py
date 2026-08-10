@@ -97,7 +97,10 @@ def verify_bundle(bundle_dir: Path) -> ModelManifest:
     manifest_path = bundle_dir / MANIFEST_FILENAME
     if not manifest_path.is_file():
         raise PublishError(f"no {MANIFEST_FILENAME} in {bundle_dir}")
-    manifest = load_manifest(manifest_path)
+    try:
+        manifest = load_manifest(manifest_path)
+    except Exception as exc:  # ManifestError / ValueError / JSONDecodeError
+        raise PublishError(f"invalid {MANIFEST_FILENAME} in {bundle_dir}: {exc}") from exc
 
     for role in ("representation", "dynamics", "prediction"):
         entry = getattr(manifest.files, role)
@@ -164,7 +167,17 @@ def stage_bundle(
     ``DEFAULT_BUNDLE_FILENAMES`` names at the staging root — the layout
     ``load_from_hf`` downloads — and the manifest is re-built against the
     flat layout (identical bytes, so identical sha256s).
+
+    Raises:
+        PublishError: If ``staging_dir`` exists and is non-empty —
+            ``upload_folder`` publishes the whole directory verbatim, so
+            stray pre-existing files would land in the Hub repo.
     """
+    if staging_dir.is_dir() and any(staging_dir.iterdir()):
+        raise PublishError(
+            f"staging dir {staging_dir} is not empty — refusing to publish "
+            "pre-existing files; pass a fresh directory"
+        )
     staging_dir.mkdir(parents=True, exist_ok=True)
     for role in ("representation", "dynamics", "prediction"):
         entry = getattr(manifest.files, role)
@@ -288,6 +301,7 @@ def main(argv: list[str] | None = None, *, api: Any | None = None) -> int:
 
     try:
         manifest = verify_bundle(args.bundle_dir)
+        ephemeral_staging = args.staging_dir is None
         staging = args.staging_dir or Path(tempfile.mkdtemp(prefix="hf-model-staging-"))
         stage_bundle(
             args.bundle_dir,
@@ -311,6 +325,11 @@ def main(argv: list[str] | None = None, *, api: Any | None = None) -> int:
             commit_message=args.commit_message,
             api=api,
         )
+        # Auto-created temp staging is removed after a successful upload;
+        # a user-supplied --staging-dir (and any failed run) is left intact
+        # for inspection.
+        if ephemeral_staging:
+            shutil.rmtree(staging, ignore_errors=True)
         print(url)
         return 0
     except PublishError as exc:

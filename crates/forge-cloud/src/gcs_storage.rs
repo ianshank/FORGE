@@ -28,7 +28,7 @@ use std::sync::{Arc, OnceLock};
 use futures::StreamExt;
 use object_store::gcp::GoogleCloudStorageBuilder;
 use object_store::path::Path as ObjectPath;
-use object_store::{ObjectMeta, ObjectStore};
+use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt};
 use tracing::{debug, info, instrument, warn};
 
 use crate::error::{CloudError, CloudResult, StorageError};

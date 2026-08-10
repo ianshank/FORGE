@@ -53,7 +53,10 @@ oracle expert.
 Every episode is **byte-identically reproducible**: FORGE uses fixed-point
 arithmetic and PCG RNG, so `(scenario_id, seed)` uniquely determines the
 full episode. Each configuration cell owns a disjoint, contiguous seed
-block. Regenerate any subset with:
+block derived from its position in the full default cell grid — a
+`--cells` filter keeps every cell's original block, so regenerating a
+subset (with the default axis lists and the published
+`--episodes-per-cell`) reproduces exactly the published episodes:
 
 ```bash
 cargo run --release -p forge-data --features hf --bin forge-gen-dataset -- \

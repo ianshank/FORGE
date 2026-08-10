@@ -222,6 +222,38 @@ def test_main_publishes_via_injected_api(bundle_dir: Path, tmp_path: Path) -> No
     assert api.uploaded[0]["folder_path"] == str(staging)
 
 
+def test_stage_bundle_rejects_nonempty_staging_dir(
+    bundle_dir: Path, tmp_path: Path
+) -> None:
+    staging = tmp_path / "dirty"
+    staging.mkdir()
+    (staging / "leftover.bin").write_bytes(b"stale")
+    manifest = pub.verify_bundle(bundle_dir)
+    with pytest.raises(pub.PublishError, match="not empty"):
+        pub.stage_bundle(
+            bundle_dir,
+            staging,
+            manifest=manifest,
+            card_template=pub.DEFAULT_CARD_TEMPLATE,
+            repo_id="user/r",
+            obs_dim="1",
+            action_dim="1",
+            trained=False,
+        )
+    # The stale file is untouched, not uploaded, not deleted.
+    assert (staging / "leftover.bin").read_bytes() == b"stale"
+
+
+def test_main_malformed_manifest_json_fails_cleanly(bundle_dir: Path) -> None:
+    # A truncated manifest must exit 1 via PublishError, not a raw
+    # ValueError/JSONDecodeError traceback.
+    (bundle_dir / MANIFEST_FILENAME).write_text("{not json")
+    code = pub.main(
+        ["--bundle-dir", str(bundle_dir), "--repo-id", "user/x", "--dry-run"]
+    )
+    assert code == 1
+
+
 def test_main_corrupted_bundle_fails(bundle_dir: Path) -> None:
     (
         bundle_dir

@@ -115,19 +115,24 @@ struct CellSpec {
     num_agents: u32,
     max_tier: u8,
     policy: DemoPolicy,
+    /// Position in the FULL (unfiltered) cell grid. Seed blocks derive from
+    /// this — not from the position in a `--cells`-filtered list — so
+    /// regenerating a subset reproduces exactly the published episodes.
+    grid_index: usize,
 }
 
 impl CellSpec {
     /// Stable label recorded as `scenario_id` for every episode in the cell.
     fn label(&self) -> String {
-        let policy = match self.policy {
-            DemoPolicy::Mcts => "mcts",
-            DemoPolicy::Random => "random",
-        };
         format!(
-            "square-{}-a{}-t{}-{policy}",
-            self.world_size, self.num_agents, self.max_tier
+            "square-{}-a{}-t{}-{}",
+            self.world_size, self.num_agents, self.max_tier, self.policy
         )
+    }
+
+    /// First seed of this cell's disjoint block.
+    fn seed_start(&self, cli: &Cli) -> u64 {
+        cli.base_seed + self.grid_index as u64 * cli.episodes_per_cell
     }
 
     /// Builds the generator configuration for this cell.
@@ -149,14 +154,6 @@ impl CellSpec {
     }
 }
 
-fn parse_policy(s: &str) -> anyhow::Result<DemoPolicy> {
-    match s {
-        "mcts" => Ok(DemoPolicy::Mcts),
-        "random" => Ok(DemoPolicy::Random),
-        other => bail!("unknown policy {other:?} (expected \"mcts\" or \"random\")"),
-    }
-}
-
 fn parse_compression(s: &str) -> anyhow::Result<ParquetCompression> {
     match s {
         "none" => Ok(ParquetCompression::None),
@@ -168,11 +165,14 @@ fn parse_compression(s: &str) -> anyhow::Result<ParquetCompression> {
 }
 
 /// Expands the CLI axes into the ordered list of cells, applying `--cells`.
+///
+/// Duplicate labels (repeated axis values) are an error: they would silently
+/// double a configuration under two different seed blocks.
 fn build_cells(cli: &Cli) -> anyhow::Result<Vec<CellSpec>> {
     let policies = cli
         .policies
         .iter()
-        .map(|p| parse_policy(p))
+        .map(|p| p.parse::<DemoPolicy>().map_err(anyhow::Error::msg))
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     let mut cells = Vec::new();
@@ -185,10 +185,21 @@ fn build_cells(cli: &Cli) -> anyhow::Result<Vec<CellSpec>> {
                         num_agents,
                         max_tier,
                         policy,
+                        grid_index: cells.len(),
                     });
                 }
             }
         }
+    }
+
+    let mut sorted_labels: Vec<String> = cells.iter().map(CellSpec::label).collect();
+    sorted_labels.sort();
+    if let Some(dup) = sorted_labels.windows(2).find(|w| w[0] == w[1]) {
+        bail!(
+            "duplicate cell label {:?} — repeated axis value in \
+             --world-sizes/--agent-counts/--tiers/--policies?",
+            dup[0]
+        );
     }
 
     if let Some(filter) = &cli.cells {
@@ -198,6 +209,7 @@ fn build_cells(cli: &Cli) -> anyhow::Result<Vec<CellSpec>> {
                 bail!("--cells label {wanted:?} does not match any cell (labels: {all_labels:?})");
             }
         }
+        // Filtering keeps each cell's grid_index, preserving its seed block.
         cells.retain(|c| filter.iter().any(|w| *w == c.label()));
     }
 
@@ -219,27 +231,30 @@ fn episode_stream<'a>(
     cli: &'a Cli,
     dropped: &'a AtomicU64,
 ) -> impl Iterator<Item = Trajectory> + 'a {
-    cells.iter().enumerate().flat_map(move |(cell_idx, cell)| {
+    cells.iter().flat_map(move |cell| {
         let generator = ExpertDemoGenerator::new(cell.to_config(cli));
         let cell_label = cell.label();
-        let start = cli.base_seed + cell_idx as u64 * cli.episodes_per_cell;
-        let seeds: Vec<u64> = (start..start + cli.episodes_per_cell).collect();
+        let start = cell.seed_start(cli);
         info!(
             cell = %cell_label,
             seed_start = start,
             episodes = cli.episodes_per_cell,
             "Generating cell"
         );
-        let batch_size = cli.generation_batch.max(1);
-        let batches: Vec<Vec<u64>> = seeds.chunks(batch_size).map(<[u64]>::to_vec).collect();
-        batches.into_iter().flat_map(move |batch| {
-            let expected = batch.len();
-            let episodes: Vec<Trajectory> = batch
-                .par_iter()
-                .filter_map(|&seed| generator.generate_episode(seed))
+        let batch_size = cli.generation_batch.max(1) as u64;
+        // Seed ranges, not materialized seed vectors: memory stays bounded
+        // by one in-flight batch regardless of --episodes-per-cell.
+        let batch_starts = (start..start + cli.episodes_per_cell).step_by(batch_size as usize);
+        let end = start + cli.episodes_per_cell;
+        batch_starts.flat_map(move |batch_start| {
+            let batch_end = (batch_start + batch_size).min(end);
+            let expected = batch_end - batch_start;
+            let episodes: Vec<Trajectory> = (batch_start..batch_end)
+                .into_par_iter()
+                .filter_map(|seed| generator.generate_episode(seed))
                 .collect();
-            if episodes.len() < expected {
-                let missing = (expected - episodes.len()) as u64;
+            if (episodes.len() as u64) < expected {
+                let missing = expected - episodes.len() as u64;
                 dropped.fetch_add(missing, Ordering::Relaxed);
                 warn!(
                     cell = %cell_label,
@@ -252,7 +267,19 @@ fn episode_stream<'a>(
     })
 }
 
+/// Validates cross-field CLI invariants before any generation work.
+fn validate_cli(cli: &Cli) -> anyhow::Result<()> {
+    if cli.episodes_per_cell == 0 {
+        bail!("--episodes-per-cell must be >= 1 (0 would publish an empty dataset)");
+    }
+    if cli.max_steps == 0 {
+        bail!("--max-steps must be >= 1");
+    }
+    Ok(())
+}
+
 fn run(cli: &Cli) -> anyhow::Result<()> {
+    validate_cli(cli)?;
     let cells = build_cells(cli)?;
     let total_episodes = cells.len() as u64 * cli.episodes_per_cell;
     info!(
@@ -283,6 +310,9 @@ fn run(cli: &Cli) -> anyhow::Result<()> {
             "{dropped} of {total_episodes} episodes failed to generate — refusing to \
              emit a silently incomplete dataset (see warnings above for cells)"
         );
+    }
+    if manifest.row_count == 0 {
+        bail!("generation produced zero rows — refusing to emit an empty dataset");
     }
 
     info!(
@@ -351,6 +381,43 @@ mod tests {
     }
 
     #[test]
+    fn filtered_cell_keeps_full_grid_seed_block() {
+        // Regeneration promise: `--cells <label>` must reproduce exactly the
+        // seed block the cell had in the full unfiltered grid.
+        let cli = base_cli();
+        let full = build_cells(&cli).unwrap();
+        let target = "square-64-a2-t2-mcts";
+        let in_full = full.iter().find(|c| c.label() == target).unwrap();
+        assert!(in_full.grid_index > 0, "test needs a non-first cell");
+
+        let mut filtered_cli = base_cli();
+        filtered_cli.cells = Some(vec![target.to_string()]);
+        let filtered = build_cells(&filtered_cli).unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].grid_index, in_full.grid_index);
+        assert_eq!(filtered[0].seed_start(&cli), in_full.seed_start(&cli));
+    }
+
+    #[test]
+    fn duplicate_axis_values_are_rejected() {
+        let mut cli = base_cli();
+        cli.world_sizes = vec![32, 32, 64];
+        let err = build_cells(&cli).unwrap_err();
+        assert!(err.to_string().contains("duplicate cell label"), "{err}");
+    }
+
+    #[test]
+    fn validate_cli_rejects_zero_episodes_and_steps() {
+        let mut cli = base_cli();
+        cli.episodes_per_cell = 0;
+        assert!(validate_cli(&cli).is_err());
+        let mut cli = base_cli();
+        cli.max_steps = 0;
+        assert!(validate_cli(&cli).is_err());
+        assert!(validate_cli(&base_cli()).is_ok());
+    }
+
+    #[test]
     fn cells_filter_rejects_unknown_label() {
         let mut cli = base_cli();
         cli.cells = Some(vec!["hex-32-a1-t1-mcts".to_string()]);
@@ -361,9 +428,10 @@ mod tests {
     fn seed_blocks_are_disjoint() {
         let cli = base_cli();
         let cells = build_cells(&cli).unwrap();
-        let mut all_ranges: Vec<(u64, u64)> = (0..cells.len() as u64)
-            .map(|i| {
-                let start = cli.base_seed + i * cli.episodes_per_cell;
+        let mut all_ranges: Vec<(u64, u64)> = cells
+            .iter()
+            .map(|c| {
+                let start = c.seed_start(&cli);
                 (start, start + cli.episodes_per_cell)
             })
             .collect();
@@ -371,6 +439,53 @@ mod tests {
         for pair in all_ranges.windows(2) {
             assert!(pair[0].1 <= pair[1].0, "seed blocks overlap: {pair:?}");
         }
+    }
+
+    #[test]
+    fn episode_stream_counts_dropped_episodes() {
+        // world_size 0 fails WorldState construction, so every episode of
+        // the cell is dropped — the counter must record all of them and the
+        // stream must yield nothing (this is what makes run() bail instead
+        // of publishing an incomplete dataset).
+        let mut cli = base_cli();
+        cli.episodes_per_cell = 3;
+        cli.max_steps = 5;
+        let cells = vec![CellSpec {
+            world_size: 0,
+            num_agents: 1,
+            max_tier: 1,
+            policy: DemoPolicy::Random,
+            grid_index: 0,
+        }];
+        let dropped = AtomicU64::new(0);
+        let produced: Vec<Trajectory> = episode_stream(&cells, &cli, &dropped).collect();
+        assert!(produced.is_empty());
+        assert_eq!(dropped.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn episode_stream_valid_cell_drops_nothing() {
+        let mut cli = base_cli();
+        cli.episodes_per_cell = 2;
+        cli.max_steps = 5;
+        cli.mcts_sims = 2;
+        let cells = vec![CellSpec {
+            world_size: 16,
+            num_agents: 1,
+            max_tier: 1,
+            policy: DemoPolicy::Random,
+            grid_index: 0,
+        }];
+        let dropped = AtomicU64::new(0);
+        let produced: Vec<Trajectory> = episode_stream(&cells, &cli, &dropped).collect();
+        assert_eq!(produced.len(), 2);
+        assert_eq!(dropped.load(Ordering::Relaxed), 0);
+        // Disjoint block starts at base_seed; labels carry the cell id.
+        assert_eq!(produced[0].metadata.seed, cli.base_seed);
+        assert_eq!(
+            produced[0].metadata.scenario_id.as_deref(),
+            Some("square-16-a1-t1-random")
+        );
     }
 
     #[test]
@@ -384,9 +499,9 @@ mod tests {
 
     #[test]
     fn parse_policy_variants() {
-        assert_eq!(parse_policy("mcts").unwrap(), DemoPolicy::Mcts);
-        assert_eq!(parse_policy("random").unwrap(), DemoPolicy::Random);
-        assert!(parse_policy("llm").is_err());
+        assert_eq!("mcts".parse::<DemoPolicy>().unwrap(), DemoPolicy::Mcts);
+        assert_eq!("random".parse::<DemoPolicy>().unwrap(), DemoPolicy::Random);
+        assert!("llm".parse::<DemoPolicy>().is_err());
     }
 
     #[test]
@@ -397,6 +512,7 @@ mod tests {
             num_agents: 2,
             max_tier: 2,
             policy: DemoPolicy::Random,
+            grid_index: 0,
         };
         let cfg = cell.to_config(&cli);
         assert_eq!(

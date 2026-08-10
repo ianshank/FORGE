@@ -87,11 +87,19 @@ def load_from_hf(
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(downloaded), target)
 
-    # Drop any now-empty subfolder chain the Hub client left behind.
+    # Drop any now-empty subfolder chain the Hub client left behind. The
+    # walk is constrained to descendants of the versioned dir so a hostile
+    # or malformed subfolder ("../..", absolute path) can never delete
+    # directories outside the bundle.
     if subfolder:
-        leftover = (versioned_dir / subfolder).resolve()
         root = versioned_dir.resolve()
-        while leftover != root and leftover.is_dir() and not any(leftover.iterdir()):
+        leftover = (versioned_dir / subfolder).resolve()
+        while (
+            leftover != root
+            and leftover.is_relative_to(root)
+            and leftover.is_dir()
+            and not any(leftover.iterdir())
+        ):
             leftover.rmdir()
             leftover = leftover.parent
 

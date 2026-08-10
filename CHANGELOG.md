@@ -41,6 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`forge-cloud`'s `gcs` feature compiles again**: `object_store` 0.14 moved
+  `put`/`get`/`delete`/`head` behind the `ObjectStoreExt` extension trait —
+  one missing import broke the feature-gated build (and with it the
+  `--features forge-cloud/gcs` CI jobs) since the 0.14 bump.
+- `forge-server` compiles again under axum 0.8 (`Message::Text` takes
+  `Utf8Bytes`; two send sites in `ws_handler.rs`).
+- Dataset-generation hardening from branch peer review: seed blocks derive
+  from each cell's position in the full unfiltered grid (so `--cells`
+  regeneration reproduces published episodes exactly), duplicate axis values
+  are rejected, `--episodes-per-cell 0` / zero-row runs abort before upload,
+  failed episodes abort instead of shipping a silently incomplete dataset,
+  and `DemoPolicy` has a single string form (serde/`Display`/`FromStr`).
+- `hf_publish_model.py` hardening: refuses non-empty staging dirs, cleans up
+  its ephemeral staging dir after upload, and malformed manifests exit
+  cleanly via `PublishError` instead of raw tracebacks. Workflow pip
+  installs are version-pinned; the dataset upload mirrors with
+  `delete_patterns` so re-runs can't leave stale shards.
 - `checkpoint_loader.load_from_hf`: removed the `local_dir_use_symlinks`
   kwarg (deleted in huggingface_hub 1.0 — the locked 1.8/1.16 clients raised
   `TypeError`), and `subfolder` downloads now normalize from the Hub

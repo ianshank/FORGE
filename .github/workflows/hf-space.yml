@@ -72,7 +72,8 @@ jobs:
           echo "Staged files:" && ls -lR "$staging"
           echo "wasm size:" && du -h "$staging/pkg/forge_wasm_bg.wasm"
       - name: Install huggingface_hub
-        run: pip install --upgrade huggingface_hub
+        # Pinned range: keeps the sync reproducible across hub releases.
+        run: pip install "huggingface_hub>=0.23,<2.0"
       - name: Upload to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
