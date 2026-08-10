@@ -358,7 +358,10 @@ scope" + the first-real-run report's next-steps):
   gradient beyond the current survival/inventory/distance/health
   composite.  `[STATUS: not-started]`
 - **HuggingFace pretrained-checkpoint loader** for warm-starts so
-  the trained variant doesn't start from random init.  `[STATUS: not-started]`
+  the trained variant doesn't start from random init.  `[STATUS: done]`
+  — `checkpoint_loader.load_from_hf` wired to `bootstrap --from-hf`;
+  publish-side counterpart in `scripts/hf_publish_model.py` +
+  `.github/workflows/hf-model.yml` (see `docs/hf/README.md`).
 - **DPO trainer** consuming `top_k_probs` / `value_hat` from the
   trajectory traces (the schema already carries these; the trainer
   doesn't consume them yet).  `[STATUS: not-started]`

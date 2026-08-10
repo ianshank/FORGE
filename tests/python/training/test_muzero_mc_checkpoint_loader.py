@@ -46,9 +46,17 @@ SCHEMA_ID = "a" * 64
 class _FakeHub:
     """Records ``hf_hub_download`` calls and materializes each file.
 
+    Mirrors the huggingface_hub 1.x behaviour the loader relies on:
+
+    - the removed ``local_dir_use_symlinks`` kwarg is NOT accepted, so a
+      loader regression re-adding it fails these tests with a
+      ``TypeError`` exactly as it would against the locked real client;
+    - with a ``subfolder``, the file is materialized under
+      ``local_dir/<subfolder>/<filename>`` and that path is returned —
+      the loader must normalize from the returned path, not recompute it.
+
     ``build_manifest`` hashes the downloaded files, so the fake must
-    actually write bytes to ``local_dir / filename`` — exactly where the
-    real Hub client places them.
+    actually write bytes where the real Hub client places them.
     """
 
     def __init__(self, *, fail_on: str | None = None) -> None:
@@ -62,7 +70,6 @@ class _FakeHub:
         filename: str,
         subfolder: str | None,
         local_dir: Path,
-        local_dir_use_symlinks: bool,
     ) -> str:
         self.calls.append(
             {
@@ -70,12 +77,14 @@ class _FakeHub:
                 "filename": filename,
                 "subfolder": subfolder,
                 "local_dir": str(local_dir),
-                "local_dir_use_symlinks": local_dir_use_symlinks,
             }
         )
         if self._fail_on is not None and filename == self._fail_on:
             raise RuntimeError(f"simulated Hub download failure for {filename}")
-        dest = Path(local_dir) / filename
+        dest = Path(local_dir)
+        if subfolder is not None:
+            dest = dest / subfolder
+        dest = dest / filename
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(f"weights::{repo_id}::{filename}".encode())
         return str(dest)
@@ -124,14 +133,13 @@ def test_load_from_hf_happy_path(fake_hub: _FakeHub, tmp_path: Path) -> None:
         expected = f"{subdir}/{DEFAULT_BUNDLE_FILENAMES[role]}"
         assert getattr(manifest.files, role).path == expected
 
-    # Exactly one download per role, no subfolder, symlinks disabled.
+    # Exactly one download per role, no subfolder.
     assert len(fake_hub.calls) == len(DEFAULT_BUNDLE_FILENAMES)
     assert {c["filename"] for c in fake_hub.calls} == set(
         DEFAULT_BUNDLE_FILENAMES.values()
     )
     assert all(c["repo_id"] == "user/forge-muzero" for c in fake_hub.calls)
     assert all(c["subfolder"] is None for c in fake_hub.calls)
-    assert all(c["local_dir_use_symlinks"] is False for c in fake_hub.calls)
 
 
 def test_default_version_is_one(fake_hub: _FakeHub, tmp_path: Path) -> None:
@@ -162,8 +170,12 @@ def test_filename_map_override(fake_hub: _FakeHub, tmp_path: Path) -> None:
     assert manifest.files.representation.path == f"{subdir}/repr_v2.onnx"
 
 
-def test_subfolder_is_passed_through(fake_hub: _FakeHub, tmp_path: Path) -> None:
-    load_from_hf(
+def test_subfolder_round_trip(fake_hub: _FakeHub, tmp_path: Path) -> None:
+    # The Hub client materializes subfolder downloads under
+    # ``local_dir/<subfolder>/``; the loader must still produce a flat,
+    # hashable versioned bundle plus a valid manifest (regression test for
+    # the FileNotFoundError this used to raise in build_manifest).
+    manifest_path = load_from_hf(
         "user/repo",
         schema_id=SCHEMA_ID,
         output_dir=tmp_path,
@@ -171,6 +183,14 @@ def test_subfolder_is_passed_through(fake_hub: _FakeHub, tmp_path: Path) -> None
     )
     assert fake_hub.calls
     assert all(c["subfolder"] == "checkpoints/best" for c in fake_hub.calls)
+
+    version_dir = tmp_path / format_bundle_version_dir(1)
+    for fname in DEFAULT_BUNDLE_FILENAMES.values():
+        assert (version_dir / fname).is_file(), "bundle files must be flat"
+    # The Hub client's subfolder scaffolding is cleaned up.
+    assert not (version_dir / "checkpoints").exists()
+    manifest = load_manifest(manifest_path)
+    assert manifest.schema_id == SCHEMA_ID
 
 
 def test_download_failure_propagates_and_writes_no_manifest(

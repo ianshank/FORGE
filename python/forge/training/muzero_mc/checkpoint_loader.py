@@ -1,12 +1,16 @@
 """HuggingFace checkpoint warm-start loader for MuZero models.
 
-Downloads pretrained MuZero ONNX weights from the HuggingFace Hub
-and builds a local model_manifest.json with checked schema_id alignment.
+Downloads pretrained MuZero ONNX weights from the HuggingFace Hub and
+builds a local model_manifest.json stamped with the caller-supplied
+schema_id (the Hub repo contributes only the ONNX bytes; schema_id
+alignment is the caller's responsibility — see ``scripts/hf_publish_model.py``
+for the publish-side counterpart that records it in the uploaded manifest).
 """
 
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 
 from forge.training.muzero_mc.manifest import (
@@ -64,16 +68,32 @@ def load_from_hf(
         schema_id,
     )
 
-    # Download each network file
+    # Download each network file. The Hub client materializes files under
+    # `local_dir/<subfolder>/<fname>` when a subfolder is given, so always
+    # trust the *returned* path and normalize into the flat versioned dir
+    # the manifest contract expects.
     for role, fname in fnames.items():
         logger.info("Downloading network %s (%s)...", role, fname)
-        hf_hub_download(
-            repo_id=repo_id,
-            filename=fname,
-            subfolder=subfolder,
-            local_dir=versioned_dir,
-            local_dir_use_symlinks=False,
+        downloaded = Path(
+            hf_hub_download(
+                repo_id=repo_id,
+                filename=fname,
+                subfolder=subfolder,
+                local_dir=versioned_dir,
+            )
         )
+        target = versioned_dir / fname
+        if downloaded.resolve() != target.resolve():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(downloaded), target)
+
+    # Drop any now-empty subfolder chain the Hub client left behind.
+    if subfolder:
+        leftover = (versioned_dir / subfolder).resolve()
+        root = versioned_dir.resolve()
+        while leftover != root and leftover.is_dir() and not any(leftover.iterdir()):
+            leftover.rmdir()
+            leftover = leftover.parent
 
     # Build the manifest referencing these files
     manifest = build_manifest(
