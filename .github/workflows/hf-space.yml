@@ -7,9 +7,10 @@ name: HF Space sync (WASM demo)
 
 on:
   push:
-    # Publish only from the release/default branches (mirrors gh-pages.yml);
-    # workflow_dispatch allows a manual sync (optionally to a different
-    # Space repo) from any branch.
+    # Publish only from the release branch (`main`) plus the repository's
+    # current default branch (`claude/plan-forge-environment-htAoK`), mirroring
+    # gh-pages.yml; workflow_dispatch allows a manual sync (optionally to a
+    # different Space repo) from any branch.
     branches: [main, claude/plan-forge-environment-htAoK]
     paths:
       - "crates/forge-wasm/**"
