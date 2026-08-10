@@ -1,0 +1,110 @@
+name: HF Dataset publish (gridworld trajectories)
+
+# Manual-dispatch pipeline: generates the FORGE gridworld trajectories
+# dataset with the `forge-gen-dataset` bin (feature `hf`) and uploads it to
+# a Hugging Face dataset repo. Requires a write-scoped HF_TOKEN secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_id:
+        description: "Target Hugging Face dataset repo id"
+        required: false
+        default: "ianshank/forge-gridworld-trajectories"
+      episodes_per_cell:
+        description: "Episodes per configuration cell (54 cells total)"
+        required: false
+        default: "185"
+      private:
+        description: "Create/keep the dataset repo private"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hf-dataset
+  cancel-in-progress: false
+
+jobs:
+  generate-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      HF_DATASET_REPO_ID: ${{ github.event.inputs.repo_id || 'ianshank/forge-gridworld-trajectories' }}
+      EPISODES_PER_CELL: ${{ github.event.inputs.episodes_per_cell || '185' }}
+      DATASET_PRIVATE: ${{ github.event.inputs.private }}
+      OUT_DIR: ${{ github.workspace }}/_hf_dataset
+    steps:
+      - name: Check HF_TOKEN secret
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is not set. Add a write-scoped token under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: hf-export
+      - name: Generate dataset
+        run: |
+          cargo run --release -p forge-data --features hf --bin forge-gen-dataset -- \
+            --out "$OUT_DIR" --episodes-per-cell "$EPISODES_PER_CELL"
+          test -f "$OUT_DIR/dataset_info.json" \
+            || (echo "::error::generation failed — dataset_info.json missing"; exit 1)
+          cat "$OUT_DIR/export_manifest.json"
+      - name: Render dataset card
+        run: |
+          row_count=$(python3 -c "import json;print(json.load(open('$OUT_DIR/dataset_info.json'))['row_count'])")
+          sed -e "s/__GIT_SHA__/${GITHUB_SHA::12}/" \
+              -e "s/__CLI_ARGS__/--episodes-per-cell $EPISODES_PER_CELL (defaults otherwise)/" \
+              -e "s/__ROW_COUNT__/$row_count/" \
+              docs/hf/dataset-card.md > "$OUT_DIR/README.md"
+      - name: Install huggingface_hub + datasets
+        run: pip install --upgrade huggingface_hub datasets
+      - name: Upload to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import os
+
+          from huggingface_hub import HfApi
+
+          repo_id = os.environ["HF_DATASET_REPO_ID"]
+          private = os.environ.get("DATASET_PRIVATE", "false") == "true"
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          api.create_repo(repo_id, repo_type="dataset", private=private, exist_ok=True)
+          api.upload_folder(
+              repo_id=repo_id,
+              repo_type="dataset",
+              folder_path=os.environ["OUT_DIR"],
+              commit_message="Publish from {}@{}".format(
+                  os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"][:12]
+              ),
+          )
+          print(f"Dataset published: https://huggingface.co/datasets/{repo_id}")
+          EOF
+      - name: Post-publish load smoke
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import json
+          import os
+
+          from datasets import load_dataset
+
+          repo_id = os.environ["HF_DATASET_REPO_ID"]
+          info = json.load(open(os.path.join(os.environ["OUT_DIR"], "dataset_info.json")))
+          ds = load_dataset(repo_id, split="train", token=os.environ["HF_TOKEN"])
+          assert ds.num_rows == info["row_count"], (
+              f"hub rows {ds.num_rows} != generated rows {info['row_count']}"
+          )
+          print(f"Load smoke OK: {ds.num_rows} rows, columns: {ds.column_names}")
+          EOF

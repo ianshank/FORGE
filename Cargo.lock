@@ -1241,9 +1241,13 @@ dependencies = [
 name = "forge-data"
 version = "0.5.0"
 dependencies = [
+ "anyhow",
+ "clap",
  "forge-agent",
  "forge-core",
+ "forge-observability",
  "forge-replay",
+ "forge-task",
  "forge-types",
  "proptest",
  "rand 0.8.5",
