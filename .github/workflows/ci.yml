@@ -518,6 +518,35 @@ jobs:
           ./target/debug/forge-mc-runner --dry-run --episodes 1 \
             || (echo "::error::forge-mc-runner --dry-run failed"; exit 1)
 
+  hf-export:
+    name: HF Export (feature-gated)
+    runs-on: ubuntu-latest
+    # The `hf` feature (arrow/parquet Parquet export + forge-gen-dataset bin)
+    # is off by default and invisible to the workspace-wide jobs above. This
+    # job keeps it compiling and its tests green, plus a tiny generation
+    # smoke so the bin's episode→Parquet path stays wired end-to-end.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: hf-export
+      - name: Clippy (hf feature)
+        run: |
+          cargo clippy -p forge-replay --all-targets --features hf -- -D warnings
+          cargo clippy -p forge-data --all-targets --features hf -- -D warnings
+      - name: Test (hf feature)
+        run: |
+          cargo test -p forge-replay --features hf
+          cargo test -p forge-data --features hf
+      - name: Generation smoke (2 cells × 2 episodes)
+        run: |
+          cargo run -p forge-data --features hf --bin forge-gen-dataset -- \
+            --out ./_hf_smoke --episodes-per-cell 2 --max-steps 30 --mcts-sims 4 \
+            --cells square-32-a1-t1-mcts,square-32-a1-t1-random
+          test -f ./_hf_smoke/dataset_info.json \
+            || (echo "::error::dataset_info.json missing"; exit 1)
+
   demo-ui:
     name: Demo UI Tests
     runs-on: ubuntu-latest

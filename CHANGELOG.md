@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Hugging Face publication pipelines (`docs/hf/README.md`)
+
+- **Static Space sync** (`.github/workflows/hf-space.yml`): builds the
+  `forge-wasm` demo and mirrors `web/` + a new Space card
+  (`web/space/README.md`) to the `ianshank/forge-wasm-demo` static Space on
+  pushes to `main`. Requires a write-scoped `HF_TOKEN` repository secret.
+- **Trajectories dataset generator** (`forge-gen-dataset`, behind the new
+  `forge-data/hf` feature): streams `ExpertDemoGenerator` episodes across a
+  54-cell config cross-product (world size × agents × tier × {mcts, random})
+  into `forge-replay`'s Parquet exporter — the first production caller of
+  `write_parquet_shards`. Disjoint per-cell seed blocks make
+  `(scenario_id, seed)` a reproducible episode key; a failed episode aborts
+  the run instead of shipping a silently incomplete dataset. Published by
+  `.github/workflows/hf-dataset.yml` with a card rendered from
+  `docs/hf/dataset-card.md`; the new `hf-export` CI job keeps the feature
+  compiling with a generation smoke.
+- **`ExpertDemoConfig` gains `policy` (`mcts` | seeded `random`),
+  `scenario_label`, and `tasks_per_episode`** (all serde-defaulted,
+  backward-compatible). Episodes now assign procedurally generated tasks via
+  `forge_task::generator::generate_active_task` — previously **no** Rust
+  driver populated `WorldState.tasks`, so every generated episode carried
+  all-zero rewards.
+- **MuZero model publisher** (`scripts/hf_publish_model.py` +
+  `.github/workflows/hf-model.yml`): verifies bundle sha256s, stages the
+  three ONNX graphs flat at the repo root (the exact layout
+  `checkpoint_loader.load_from_hf` consumes), renders
+  `docs/hf/model-card.md`, uploads via `HfApi`, and round-trips the repo
+  back through `bootstrap --from-hf`. Publishes **private** with a
+  random-init warning until real training lands.
+
+### Fixed
+
+- **`forge-cloud`'s `gcs` feature compiles again**: `object_store` 0.14 moved
+  `put`/`get`/`delete`/`head` behind the `ObjectStoreExt` extension trait —
+  one missing import broke the feature-gated build (and with it the
+  `--features forge-cloud/gcs` CI jobs) since the 0.14 bump.
+- `forge-server` compiles again under axum 0.8 (`Message::Text` takes
+  `Utf8Bytes`; two send sites in `ws_handler.rs`).
+- Dataset-generation hardening from branch peer review: seed blocks derive
+  from each cell's position in the full unfiltered grid (so `--cells`
+  regeneration reproduces published episodes exactly), duplicate axis values
+  are rejected, `--episodes-per-cell 0` / zero-row runs abort before upload,
+  failed episodes abort instead of shipping a silently incomplete dataset,
+  and `DemoPolicy` has a single string form (serde/`Display`/`FromStr`).
+- `hf_publish_model.py` hardening: refuses non-empty staging dirs, cleans up
+  its ephemeral staging dir after upload, and malformed manifests exit
+  cleanly via `PublishError` instead of raw tracebacks. Workflow pip
+  installs are version-pinned; the dataset upload mirrors with
+  `delete_patterns` so re-runs can't leave stale shards.
+- `checkpoint_loader.load_from_hf`: removed the `local_dir_use_symlinks`
+  kwarg (deleted in huggingface_hub 1.0 — the locked 1.8/1.16 clients raised
+  `TypeError`), and `subfolder` downloads now normalize from the Hub
+  client's returned path instead of recomputing it (previously
+  `FileNotFoundError` in manifest hashing). The fake-hub test double now
+  mirrors the real 1.x signature so neither bug can re-mask.
+- `huggingface-hub>=0.20` added to the `minecraft` extra so
+  `bootstrap --from-hf` works under `pip install -e ".[minecraft]"`.
+
 ### Changed — charter ↔ codebase alignment
 
 - **Removed the unimplemented `live-test-stub` Cargo feature** from

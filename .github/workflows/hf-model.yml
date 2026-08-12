@@ -1,0 +1,113 @@
+name: HF Model publish (MuZero bundle)
+
+# Manual-dispatch pipeline validating the model release path end-to-end:
+# computes the canonical schema_id, bootstraps a bundle (random-init unless
+# a trained bundle is supplied later), and publishes it to a Hugging Face
+# model repo via scripts/hf_publish_model.py. Defaults to a PRIVATE repo —
+# the public trained release is the same dispatch with `trained: true` and
+# `private: false` once real training lands (v0.5 Phase 2).
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_id:
+        description: "Target Hugging Face model repo id"
+        required: false
+        default: "ianshank/forge-muzero-minecraft"
+      private:
+        description: "Create/keep the model repo private"
+        type: boolean
+        required: false
+        default: true
+      trained:
+        description: "Bundle holds real trained weights (omits the random-init warning)"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hf-model
+  cancel-in-progress: false
+
+jobs:
+  bootstrap-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HF_MODEL_REPO_ID: ${{ github.event.inputs.repo_id || 'ianshank/forge-muzero-minecraft' }}
+      # v0.5 contract pins (docs/results/v0.5-first-real-run.md).
+      OBS_DIM: "920"
+      ACTION_DIM: "12"
+    steps:
+      - name: Check HF_TOKEN secret
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is not set. Add a write-scoped token under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install "onnx>=1.16" "onnxruntime>=1.17" "onnxscript>=0.1" \
+            "huggingface_hub>=0.23,<2.0"
+      - name: Compute schema_id
+        id: schema
+        run: |
+          export PYTHONPATH="$GITHUB_WORKSPACE/python"
+          schema_id=$(python -m forge.training.muzero_mc.cli compute-schema-id \
+            --action-map configs/minecraft/action_map.toml \
+            --rewards configs/minecraft/rewards.toml --quiet)
+          echo "schema_id=$schema_id" >> "$GITHUB_OUTPUT"
+          echo "schema_id: $schema_id"
+      - name: Bootstrap random-init bundle
+        run: |
+          export PYTHONPATH="$GITHUB_WORKSPACE/python"
+          python -m forge.training.muzero_mc.cli bootstrap \
+            --obs-dim "$OBS_DIM" --action-dim "$ACTION_DIM" \
+            --schema-id "${{ steps.schema.outputs.schema_id }}" \
+            --out "$GITHUB_WORKSPACE/_hf_model_bundle"
+      - name: Publish to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          export PYTHONPATH="$GITHUB_WORKSPACE/python"
+          args=(--bundle-dir "$GITHUB_WORKSPACE/_hf_model_bundle"
+                --repo-id "$HF_MODEL_REPO_ID"
+                --obs-dim "$OBS_DIM" --action-dim "$ACTION_DIM"
+                --commit-message "Publish from ${GITHUB_REPOSITORY}@${GITHUB_SHA::12}")
+          if [ "${{ github.event.inputs.private }}" != "false" ]; then
+            args+=(--private)
+          fi
+          if [ "${{ github.event.inputs.trained }}" = "true" ]; then
+            args+=(--trained)
+          fi
+          python scripts/hf_publish_model.py "${args[@]}"
+      - name: Warm-start round-trip smoke
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          export PYTHONPATH="$GITHUB_WORKSPACE/python"
+          python -m forge.training.muzero_mc.cli bootstrap \
+            --from-hf "$HF_MODEL_REPO_ID" \
+            --obs-dim "$OBS_DIM" --action-dim "$ACTION_DIM" \
+            --schema-id "${{ steps.schema.outputs.schema_id }}" \
+            --out "$GITHUB_WORKSPACE/_hf_roundtrip"
+          python - <<'EOF'
+          import json
+          import os
+
+          with open(os.path.join(os.environ["GITHUB_WORKSPACE"], "_hf_roundtrip", "model_manifest.json")) as fh:
+              manifest = json.load(fh)
+          print("round-trip manifest:", json.dumps(manifest, indent=2))
+          assert manifest["schema_version"] == 1
+          EOF

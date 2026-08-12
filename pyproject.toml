@@ -30,17 +30,24 @@ mousedroid = ["huggingface-hub>=0.20", "torch>=2.0"]
 teacher    = ["openai>=1.0,<2.0", "jsonschema>=4.0,<5.0"]
 # Minecraft MuZero training pipeline (Phase 5 — consumed by
 # `python/forge/training/muzero_mc/`):
-#   - torch         -> network init + ONNX export
-#   - onnx          -> ONNX graph manipulation for round-trip tests
-#   - onnxruntime   -> cross-runtime validation; matches the Rust
-#                      `onnxruntime`/`ort` crate version range
-minecraft  = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17"]
+#   - torch           -> network init + ONNX export
+#   - onnx            -> ONNX graph manipulation for round-trip tests
+#   - onnxruntime     -> cross-runtime validation; matches the Rust
+#                        `onnxruntime`/`ort` crate version range
+#   - huggingface-hub -> `bootstrap --from-hf` warm-start +
+#                        `scripts/hf_publish_model.py` publishing.
+#                        Floor 0.23: the first release where
+#                        `hf_hub_download(local_dir=...)` always
+#                        materializes real files (0.20-0.22 symlink >5MB
+#                        files into the HF cache, which breaks bundles
+#                        mounted into the runner container)
+minecraft  = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17", "huggingface-hub>=0.23"]
 all        = [
     "stable-baselines3>=2.0",
     "torch>=2.0",
     "wandb>=0.16",
     "mlflow>=2.0",
-    "huggingface-hub>=0.20",
+    "huggingface-hub>=0.23",
     "openai>=1.0,<2.0",
     "jsonschema>=4.0,<5.0",
     "onnx>=1.16",
