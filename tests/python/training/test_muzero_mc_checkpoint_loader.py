@@ -193,27 +193,26 @@ def test_subfolder_round_trip(fake_hub: _FakeHub, tmp_path: Path) -> None:
     assert manifest.schema_id == SCHEMA_ID
 
 
-def test_hostile_subfolder_never_cleans_outside_bundle(
+def test_hostile_subfolder_rejected_before_download(
     fake_hub: _FakeHub, tmp_path: Path
 ) -> None:
-    # A subfolder that path-escapes the versioned dir must not let the
-    # empty-dir cleanup walk (or delete) anything outside the bundle. The
-    # fake hub writes to local_dir/<subfolder>/<file>, which for "../side"
-    # lands next to the versioned dir; the loader must still produce a
-    # valid flat bundle and leave outside directories alone.
+    # A subfolder that path-escapes the versioned dir must be rejected
+    # immediately with a ValueError — no files should be downloaded and no
+    # directories outside the bundle should be created.
     sentinel = tmp_path / "outside-empty-dir"
     sentinel.mkdir()
-    manifest_path = load_from_hf(
-        "user/repo",
-        schema_id=SCHEMA_ID,
-        output_dir=tmp_path / "bundle",
-        subfolder="../escape",
-    )
-    assert manifest_path.is_file()
-    version_dir = tmp_path / "bundle" / format_bundle_version_dir(1)
-    for fname in DEFAULT_BUNDLE_FILENAMES.values():
-        assert (version_dir / fname).is_file()
-    assert sentinel.is_dir(), "cleanup escaped the bundle directory"
+    with pytest.raises(ValueError, match="path traversal rejected"):
+        load_from_hf(
+            "user/repo",
+            schema_id=SCHEMA_ID,
+            output_dir=tmp_path / "bundle",
+            subfolder="../escape",
+        )
+    # No files downloaded and no manifest written.
+    bundle_dir = tmp_path / "bundle"
+    assert not bundle_dir.exists() or not any(bundle_dir.rglob("*.onnx"))
+    # Outside directory was never touched.
+    assert sentinel.is_dir(), "validation escaped the bundle directory"
 
 
 def test_download_failure_propagates_and_writes_no_manifest(

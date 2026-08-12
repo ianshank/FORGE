@@ -68,6 +68,16 @@ def load_from_hf(
         schema_id,
     )
 
+    # Reject subfolder values that could escape versioned_dir via path traversal.
+    if subfolder is not None:
+        # Normalize and verify the joined path stays inside versioned_dir.
+        candidate = (versioned_dir / subfolder).resolve()
+        if not candidate.is_relative_to(versioned_dir.resolve()):
+            raise ValueError(
+                f"subfolder {subfolder!r} resolves outside the bundle directory "
+                f"({versioned_dir}) — path traversal rejected"
+            )
+
     # Download each network file. The Hub client materializes files under
     # `local_dir/<subfolder>/<fname>` when a subfolder is given, so always
     # trust the *returned* path and normalize into the flat versioned dir
