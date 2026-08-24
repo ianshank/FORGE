@@ -17,7 +17,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 toml = { workspace = true }
-tungstenite = "0.24"
+tungstenite = "0.29"
 url = { workspace = true }
 sha2 = { workspace = true }
 
