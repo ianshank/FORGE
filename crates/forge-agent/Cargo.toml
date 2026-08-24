@@ -32,7 +32,7 @@ rand_pcg = { workspace = true }
 # Optional ONNX Runtime for latent MCTS deployment
 # Note: ort doesn't provide prebuilt binaries for x86_64-pc-windows-gnu
 # Use x86_64-pc-windows-msvc or compile ort from source on GNU target
-ort = { version = "=2.0.0-rc.12", optional = true, default-features = false }
+ort = { version = "=2.0.0-rc.13", optional = true, default-features = false }
 ndarray = { version = "0.16", optional = true }
 anyhow.workspace = true
 thiserror.workspace = true
