@@ -81,6 +81,15 @@ no per-user setup needed):
 - **`/forge-verify` skill** (`.claude/skills/forge-verify/SKILL.md`) — runs
   `make verify` / `make verify-full` and reports a per-category pass/fail
   summary instead of a single opaque result.
+- **`forge-docs-audit` skill** (`.claude/skills/forge-docs-audit/SKILL.md`)
+  — re-verifies factual claims in `docs/next_steps.md`, `CHANGELOG.md`,
+  `README.md`, `docs/architecture.md`, `Agent.md`, and `CLAUDE.md`
+  against the actual codebase (counts, file:line references, named
+  tests, status markers) and corrects drift in the house style already
+  established in those files, rather than each pass re-deriving the same
+  evidence by hand. Packages the single most-repeated pattern in this
+  repo's own history — multiple `docs: fix stale ...` commits and several
+  Technical Debt rows that turned out to be false when re-checked.
 - **Tracked-file deletion guard** (`.claude/hooks/guard_tracked_deletion.py`,
   wired via `.claude/settings.json`'s `PreToolUse` hook) — blocks a `Bash`
   `rm`/`find -delete` command whose glob pattern matches a *git-tracked*

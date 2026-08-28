@@ -51,6 +51,17 @@ CI's `python-lint` job; documented in `docs/hardcoded-values-audit.md`.
 - **`/forge-verify` skill** (`.claude/skills/forge-verify/SKILL.md`): wraps
   the Makefile's `verify`/`verify-full` pre-PR gate sequence with a
   per-category pass/fail report instead of one opaque result.
+- **`forge-docs-audit` skill** (`.claude/skills/forge-docs-audit/SKILL.md`):
+  re-verifies factual claims (counts, file:line refs, named tests, status
+  markers) in `docs/next_steps.md`/`CHANGELOG.md`/`README.md`/
+  `docs/architecture.md`/`Agent.md`/`CLAUDE.md` against the actual
+  codebase and corrects drift in the house style already established in
+  those files. Motivated by a fresh skills/hooks re-survey pointing out
+  this is the single most-repeated pattern in this repo's own git
+  history — the several `docs: fix stale ...` commits and multiple
+  Technical Debt rows resolved specifically because they were re-checked
+  and found false, each requiring independently re-deriving evidence by
+  hand.
 - **Tracked-file deletion guard** (`.claude/hooks/guard_tracked_deletion.py`,
   registered via `.claude/settings.json` as a `PreToolUse` hook on `Bash`):
   blocks `rm`/`find -delete` commands whose glob pattern matches a
