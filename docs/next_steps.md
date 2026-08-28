@@ -484,13 +484,15 @@ surfaced during triage.
   open bullets.
 - Opt-in LM Studio CI smoke (`pytest -m lmstudio` against a containerised
   endpoint) — Tech Debt row "Real LM Studio integration smoke test".
-- `BCTrainer._train_torch` branch coverage (KL-only + value-loss-only) —
-  Tech Debt row "Torch path coverage for `BCTrainer._train_torch`". One of
-  the two branches (value-loss) is now covered by
-  `test_torch_path_uses_value_loss_when_value_hats_supplied` (2026-05-16);
-  KL-only branch remains.
-- Fix `forge-server::config::tests::test_from_env_defaults` flake (new TD
-  row below) — small, high-signal, blocks `cargo test --workspace` green CI.
+- ~~`BCTrainer._train_torch` branch coverage (KL-only + value-loss-only)~~
+  **✅ Done** — this line was stale (self-contradicted the Tech Debt table
+  below, found during the 2026-08 tech-debt pass). Both branches are
+  covered: value-loss by `test_torch_path_uses_value_loss_when_value_hats_supplied`
+  (2026-05-16), KL-only by `test_torch_path_kl_only_branch` (confirmed
+  present in `tests/python/test_bc_trainer.py`) — see the Tech Debt row
+  "Torch path coverage for `BCTrainer._train_torch`".
+- ~~Fix `forge-server::config::tests::test_from_env_defaults` flake~~
+  **✅ Done** — also stale; see the matching Tech Debt row below.
 
 ### P1 — v0.3 window
 
