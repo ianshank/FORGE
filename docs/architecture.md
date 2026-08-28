@@ -2089,10 +2089,10 @@ build:
    rust:1.93-bookworm builder
         │
         ├── --features mc-live        (random-baseline-only; 135 MB image)
-        └── --features mc-live-bundled (trained-mode; requires re-enabling
-                                        the commented-out ONNX-runtime
-                                        install block in the Dockerfile.
-                                        Deferred — `ort` rc.12 ABI churn.)
+        └── --features mc-live-bundled (trained-mode; the builder stage
+                                        unconditionally installs the ONNX
+                                        Runtime shared library. Fixed in the
+                                        2026-08 tech-debt pass -- see below.)
                 │
                 ▼
         debian:bookworm-slim runtime
@@ -2125,9 +2125,21 @@ Local-dev (no docker):
 The Rust runner refactor splits the trained-mode path into
 `live::run_live_trained()` feature-gated behind `onnx-reload`; the
 random-baseline path (`run_live_random()`) compiles cleanly with
-just `--features mc-live` (no ORT dependency). This dodges the
-`ort 2.0.0-rc.12` transitive-dep cascade (ureq 3.x TLS feature,
-onnxruntime ABI drift, rustc 1.93 MSRV chain from `fixed`/`icu_*`).
+just `--features mc-live` (no ORT dependency).
+
+**Update (2026-08 tech-debt pass):** the trained-mode path's `ort` break
+is fixed. Root cause: a routine Dependabot bump (rc.12 → rc.13) silently
+broke `forge-agent`'s ONNX code because no CI job built this feature
+surface -- a 5-line API-drift fix (`try_extract_raw_tensor` →
+`try_extract_tensor`, a stray `?` after `ort::inputs![...]` removed ×3,
+`&mut self` on the session-holding locals, `ort/std` added for
+`commit_from_file`) restores the build. Separately, `ONNXRUNTIME_VERSION`
+in this Dockerfile is now pinned to `>=1.23.2`: earlier releases hit a
+known upstream `ort` rc.13 teardown segfault on process exit under
+`load-dynamic` (pykeio/ort#614, fixed in the runtime by pykeio/ort#610),
+reproduced and confirmed fixed by the version bump. A new CI job
+(`onnx-features` in `ci.yml`) now builds and tests this feature surface
+on every push, so it can't silently rot again.
 
 ### 3.10.15 Manual baseline path + handshake probe (v0.5 Phase 1, 2026-05-21)
 

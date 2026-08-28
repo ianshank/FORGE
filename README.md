@@ -494,9 +494,9 @@ validates the v0.5 contract against a live bot, and the
 `docker/mc-runner.Dockerfile` for a from-source runner image. The
 v0.5 grid_shape handshake has been verified end-to-end against a real
 `itzg/minecraft-server`; the report documents what's verified and the
-two infrastructure issues deferred to Phase 2 (mineflayer
-auto-reconnect, `ort` rc.12 forward-port for the trained-mode docker
-image).
+infrastructure issue deferred to Phase 2 (mineflayer
+auto-reconnect). The trained-mode docker image's `ort` rc.13
+build/runtime break (see CHANGELOG) has since been fixed.
 
 ### Quickstart
 

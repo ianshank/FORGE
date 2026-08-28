@@ -329,18 +329,23 @@ All Phase 2 production-stability and code-hardening goals are **COMPLETED**:
 
 - **Mineflayer auto-reconnect on MC-side tick timeout**  `[STATUS: COMPLETED]`
   Implemented connection health monitoring and tick-age checks in `mc-bot/src/bot_manager.ts`. The `BotManager` automatically tears down and rebuilds the mineflayer instance on stale connection detection using exponential backoff, keeping the WebSocket layer continuously alive.
-- **`ort 2.0.0-rc.12` forward-port or rc.9 downgrade**  `[STATUS: COMPLETED]`
-  Pinned exact version `2.0.0-rc.9` in `crates/forge-agent/Cargo.toml` and reverted `build_session_from_path` to use the robust `commit_from_file` API, fully resolving the FFI error hazards and the `download-binaries` TLS conflict for trained-mode Docker builds.
-  (1) `download-binaries` pulls ureq 3.x whose `tls` is
-  feature-gated; (2) `load-dynamic` + onnxruntime 1.22.0 hits an
-  ABI mismatch (`unknown field CreateEnvWithCustomLoggerAndGlobal
-  ThreadPools`); (3) workspace deps require rustc 1.93 (already
-  bumped in the v0.5 Dockerfile); (4) workspace Cargo.lock pins
-  versions that conflict with rc.12's build-script
-  tracing-subscriber expectations. Fix is to either downgrade
-  `ort` to a stable rc.9 line or forward-port
-  `forge-agent::onnx_model.rs` to whatever rc.12 ABI accepts.
-  Random-baseline `mc-live` already works.
+- **`ort` API drift (rc.9 → rc.12 → rc.13)**  `[STATUS: COMPLETED, 2026-08 tech-debt pass]`
+  This entry previously claimed COMPLETED via a "pin to rc.9" fix, but that
+  claim didn't match reality: `crates/forge-agent/Cargo.toml` was actually
+  pinned to `=2.0.0-rc.13` (bumped from rc.12 by a routine Dependabot
+  "cargo-minor-patch" auto-merge, invisible because no CI job built this
+  feature surface). A first-hand rebuild found the real break was 5
+  mechanical lines in `onnx_model.rs` (`try_extract_raw_tensor` renamed to
+  `try_extract_tensor`, `ort::inputs![...]` no longer returns a `Result` so
+  the trailing `?` was removed ×3, `Session::run` now needs `&mut self`,
+  and `ort/std` must be enabled explicitly for `commit_from_file`) --
+  fixed. Separately, `docker/mc-runner.Dockerfile`'s `ONNXRUNTIME_VERSION`
+  is now pinned `>=1.23.2`: earlier releases hit an upstream `ort` rc.13
+  teardown segfault on process exit under `load-dynamic` (pykeio/ort#614,
+  fixed in the runtime by pykeio/ort#610), reproduced and confirmed fixed
+  locally. A new CI job (`onnx-features` in `ci.yml`) builds and tests
+  `onnx`/`onnx-reload`/`mc-live-bundled` on every push now, closing the
+  coverage gap that let this drift silently.
 
 Phase-2 RL-specific candidates (deferred from Phase 1's "Out of
 scope" + the first-real-run report's next-steps):

@@ -41,6 +41,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`forge-agent`'s ONNX feature surface (`onnx`/`onnx-reload`/`mc-live-bundled`)
+  compiles and runs again**: a routine Dependabot bump (`ort` rc.12 → rc.13,
+  `a7b078c`) had silently broken it, invisible because no CI job built this
+  surface. Fix was 5 mechanical lines in `onnx_model.rs`
+  (`try_extract_raw_tensor` → `try_extract_tensor`, a stray `?` removed ×3
+  after `ort::inputs![...]` — it no longer returns a `Result` — and `&mut
+  self` on the session-holding locals) plus enabling `ort/std` for
+  `commit_from_file`. Separately, `docker/mc-runner.Dockerfile`'s
+  `ONNXRUNTIME_VERSION` is now pinned `>=1.23.2`: earlier releases hit a
+  known upstream `ort` rc.13 teardown segfault on process exit under
+  `load-dynamic` (pykeio/ort#614, fixed in the runtime by pykeio/ort#610),
+  reproduced and confirmed fixed locally end-to-end (bootstrap a real
+  MuZero bundle → load via `OnnxMuZeroModel` → run real MCTS inference,
+  zero crashes). A new `onnx-features` CI job now builds and tests this
+  surface on every push.
 - **`forge-cloud`'s `gcs` feature compiles again**: `object_store` 0.14 moved
   `put`/`get`/`delete`/`head` behind the `ObjectStoreExt` extension trait —
   one missing import broke the feature-gated build (and with it the
