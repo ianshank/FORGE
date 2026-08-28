@@ -91,7 +91,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-machete
+          tool: cargo-machete@0.9.2
       # Advisory-only, matching security.yml's `|| true` scanners: cargo-machete's
       # static scan false-positives on this derive-heavy workspace (serde /
       # thiserror / fixed are used only through derive macros it cannot see).

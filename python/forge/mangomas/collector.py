@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,9 +12,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
+# sys.version_info (not try/except ModuleNotFoundError) so mypy resolves
+# exactly one branch statically instead of flagging a name redefinition
+# once its python_version target is 3.11+ (where tomllib is unconditionally
+# a stdlib module).
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:
+else:
     import tomli as tomllib
 
 from forge.mangomas.adapters import ObservationAdapter

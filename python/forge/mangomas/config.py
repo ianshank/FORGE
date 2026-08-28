@@ -6,6 +6,7 @@ All values flow through config — no hard-coded constants.
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -411,9 +412,13 @@ class MangoMASBridgeConfig:
     @classmethod
     def from_toml(cls, path: str | Path) -> MangoMASBridgeConfig:
         """Load configuration from a TOML file."""
-        try:
+        # sys.version_info (not try/except ModuleNotFoundError) so mypy
+        # resolves exactly one branch statically instead of flagging a name
+        # redefinition once its python_version target is 3.11+ (where
+        # tomllib is unconditionally a stdlib module).
+        if sys.version_info >= (3, 11):
             import tomllib
-        except ModuleNotFoundError:
+        else:
             import tomli as tomllib
 
         path = Path(path)

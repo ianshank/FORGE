@@ -44,7 +44,7 @@ jobs:
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: latest
+          version: 'v0.15.0'
       - name: Build forge-wasm (wasm-pack, web target)
         # Emits the JS bindings + .wasm into web/pkg/, which web/app.js imports.
         run: wasm-pack build crates/forge-wasm --target web --out-dir "$GITHUB_WORKSPACE/web/pkg" --no-typescript

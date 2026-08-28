@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny
+          tool: cargo-deny@0.20.2
       - name: cargo deny check (report-only)
         # Thresholds live in deny.toml. Report findings without failing the
         # build during the advisory-first rollout.

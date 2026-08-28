@@ -112,7 +112,14 @@ known-first-party = ["forge", "forge_env"]
 "scripts/calibrate_agri.py" = ["RUF009"]
 
 [tool.mypy]
-python_version = "3.9"
+# Matches CI's actual runtime (actions/setup-python "3.11" in every
+# workflow job) rather than the "&gt;=3.9" support floor at [project]
+# requires-python above. A local torch install triggers Python-3.10+
+# match-syntax parsing inside torch's own type stubs when mypy targets
+# 3.9; CI never hits this because its lint job never installs torch, but
+# raising the target here fixes it for local devs too, at no cost since
+# nothing in this codebase's own source relies on sub-3.11 syntax.
+python_version = "3.11"
 mypy_path = "$MYPY_CONFIG_FILE_DIR/python,$MYPY_CONFIG_FILE_DIR/scripts,$MYPY_CONFIG_FILE_DIR/tests/python"
 warn_return_any = true
 warn_unused_configs = true

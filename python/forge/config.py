@@ -14,15 +14,20 @@ Usage::
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import MISSING, asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
 from forge.utils.config_env import apply_env_overrides as _apply_env_overrides_shared
 
-try:
-    import tomllib  # Python 3.11+
-except ModuleNotFoundError:
+# sys.version_info (not try/except ModuleNotFoundError) so mypy resolves
+# exactly one branch statically instead of flagging a name redefinition
+# once its python_version target is 3.11+ (where tomllib is unconditionally
+# a stdlib module).
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
     import tomli as tomllib
 
 logger = logging.getLogger(__name__)
