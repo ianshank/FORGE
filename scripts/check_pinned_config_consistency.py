@@ -100,44 +100,59 @@ def _read(path: Path) -> str:
         sys.exit(EXIT_INPUT_ERROR)
 
 
+def _strip_comment(line: str) -> str:
+    """Truncate `line` at its first `#` (TOML/YAML/Dockerfile/Python all
+    use `#` for a line comment), so a commented-out stale pin like
+    `# toolchain: "1.60.0"` isn't parsed as a live occurrence -- confirmed
+    a real false-positive risk, not a hypothetical one: every pattern this
+    script looks for is a simple `KEY: "VALUE"` / `ARG KEY=VALUE` shape
+    that never legitimately contains a literal `#` inside the value
+    itself, so truncating at the first `#` regardless of quoting is safe
+    here without needing a full comment-aware tokenizer.
+    """
+    return line.split("#", 1)[0]
+
+
 def _find_all(path: Path, pattern: re.Pattern[str]) -> list[Occurrence]:
     text = _read(path)
     rel = str(path.relative_to(REPO_ROOT))
     hits = []
     for lineno, line in enumerate(text.splitlines(), start=1):
-        m = pattern.search(line)
+        m = pattern.search(_strip_comment(line))
         if m:
             hits.append(Occurrence(rel, lineno, m.group(1)))
     return hits
 
 
+def _canonical(path: Path, pattern: re.Pattern[str], description: str) -> str:
+    """First non-comment match of `pattern` in `path`, or exit with an error."""
+    hits = _find_all(path, pattern)
+    if not hits:
+        print(f"ERROR: no {description} found in {path}", file=sys.stderr)
+        sys.exit(EXIT_INPUT_ERROR)
+    return hits[0].value
+
+
 def _canonical_rust_toolchain() -> str:
     path = REPO_ROOT / "rust-toolchain.toml"
-    m = re.search(r'channel\s*=\s*"([^"]+)"', _read(path))
-    if not m:
-        print(f"ERROR: no `channel = \"...\"` found in {path}", file=sys.stderr)
-        sys.exit(EXIT_INPUT_ERROR)
-    return m.group(1)
+    return _canonical(path, re.compile(r'channel\s*=\s*"([^"]+)"'), 'a `channel = "..."` line')
 
 
 def _canonical_onnxruntime_version() -> str:
     path = REPO_ROOT / "docker" / "mc-runner.Dockerfile"
-    m = re.search(r"ARG\s+ONNXRUNTIME_VERSION=(\S+)", _read(path))
-    if not m:
-        print(f"ERROR: no `ARG ONNXRUNTIME_VERSION=...` default found in {path}", file=sys.stderr)
-        sys.exit(EXIT_INPUT_ERROR)
-    return m.group(1)
+    return _canonical(
+        path, re.compile(r"ARG\s+ONNXRUNTIME_VERSION=(\S+)"), "an `ARG ONNXRUNTIME_VERSION=...` default"
+    )
 
 
 def _canonical_lmstudio_base_url() -> tuple[str, str]:
     """Return (base_url, port) derived from the Python default."""
     path = REPO_ROOT / "python" / "forge" / "cognitive" / "providers.py"
-    text = _read(path)
-    m = re.search(r'DEFAULT_LMSTUDIO_BASE_URL\s*:\s*str\s*=\s*"([^"]+)"', text)
-    if not m:
-        print(f"ERROR: no `DEFAULT_LMSTUDIO_BASE_URL: str = \"...\"` found in {path}", file=sys.stderr)
-        sys.exit(EXIT_INPUT_ERROR)
-    base_url = m.group(1)
+    base_url = _canonical(
+        path,
+        re.compile(r'DEFAULT_LMSTUDIO_BASE_URL\s*:\s*str\s*=\s*"([^"]+)"'),
+        'a `DEFAULT_LMSTUDIO_BASE_URL: str = "..."` line',
+    )
     port_match = re.search(r":(\d+)/", base_url)
     if not port_match:
         print(f"ERROR: could not derive a port from DEFAULT_LMSTUDIO_BASE_URL={base_url!r}", file=sys.stderr)

@@ -34,13 +34,17 @@ script re-derives every copy and fails on drift:
 Started as a Rust/ONNX-only script (`check_version_consistency.py`),
 renamed once the same "duplicated pin, no single source possible" pattern
 turned up a third time for the LM Studio endpoint rather than adding a
-mismatched-scope check under the old name. Verified against a
-deliberately-introduced mismatch in each of the three checks (confirmed
-each fails with an actionable message) and the clean repo state
-(confirmed it passes); the pre-existing Rust/ONNX checks were re-verified
-after the refactor to confirm the rename didn't silently break them.
-Wired into `make verify` (`pin-check` target) and CI's `python-lint` job;
-documented in `docs/hardcoded-values-audit.md`.
+mismatched-scope check under the old name. An adversarial peer review
+found its line-matching regexes were comment-blind: a commented-out stale
+pin like `# toolchain: "1.60.0"` was parsed as a live occurrence, a real
+false-positive risk (confirmed: reproduced the false CI failure, then
+fixed by truncating each line at its first `#` before matching). Covered
+by `tests/python/test_check_pinned_config_consistency.py` (14 cases,
+using `monkeypatch` to redirect the script's `REPO_ROOT` to an isolated
+fixture tree rather than ever mutating real repository files) in addition
+to the ad hoc deliberate-mismatch/restore verification run directly
+against the real repo. Wired into `make verify` (`pin-check` target) and
+CI's `python-lint` job; documented in `docs/hardcoded-values-audit.md`.
 
 ### Added — Claude Code tooling (`.claude/`)
 
@@ -54,9 +58,28 @@ documented in `docs/hardcoded-values-audit.md`.
   by cross-checking against `git ls-files` (no hand-maintained path list,
   so it can't drift). Fails open on any parse/git error. Directly
   motivated by a real incident this pass where a `.coverage*` cleanup glob
-  also matched and deleted the tracked `.coveragerc`. Covered by a
-  stdlib-only self-test suite (`make hooks-test`), run in CI's
-  `python-lint` job.
+  also matched and deleted the tracked `.coveragerc`.
+  Went through two rounds of adversarial review before landing in its
+  current form — an initial version detecting `rm` via an anchored regex
+  (only recognized `rm` as the string's first token, or immediately after
+  `;`/`&`/`|`) turned out to have real, reproducible bypasses: `find X |
+  xargs rm -rf` (the single most common bulk-delete idiom), `sudo rm -rf`,
+  `VAR=x rm -rf`, `(rm ...)`/`{ rm ...; }`, a bare leading space, a
+  newline instead of `;`, plus `find`'s own `-iname`/`-path`/`-regex`
+  selectors (and no selector at all) being silently unchecked, and
+  `./`-prefixed/absolute-path/bare-directory targets not matching a
+  tracked file's basename. Rewritten to tokenize the whole command once
+  and check token membership rather than anchor a regex on what precedes
+  `rm` — recall-favoring by design, since an over-liberal detection only
+  costs one extra, cheap `git ls-files` cross-reference for a command
+  that turns out to need no scrutiny; a `find | xargs rm` invocation with
+  no literal delete target in its own text is resolved via `find`'s own
+  `-name`/`-iname`/`-path`/`-ipath` selectors instead of the sibling `rm`
+  extraction, since xargs supplies the actual argument at runtime. Every
+  bypass above is now a named regression test (34 total), each proven
+  non-vacuous by confirming it fails against the pre-fix code before
+  passing post-fix. Covered by this stdlib-only self-test suite (`make
+  hooks-test`), run in CI's `python-lint` job.
 
 ### Added — Hugging Face publication pipelines (`docs/hf/README.md`)
 
