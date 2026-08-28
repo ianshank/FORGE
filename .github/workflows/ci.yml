@@ -282,6 +282,11 @@ jobs:
         # Stdlib-only (unittest + tempfile + git, no project deps), so it
         # runs here rather than needing its own job. See .claude/hooks/.
         run: python3 .claude/hooks/test_guard_tracked_deletion.py -v
+      - name: Version pin consistency check
+        # Catches rust-toolchain.toml / dtolnay toolchain: / Dockerfile
+        # RUST_IMAGE_TAG / ONNXRUNTIME_VERSION drift -- see the script's
+        # own docstring for exactly which pins it cross-checks and why.
+        run: python3 scripts/check_version_consistency.py
 
   python-test:
     name: Python Tests (maturin)

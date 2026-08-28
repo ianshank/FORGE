@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — version-pin consistency check (`scripts/check_version_consistency.py`)
+
+Cross-checks the Rust toolchain version (`rust-toolchain.toml`'s `channel`)
+against its 15 `dtolnay/rust-toolchain@stable` `toolchain:` copies (5
+workflow files) and 2 Dockerfiles' `RUST_IMAGE_TAG`, and the ONNX Runtime
+version `docker/mc-runner.Dockerfile` and `ci.yml`'s `onnx-features` job
+each pin independently — none of these can be single-sourced across
+TOML/YAML/Dockerfile without much more invasive templating, so instead of
+eliminating the duplication the script re-derives every copy and fails on
+drift. Verified against a deliberately-introduced mismatch in each check
+(confirmed it fails) and the clean repo state (confirmed it passes).
+Deliberately excludes `docker/trainer.Dockerfile`'s own `ONNXRUNTIME_VERSION`
+(a different artifact — the Python wheel, not the C++ redistributable — on
+an independent release cadence). Wired into `make verify` and CI's
+`python-lint` job; documented in `docs/hardcoded-values-audit.md`.
+
 ### Added — Claude Code tooling (`.claude/`)
 
 - **`/forge-verify` skill** (`.claude/skills/forge-verify/SKILL.md`): wraps

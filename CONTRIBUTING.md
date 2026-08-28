@@ -54,6 +54,9 @@ cd dashboard && npm ci && npm run build && npm run lint && npm run test:coverage
 
 # Claude Code tooling (hooks/skills self-checks; see "Claude Code tooling" below)
 python3 .claude/hooks/test_guard_tracked_deletion.py -v
+
+# Version-pin consistency (Rust toolchain + ONNX Runtime, duplicated across workflows/Dockerfiles)
+python3 scripts/check_version_consistency.py
 ```
 
 More task-specific commands (benchmarks, the visualization server, the Minecraft
