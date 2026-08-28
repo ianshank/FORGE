@@ -9,21 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added — version-pin consistency check (`scripts/check_version_consistency.py`)
+### Added — pinned-config consistency check (`scripts/check_pinned_config_consistency.py`)
 
-Cross-checks the Rust toolchain version (`rust-toolchain.toml`'s `channel`)
-against its 15 `dtolnay/rust-toolchain@stable` `toolchain:` copies (5
-workflow files) and 2 Dockerfiles' `RUST_IMAGE_TAG`, and the ONNX Runtime
-version `docker/mc-runner.Dockerfile` and `ci.yml`'s `onnx-features` job
-each pin independently — none of these can be single-sourced across
-TOML/YAML/Dockerfile without much more invasive templating, so instead of
-eliminating the duplication the script re-derives every copy and fails on
-drift. Verified against a deliberately-introduced mismatch in each check
-(confirmed it fails) and the clean repo state (confirmed it passes).
-Deliberately excludes `docker/trainer.Dockerfile`'s own `ONNXRUNTIME_VERSION`
-(a different artifact — the Python wheel, not the C++ redistributable — on
-an independent release cadence). Wired into `make verify` and CI's
-`python-lint` job; documented in `docs/hardcoded-values-audit.md`.
+Cross-checks three values that get duplicated across files which can't
+share one source (a Dockerfile `ARG`, a GH Actions `env:`/`with:` entry,
+and a Python/TOML source can't all read the same file without much more
+invasive templating) — so instead of eliminating the duplication, the
+script re-derives every copy and fails on drift:
+
+- The Rust toolchain version (`rust-toolchain.toml`'s `channel`) against
+  its 15 `dtolnay/rust-toolchain@stable` `toolchain:` copies (5 workflow
+  files) and 2 Dockerfiles' `RUST_IMAGE_TAG`.
+- The ONNX Runtime version `docker/mc-runner.Dockerfile` and `ci.yml`'s
+  `onnx-features` job each pin independently. Deliberately excludes
+  `docker/trainer.Dockerfile`'s own `ONNXRUNTIME_VERSION` (a different
+  artifact — the Python wheel, not the C++ redistributable — on an
+  independent release cadence).
+- The LM Studio port/base-URL (`providers.py`'s `DEFAULT_LMSTUDIO_BASE_URL`)
+  against `ci.yml`'s `LMSTUDIO_PORT`/`LMSTUDIO_BASE_URL` env (already
+  comment-annotated "keep in lock-step" — now actually enforced) and
+  `e2e-long.yml`'s own `LMSTUDIO_PORT`, which had no such comment at all
+  and was the least-guarded of the three copies before this check existed.
+
+Started as a Rust/ONNX-only script (`check_version_consistency.py`),
+renamed once the same "duplicated pin, no single source possible" pattern
+turned up a third time for the LM Studio endpoint rather than adding a
+mismatched-scope check under the old name. Verified against a
+deliberately-introduced mismatch in each of the three checks (confirmed
+each fails with an actionable message) and the clean repo state
+(confirmed it passes); the pre-existing Rust/ONNX checks were re-verified
+after the refactor to confirm the rename didn't silently break them.
+Wired into `make verify` (`pin-check` target) and CI's `python-lint` job;
+documented in `docs/hardcoded-values-audit.md`.
 
 ### Added — Claude Code tooling (`.claude/`)
 

@@ -6,7 +6,7 @@ SHELL := /bin/bash
 # it just saves re-typing the exact CI invocations. Keep both in sync.
 
 .PHONY: help build fmt fmt-check lint test coverage \
-        onnx-check deny gitleaks version-check \
+        onnx-check deny gitleaks pin-check \
         py-lint py-test hooks-test \
         mc-bot-test dashboard-test \
         verify verify-full clean
@@ -59,8 +59,8 @@ gitleaks: ## Scan git history for committed secrets (advisory; needs the gitleak
 	}
 	gitleaks git --redact -v .
 
-version-check: ## Cross-check the Rust toolchain + ONNX Runtime version pins duplicated across workflows/Dockerfiles
-	python3 scripts/check_version_consistency.py
+pin-check: ## Cross-check Rust toolchain / ONNX Runtime / LM Studio endpoint pins duplicated across workflows, Dockerfiles, and Python
+	python3 scripts/check_pinned_config_consistency.py
 
 # ---- Python ------------------------------------------------------------------
 
@@ -84,7 +84,7 @@ dashboard-test: ## dashboard: build + Biome lint + Vitest coverage gate (85%)
 
 # ---- Aggregate -----------------------------------------------------------
 
-verify: fmt-check lint test py-lint py-test hooks-test version-check mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/deny/gitleaks -- see verify-full)
+verify: fmt-check lint test py-lint py-test hooks-test pin-check mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/deny/gitleaks -- see verify-full)
 	@echo "verify: all standard gates passed."
 
 verify-full: verify coverage deny gitleaks ## verify, plus the slower/environment-dependent gates (tarpaulin, cargo-deny, gitleaks). Does NOT include onnx-check (needs ORT_DYLIB_PATH set manually).
