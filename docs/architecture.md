@@ -234,7 +234,7 @@ The production deployment packages FORGE as three Docker containers orchestrated
 │                         ▼                  ▼                      │
 │              ┌───────────────────────────────────┐               │
 │              │  simulation                        │               │
-│              │  rust:1.85-bookworm (build)        │               │
+│              │  rust:1.94.1-bookworm (build)      │               │
 │              │  python:3.11-slim  (runtime)       │               │
 │              │                                    │               │
 │              │  :8080 ──► host:8080              │               │
@@ -266,7 +266,7 @@ The production deployment packages FORGE as three Docker containers orchestrated
 
 | File | Purpose |
 |------|---------|
-| `docker/Dockerfile` | `rust:1.85` build → `python:3.11-slim` runtime; maturin native ext |
+| `docker/Dockerfile` | `rust:1.94.1-bookworm` build → `python:3.11-slim` runtime; maturin native ext |
 | `docker/Dockerfile.dashboard` | `node:20` build → `nginx:1.27-alpine` serve |
 | `docker/Dockerfile.demo` | `python:3.11-slim`; FastAPI/uvicorn |
 | `docker/docker-compose.yml` | Three-service orchestration with health gates |
@@ -2468,7 +2468,7 @@ guarantee in-range inputs.
 
 ## CI/CD Pipeline
 
-The CI pipeline runs on every push and pull request targeting `main`, `master`, or `develop`. All jobs run on `ubuntu-latest` with stable Rust and aggressive caching (`Swatinem/rust-cache`, `actions/cache`).
+The CI pipeline runs on every push and pull request targeting `main`, `master`, or `develop`. All jobs run on `ubuntu-latest` with a pinned Rust toolchain (`rust-toolchain.toml`, explicitly passed to every `dtolnay/rust-toolchain@stable` step since that action never reads the file itself) and aggressive caching (`Swatinem/rust-cache`, `actions/cache`).
 
 ### Job Dependency Graph
 
@@ -2508,6 +2508,27 @@ The CI pipeline runs on every push and pull request targeting `main`, `master`, 
                                   │ linux/arm64  │
                                   └──────────────┘
 ```
+
+> The diagram above shows the core dependency chain only and predates
+> several jobs added since — it is not an exhaustive job list. The table
+> below is the complete, current picture (verified against
+> `.github/workflows/ci.yml` and `.github/workflows/security.yml` during
+> the 2026-08 tech-debt pass); update it directly rather than the ASCII
+> diagram when jobs change, since a table stays accurate far more cheaply
+> than hand-aligned box-drawing characters.
+
+### Full CI Job Inventory
+
+| Job (`ci.yml` unless noted) | Gate type | Trigger |
+|---|---|---|
+| `fmt`, `clippy`, `test`, `alloc-audit`, `coverage`, `python-lint`, `python-test`, `mc-bot-test`, `forge-mc-runner-bin` | **Blocking** (CHARTER.md Invariant 6) | push / PR |
+| `onnx-features` | **Blocking** | push / PR — builds/tests the `onnx`/`onnx-reload`/`mc-live-bundled` surface (added 2026-08; previously **zero** CI coverage) |
+| `machete`, `dashboard-e2e` | Advisory / non-required | push / PR |
+| `markdownlint`, `bench`, `hf-export`, `demo-ui`, `dashboard`, `python-test-fast` | Runs on push/PR; not in CHARTER.md's blocking list but not marked advisory either — check branch protection for current required-check status | push / PR |
+| `python-test-lmstudio`, `python-test-minecraft-e2e`, `python-test-minecraft-real-run` | Opt-in | `workflow_dispatch` only |
+| `docker` | Build + push to GHCR | default branch / version tags only, `needs: [test, clippy, fmt, python-test]` |
+| `cargo-deny`, `pip-audit`, `npm-audit` (×2), `trivy-fs`, `gitleaks` (`security.yml`) | Advisory (report-only, `\|\| true`) | push / PR / weekly cron |
+| `codeql` (`security.yml`) | Opt-in | gated on repo var `ENABLE_CODEQL` |
 
 ### Benchmark Regression Gate
 
