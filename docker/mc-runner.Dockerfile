@@ -16,8 +16,13 @@
 # Run (via docker compose, see docker/compose.minecraft.yml):
 #   docker compose -f docker/compose.minecraft.yml up runner
 
+# ONNXRUNTIME_VERSION must stay >=1.23.2: older releases hit a known
+# upstream `ort` rc.13 teardown segfault on process exit when loaded via
+# load-dynamic (pykeio/ort#614, fixed in the runtime by pykeio/ort#610) --
+# reproduced and confirmed fixed by this version bump during the ONNX
+# feature-surface repair (see crates/forge-agent/tests/onnx_integration.rs).
 ARG RUST_IMAGE_TAG=1.93-bookworm
-ARG ONNXRUNTIME_VERSION=1.18.0
+ARG ONNXRUNTIME_VERSION=1.23.2
 ARG FEATURES=mc-live
 
 # --- builder stage -----------------------------------------------------
