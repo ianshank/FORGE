@@ -51,6 +51,9 @@ cd mc-bot && npm ci && npm run typecheck && npm run lint && npm test && npm run 
 
 # dashboard
 cd dashboard && npm ci && npm run build && npm run lint && npm run test:coverage
+
+# Claude Code tooling (hooks/skills self-checks; see "Claude Code tooling" below)
+python3 .claude/hooks/test_guard_tracked_deletion.py -v
 ```
 
 More task-specific commands (benchmarks, the visualization server, the Minecraft
@@ -66,6 +69,26 @@ execute this whole sequence at once (see the root `Makefile`).
 | dashboard (Vitest) | 85% |
 | mc-bot (c8) | report-only (baseline ~88%; no fail-under yet) |
 | demo_ui (pytest-cov) | report-only (baseline ~90% on `demo_ui/backend`; no fail-under yet) |
+
+## Claude Code tooling
+
+Repo-checked-in, applies to any Claude Code session opened here (`.claude/`,
+no per-user setup needed):
+
+- **`/forge-verify` skill** (`.claude/skills/forge-verify/SKILL.md`) — runs
+  `make verify` / `make verify-full` and reports a per-category pass/fail
+  summary instead of a single opaque result.
+- **Tracked-file deletion guard** (`.claude/hooks/guard_tracked_deletion.py`,
+  wired via `.claude/settings.json`'s `PreToolUse` hook) — blocks a `Bash`
+  `rm`/`find -delete` command whose glob pattern matches a *git-tracked*
+  file, not just the generated/ignored ones it was presumably aimed at
+  (cross-checked against `git ls-files`, so it needs no hand-maintained
+  path list and can't drift). Fails open on any parse or git error — it
+  must never be the reason a legitimate command can't run. Added after a
+  real incident where a `find … -name ".coverage*" -delete` cleanup swept
+  up the tracked `.coveragerc` along with coverage.py's temp files.
+  Self-tests: `make hooks-test` (also runs as part of `make verify` and in
+  CI's `python-lint` job).
 
 ## Conventions
 

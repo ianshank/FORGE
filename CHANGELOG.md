@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Claude Code tooling (`.claude/`)
+
+- **`/forge-verify` skill** (`.claude/skills/forge-verify/SKILL.md`): wraps
+  the Makefile's `verify`/`verify-full` pre-PR gate sequence with a
+  per-category pass/fail report instead of one opaque result.
+- **Tracked-file deletion guard** (`.claude/hooks/guard_tracked_deletion.py`,
+  registered via `.claude/settings.json` as a `PreToolUse` hook on `Bash`):
+  blocks `rm`/`find -delete` commands whose glob pattern matches a
+  git-tracked file rather than just the generated/ignored ones intended,
+  by cross-checking against `git ls-files` (no hand-maintained path list,
+  so it can't drift). Fails open on any parse/git error. Directly
+  motivated by a real incident this pass where a `.coverage*` cleanup glob
+  also matched and deleted the tracked `.coveragerc`. Covered by a
+  stdlib-only self-test suite (`make hooks-test`), run in CI's
+  `python-lint` job.
+
 ### Added — Hugging Face publication pipelines (`docs/hf/README.md`)
 
 - **Static Space sync** (`.github/workflows/hf-space.yml`): builds the

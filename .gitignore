@@ -62,8 +62,16 @@ htmlcov/
 .coverage
 coverage.xml
 
-# Claude agent configuration (not for repo)
-.claude/
+# Claude Code configuration -- most of .claude/ is per-user/ephemeral state
+# (e.g. settings.local.json) and stays untracked, but these specific paths
+# are intentional, shared repo tooling and must be committed. A trailing
+# `.claude/` here would prune the whole directory from traversal, which
+# breaks `!`-negation for anything inside it -- `.claude/*` (one level)
+# plus explicit re-includes is the pattern that actually works.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/skills/
 
 # Dashboard production build
 dashboard/dist/

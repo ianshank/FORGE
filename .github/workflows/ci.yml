@@ -278,6 +278,10 @@ jobs:
         run: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
       - name: Mypy type check
         run: mypy python/ scripts/ --config-file pyproject.toml
+      - name: Claude Code hook self-tests
+        # Stdlib-only (unittest + tempfile + git, no project deps), so it
+        # runs here rather than needing its own job. See .claude/hooks/.
+        run: python3 .claude/hooks/test_guard_tracked_deletion.py -v
 
   python-test:
     name: Python Tests (maturin)
