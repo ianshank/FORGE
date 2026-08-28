@@ -73,8 +73,17 @@ def _tracked_files(cwd: str) -> list[str] | None:
 
 
 def _find_name_patterns(command: str) -> list[str]:
-    """Extract every `-name PATTERN` argument (quoted or bare)."""
-    matches = re.findall(r"-name\s+(?:'([^']*)'|\"([^\"]*)\"|(\S+))", command)
+    r"""Extract every `-name PATTERN` argument (quoted or bare).
+
+    The bare-argument branch stops at whitespace *and* at `;`/`&`/`|`: a
+    real shell treats those as command separators regardless of adjacent
+    whitespace (`-name .cover*;rm -rf /` is a `-name .cover*` argument
+    followed by a separate `rm -rf /` command, not one `.cover*;rm`
+    argument) -- a plain `\S+` would swallow the separator and everything
+    after it into the "pattern", corrupting the match and letting a
+    tracked-file hit slip through unblocked.
+    """
+    matches = re.findall(r"-name\s+(?:'([^']*)'|\"([^\"]*)\"|([^\s;&|]+))", command)
     return [next(g for g in groups if g) for groups in matches if any(groups)]
 
 
@@ -87,7 +96,16 @@ def _rm_targets(command: str) -> list[str]:
     character in the name).
     """
     try:
-        tokens = shlex.split(command)
+        # punctuation_chars=True makes `;`, `&&`, `||`, `|` their own
+        # tokens even with no surrounding whitespace (`rm -f .cover*;git
+        # status` -> [..., ".cover*", ";", "git", "status"], not
+        # [..., ".cover*;git", "status"]). Plain shlex.split() only splits
+        # on whitespace, so a glob glued to a following command without a
+        # space would be missed entirely -- a real false-negative, not a
+        # hypothetical one.
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
     except ValueError:
         return []
 

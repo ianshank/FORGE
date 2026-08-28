@@ -101,6 +101,60 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn(".coveragerc", message)
 
+    def test_blocks_rm_glob_glued_to_next_command_with_no_space(self) -> None:
+        # Regression test for a PR review finding (GitHub Copilot, PR #117):
+        # shlex.split() only splits on whitespace, so `rm -f .cover*;git
+        # status` used to glue ".cover*;git" into a single token, which
+        # never matched a tracked file and let the delete through unblocked.
+        with TrackedRepo() as repo:
+            payload = {
+                "tool_name": "Bash",
+                "cwd": repo.path,
+                "tool_input": {"command": "rm -f .cover*;git status"},
+            }
+            code, message = guard.evaluate(payload)
+        self.assertEqual(code, 2)
+        self.assertIn(".coveragerc", message)
+
+    def test_blocks_rm_glob_glued_to_double_ampersand_with_no_space(self) -> None:
+        with TrackedRepo() as repo:
+            payload = {
+                "tool_name": "Bash",
+                "cwd": repo.path,
+                "tool_input": {"command": "rm -f .cover*&&echo done"},
+            }
+            code, message = guard.evaluate(payload)
+        self.assertEqual(code, 2)
+        self.assertIn(".coveragerc", message)
+
+    def test_blocks_find_delete_pattern_glued_to_next_command_with_no_space(self) -> None:
+        # Same bug class as above, in the sibling find -name extraction
+        # path: a bare (unquoted) pattern regex that doesn't stop at shell
+        # metacharacters would swallow ";rm -rf /" into the "pattern" too,
+        # silently failing to match the tracked file it should have caught.
+        with TrackedRepo() as repo:
+            payload = {
+                "tool_name": "Bash",
+                "cwd": repo.path,
+                "tool_input": {"command": 'find . -name .cover*;echo done -delete'},
+            }
+            code, message = guard.evaluate(payload)
+        self.assertEqual(code, 2)
+        self.assertIn(".coveragerc", message)
+
+    def test_allows_rm_glob_scoped_to_ignored_dir_with_no_space_chain(self) -> None:
+        # False-positive guard: the same no-space-separator parsing must
+        # not start blocking safe compound commands it previously allowed.
+        with TrackedRepo() as repo:
+            payload = {
+                "tool_name": "Bash",
+                "cwd": repo.path,
+                "tool_input": {"command": "rm -rf target/&&echo done"},
+            }
+            code, message = guard.evaluate(payload)
+        self.assertEqual(code, 0)
+        self.assertEqual(message, "")
+
     def test_allows_literal_single_file_rm_without_recursion_or_glob(self) -> None:
         # No wildcard, no -r: blast radius is exactly the named file and
         # already visible in the command text -- out of scope for this guard.
