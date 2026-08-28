@@ -160,7 +160,7 @@ futures = "0.3"
 # HTTP server framework (forge-server enables the `ws` feature; forge-mc-runner does not)
 axum = { version = "0.8" }
 tower = "0.5"
-tower-http = "0.6"
+tower-http = "0.7"
 
 # Data-parallelism
 rayon = "1"
