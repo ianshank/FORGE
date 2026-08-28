@@ -18,9 +18,12 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 # Tracing subscriber init is centralized in forge-observability (init_tracing),
 # so this crate no longer depends on tracing-subscriber directly.
-tokio = { version = "1", features = ["full"] }
+# Feature set sized to actual usage: #[tokio::main] (rt-multi-thread, macros),
+# tokio::sync::{broadcast,mpsc} (sync), tokio::net::TcpListener (net),
+# tokio::time::interval (time) -- not "full".
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "net", "time"] }
 axum = { workspace = true, features = ["ws"] }
-tower-http = { version = "0.5", features = ["cors"] }
+tower-http = { workspace = true, features = ["cors"] }
 futures = { workspace = true }
 rand = { workspace = true }
 
@@ -29,12 +32,12 @@ name = "forge-server"
 path = "src/main.rs"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread", "net"] }
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread", "net"] }
 proptest = { workspace = true }
 toml = { workspace = true }
-tokio-tungstenite = "0.24"
+tokio-tungstenite = "0.29"
 tempfile = { workspace = true }
-tower = { version = "0.5", features = ["util"] }
+tower = { workspace = true, features = ["util"] }
 
 [lints]
 workspace = true
