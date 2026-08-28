@@ -10,9 +10,13 @@
 # Shared Rust toolchain image tag for all builder stages. Must be >= 1.85 so
 # cargo can parse edition-2024 dependency manifests (e.g. `fixed` >= 1.30, which
 # declares edition = "2024"); older cargo fails with "failed to parse manifest".
-# Kept in sync with docker/mc-runner.Dockerfile. Override at build time with
+# Kept in sync with docker/mc-runner.Dockerfile AND the repo-root
+# rust-toolchain.toml pin -- every bare `cargo` CI gate (fmt/clippy/test/
+# coverage/onnx-features/etc.) now builds on that pinned version, so an
+# un-synced Docker image would be the one artifact CI's toolchain pin
+# doesn't actually cover. Override at build time with
 # `--build-arg RUST_IMAGE_TAG=...`.
-ARG RUST_IMAGE_TAG=1.93-bookworm
+ARG RUST_IMAGE_TAG=1.94.1-bookworm
 FROM rust:${RUST_IMAGE_TAG} AS rust-builder
 ARG FEATURES=""
 WORKDIR /build

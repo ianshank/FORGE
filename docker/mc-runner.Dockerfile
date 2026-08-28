@@ -21,7 +21,14 @@
 # load-dynamic (pykeio/ort#614, fixed in the runtime by pykeio/ort#610) --
 # reproduced and confirmed fixed by this version bump during the ONNX
 # feature-surface repair (see crates/forge-agent/tests/onnx_integration.rs).
-ARG RUST_IMAGE_TAG=1.93-bookworm
+#
+# RUST_IMAGE_TAG kept in sync with docker/Dockerfile AND the repo-root
+# rust-toolchain.toml pin -- the new `onnx-features` CI job (ci.yml)
+# validates this exact feature surface via bare `cargo build`/`cargo test`
+# on the pinned toolchain, but never builds this Dockerfile itself, so an
+# un-synced tag here would silently drift back to being untested by CI,
+# the exact failure mode this pass exists to close.
+ARG RUST_IMAGE_TAG=1.94.1-bookworm
 ARG ONNXRUNTIME_VERSION=1.23.2
 ARG FEATURES=mc-live
 

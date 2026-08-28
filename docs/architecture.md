@@ -409,7 +409,7 @@ Server (mc-bot) → Client (runner)
 | `docker/compose.minecraft.yml` | 4-service orchestration; health gates; `self-play` profile gates trainer |
 | `docker/compose.minecraft.env.example` | Sample env file with `MC_EULA=FALSE` default; operator overrides |
 | `docker/mc-bot.Dockerfile` | Node 22 + mineflayer + prismarine-viewer |
-| `docker/mc-runner.Dockerfile` | rust:1.93-bookworm builder → debian:bookworm-slim runtime (135 MB) |
+| `docker/mc-runner.Dockerfile` | rust:1.94.1-bookworm builder → debian:bookworm-slim runtime (135 MB) |
 | `docker/trainer.Dockerfile` | python:3.11 + torch + onnx + maturin |
 | `configs/minecraft/env.toml` | Local-dev defaults (`127.0.0.1`) |
 | `configs/minecraft/env.docker.toml` | Docker overlay (`bot.host="minecraft"`, `ws_url="ws://mc-bot:8765"`) |
@@ -2086,7 +2086,7 @@ build:
    docker build -f docker/mc-runner.Dockerfile -t forge-mc-runner:dev .
         │
         ▼
-   rust:1.93-bookworm builder
+   rust:1.94.1-bookworm builder
         │
         ├── --features mc-live        (random-baseline-only; 135 MB image)
         └── --features mc-live-bundled (trained-mode; the builder stage
