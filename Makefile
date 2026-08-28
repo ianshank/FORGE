@@ -72,7 +72,7 @@ py-test: ## pytest tests/python, excluding opt-in markers (build the native ext 
 	pytest tests/python -m 'not lmstudio and not e2e_long and not minecraft_e2e'
 
 hooks-test: ## Self-tests for .claude/hooks/ (stdlib-only, no project deps; matches CI's python-lint job)
-	python3 .claude/hooks/test_guard_tracked_deletion.py -v
+	python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
 
 # ---- Node --------------------------------------------------------------------
 

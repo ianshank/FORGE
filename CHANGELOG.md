@@ -79,7 +79,26 @@ CI's `python-lint` job; documented in `docs/hardcoded-values-audit.md`.
   bypass above is now a named regression test (34 total), each proven
   non-vacuous by confirming it fails against the pre-fix code before
   passing post-fix. Covered by this stdlib-only self-test suite (`make
-  hooks-test`), run in CI's `python-lint` job.
+  hooks-test`, now `python3 -m unittest discover` over `.claude/hooks/`
+  rather than a hardcoded filename, so a new hook's tests are picked up
+  automatically), run in CI's `python-lint` job.
+- **Staged-secret guard** (`.claude/hooks/guard_staged_secrets.py`, same
+  `PreToolUse`/`Bash` wiring): runs `gitleaks protect --staged` before a
+  `git commit` actually happens and blocks on a real finding. Closes a
+  gap `security.yml`'s own comments admit exists: its `gitleaks` job
+  scans git *history* after a push and is explicitly report-only
+  (`|| true`) — nothing previously scanned *before* a commit landed.
+  Not a replacement for that job (still the full-history backstop), an
+  earlier and cheaper checkpoint. Fails open if `gitleaks` isn't
+  installed. Test fixtures use a repo-local custom `.gitleaks.toml` rule
+  rather than a well-known example secret (AWS's own published EXAMPLE
+  key, tried first, is — confirmed empirically — excluded from gitleaks'
+  default ruleset, almost certainly because it's such a common docs/
+  tutorial placeholder), so the tests don't depend on the exact shape of
+  gitleaks' bundled rules. The two cases needing the real binary skip
+  themselves when it's absent; `security.yml`'s `gitleaks` job (which
+  already fetches the binary for the history scan) now also adds it to
+  `$GITHUB_PATH` and runs this hook's suite unskipped there.
 
 ### Added — Hugging Face publication pipelines (`docs/hf/README.md`)
 

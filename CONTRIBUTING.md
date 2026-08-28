@@ -53,7 +53,7 @@ cd mc-bot && npm ci && npm run typecheck && npm run lint && npm test && npm run 
 cd dashboard && npm ci && npm run build && npm run lint && npm run test:coverage
 
 # Claude Code tooling (hooks/skills self-checks; see "Claude Code tooling" below)
-python3 .claude/hooks/test_guard_tracked_deletion.py -v
+python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
 
 # Pinned-config consistency (Rust toolchain / ONNX Runtime / LM Studio endpoint, duplicated across workflows/Dockerfiles/Python)
 python3 scripts/check_pinned_config_consistency.py
@@ -92,6 +92,18 @@ no per-user setup needed):
   up the tracked `.coveragerc` along with coverage.py's temp files.
   Self-tests: `make hooks-test` (also runs as part of `make verify` and in
   CI's `python-lint` job).
+- **Staged-secret guard** (`.claude/hooks/guard_staged_secrets.py`, same
+  `PreToolUse`/`Bash` wiring) — runs `gitleaks protect --staged` before a
+  `git commit` actually happens, blocking on a real finding. Closes a gap
+  the security workflow's own comments admit: its `gitleaks` job scans
+  *history* after a push and is explicitly report-only (`|| true`) —
+  nothing previously scanned *before* a commit. Not a replacement for that
+  job (still the full-history backstop), just an earlier, cheaper
+  checkpoint. Fails open if `gitleaks` isn't installed locally — this
+  hook is best-effort, not a hard requirement to commit. Self-tests:
+  `python3 .claude/hooks/test_guard_staged_secrets.py -v` (the two cases
+  needing a real `gitleaks` binary skip themselves without one, so `make
+  hooks-test` still exercises the rest everywhere).
 
 ## Conventions
 

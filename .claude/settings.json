@@ -8,6 +8,11 @@
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_tracked_deletion.py\"",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_staged_secrets.py\"",
+            "timeout": 60
           }
         ]
       }

@@ -281,7 +281,12 @@ jobs:
       - name: Claude Code hook self-tests
         # Stdlib-only (unittest + tempfile + git, no project deps), so it
         # runs here rather than needing its own job. See .claude/hooks/.
-        run: python3 .claude/hooks/test_guard_tracked_deletion.py -v
+        # Auto-discovers every test_*.py under .claude/hooks/, so a new
+        # hook's tests are picked up without touching this step. The
+        # guard_staged_secrets tests that need a real `gitleaks` binary
+        # skip themselves here (none on this job's PATH) -- they run
+        # unskipped in security.yml's gitleaks job instead.
+        run: python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
       - name: Pinned-config consistency check
         # Catches rust-toolchain.toml / dtolnay toolchain: / Dockerfile
         # RUST_IMAGE_TAG / ONNXRUNTIME_VERSION / LM Studio port+URL drift --
