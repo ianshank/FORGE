@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
 
-use chrono::Utc;
 use forge_types::config::ForgeConfig;
+use forge_types::time::now_ms;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, warn};
 
@@ -45,7 +45,7 @@ fn lock_recover<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
 /// human-readable identifier that is practically unique.
 #[instrument]
 pub fn generate_worker_id(hostname: &str) -> String {
-    let ts = Utc::now().timestamp_millis();
+    let ts = now_ms();
     let id = format!("{hostname}-{ts}");
     debug!(worker_id = %id, "generated worker ID");
     id
@@ -106,11 +106,6 @@ impl InMemoryWorkerRegistry {
         let workers = lock_recover(&self.workers);
         workers.len()
     }
-
-    /// Returns the current timestamp in milliseconds.
-    fn now_ms() -> u64 {
-        Utc::now().timestamp_millis() as u64
-    }
 }
 
 impl WorkerManager for InMemoryWorkerRegistry {
@@ -139,7 +134,7 @@ impl WorkerManager for InMemoryWorkerRegistry {
         let entry = WorkerEntry {
             metadata,
             status: WorkerStatus::Idle,
-            last_heartbeat_ms: Self::now_ms(),
+            last_heartbeat_ms: now_ms(),
             episodes_completed: 0,
             replays_submitted: 0,
         };
@@ -166,7 +161,7 @@ impl WorkerManager for InMemoryWorkerRegistry {
         let entry = workers
             .get_mut(worker_id)
             .ok_or_else(|| WorkerError::NotFound(worker_id.to_string()))?;
-        entry.last_heartbeat_ms = Self::now_ms();
+        entry.last_heartbeat_ms = now_ms();
         debug!(worker_id, "heartbeat recorded");
         Ok(())
     }
@@ -174,7 +169,7 @@ impl WorkerManager for InMemoryWorkerRegistry {
     #[instrument(skip(self))]
     fn active_workers(&self) -> CloudResult<Vec<WorkerInfo>> {
         let workers = lock_recover(&self.workers);
-        let now_ms = chrono::Utc::now().timestamp_millis() as u64;
+        let now_ms = now_ms();
         let infos = workers
             .iter()
             .map(|(id, entry)| {

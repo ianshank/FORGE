@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::error::McEnvError;
+use crate::hash_util::hex_encode;
 
 /// Parsed reward config. `entries` order matters for the canonical
 /// hash — both sides MUST iterate in file order.
@@ -132,14 +133,6 @@ fn toml_to_canonical_json(v: &toml::Value) -> serde_json::Value {
             J::Object(map)
         }
     }
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        out.push_str(&format!("{b:02x}"));
-    }
-    out
 }
 
 /// Combined `schema_id` folding action map + rewards + (future)

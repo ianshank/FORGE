@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::error::McEnvError;
+use crate::hash_util::hex_encode;
 
 /// Concrete action kinds the bot knows how to execute.
 ///
@@ -227,14 +228,6 @@ impl ActionMap {
         let digest = hasher.finalize();
         hex_encode(&digest)
     }
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        out.push_str(&format!("{b:02x}"));
-    }
-    out
 }
 
 #[cfg(test)]

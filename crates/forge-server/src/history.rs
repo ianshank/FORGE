@@ -17,8 +17,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use forge_types::time::now_ms;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -35,14 +35,6 @@ pub enum HistoryError {
     /// A (de)serialization error for a history record.
     #[error("history serialization error: {0}")]
     Serde(String),
-}
-
-/// Current wall-clock time in milliseconds since the Unix epoch.
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 /// A stored training-metrics sample, tagged with its run id and capture time.
