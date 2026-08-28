@@ -61,6 +61,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
           components: rustfmt
       - run: cargo fmt --all --check
 
@@ -71,6 +77,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets --features forge-cloud/gcs -- -D warnings
@@ -81,6 +93,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --features forge-cloud/gcs --verbose
 
@@ -118,6 +137,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
       - name: Install critcmp
         run: cargo install critcmp --locked || true
@@ -147,6 +173,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
@@ -181,6 +214,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
       - name: Cache tarpaulin binary
         id: cache-tarpaulin
@@ -240,6 +280,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
@@ -304,6 +351,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
@@ -521,6 +575,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: forge-mc-runner-bin
@@ -542,6 +603,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: hf-export
@@ -560,6 +628,64 @@ jobs:
             --cells square-32-a1-t1-mcts,square-32-a1-t1-random
           test -f ./_hf_smoke/dataset_info.json \
             || (echo "::error::dataset_info.json missing"; exit 1)
+
+  onnx-features:
+    name: ONNX Feature Surface (onnx, onnx-reload, mc-live-bundled)
+    runs-on: ubuntu-latest
+    # The onnx/onnx-reload/mc-live-bundled feature surface had ZERO CI
+    # coverage until this job -- every workspace-wide job above builds
+    # only `--features forge-cloud/gcs`. That's exactly how a routine
+    # Dependabot bump (ort rc.12 -> rc.13) silently broke the ONNX path:
+    # nothing here caught it. Uses load-dynamic (`ort/load-dynamic`, via
+    # forge-agent's `onnx-bundled` feature and forge-mc-runner's
+    # `mc-live-bundled`, which implies it) so this job only needs a
+    # downloaded .so + ORT_DYLIB_PATH -- no system ONNX Runtime install,
+    # pkg-config, or static-link setup required.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: onnx-features
+      - name: Install ONNX Runtime
+        # >=1.23.2 is required: older releases hit a known upstream `ort`
+        # rc.13 teardown segfault on process exit under load-dynamic
+        # (pykeio/ort#614, fixed in the runtime by pykeio/ort#610) --
+        # reproduced and confirmed fixed by this version during the
+        # feature-surface repair. Matches docker/mc-runner.Dockerfile's
+        # ONNXRUNTIME_VERSION build arg.
+        run: |
+          set -euo pipefail
+          ORT_VERSION=1.23.2
+          curl -fsSL -o /tmp/onnxruntime.tgz \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          tar -xzf /tmp/onnxruntime.tgz -C /tmp
+          echo "ORT_DYLIB_PATH=/tmp/onnxruntime-linux-x64-${ORT_VERSION}/lib/libonnxruntime.so" >> "$GITHUB_ENV"
+      - name: Clippy (onnx-bundled / mc-live-bundled)
+        run: |
+          cargo clippy -p forge-agent --all-targets --features onnx-bundled -- -D warnings
+          cargo clippy -p forge-mc-runner --all-targets --features mc-live-bundled -- -D warnings
+      - name: Build (mc-live-bundled binary)
+        run: cargo build -p forge-mc-runner --bin forge-mc-runner --features mc-live-bundled
+      - name: Test (onnx-bundled / mc-live-bundled)
+        # mc-live-bundled implies onnx-reload, so this also exercises every
+        # onnx-reload-gated test (ModelManifest, HotReloadWatcher,
+        # OnnxMuZeroModel::reload) without a separate static-link setup.
+        # The heavier bootstrap-a-real-model-and-infer integration test
+        # (tests/onnx_integration.rs) needs torch+onnx+onnxscript and is
+        # `#[ignore]`d accordingly -- run manually with `--ignored` in a
+        # torch-capable environment, matching forge-eval's precedent for
+        # heavy-external-dep tests.
+        run: |
+          cargo test -p forge-agent --features onnx-bundled
+          cargo test -p forge-mc-runner --features mc-live-bundled
 
   demo-ui:
     name: Demo UI Tests
