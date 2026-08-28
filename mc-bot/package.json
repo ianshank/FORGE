@@ -10,6 +10,7 @@
   "scripts": {
     "test": "tsx --test test/*.test.ts",
     "test:no-deps": "tsx --test test/protocol.test.ts test/action_map.test.ts test/reward.test.ts test/schema_id.test.ts test/config.test.ts test/actions.test.ts test/observation.test.ts test/observation_grid.test.ts test/index.test.ts test/bot_manager.test.ts test/security.test.ts",
+    "test:coverage": "c8 --reporter=text --reporter=json-summary --reporter=html npm test",
     "start": "tsx src/index.ts",
     "lint": "biome check src test",
     "lint:fix": "biome check --write src test",
@@ -28,6 +29,7 @@
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^26",
     "@types/ws": "^8.5.10",
+    "c8": "^12.0.0",
     "tsx": "^4.23.12",
     "typescript": "^5.6.0"
   }

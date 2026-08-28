@@ -1,0 +1,15 @@
+[run]
+source = demo_ui/backend
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    pass
+    \.\.\.
+
+; Deliberately no fail_under: report-only until a real baseline exists
+; (see docs/next_steps.md). Explicit so this never accidentally inherits
+; the workspace-root .coveragerc's fail_under=85 via coverage.py's cwd-based
+; auto-discovery.

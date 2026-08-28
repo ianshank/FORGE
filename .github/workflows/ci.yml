@@ -476,8 +476,7 @@ jobs:
           node-version: "22"
       - name: Install mc-bot dependencies
         working-directory: mc-bot
-        # `npm ci` when a lockfile exists, otherwise `npm install`.
-        # Lockfile commitment is tracked as a separate follow-up.
+        # package-lock.json is committed, so this always takes the `npm ci` path.
         run: |
           if [ -f package-lock.json ]; then
             npm ci
@@ -497,6 +496,21 @@ jobs:
       - name: Run node:test suite
         working-directory: mc-bot
         run: npm test
+      - name: Run node:test suite with coverage (report-only)
+        # c8-based coverage, report-only for now: establishes a real
+        # baseline before a fail-under threshold is picked. mc-bot owns
+        # first-class wire-contract logic (schema_id canonicalization,
+        # action/reward registries) that the Rust and Python sides
+        # cross-check against, so this surface is worth measuring even
+        # before a gate is decided.
+        working-directory: mc-bot
+        run: npm run test:coverage
+      - name: Upload mc-bot coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mc-bot-coverage-report
+          path: mc-bot/coverage/
 
   forge-mc-runner-bin:
     name: forge-mc-runner Binary Smoke
@@ -571,7 +585,15 @@ jobs:
       - name: Install Playwright browser
         run: python -m playwright install --with-deps chromium
       - name: Run demo UI tests
+        # demo_ui/pytest.ini adds report-only coverage (demo_ui/backend);
+        # deliberately no fail-under yet -- see docs/next_steps.md.
         run: pytest demo_ui/tests/ -v --tb=short
+      - name: Upload demo UI coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-ui-coverage-report
+          path: coverage.xml
       - name: Smoke-test server health endpoint
         run: |
           python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port ${FORGE_DEMO_UI_PORT} &
