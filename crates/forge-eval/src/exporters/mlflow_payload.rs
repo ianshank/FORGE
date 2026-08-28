@@ -666,6 +666,13 @@ fn escape_js_string(s: &str) -> String {
     out
 }
 
+/// Pinned Plotly.js release for [`render_tier_bar_chart_html`]'s CDN
+/// `<script>` tag. Pinned (rather than `-latest-`) so a regenerated report
+/// renders identically regardless of when it's opened; bump deliberately,
+/// not automatically. `3.7.0` is the newest release on the mature `3.x`
+/// line as of this pin (the `4.0.0` major bump is only days old).
+const PLOTLY_JS_VERSION: &str = "3.7.0";
+
 /// Self-contained Plotly HTML for the per-tier success-rate + mean-reward
 /// chart. Emitted as the `tier_success_rates.html` artefact under each
 /// parent run's `artifacts/` directory.
@@ -689,7 +696,7 @@ pub fn render_tier_bar_chart_html(tier_scores: &[TierScore], run_name: &str) -> 
 <head>
 <meta charset="utf-8">
 <title>FORGE eval tier success rates — {html_safe}</title>
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-{PLOTLY_JS_VERSION}.min.js"></script>
 </head>
 <body>
 <div id="chart" style="width:100%;height:480px;"></div>
@@ -898,7 +905,7 @@ mod tests {
         ];
         let html = render_tier_bar_chart_html(&tiers, "run-test");
         assert!(html.contains("<!DOCTYPE html>"));
-        assert!(html.contains("plotly-latest.min.js"));
+        assert!(html.contains(&format!("plotly-{PLOTLY_JS_VERSION}.min.js")));
         assert!(html.contains("run-test"));
         // Tier values + success rates make it into the embedded JSON.
         assert!(html.contains("[1, 2]"));
@@ -1162,7 +1169,7 @@ mod tests {
         if let ArtifactSource::Inline(bytes) = chart_html {
             assert!(std::str::from_utf8(bytes)
                 .unwrap()
-                .contains("plotly-latest.min.js"));
+                .contains(&format!("plotly-{PLOTLY_JS_VERSION}.min.js")));
         }
     }
 
