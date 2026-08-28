@@ -259,8 +259,13 @@ jobs:
           python-version: "3.11"
       - name: Install lint tools
         # Pin tooling versions because:
-        # - mypy >= 2.0 dropped Python 3.9 support; pyproject sets
-        #   python_version = "3.9" to match `requires-python = ">=3.9"`.
+        # - mypy is capped below the next major (3.0), not 2.0: mypy 2.0
+        #   dropped support for `python_version` targets below 3.10, which
+        #   used to matter because pyproject pinned "3.9" here. It now sets
+        #   "3.11" (see [tool.mypy]'s own comment), so mypy 2.x installs and
+        #   type-checks clean (verified locally against mypy 2.3.1) -- the
+        #   <3.0 cap is just the same "verify a new major before adopting
+        #   it" discipline as the ruff pin below, not a live incompatibility.
         # - numpy >= 2.0 bundles type stubs that misinterpret the
         #   `np.savez(path, **weights)` idiom used by every FORGE
         #   trainer's export path, raising spurious arg-type errors.
@@ -268,7 +273,7 @@ jobs:
         #   the call sites is staged separately.
         run: |
           python -m pip install --upgrade pip
-          pip install "ruff>=0.13,<0.16" "mypy>=1.11,<2.0" "numpy>=1.26,<2.0"
+          pip install "ruff>=0.13,<0.16" "mypy>=1.11,<3.0" "numpy>=1.26,<2.0"
       - name: Ruff lint
         run: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
       - name: Mypy type check

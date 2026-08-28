@@ -43,7 +43,7 @@ gitleaks git --redact -v .   # secret scanning; needs the gitleaks binary on PAT
 
 # Python (build the native ext first with `maturin develop`)
 ruff check
-mypy --config-file pyproject.toml
+mypy python/ scripts/ --config-file pyproject.toml
 pytest tests/python -m 'not lmstudio and not e2e_long and not minecraft_e2e'
 
 # mc-bot

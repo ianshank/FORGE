@@ -418,7 +418,7 @@ class MangoMASBridgeConfig:
         # tomllib is unconditionally a stdlib module).
         if sys.version_info >= (3, 11):
             import tomllib
-        else:
+        else:  # pragma: no cover - py39/py310
             import tomli as tomllib
 
         path = Path(path)

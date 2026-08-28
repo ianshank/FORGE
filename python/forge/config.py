@@ -27,7 +27,7 @@ from forge.utils.config_env import apply_env_overrides as _apply_env_overrides_s
 # a stdlib module).
 if sys.version_info >= (3, 11):
     import tomllib
-else:
+else:  # pragma: no cover - py39/py310
     import tomli as tomllib
 
 logger = logging.getLogger(__name__)
