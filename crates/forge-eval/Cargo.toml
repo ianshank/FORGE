@@ -42,8 +42,8 @@ required-features = ["http-mlflow"]
 
 [dependencies]
 forge-types = { workspace = true }
-forge-core = { path = "../forge-core" }
-forge-replay = { path = "../forge-replay" }
+forge-core = { workspace = true }
+forge-replay = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

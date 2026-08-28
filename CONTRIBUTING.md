@@ -29,8 +29,17 @@ cargo test --workspace --features forge-cloud/gcs
 cargo tarpaulin --workspace --exclude forge-python --exclude forge-wasm \
   --features forge-cloud/gcs --skip-clean --fail-under 85
 
+# ONNX feature surface (onnx/onnx-reload/mc-live-bundled; not covered by the
+# workspace-wide commands above, which only build --features forge-cloud/gcs).
+# Needs a real ONNX Runtime >=1.23.2 .so + ORT_DYLIB_PATH set -- see the
+# `onnx-features` CI job in .github/workflows/ci.yml for the exact fetch steps.
+cargo clippy -p forge-agent --all-targets --features onnx-bundled -- -D warnings
+cargo test -p forge-agent --features onnx-bundled
+cargo test -p forge-mc-runner --features mc-live-bundled
+
 # Supply chain (advisory)
 cargo deny check
+gitleaks git --redact -v .   # secret scanning; needs the gitleaks binary on PATH
 
 # Python (build the native ext first with `maturin develop`)
 ruff check
@@ -38,11 +47,15 @@ mypy --config-file pyproject.toml
 pytest tests/python -m 'not lmstudio and not e2e_long and not minecraft_e2e'
 
 # mc-bot
-cd mc-bot && npm ci && npm run typecheck && npm run lint && npm test
+cd mc-bot && npm ci && npm run typecheck && npm run lint && npm test && npm run test:coverage
+
+# dashboard
+cd dashboard && npm ci && npm run build && npm run lint && npm run test:coverage
 ```
 
 More task-specific commands (benchmarks, the visualization server, the Minecraft
-self-play stack) are listed in [`CLAUDE.md`](CLAUDE.md).
+self-play stack) are listed in [`CLAUDE.md`](CLAUDE.md). Or run `make verify` to
+execute this whole sequence at once (see the root `Makefile`).
 
 ## Coverage gates by runtime
 
@@ -51,8 +64,8 @@ self-play stack) are listed in [`CLAUDE.md`](CLAUDE.md).
 | Rust (tarpaulin, excl. forge-python/forge-wasm) | 85% |
 | Python (pytest-cov) | 85% |
 | dashboard (Vitest) | 85% |
-| mc-bot (c8) | being introduced |
-| demo_ui | ungated (known gap) |
+| mc-bot (c8) | report-only (baseline ~88%; no fail-under yet) |
+| demo_ui (pytest-cov) | report-only (baseline ~90% on `demo_ui/backend`; no fail-under yet) |
 
 ## Conventions
 
