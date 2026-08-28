@@ -212,7 +212,11 @@ async fn async_main(cli: Cli, config: RunnerConfig) -> ExitCode {
         match runner_result {
             Ok(Ok(())) => ExitCode::SUCCESS,
             Ok(Err(e)) => {
-                error!("live runner failed: {e}");
+                // {e:?} (Debug), not {e} (Display): anyhow::Error's Display
+                // only prints the outermost .context() message, dropping the
+                // chained cause -- for an ONNX inference failure that's the
+                // one part (which op/shape/session) worth having in prod logs.
+                error!("live runner failed: {e:?}");
                 ExitCode::from(1)
             }
             Err(e) => {
