@@ -3,7 +3,7 @@
 Fast Open-source Runtime for Generalist Environments
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 
 A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python.
@@ -888,7 +888,7 @@ docker build -f docker/Dockerfile.demo -t forge-demo .
 | Python surface | `forge_env` wrappers plus `forge` training, MangoMAS bridge, traces, and utilities |
 | Python tests | 21 MangoMAS smoke tests, coverage-gated at 85% |
 | Python lint | `ruff` + `mypy --strict` — 86 source files, 0 errors |
-| CI pipeline | 10 GitHub Actions jobs (fmt, clippy, test, bench, coverage, python-lint, python-test, python-test-fast, demo-ui, docker) |
+| CI pipeline | `.github/workflows/ci.yml` (blocking: fmt, clippy `-D warnings`, test, alloc-audit, coverage, python-lint, python-test, mc-bot-test, forge-mc-runner-bin; advisory: machete, dashboard-e2e; plus opt-in `workflow_dispatch` jobs) and `security.yml` (advisory: cargo-deny, pip-audit, npm-audit, trivy-fs, CodeQL) |
 | Deployment | Docker Compose (3 services), GHCR multi-arch images (amd64 + arm64) |
 | Dependencies | See [`Cargo.toml`](Cargo.toml) for full list |
 

@@ -6,6 +6,13 @@ You are the **FORGE Orchestrator** — the top-level coordinator for the Fast Op
 
 ## Crate Dependency Graph
 
+> The diagram below is a simplified view of the core-simulation subset only
+> (9 of the workspace's 26 crates) and predates the Minecraft/env-trait
+> integration. For the complete, current dependency graph and a one-line
+> purpose for every crate, see
+> [`docs/architecture.md`](docs/architecture.md) — "Level 2: Container
+> Diagram → Container Descriptions."
+
 ```
 forge-types          (foundation — no FORGE dependencies)
     |
@@ -32,6 +39,12 @@ forge-observability  (foundation — no FORGE dependencies)
 ```
 
 ## Data Flow
+
+> As with the graph above, this traces only the core-simulation path
+> (config → worldgen → step → observations). The Minecraft/env-trait data
+> flow (`forge-env-mc` ↔ `mc-bot` ↔ `forge-mc-runner`) is covered separately
+> under "Env-Trait Crates" below; see
+> [`docs/architecture.md`](docs/architecture.md) for the full picture.
 
 ```
 Config (forge-types)
