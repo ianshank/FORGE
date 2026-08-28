@@ -26,6 +26,7 @@ pub mod action_map;
 pub mod client;
 pub mod config;
 pub mod error;
+mod hash_util;
 pub mod mc_env;
 pub mod protocol;
 pub mod reward_config;

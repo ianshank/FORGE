@@ -12,8 +12,9 @@
 
 use std::cell::Cell;
 use std::path::Path;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
+use forge_types::time::now_ms;
 use reqwest::blocking::{Client, RequestBuilder, Response};
 use reqwest::StatusCode;
 use serde_json::{json, Value};
@@ -676,16 +677,6 @@ fn rewrite_parent_run_id_tag(tags: &[TagKv], parent_server_run_id: Option<&str>)
             })
             .collect(),
     }
-}
-
-/// Wall-clock milliseconds since Unix epoch. Mirrors the
-/// `mlflow_fs::now_ms` helper so HTTP + filesystem sinks agree on the
-/// stamp recorded for create_run / set_terminated.
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 // ─── MlflowHttpSink ────────────────────────────────────────────────────────

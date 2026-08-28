@@ -329,18 +329,23 @@ All Phase 2 production-stability and code-hardening goals are **COMPLETED**:
 
 - **Mineflayer auto-reconnect on MC-side tick timeout**  `[STATUS: COMPLETED]`
   Implemented connection health monitoring and tick-age checks in `mc-bot/src/bot_manager.ts`. The `BotManager` automatically tears down and rebuilds the mineflayer instance on stale connection detection using exponential backoff, keeping the WebSocket layer continuously alive.
-- **`ort 2.0.0-rc.12` forward-port or rc.9 downgrade**  `[STATUS: COMPLETED]`
-  Pinned exact version `2.0.0-rc.9` in `crates/forge-agent/Cargo.toml` and reverted `build_session_from_path` to use the robust `commit_from_file` API, fully resolving the FFI error hazards and the `download-binaries` TLS conflict for trained-mode Docker builds.
-  (1) `download-binaries` pulls ureq 3.x whose `tls` is
-  feature-gated; (2) `load-dynamic` + onnxruntime 1.22.0 hits an
-  ABI mismatch (`unknown field CreateEnvWithCustomLoggerAndGlobal
-  ThreadPools`); (3) workspace deps require rustc 1.93 (already
-  bumped in the v0.5 Dockerfile); (4) workspace Cargo.lock pins
-  versions that conflict with rc.12's build-script
-  tracing-subscriber expectations. Fix is to either downgrade
-  `ort` to a stable rc.9 line or forward-port
-  `forge-agent::onnx_model.rs` to whatever rc.12 ABI accepts.
-  Random-baseline `mc-live` already works.
+- **`ort` API drift (rc.9 → rc.12 → rc.13)**  `[STATUS: COMPLETED, 2026-08 tech-debt pass]`
+  This entry previously claimed COMPLETED via a "pin to rc.9" fix, but that
+  claim didn't match reality: `crates/forge-agent/Cargo.toml` was actually
+  pinned to `=2.0.0-rc.13` (bumped from rc.12 by a routine Dependabot
+  "cargo-minor-patch" auto-merge, invisible because no CI job built this
+  feature surface). A first-hand rebuild found the real break was 5
+  mechanical lines in `onnx_model.rs` (`try_extract_raw_tensor` renamed to
+  `try_extract_tensor`, `ort::inputs![...]` no longer returns a `Result` so
+  the trailing `?` was removed ×3, `Session::run` now needs `&mut self`,
+  and `ort/std` must be enabled explicitly for `commit_from_file`) --
+  fixed. Separately, `docker/mc-runner.Dockerfile`'s `ONNXRUNTIME_VERSION`
+  is now pinned `>=1.23.2`: earlier releases hit an upstream `ort` rc.13
+  teardown segfault on process exit under `load-dynamic` (pykeio/ort#614,
+  fixed in the runtime by pykeio/ort#610), reproduced and confirmed fixed
+  locally. A new CI job (`onnx-features` in `ci.yml`) builds and tests
+  `onnx`/`onnx-reload`/`mc-live-bundled` on every push now, closing the
+  coverage gap that let this drift silently.
 
 Phase-2 RL-specific candidates (deferred from Phase 1's "Out of
 scope" + the first-real-run report's next-steps):
@@ -479,13 +484,15 @@ surfaced during triage.
   open bullets.
 - Opt-in LM Studio CI smoke (`pytest -m lmstudio` against a containerised
   endpoint) — Tech Debt row "Real LM Studio integration smoke test".
-- `BCTrainer._train_torch` branch coverage (KL-only + value-loss-only) —
-  Tech Debt row "Torch path coverage for `BCTrainer._train_torch`". One of
-  the two branches (value-loss) is now covered by
-  `test_torch_path_uses_value_loss_when_value_hats_supplied` (2026-05-16);
-  KL-only branch remains.
-- Fix `forge-server::config::tests::test_from_env_defaults` flake (new TD
-  row below) — small, high-signal, blocks `cargo test --workspace` green CI.
+- ~~`BCTrainer._train_torch` branch coverage (KL-only + value-loss-only)~~
+  **✅ Done** — this line was stale (self-contradicted the Tech Debt table
+  below, found during the 2026-08 tech-debt pass). Both branches are
+  covered: value-loss by `test_torch_path_uses_value_loss_when_value_hats_supplied`
+  (2026-05-16), KL-only by `test_torch_path_kl_only_branch` (confirmed
+  present in `tests/python/test_bc_trainer.py`) — see the Tech Debt row
+  "Torch path coverage for `BCTrainer._train_torch`".
+- ~~Fix `forge-server::config::tests::test_from_env_defaults` flake~~
+  **✅ Done** — also stale; see the matching Tech Debt row below.
 
 ### P1 — v0.3 window
 
@@ -539,10 +546,13 @@ surfaced during triage.
 | Torch path coverage for `BCTrainer._train_torch` | ✅ Done | KL-only branch (lines 336-339) covered by `test_torch_path_kl_only_branch` (parametrised over `DEFAULT_BC_KL_WEIGHT` active vs. `0.0`, deterministic via `DEFAULT_BC_SEED`); value-loss branch covered by `test_torch_path_uses_value_loss_when_value_hats_supplied` (2026-05-16). Inline `_ToyActorCritic` consolidated into module-scoped `toy_actor_critic_factory` fixture (no duplication across the three torch tests). Local coverage on `bc_trainer.py` rose to 97.45% with all torch-path branches reached. |
 | DAgger / DPO follow-on for the teacher pipeline | Medium | Out of scope for the BC PR but a natural next step. The teacher trace schema (`TeacherDecisionTrace`) already records `top_k_probs` and `value_hat`, which DPO would consume directly. Belongs in a separate `forge.mangomas.dpo_trainer` module. |
 | Vectorised step-level teacher concurrency | Low | Today concurrency is at the episode level (one LLM call per step, parallelised across episodes). Step-level batching would require a real vec-env under the teacher and is not justified at Qwen 14B latencies. Revisit when sub-100ms quantised inference is available. |
-| Workspace `dev-dependencies` consolidation | Low | `proptest` + `tracing-subscriber` declared per-crate in 15 crates; promote to `workspace.dev-dependencies` |
-| Commented-out `println!` in `forge-data` | Low | Either delete or convert to `tracing::info!` in `generator.rs`, `lib.rs`, `minari.rs`, `maze.rs`, `edge_replay.rs` |
+| Workspace `dev-dependencies` consolidation | ✅ Resolved | **Stale entry, verified false during the 2026-08 tech-debt pass.** All crates already declare `proptest = { workspace = true }` and `tracing-subscriber = { workspace = true }` where needed (version centralized in `[workspace.dependencies]`); Cargo has no `workspace.dev-dependencies` auto-apply mechanism, so each crate must list the line regardless. No action remains. |
+| Commented-out `println!` in `forge-data` | ✅ Resolved | **Stale entry, verified false during the 2026-08 tech-debt pass.** Every `println!` in the cited files (`generator.rs`, `lib.rs`, `minari.rs`, `maze.rs`, `edge_replay.rs`) is inside a `//! ```rust,no_run` doctest example block, not dead/commented-out code. No action remains. |
 | `forge-server::config::tests::test_from_env_defaults` env-pollution flake | ✅ Done | Fixed by wrapping `test_from_env_defaults` and `test_from_env_defaults_when_no_env_vars` with the existing `ENV_LOCK` + `EnvScope::new(ALL_KEYS)` machinery in `crates/forge-server/src/config.rs` (the helpers already existed in `mod tests` for the other override tests). Added `eprintln!` diagnostic inside `EnvScope::new` for forensic visibility under `--nocapture`. Reproducer (20 iterations with ambient `FORGE_SERVER_PORT=7777`): pre-fix 20/20 fail, post-fix 0/20 fail. |
 | `forge_demo.py demo_day_night` uses out-of-range `default_vision_radius=5` | ✅ Done (reconciled v0.5.0) | **Already fixed.** `examples/forge_demo.py:491` now passes `default_vision_radius: 4` (in range `[0, 4]`); no `5` remains in the file. The row was stale. |
 | `torch.jit.trace` deprecation in MuZero export | Low (deferred — needs torch env) | `python/forge/models/muzero_export.py:145,154,162` still call `torch.jit.trace` (confirmed), but **only** in the secondary `export_torchscript()` path — the primary ONNX path the Rust runner consumes does not use it. Migrating to `torch.export` changes the saved `.pt` artifact semantics and **cannot be validated without a torch install** (absent in the v0.5.0 reconciliation env), so it is deliberately deferred rather than shipped unverified. Do in a torch-capable env with the ONNX/TorchScript round-trip tests green. |
-| Dashboard `npm ci` does not install `eslint` into `node_modules/.bin/` | Medium | `dashboard/package.json` lists `eslint ^8.57.0` in devDependencies but a fresh `npm ci` produces no `node_modules/.bin/eslint`. Likely lock-file drift or a missing peer-dep (`@typescript-eslint/parser` + `@typescript-eslint/eslint-plugin` are not in devDependencies either, yet `lint` script targets `.ts,.tsx`). Fix the dep chain or convert `lint` to a Vite/Biome-based runner. |
-| Local `mypy python` walks into installed `torch` and fails on Python-3.10 `match` syntax | Low | CI's lint job installs `mypy<2.0` + `numpy<2.0` only (no torch), so it never hits the issue. Local devs with torch installed see `torch/fx/experimental/symbolic_shapes.py:6069: Pattern matching is only supported in Python 3.10 and greater`. Fix: either raise `[tool.mypy] python_version` to `"3.11"` (matches the supported runtime) or add `[[tool.mypy.overrides]] module = "torch.*"` with `ignore_errors = true`. |
+| Dashboard `npm ci` does not install `eslint` into `node_modules/.bin/` | ✅ Resolved | **Stale entry, verified false during the 2026-08 tech-debt pass.** `dashboard/package.json`'s devDependencies now contain no `eslint`/`@typescript-eslint/*` entries at all; `lint` is already `"biome check ."`, matching CI's `Dashboard Build + Lint + Coverage` job. Reproduced fresh (`rm -rf node_modules && npm ci`): no `eslint` binary, `biome` present, `npm run lint` passes clean, lockfile stable. The `lint`-to-Biome migration this row anticipated has already happened; no action remains. |
+| Local `mypy python` walks into installed `torch` and fails on Python-3.10 `match` syntax | ✅ Done | Raised `[tool.mypy] python_version` to `"3.11"` (matches CI's actual runtime), fixing the local torch-stub failure without affecting CI (whose lint job never installs torch either way). |
+| CI Python installs use ad hoc `pip install "pkg>=x,<y"` ranges instead of syncing the committed `uv.lock` | Medium — feasibility researched, **no-go as-is** | `ci.yml`'s `python-lint`/`python-test`/`python-test-fast`/`hf-dataset`/`e2e-long`/`hf-space` jobs each hand-list version ranges rather than running `uv sync` against `uv.lock` (224-package universal lock spanning Python 3.9–3.13+, comfortably covering CI's pinned 3.11) — so the lockfile isn't actually what CI installs from. **Researched with real `uv lock`/`uv sync --dry-run --frozen` experiments in an isolated git worktree** (repo left untouched): the specific fear (lockfile might not resolve, or conflict) is **not confirmed** — adding a `lint` dev-group and relocking resolved clean with zero conflicts (ruff 0.15.22, mypy 2.3.1, numpy 1.26.4 — satisfies the `<2.0` CI pin). The real blocker is structural: `pyproject.toml` has **zero** `dependencies`/dev-dependency-groups today — `ruff`/`mypy`/`pytest`/`pytest-cov`/`maturin`/`onnxscript`/`datasets`/`toml`/`playwright`/`pip-audit` appear **zero times** in `uv.lock` (never declared, not just under-pinned), and `torch` has no CPU-wheel index configured (`uv sync` would default to pulling the CUDA build + 15 `nvidia-*` packages instead of CI's explicit `--index-url .../whl/cpu`). Per-job verdict: `python-lint` is **validated safe to convert first** (no torch, 9-package dev-group resolves clean) once a `lint` dev-group is added and the lockfile is relocked (note: `uv lock --check` fails against live PyPI right now while `uv lock --dry-run` reports no changes — the two disagree today, so relock once for a clean baseline before converting anything); `python-test`/`python-test-fast`/`hf-model` need the torch CPU-index fixed first; `e2e-long`/`hf-dataset` need `datasets` declared as a new dependency group first; `demo-ui` is a separate `demo_ui/pyproject.toml` package, not a uv workspace member, out of scope for this lockfile; `security.yml`'s pip-audit is a scanning tool, fits `uv tool run`, not the lock. Sequence for a future pass: relock → add `lint`/`test` dependency-groups → convert `python-lint` (proven safe) → fix torch's CPU index → declare `datasets` → convert the rest. |
+| No repo-checked-in Claude Code skills/hooks despite a large, repetitive validation surface | ✅ Done | Added `.claude/skills/forge-verify/SKILL.md` (`/forge-verify`, wraps `make verify`/`verify-full` with a per-category report) and two `PreToolUse` hooks registered in `.claude/settings.json`: `guard_tracked_deletion.py` (blocks a `Bash` `rm`/`find -delete` whose glob matches a git-tracked file, cross-checked against `git ls-files`; motivated by a real incident where a `.coverage*` cleanup glob deleted the tracked `.coveragerc`; hardened through two rounds of adversarial review that found and closed real bypasses — see CHANGELOG.md) and `guard_staged_secrets.py` (runs `gitleaks protect --staged` before a `git commit`, closing the gap that `security.yml`'s own gitleaks job is history-only and report-only). Covered by a stdlib-only self-test suite auto-discovered via `python3 -m unittest discover -s .claude/hooks` (`make hooks-test`), wired into `make verify` and CI's `python-lint` job (plus `security.yml`'s `gitleaks` job for the two cases needing a real binary). A fresh re-survey identified further opportunities and this pass acted on the highest-priority one: added `.claude/skills/forge-docs-audit/SKILL.md` (re-verifies factual claims across this doc/`CHANGELOG.md`/`README.md`/`docs/architecture.md`/`Agent.md`/`CLAUDE.md` against the actual codebase, in the house style already used throughout this table). Remaining lower-priority proposals from the same survey (a `forge-onnx-bump` skill for the `ort`-API-drift diagnosis pattern, a guard against direct edits to `model_manifest.json`/trajectory files) are tracked here as future work, not yet implemented. |
+| Rust toolchain (18 lines/8 files), ONNX Runtime (2 files), and LM Studio port/URL (3 files) pins can drift silently — no single source of truth possible across TOML/YAML/Dockerfile/Python | ✅ Done | `scripts/check_pinned_config_consistency.py` re-derives every copy (15 `dtolnay/rust-toolchain@stable toolchain:` inputs across 5 workflow files + 2 Dockerfiles' `RUST_IMAGE_TAG` against `rust-toolchain.toml`'s `channel`; `ci.yml`'s `onnx-features` job `ORT_VERSION` against `docker/mc-runner.Dockerfile`'s `ONNXRUNTIME_VERSION`; `ci.yml` + `e2e-long.yml`'s `LMSTUDIO_PORT`/`LMSTUDIO_BASE_URL` against `providers.py`'s `DEFAULT_LMSTUDIO_BASE_URL`) and fails on drift instead of eliminating the duplication outright. Verified against deliberately-introduced mismatches in all three checks. Deliberately excludes `docker/trainer.Dockerfile`'s independent Python-wheel `ONNXRUNTIME_VERSION` (different artifact, legitimately different version). Wired into `make verify` (`pin-check` target) and CI's `python-lint` job; see `docs/hardcoded-values-audit.md`. |

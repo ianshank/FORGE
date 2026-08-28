@@ -50,8 +50,12 @@ fn default_action_map_path() -> PathBuf {
     PathBuf::from("configs/minecraft/action_map.toml")
 }
 
+/// Default mc-bot WebSocket URL. Pinned as a `const` so the default
+/// flows through one source of truth.
+const DEFAULT_WS_URL: &str = "ws://127.0.0.1:8765";
+
 fn default_ws_url() -> String {
-    "ws://127.0.0.1:8765".to_string()
+    DEFAULT_WS_URL.to_string()
 }
 
 fn default_heartbeat_ms() -> u64 {

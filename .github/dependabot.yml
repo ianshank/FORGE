@@ -12,6 +12,13 @@ updates:
     groups:
       cargo-minor-patch:
         update-types: ["minor", "patch"]
+        # `ort` gets its own individual PR rather than being batched with
+        # everything else: a routine rc.12->rc.13 bump silently broke the
+        # onnx/onnx-reload/mc-live-bundled feature surface once (a7b078c)
+        # because no CI job built it at the time. The `onnx-features` CI
+        # job now catches this regardless, but an ort-specific PR is also
+        # easier for a reviewer to scrutinize than a generic grouped bump.
+        exclude-patterns: ["ort", "ort-sys"]
 
   # Python (root pyproject.toml).
   - package-ecosystem: pip

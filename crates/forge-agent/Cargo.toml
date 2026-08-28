@@ -13,7 +13,13 @@ description = "Agent framework, MCTS planning, and baselines for FORGE"
 [features]
 default = []
 # ONNX Runtime support (Windows MSVC only due to ort-sys binary availability)
-onnx = ["ort", "ndarray"]
+# `ort/std` is required for `SessionBuilder::commit_from_file` -- ort 2.0.0-rc.13
+# gates it behind the `std` feature (previously implicit/ungated), so it must be
+# turned on explicitly since the base `ort` dependency below opts out of ort's
+# defaults entirely. Pulls in only "ort-sys/std", "ndarray?/std", "tracing?/std"
+# -- not the `download-binaries`/`ureq` feature that `default-features = false`
+# exists to avoid.
+onnx = ["ort", "ort/std", "ndarray"]
 # Use ort's `load-dynamic` mode: at runtime, ort opens
 # libonnxruntime.so via `ORT_DYLIB_PATH`. Used by the runner Docker
 # image, which installs the shared lib manually under /usr/local/lib

@@ -9,6 +9,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — pinned-config consistency check (`scripts/check_pinned_config_consistency.py`)
+
+Cross-checks three values that get duplicated across files which can't
+share one source (a Dockerfile `ARG`, a GH Actions `env:`/`with:` entry,
+and a Python/TOML source can't all read the same file without much more
+invasive templating) — so instead of eliminating the duplication, the
+script re-derives every copy and fails on drift:
+
+- The Rust toolchain version (`rust-toolchain.toml`'s `channel`) against
+  its 15 `dtolnay/rust-toolchain@stable` `toolchain:` copies (5 workflow
+  files) and 2 Dockerfiles' `RUST_IMAGE_TAG`.
+- The ONNX Runtime version `docker/mc-runner.Dockerfile` and `ci.yml`'s
+  `onnx-features` job each pin independently. Deliberately excludes
+  `docker/trainer.Dockerfile`'s own `ONNXRUNTIME_VERSION` (a different
+  artifact — the Python wheel, not the C++ redistributable — on an
+  independent release cadence).
+- The LM Studio port/base-URL (`providers.py`'s `DEFAULT_LMSTUDIO_BASE_URL`)
+  against `ci.yml`'s `LMSTUDIO_PORT`/`LMSTUDIO_BASE_URL` env (already
+  comment-annotated "keep in lock-step" — now actually enforced) and
+  `e2e-long.yml`'s own `LMSTUDIO_PORT`, which had no such comment at all
+  and was the least-guarded of the three copies before this check existed.
+
+Started as a Rust/ONNX-only script (`check_version_consistency.py`),
+renamed once the same "duplicated pin, no single source possible" pattern
+turned up a third time for the LM Studio endpoint rather than adding a
+mismatched-scope check under the old name. An adversarial peer review
+found its line-matching regexes were comment-blind: a commented-out stale
+pin like `# toolchain: "1.60.0"` was parsed as a live occurrence, a real
+false-positive risk (confirmed: reproduced the false CI failure, then
+fixed by truncating each line at its first `#` before matching). Covered
+by `tests/python/test_check_pinned_config_consistency.py` (14 cases,
+using `monkeypatch` to redirect the script's `REPO_ROOT` to an isolated
+fixture tree rather than ever mutating real repository files) in addition
+to the ad hoc deliberate-mismatch/restore verification run directly
+against the real repo. Wired into `make verify` (`pin-check` target) and
+CI's `python-lint` job; documented in `docs/hardcoded-values-audit.md`.
+
+### Added — Claude Code tooling (`.claude/`)
+
+- **`/forge-verify` skill** (`.claude/skills/forge-verify/SKILL.md`): wraps
+  the Makefile's `verify`/`verify-full` pre-PR gate sequence with a
+  per-category pass/fail report instead of one opaque result.
+- **`forge-docs-audit` skill** (`.claude/skills/forge-docs-audit/SKILL.md`):
+  re-verifies factual claims (counts, file:line refs, named tests, status
+  markers) in `docs/next_steps.md`/`CHANGELOG.md`/`README.md`/
+  `docs/architecture.md`/`Agent.md`/`CLAUDE.md` against the actual
+  codebase and corrects drift in the house style already established in
+  those files. Motivated by a fresh skills/hooks re-survey pointing out
+  this is the single most-repeated pattern in this repo's own git
+  history — the several `docs: fix stale ...` commits and multiple
+  Technical Debt rows resolved specifically because they were re-checked
+  and found false, each requiring independently re-deriving evidence by
+  hand.
+- **Tracked-file deletion guard** (`.claude/hooks/guard_tracked_deletion.py`,
+  registered via `.claude/settings.json` as a `PreToolUse` hook on `Bash`):
+  blocks `rm`/`find -delete` commands whose glob pattern matches a
+  git-tracked file rather than just the generated/ignored ones intended,
+  by cross-checking against `git ls-files` (no hand-maintained path list,
+  so it can't drift). Fails open on any parse/git error. Directly
+  motivated by a real incident this pass where a `.coverage*` cleanup glob
+  also matched and deleted the tracked `.coveragerc`.
+  Went through two rounds of adversarial review before landing in its
+  current form — an initial version detecting `rm` via an anchored regex
+  (only recognized `rm` as the string's first token, or immediately after
+  `;`/`&`/`|`) turned out to have real, reproducible bypasses: `find X |
+  xargs rm -rf` (the single most common bulk-delete idiom), `sudo rm -rf`,
+  `VAR=x rm -rf`, `(rm ...)`/`{ rm ...; }`, a bare leading space, a
+  newline instead of `;`, plus `find`'s own `-iname`/`-path`/`-regex`
+  selectors (and no selector at all) being silently unchecked, and
+  `./`-prefixed/absolute-path/bare-directory targets not matching a
+  tracked file's basename. Rewritten to tokenize the whole command once
+  and check token membership rather than anchor a regex on what precedes
+  `rm` — recall-favoring by design, since an over-liberal detection only
+  costs one extra, cheap `git ls-files` cross-reference for a command
+  that turns out to need no scrutiny; a `find | xargs rm` invocation with
+  no literal delete target in its own text is resolved via `find`'s own
+  `-name`/`-iname`/`-path`/`-ipath` selectors instead of the sibling `rm`
+  extraction, since xargs supplies the actual argument at runtime. Every
+  bypass above is now a named regression test (34 total), each proven
+  non-vacuous by confirming it fails against the pre-fix code before
+  passing post-fix. Covered by this stdlib-only self-test suite (`make
+  hooks-test`, now `python3 -m unittest discover` over `.claude/hooks/`
+  rather than a hardcoded filename, so a new hook's tests are picked up
+  automatically), run in CI's `python-lint` job.
+- **Staged-secret guard** (`.claude/hooks/guard_staged_secrets.py`, same
+  `PreToolUse`/`Bash` wiring): runs `gitleaks protect --staged` before a
+  `git commit` actually happens and blocks on a real finding. Closes a
+  gap `security.yml`'s own comments admit exists: its `gitleaks` job
+  scans git *history* after a push and is explicitly report-only
+  (`|| true`) — nothing previously scanned *before* a commit landed.
+  Not a replacement for that job (still the full-history backstop), an
+  earlier and cheaper checkpoint. Fails open if `gitleaks` isn't
+  installed. Test fixtures use a repo-local custom `.gitleaks.toml` rule
+  rather than a well-known example secret (AWS's own published EXAMPLE
+  key, tried first, is — confirmed empirically — excluded from gitleaks'
+  default ruleset, almost certainly because it's such a common docs/
+  tutorial placeholder), so the tests don't depend on the exact shape of
+  gitleaks' bundled rules. The two cases needing the real binary skip
+  themselves when it's absent; `security.yml`'s `gitleaks` job (which
+  already fetches the binary for the history scan) now also adds it to
+  `$GITHUB_PATH` and runs this hook's suite unskipped there.
+
 ### Added — Hugging Face publication pipelines (`docs/hf/README.md`)
 
 - **Static Space sync** (`.github/workflows/hf-space.yml`): builds the
@@ -41,6 +143,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`forge-agent`'s ONNX feature surface (`onnx`/`onnx-reload`/`mc-live-bundled`)
+  compiles and runs again**: a routine Dependabot bump (`ort` rc.12 → rc.13,
+  `a7b078c`) had silently broken it, invisible because no CI job built this
+  surface. Fix was 5 mechanical lines in `onnx_model.rs`
+  (`try_extract_raw_tensor` → `try_extract_tensor`, a stray `?` removed ×3
+  after `ort::inputs![...]` — it no longer returns a `Result` — and `&mut
+  self` on the session-holding locals) plus enabling `ort/std` for
+  `commit_from_file`. Separately, `docker/mc-runner.Dockerfile`'s
+  `ONNXRUNTIME_VERSION` is now pinned `>=1.23.2`: earlier releases hit a
+  known upstream `ort` rc.13 teardown segfault on process exit under
+  `load-dynamic` (pykeio/ort#614, fixed in the runtime by pykeio/ort#610),
+  reproduced and confirmed fixed locally end-to-end (bootstrap a real
+  MuZero bundle → load via `OnnxMuZeroModel` → run real MCTS inference,
+  zero crashes). A new `onnx-features` CI job now builds and tests this
+  surface on every push.
 - **`forge-cloud`'s `gcs` feature compiles again**: `object_store` 0.14 moved
   `put`/`get`/`delete`/`head` behind the `ObjectStoreExt` extension trait —
   one missing import broke the feature-gated build (and with it the

@@ -1,9 +1,18 @@
 #[cfg(feature = "onnx")]
 #[test]
+// requires Python with torch, onnx, and onnxscript installed (exports real
+// MuZero networks via a subprocess) plus a real ONNX Runtime >=1.23.2 loaded
+// via ORT_DYLIB_PATH; run with --ignored. Matches the
+// forge-eval/tests/exporters_e2e.rs precedent for heavy-external-dep tests.
+// (ONNX Runtime <1.23.2 hits a known upstream ort rc.13 teardown segfault on
+// process exit after this test's real inference completes successfully --
+// pykeio/ort#614, fixed by pykeio/ort#610 in the runtime, not in this crate.)
+#[ignore]
 fn test_onnx_pipeline_integration() {
     use forge_agent::latent_mcts::onnx_model::{OnnxModelConfig, OnnxMuZeroModel};
     use forge_agent::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch};
     use std::fs;
+    use std::process::Command;
     use tempfile::tempdir;
 
     let dir = tempdir().unwrap();

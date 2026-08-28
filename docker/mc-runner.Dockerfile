@@ -16,8 +16,20 @@
 # Run (via docker compose, see docker/compose.minecraft.yml):
 #   docker compose -f docker/compose.minecraft.yml up runner
 
-ARG RUST_IMAGE_TAG=1.93-bookworm
-ARG ONNXRUNTIME_VERSION=1.18.0
+# ONNXRUNTIME_VERSION must stay >=1.23.2: older releases hit a known
+# upstream `ort` rc.13 teardown segfault on process exit when loaded via
+# load-dynamic (pykeio/ort#614, fixed in the runtime by pykeio/ort#610) --
+# reproduced and confirmed fixed by this version bump during the ONNX
+# feature-surface repair (see crates/forge-agent/tests/onnx_integration.rs).
+#
+# RUST_IMAGE_TAG kept in sync with docker/Dockerfile AND the repo-root
+# rust-toolchain.toml pin -- the new `onnx-features` CI job (ci.yml)
+# validates this exact feature surface via bare `cargo build`/`cargo test`
+# on the pinned toolchain, but never builds this Dockerfile itself, so an
+# un-synced tag here would silently drift back to being untested by CI,
+# the exact failure mode this pass exists to close.
+ARG RUST_IMAGE_TAG=1.94.1-bookworm
+ARG ONNXRUNTIME_VERSION=1.23.2
 ARG FEATURES=mc-live
 
 # --- builder stage -----------------------------------------------------

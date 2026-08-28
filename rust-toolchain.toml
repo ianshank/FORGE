@@ -1,0 +1,9 @@
+[toolchain]
+# Pinned (rather than a floating "stable") so CI and every contributor build
+# with the exact compiler this workspace is validated against -- including
+# the full ONNX/mc-live-bundled feature surface (see crates/forge-agent and
+# crates/forge-mc-runner's onnx-reload feature). Comfortably above the
+# documented MSRV floor (rust-version = "1.85" in the root Cargo.toml);
+# bump deliberately when there's a reason to, not automatically.
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]

@@ -274,7 +274,7 @@ impl OnnxMuZeroModel {
     /// Helper: extract a flat Vec<f32> from an ONNX output DynValue.
     fn extract_f32(value: &ort::value::DynValue) -> Result<Vec<f32>> {
         let (_shape, slice) = value
-            .try_extract_raw_tensor::<f32>()
+            .try_extract_tensor::<f32>()
             .context("failed to extract f32 tensor")?;
         Ok(slice.to_vec())
     }
@@ -289,12 +289,12 @@ impl OnnxMuZeroModel {
     /// Run representation network and return latent data.
     fn run_representation(&self, observation: &[f32]) -> Result<Vec<f32>> {
         let obs_value = Self::make_input(observation.to_vec(), observation.len())?;
-        let session = self
+        let mut session = self
             .representation
             .lock()
             .map_err(|_| Self::poisoned("representation"))?;
         let outputs = session
-            .run(ort::inputs![obs_value]?)
+            .run(ort::inputs![obs_value])
             .context("Representation inference failed")?;
         Self::extract_f32(&outputs[0])
     }
@@ -302,12 +302,12 @@ impl OnnxMuZeroModel {
     /// Run prediction network and return (policy_logits, value).
     fn run_prediction(&self, latent_data: Vec<f32>) -> Result<(Vec<f32>, f32)> {
         let latent_value = Self::make_input(latent_data, self.config.latent_dim)?;
-        let session = self
+        let mut session = self
             .prediction
             .lock()
             .map_err(|_| Self::poisoned("prediction"))?;
         let outputs = session
-            .run(ort::inputs![latent_value]?)
+            .run(ort::inputs![latent_value])
             .context("Prediction inference failed")?;
         let policy_logits = Self::extract_f32(&outputs[0])?;
         let value = Self::extract_f32(&outputs[1])?;
@@ -322,12 +322,12 @@ impl OnnxMuZeroModel {
     /// Run dynamics network and return (next_latent_data, reward).
     fn run_dynamics(&self, dyn_input: Vec<f32>, input_dim: usize) -> Result<(Vec<f32>, f32)> {
         let dyn_value = Self::make_input(dyn_input, input_dim)?;
-        let session = self
+        let mut session = self
             .dynamics
             .lock()
             .map_err(|_| Self::poisoned("dynamics"))?;
         let outputs = session
-            .run(ort::inputs![dyn_value]?)
+            .run(ort::inputs![dyn_value])
             .context("Dynamics inference failed")?;
         let next_latent = Self::extract_f32(&outputs[0])?;
         let reward = Self::extract_f32(&outputs[1])?;

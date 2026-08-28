@@ -47,12 +47,16 @@ runtime code resolves to one of the homes above. Representative confirmations:
 | Location | Value | Status |
 |---|---|---|
 | `mc-bot/src/bot_manager.ts` spawn timeout | `30000` ms, inlined in logic **and** the error string | **Fixed** — moved to `bot.spawn_timeout_ms` (default via `DEFAULT_SPAWN_TIMEOUT_MS`); error string built from the value. |
-| LM Studio port/URL | duplicated between `.github/workflows/ci.yml` env and the Python provider default | **Open (minor)** — cross-file duplication of a value, not an in-logic hardcode. Candidate to source both from one place; low priority. |
+| LM Studio port/URL | duplicated between `.github/workflows/ci.yml` env, `.github/workflows/e2e-long.yml` env, and the Python provider default | **Mitigated** — `e2e-long.yml`'s copy wasn't even documented as intentional (no cross-reference comment, unlike `ci.yml`'s); `scripts/check_pinned_config_consistency.py` now re-derives all copies from `providers.py`'s `DEFAULT_LMSTUDIO_BASE_URL` and fails on drift, same mechanism as the two rows below. |
 | `python/forge/utils/dashboard_client.py` | `http://localhost:8080` in a module docstring/example | **Benign** — documentation only, not a runtime default. |
+| Rust toolchain version (`rust-toolchain.toml`'s `channel`) | duplicated across 15 `dtolnay/rust-toolchain@stable` `toolchain:` inputs (5 workflow files) + 2 Dockerfiles' `RUST_IMAGE_TAG` | **Mitigated** — genuinely can't be single-sourced (a Dockerfile `ARG` and a GH Actions `with:` input can't both read one TOML file without much more invasive templating), so instead of eliminating the duplication, `scripts/check_pinned_config_consistency.py` re-derives every copy and fails if any drifts from the canonical `rust-toolchain.toml` value. Wired into `make verify` and CI's `python-lint` job. |
+| ONNX Runtime version for the Rust `ort` crate | duplicated between `docker/mc-runner.Dockerfile`'s `ONNXRUNTIME_VERSION` and `ci.yml`'s `onnx-features` job `ORT_VERSION` | **Mitigated** — same script, same mechanism. Deliberately does **not** couple this to `docker/trainer.Dockerfile`'s own `ONNXRUNTIME_VERSION` (`1.20.0`), which pins the *Python* `onnxruntime` wheel for the trainer image — a different artifact on a different release cadence than the C++ redistributable the Rust `ort` crate dlopens; forcing those two to match would be wrong, not a fix. |
 
 ## Bottom line
 
-No in-logic hard-coded runtime values remain after the mc-bot spawn-timeout fix.
-The one open item is a cross-file duplication (CI env ↔ Python default), tracked as
-low priority. Re-run the sweep and update this table when adding new config-bearing
-literals.
+No in-logic hard-coded runtime values remain after the mc-bot spawn-timeout fix. Three
+cross-file duplications (LM Studio port/URL, Rust toolchain, ONNX Runtime version)
+can't be structurally eliminated — a Dockerfile `ARG`, a GH Actions `env:` entry, and
+a Python/TOML source can't all read one file — but are now drift-checked automatically
+by `scripts/check_pinned_config_consistency.py` rather than left to go silently stale.
+Re-run the sweep and update this table when adding new config-bearing literals.

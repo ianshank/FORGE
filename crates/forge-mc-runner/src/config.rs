@@ -272,6 +272,12 @@ pub const DEFAULT_METRICS_EPISODE_LENGTH_BUCKETS: &[f64] = &[
 /// `const` so the default flows through one source of truth.
 pub const DEFAULT_METRICS_BIND: &str = "127.0.0.1";
 
+/// Default port for the Prometheus metrics endpoint. Pinned as a
+/// `const` (rather than an inline literal in `RunnerConfig::default()`)
+/// so the default flows through one source of truth, same as
+/// `DEFAULT_METRICS_BIND` above.
+pub const DEFAULT_METRICS_PORT: u16 = 9090;
+
 impl Default for RunnerConfig {
     fn default() -> Self {
         Self {
@@ -284,7 +290,7 @@ impl Default for RunnerConfig {
             planning_sims: 50,
             action_repeat: 1,
             base_seed: None,
-            metrics_port: 9090,
+            metrics_port: DEFAULT_METRICS_PORT,
             metrics_bind: DEFAULT_METRICS_BIND.to_string(),
             metrics_histogram_buckets: DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS.to_vec(),
             metrics_episode_length_buckets: DEFAULT_METRICS_EPISODE_LENGTH_BUCKETS.to_vec(),

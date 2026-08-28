@@ -234,7 +234,7 @@ The production deployment packages FORGE as three Docker containers orchestrated
 │                         ▼                  ▼                      │
 │              ┌───────────────────────────────────┐               │
 │              │  simulation                        │               │
-│              │  rust:1.85-bookworm (build)        │               │
+│              │  rust:1.94.1-bookworm (build)      │               │
 │              │  python:3.11-slim  (runtime)       │               │
 │              │                                    │               │
 │              │  :8080 ──► host:8080              │               │
@@ -266,7 +266,7 @@ The production deployment packages FORGE as three Docker containers orchestrated
 
 | File | Purpose |
 |------|---------|
-| `docker/Dockerfile` | `rust:1.85` build → `python:3.11-slim` runtime; maturin native ext |
+| `docker/Dockerfile` | `rust:1.94.1-bookworm` build → `python:3.11-slim` runtime; maturin native ext |
 | `docker/Dockerfile.dashboard` | `node:20` build → `nginx:1.27-alpine` serve |
 | `docker/Dockerfile.demo` | `python:3.11-slim`; FastAPI/uvicorn |
 | `docker/docker-compose.yml` | Three-service orchestration with health gates |
@@ -409,7 +409,7 @@ Server (mc-bot) → Client (runner)
 | `docker/compose.minecraft.yml` | 4-service orchestration; health gates; `self-play` profile gates trainer |
 | `docker/compose.minecraft.env.example` | Sample env file with `MC_EULA=FALSE` default; operator overrides |
 | `docker/mc-bot.Dockerfile` | Node 22 + mineflayer + prismarine-viewer |
-| `docker/mc-runner.Dockerfile` | rust:1.93-bookworm builder → debian:bookworm-slim runtime (135 MB) |
+| `docker/mc-runner.Dockerfile` | rust:1.94.1-bookworm builder → debian:bookworm-slim runtime (135 MB) |
 | `docker/trainer.Dockerfile` | python:3.11 + torch + onnx + maturin |
 | `configs/minecraft/env.toml` | Local-dev defaults (`127.0.0.1`) |
 | `configs/minecraft/env.docker.toml` | Docker overlay (`bot.host="minecraft"`, `ws_url="ws://mc-bot:8765"`) |
@@ -2086,13 +2086,13 @@ build:
    docker build -f docker/mc-runner.Dockerfile -t forge-mc-runner:dev .
         │
         ▼
-   rust:1.93-bookworm builder
+   rust:1.94.1-bookworm builder
         │
         ├── --features mc-live        (random-baseline-only; 135 MB image)
-        └── --features mc-live-bundled (trained-mode; requires re-enabling
-                                        the commented-out ONNX-runtime
-                                        install block in the Dockerfile.
-                                        Deferred — `ort` rc.12 ABI churn.)
+        └── --features mc-live-bundled (trained-mode; the builder stage
+                                        unconditionally installs the ONNX
+                                        Runtime shared library. Fixed in the
+                                        2026-08 tech-debt pass -- see below.)
                 │
                 ▼
         debian:bookworm-slim runtime
@@ -2125,9 +2125,21 @@ Local-dev (no docker):
 The Rust runner refactor splits the trained-mode path into
 `live::run_live_trained()` feature-gated behind `onnx-reload`; the
 random-baseline path (`run_live_random()`) compiles cleanly with
-just `--features mc-live` (no ORT dependency). This dodges the
-`ort 2.0.0-rc.12` transitive-dep cascade (ureq 3.x TLS feature,
-onnxruntime ABI drift, rustc 1.93 MSRV chain from `fixed`/`icu_*`).
+just `--features mc-live` (no ORT dependency).
+
+**Update (2026-08 tech-debt pass):** the trained-mode path's `ort` break
+is fixed. Root cause: a routine Dependabot bump (rc.12 → rc.13) silently
+broke `forge-agent`'s ONNX code because no CI job built this feature
+surface -- a 5-line API-drift fix (`try_extract_raw_tensor` →
+`try_extract_tensor`, a stray `?` after `ort::inputs![...]` removed ×3,
+`&mut self` on the session-holding locals, `ort/std` added for
+`commit_from_file`) restores the build. Separately, `ONNXRUNTIME_VERSION`
+in this Dockerfile is now pinned to `>=1.23.2`: earlier releases hit a
+known upstream `ort` rc.13 teardown segfault on process exit under
+`load-dynamic` (pykeio/ort#614, fixed in the runtime by pykeio/ort#610),
+reproduced and confirmed fixed by the version bump. A new CI job
+(`onnx-features` in `ci.yml`) now builds and tests this feature surface
+on every push, so it can't silently rot again.
 
 ### 3.10.15 Manual baseline path + handshake probe (v0.5 Phase 1, 2026-05-21)
 
@@ -2456,7 +2468,7 @@ guarantee in-range inputs.
 
 ## CI/CD Pipeline
 
-The CI pipeline runs on every push and pull request targeting `main`, `master`, or `develop`. All jobs run on `ubuntu-latest` with stable Rust and aggressive caching (`Swatinem/rust-cache`, `actions/cache`).
+The CI pipeline runs on every push and pull request targeting `main`, `master`, or `develop`. All jobs run on `ubuntu-latest` with a pinned Rust toolchain (`rust-toolchain.toml`, explicitly passed to every `dtolnay/rust-toolchain@stable` step since that action never reads the file itself) and aggressive caching (`Swatinem/rust-cache`, `actions/cache`).
 
 ### Job Dependency Graph
 
@@ -2496,6 +2508,27 @@ The CI pipeline runs on every push and pull request targeting `main`, `master`, 
                                   │ linux/arm64  │
                                   └──────────────┘
 ```
+
+> The diagram above shows the core dependency chain only and predates
+> several jobs added since — it is not an exhaustive job list. The table
+> below is the complete, current picture (verified against
+> `.github/workflows/ci.yml` and `.github/workflows/security.yml` during
+> the 2026-08 tech-debt pass); update it directly rather than the ASCII
+> diagram when jobs change, since a table stays accurate far more cheaply
+> than hand-aligned box-drawing characters.
+
+### Full CI Job Inventory
+
+| Job (`ci.yml` unless noted) | Gate type | Trigger |
+|---|---|---|
+| `fmt`, `clippy`, `test`, `alloc-audit`, `coverage`, `python-lint`, `python-test`, `mc-bot-test`, `forge-mc-runner-bin` | **Blocking** (CHARTER.md Invariant 6) | push / PR |
+| `onnx-features` | **Blocking** | push / PR — builds/tests the `onnx`/`onnx-reload`/`mc-live-bundled` surface (added 2026-08; previously **zero** CI coverage) |
+| `machete`, `dashboard-e2e` | Advisory / non-required | push / PR |
+| `markdownlint`, `bench`, `hf-export`, `demo-ui`, `dashboard`, `python-test-fast` | Runs on push/PR; not in CHARTER.md's blocking list but not marked advisory either — check branch protection for current required-check status | push / PR |
+| `python-test-lmstudio`, `python-test-minecraft-e2e`, `python-test-minecraft-real-run` | Opt-in | `workflow_dispatch` only |
+| `docker` | Build + push to GHCR | default branch / version tags only, `needs: [test, clippy, fmt, python-test]` |
+| `cargo-deny`, `pip-audit`, `npm-audit` (×2), `trivy-fs`, `gitleaks` (`security.yml`) | Advisory (report-only, `\|\| true`) | push / PR / weekly cron |
+| `codeql` (`security.yml`) | Opt-in | gated on repo var `ENABLE_CODEQL` |
 
 ### Benchmark Regression Gate
 

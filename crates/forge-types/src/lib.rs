@@ -30,6 +30,7 @@ pub mod observation;
 pub mod prelude;
 pub mod resource;
 pub mod task;
+pub mod time;
 pub mod transport;
 pub mod validation;
 

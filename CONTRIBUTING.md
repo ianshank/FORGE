@@ -29,20 +29,39 @@ cargo test --workspace --features forge-cloud/gcs
 cargo tarpaulin --workspace --exclude forge-python --exclude forge-wasm \
   --features forge-cloud/gcs --skip-clean --fail-under 85
 
+# ONNX feature surface (onnx/onnx-reload/mc-live-bundled; not covered by the
+# workspace-wide commands above, which only build --features forge-cloud/gcs).
+# Needs a real ONNX Runtime >=1.23.2 .so + ORT_DYLIB_PATH set -- see the
+# `onnx-features` CI job in .github/workflows/ci.yml for the exact fetch steps.
+cargo clippy -p forge-agent --all-targets --features onnx-bundled -- -D warnings
+cargo test -p forge-agent --features onnx-bundled
+cargo test -p forge-mc-runner --features mc-live-bundled
+
 # Supply chain (advisory)
 cargo deny check
+gitleaks git --redact -v .   # secret scanning; needs the gitleaks binary on PATH
 
 # Python (build the native ext first with `maturin develop`)
 ruff check
-mypy --config-file pyproject.toml
+mypy python/ scripts/ --config-file pyproject.toml
 pytest tests/python -m 'not lmstudio and not e2e_long and not minecraft_e2e'
 
 # mc-bot
-cd mc-bot && npm ci && npm run typecheck && npm run lint && npm test
+cd mc-bot && npm ci && npm run typecheck && npm run lint && npm test && npm run test:coverage
+
+# dashboard
+cd dashboard && npm ci && npm run build && npm run lint && npm run test:coverage
+
+# Claude Code tooling (hooks/skills self-checks; see "Claude Code tooling" below)
+python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
+
+# Pinned-config consistency (Rust toolchain / ONNX Runtime / LM Studio endpoint, duplicated across workflows/Dockerfiles/Python)
+python3 scripts/check_pinned_config_consistency.py
 ```
 
 More task-specific commands (benchmarks, the visualization server, the Minecraft
-self-play stack) are listed in [`CLAUDE.md`](CLAUDE.md).
+self-play stack) are listed in [`CLAUDE.md`](CLAUDE.md). Or run `make verify` to
+execute this whole sequence at once (see the root `Makefile`).
 
 ## Coverage gates by runtime
 
@@ -51,8 +70,49 @@ self-play stack) are listed in [`CLAUDE.md`](CLAUDE.md).
 | Rust (tarpaulin, excl. forge-python/forge-wasm) | 85% |
 | Python (pytest-cov) | 85% |
 | dashboard (Vitest) | 85% |
-| mc-bot (c8) | being introduced |
-| demo_ui | ungated (known gap) |
+| mc-bot (c8) | report-only (baseline ~88%; no fail-under yet) |
+| demo_ui (pytest-cov) | report-only (baseline ~90% on `demo_ui/backend`; no fail-under yet) |
+
+## Claude Code tooling
+
+Repo-checked-in, applies to any Claude Code session opened here (`.claude/`,
+no per-user setup needed):
+
+- **`/forge-verify` skill** (`.claude/skills/forge-verify/SKILL.md`) — runs
+  `make verify` / `make verify-full` and reports a per-category pass/fail
+  summary instead of a single opaque result.
+- **`forge-docs-audit` skill** (`.claude/skills/forge-docs-audit/SKILL.md`)
+  — re-verifies factual claims in `docs/next_steps.md`, `CHANGELOG.md`,
+  `README.md`, `docs/architecture.md`, `Agent.md`, and `CLAUDE.md`
+  against the actual codebase (counts, file:line references, named
+  tests, status markers) and corrects drift in the house style already
+  established in those files, rather than each pass re-deriving the same
+  evidence by hand. Packages the single most-repeated pattern in this
+  repo's own history — multiple `docs: fix stale ...` commits and several
+  Technical Debt rows that turned out to be false when re-checked.
+- **Tracked-file deletion guard** (`.claude/hooks/guard_tracked_deletion.py`,
+  wired via `.claude/settings.json`'s `PreToolUse` hook) — blocks a `Bash`
+  `rm`/`find -delete` command whose glob pattern matches a *git-tracked*
+  file, not just the generated/ignored ones it was presumably aimed at
+  (cross-checked against `git ls-files`, so it needs no hand-maintained
+  path list and can't drift). Fails open on any parse or git error — it
+  must never be the reason a legitimate command can't run. Added after a
+  real incident where a `find … -name ".coverage*" -delete` cleanup swept
+  up the tracked `.coveragerc` along with coverage.py's temp files.
+  Self-tests: `make hooks-test` (also runs as part of `make verify` and in
+  CI's `python-lint` job).
+- **Staged-secret guard** (`.claude/hooks/guard_staged_secrets.py`, same
+  `PreToolUse`/`Bash` wiring) — runs `gitleaks protect --staged` before a
+  `git commit` actually happens, blocking on a real finding. Closes a gap
+  the security workflow's own comments admit: its `gitleaks` job scans
+  *history* after a push and is explicitly report-only (`|| true`) —
+  nothing previously scanned *before* a commit. Not a replacement for that
+  job (still the full-history backstop), just an earlier, cheaper
+  checkpoint. Fails open if `gitleaks` isn't installed locally — this
+  hook is best-effort, not a hard requirement to commit. Self-tests:
+  `python3 .claude/hooks/test_guard_staged_secrets.py -v` (the two cases
+  needing a real `gitleaks` binary skip themselves without one, so `make
+  hooks-test` still exercises the rest everywhere).
 
 ## Conventions
 

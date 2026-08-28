@@ -12,9 +12,9 @@ description = "Cross-layer integration orchestrator for the FORGE platform"
 
 [dependencies]
 forge-types = { workspace = true }
-forge-memory = { path = "../forge-memory" }
-forge-social = { path = "../forge-social" }
-forge-cognitive = { path = "../forge-cognitive" }
+forge-memory = { workspace = true }
+forge-social = { workspace = true }
+forge-cognitive = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

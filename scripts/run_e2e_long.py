@@ -198,9 +198,13 @@ class E2ELongConfig:
 
 def _read_toml(path: Path) -> dict[str, Any]:
     """Load a TOML file as a dict; py39/3.10 fall back to ``tomli``."""
-    try:
+    # sys.version_info (not try/except ModuleNotFoundError) so mypy resolves
+    # exactly one branch statically instead of flagging a name redefinition
+    # once its python_version target is 3.11+ (where tomllib is
+    # unconditionally a stdlib module).
+    if sys.version_info >= (3, 11):
         import tomllib as _toml
-    except ModuleNotFoundError:  # pragma: no cover - py39/py310
+    else:  # pragma: no cover - py39/py310
         import tomli as _toml
     with path.open("rb") as fh:
         loaded: dict[str, Any] = _toml.load(fh)

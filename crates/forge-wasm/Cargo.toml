@@ -14,8 +14,8 @@ description = "WebAssembly visualization module for FORGE"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-forge-types = { path = "../forge-types" }
-forge-core = { path = "../forge-core" }
+forge-types = { workspace = true }
+forge-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

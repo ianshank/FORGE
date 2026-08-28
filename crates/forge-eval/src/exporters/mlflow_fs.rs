@@ -11,8 +11,8 @@
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use forge_types::time::now_ms;
 use serde::Serialize;
 use tracing::{debug, instrument};
 
@@ -394,13 +394,6 @@ fn copy_subdir_if_exists(src: &Path, dst: &Path) -> Result<(), ExportError> {
         }
     }
     Ok(())
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 fn format_metric_value(v: f64) -> String {
