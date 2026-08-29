@@ -89,7 +89,7 @@ jobs:
       FORGE_HF_EXPORT_ROOT: "artifacts/e2e-long/hf"
       FORGE_E2E_OUTPUT_DIR: "artifacts/e2e-long"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Keep in sync with rust-toolchain.toml -- dtolnay/rust-toolchain

@@ -58,7 +58,7 @@ jobs:
     name: Format Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -74,7 +74,7 @@ jobs:
     name: Clippy Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -91,7 +91,7 @@ jobs:
     name: Rust Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -107,7 +107,7 @@ jobs:
     name: Unused Dependencies (advisory)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-machete@0.9.2
@@ -124,7 +124,7 @@ jobs:
     name: Markdown Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -135,7 +135,7 @@ jobs:
     name: Benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -171,7 +171,7 @@ jobs:
     name: Allocation Audit (zero-alloc gate)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -212,7 +212,7 @@ jobs:
     name: Rust Coverage (tarpaulin)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -253,7 +253,7 @@ jobs:
     name: Python Lint (fast)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -298,7 +298,7 @@ jobs:
     name: Python Tests (maturin)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -369,7 +369,7 @@ jobs:
       # override is needed — overriding it would mask config drift.
       FORGE_LMSTUDIO_LIVE: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -416,7 +416,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.run_minecraft_e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Verify docker compose is available
         run: docker compose version
       - name: Accept Minecraft EULA in the compose env
@@ -459,7 +459,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.run_minecraft_real_run
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Verify docker compose is available
         run: docker compose version
       - name: Accept Minecraft EULA in the compose env
@@ -519,7 +519,7 @@ jobs:
     name: Python Tests (no native)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -542,7 +542,7 @@ jobs:
     # previously not run in CI, plus a Biome config that lints the JS
     # surface. Both run here on every push touching the bot.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           # Pinned to the same major version mc-bot/package.json's
@@ -593,7 +593,7 @@ jobs:
     # --dry-run smoke path remains green. Cheap, catches regressions in
     # the env+search+writer composition without requiring docker.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -621,7 +621,7 @@ jobs:
     # job keeps it compiling and its tests green, plus a tiny generation
     # smoke so the bin's episode→Parquet path stays wired end-to-end.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -662,7 +662,7 @@ jobs:
     # downloaded .so + ORT_DYLIB_PATH -- no system ONNX Runtime install,
     # pkg-config, or static-link setup required.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -715,7 +715,7 @@ jobs:
       FORGE_DEMO_PORT: "18765"
       FORGE_STARTUP_WAIT_SECS: "3"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -755,7 +755,7 @@ jobs:
     # an enforced 85% coverage threshold (configured in vite.config.ts). This
     # job builds, lints (Biome), and runs the coverage gate on every push.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -781,7 +781,7 @@ jobs:
     # backends mocked, plus axe-core accessibility scans. NON-BLOCKING for now:
     # not in any job's needs[] and not a required check — promote once stable.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -829,7 +829,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Set up QEMU (multi-arch)
