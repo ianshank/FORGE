@@ -23,7 +23,7 @@ sb3        = ["stable-baselines3>=2.0", "torch>=2.0"]
 cleanrl    = ["torch>=2.0"]
 wandb      = ["wandb>=0.16"]
 mlflow     = ["mlflow>=3.15.1"]
-mousedroid = ["huggingface-hub>=0.20", "torch>=2.0"]
+mousedroid = ["huggingface-hub>=1.28.0", "torch>=2.0"]
 # LM Studio offline-teacher pipeline (cognitive providers + structured BC):
 #   - openai SDK    -> sync/async OpenAI-compatible HTTP client
 #   - jsonschema    -> validates few-shot exemplars against the action schema
@@ -41,13 +41,13 @@ teacher    = ["openai>=1.0,<2.0", "jsonschema>=4.0,<5.0"]
 #                        materializes real files (0.20-0.22 symlink >5MB
 #                        files into the HF cache, which breaks bundles
 #                        mounted into the runner container)
-minecraft  = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17", "huggingface-hub>=0.23"]
+minecraft  = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17", "huggingface-hub>=1.28.0"]
 all        = [
     "stable-baselines3>=2.0",
     "torch>=2.0",
     "wandb>=0.16",
     "mlflow>=3.15.1",
-    "huggingface-hub>=0.23",
+    "huggingface-hub>=1.28.0",
     "openai>=1.0,<2.0",
     "jsonschema>=4.0,<5.0",
     "onnx>=1.16",
