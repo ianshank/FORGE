@@ -52,8 +52,11 @@ the remainder.
 ### Requirement: Evidentiality Is Decided From Recorded Signals
 A record SHALL be evidential only when its recorded protocol-error count is
 zero, its recorded observation dimension equals the dimension declared at
-handshake, and — where the outcome denotes truncation — its realised step
-count meets the pinned step floor. A record whose evidentiality cannot be
+handshake, and — for any record that is not a confirmed natural terminal —
+its realised step count meets the pinned step floor. The floor applies to a
+truncated outcome and to an ambiguous outcome (neither terminal nor
+truncated) alike, since an ambiguous outcome is not evidence that the system
+ran to completion either. A record whose evidentiality cannot be
 established from its own contents SHALL be treated as non-evidential.
 
 #### Scenario: A one-step record with a protocol error is not evidential
@@ -68,6 +71,13 @@ established from its own contents SHALL be treated as non-evidential.
   matches the handshake
 - **WHEN** evidentiality is decided
 - **THEN** the record SHALL be evidential
+
+#### Scenario: A short ambiguous outcome is held to the step floor
+- **GIVEN** a record whose outcome denotes neither a natural terminal nor a
+  truncation
+- **AND** whose realised step count falls short of the pinned step floor
+- **WHEN** evidentiality is decided
+- **THEN** the record SHALL be non-evidential
 
 #### Scenario: A record lacking the deciding signals is not evidential
 - **WHEN** a record carries no protocol-error count

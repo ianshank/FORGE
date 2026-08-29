@@ -9,8 +9,9 @@
 
 - [x] 2.1 Add the evidential predicate: a record is evidential when its
       protocol-error count is zero, its observation dimension equals the
-      handshake's, and — for truncated outcomes only — its step count meets
-      the pinned floor
+      handshake's, and — for any record that is not a confirmed natural
+      terminal, truncated or ambiguous alike — its step count meets the
+      pinned floor
 - [x] 2.2 Filter `summarize_snapshot` to evidential records and carry the
       evidential and excluded counts on the summary
 - [x] 2.3 Refuse to render a comparison below the pinned evidential floor,

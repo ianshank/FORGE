@@ -24,8 +24,9 @@ Only evidential episodes feed the aggregates below — the summary
 table AND the three plots share the same filter via
 ``_evidential_records``, so a record excluded from one cannot still
 shift the other. A record whose protocol-error count is non-zero,
-whose observation dimension disagrees with the handshake, or — when
-its outcome denotes a truncation — whose step count falls short of
+whose observation dimension disagrees with the handshake, or — for
+any record that is not a confirmed natural terminal, truncated or
+ambiguous alike — whose step count falls short of
 ``MIN_EVIDENTIAL_STEPS_IF_TRUNCATED``, did not measure the system and
 is excluded before any mean, median, deviation, curve, or histogram
 is computed. See ``openspec/changes/refuse-non-evidential-aggregates/``.
