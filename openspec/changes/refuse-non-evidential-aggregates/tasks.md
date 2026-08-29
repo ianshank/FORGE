@@ -24,14 +24,14 @@
 
 ## 3. Fix the producer
 
-- [ ] 3.1 Record an environment-reported step failure as a distinct outcome
+- [x] 3.1 Record an environment-reported step failure as a distinct outcome
       instead of setting the truncation flag
-- [ ] 3.2 Abort the capture on an unknown-action or malformed-frame error
+- [x] 3.2 Abort the capture on an unknown-action or malformed-frame error
       code; halt after the pinned number of consecutive transient failures
-- [ ] 3.3 Assert at capture start that the handshake's schema identifier
+- [x] 3.3 Assert at capture start that the handshake's schema identifier
       equals a recomputation over the repository's pinned configs, and fail
       the capture on mismatch
-- [ ] 3.4 Add `tests/python/test_v05_manual_baseline.py` driving the episode
+- [x] 3.4 Add `tests/python/test_v05_manual_baseline.py` driving the episode
       loop against a faked socket: an error frame yields a non-evidential
       outcome and no truncation flag; the step budget reached with no error
       stays evidential; three consecutive failures halt with exactly three

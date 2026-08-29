@@ -9,12 +9,29 @@ and writes the trajectory + per-episode summary to disk.
 The output schema mirrors `forge.training.muzero_mc.capture_baseline`'s
 `BaselineRecord` so the existing `mc_plot_baseline.py` can consume
 it once the operator pivots to the proper runner-driven flow.
+
+Outcome classification (openspec/changes/refuse-non-evidential-aggregates/):
+an environment-reported step failure is recorded as a distinct
+``"environment_error"`` outcome rather than by setting `truncated`,
+so it cannot be mistaken for a real completion. An error code meaning
+the action space or wire shape disagrees across languages (Invariant 2
+territory) aborts the whole capture immediately rather than being
+recorded as one more failed episode. The transient error codes instead
+halt the capture once they occur on `DEFAULT_MAX_CONSECUTIVE_ENV_FAILURES`
+consecutive episodes, so a wedged bot cannot silently burn through the
+entire configured episode budget. Before any episode runs, the bot's
+handshake `schema_id` is checked against a recomputation over this
+repo's own `configs/minecraft/{action_map,rewards}.toml` -- a mismatch
+means the bot's configs have drifted from this repo's and the capture
+refuses to proceed.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
+import importlib.util
 import json
 import logging
 import random
@@ -24,9 +41,12 @@ import time
 from collections.abc import Iterator  # noqa: TC003 — runtime use in iter_episodes
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from _ws_client import open_ws, recv_text, send_text
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 logger = logging.getLogger("v05_manual_baseline")
 
@@ -38,6 +58,101 @@ DEFAULT_EPISODES: Final[int] = 10
 DEFAULT_MAX_STEPS_PER_EPISODE: Final[int] = 100
 DEFAULT_BASE_SEED: Final[int] = 0xCAFEF00D
 DEFAULT_OUT_PATH: Final[str] = "baseline_random_manual.json"
+# Pinned in tests/python/test_v05_manual_baseline.py -- lowering this
+# changes how much sustained bot failure this driver tolerates before
+# giving up, so a change to it should be visible in review, not silent.
+DEFAULT_MAX_CONSECUTIVE_ENV_FAILURES: Final[int] = 3
+
+EXIT_OK: Final[int] = 0
+EXIT_SCHEMA_MISMATCH: Final[int] = 3
+EXIT_CONTRACT_VIOLATION: Final[int] = 4
+EXIT_SUSTAINED_FAILURE: Final[int] = 5
+
+# The bot's own error-code vocabulary (mc-bot/src/index.ts). Only these
+# three are transient environment-health signals; everything else --
+# including the two the bot documents (BAD_MESSAGE, INVALID_ACTION) and
+# any code this script doesn't recognise at all -- means the action
+# space or wire shape disagrees across languages, or that the bot's
+# error vocabulary has drifted from what this script was written
+# against. Either way that is Invariant 2 territory: fail closed on
+# the unknown rather than silently treating it as just another
+# transient fault.
+_TRANSIENT_ENVIRONMENT_CODES: Final[frozenset[str]] = frozenset(
+    {"BUSY", "RECONNECTING", "INTERNAL"}
+)
+
+REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+_SCHEMA_ID_MODULE_PATH: Final[Path] = (
+    REPO_ROOT / "python" / "forge" / "training" / "muzero_mc" / "schema_id.py"
+)
+ACTION_MAP_PATH: Final[Path] = REPO_ROOT / "configs" / "minecraft" / "action_map.toml"
+REWARDS_PATH: Final[Path] = REPO_ROOT / "configs" / "minecraft" / "rewards.toml"
+
+
+class ContractViolation(RuntimeError):
+    """The bot reported a non-transient error: the action space or wire
+    shape disagrees across languages. Aborts the capture; no output
+    file is written, since a partial capture past this point would be
+    evidence of a broken configuration, not of the system under test.
+    """
+
+
+class SustainedEnvironmentFailure(RuntimeError):
+    """The environment failed on `DEFAULT_MAX_CONSECUTIVE_ENV_FAILURES`
+    consecutive episodes. Halts the capture; the episodes already
+    captured (including the failing ones) are still written, since
+    they are legitimate evidence of what happened.
+    """
+
+
+class SchemaIdMismatch(RuntimeError):
+    """The bot's handshake `schema_id` disagrees with a recomputation
+    over this repo's own `configs/minecraft/{action_map,rewards}.toml`.
+    Raised before any episode runs; no output file is written.
+    """
+
+
+@functools.lru_cache(maxsize=1)
+def _load_schema_id_module() -> ModuleType:
+    """Load ``schema_id.py`` directly by file path.
+
+    Bypasses ``forge``/``forge.training``'s package `__init__` chain,
+    which unconditionally imports the MLflow/W&B/TensorBoard-backed
+    logger factories -- a hard dependency this stdlib-only driver
+    should not need just to verify a hash. `schema_id.py` itself only
+    imports `hashlib`, `json`, and `tomllib`.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "_forge_schema_id", _SCHEMA_ID_MODULE_PATH
+    )
+    if spec is None or spec.loader is None:
+        msg = f"cannot load schema_id module from {_SCHEMA_ID_MODULE_PATH}"
+        raise RuntimeError(msg)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _assert_schema_id_matches_repo(hello: dict[str, Any]) -> None:
+    reported = hello.get("schema_id")
+    module = _load_schema_id_module()
+    expected = module.compute_schema_id_from_paths(ACTION_MAP_PATH, REWARDS_PATH)
+    if reported != expected:
+        msg = (
+            f"handshake schema_id={reported!r} does not match a recomputation "
+            f"over {ACTION_MAP_PATH} + {REWARDS_PATH} ({expected!r}); the bot's "
+            "configs have drifted from this repo's, or the schema changed on "
+            "one side without the other -- refusing to capture"
+        )
+        raise SchemaIdMismatch(msg)
+
+
+def _raise_if_contract_violation(msg: dict[str, Any], *, context: str) -> None:
+    code = msg.get("code")
+    if code not in _TRANSIENT_ENVIRONMENT_CODES:
+        detail = msg.get("message")
+        error_msg = f"{context}: non-transient error code={code!r} message={detail!r}"
+        raise ContractViolation(error_msg)
 
 
 def drive_episode(
@@ -51,6 +166,23 @@ def drive_episode(
 ) -> dict[str, Any]:
     send_text(sock, {"type": "reset", "seed": seed})
     obs_msg = recv_text(sock, buf)
+    if obs_msg.get("type") == "error":
+        _raise_if_contract_violation(obs_msg, context="reset")
+        logger.warning(
+            "reset returned protocol error code=%s message=%s; skipping episode",
+            obs_msg.get("code"),
+            obs_msg.get("message"),
+        )
+        return {
+            "total_reward": 0.0,
+            "steps": 0,
+            "terminated": False,
+            "truncated": False,
+            "protocol_errors": 1,
+            "outcome": "environment_error",
+            "last_tick": 0,
+            "obs_dim": 0,
+        }
     if obs_msg.get("type") != "observation":
         msg = f"expected observation after reset, got {obs_msg.get('type')}"
         raise RuntimeError(msg)
@@ -66,16 +198,16 @@ def drive_episode(
         last_msg = recv_text(sock, buf)
         msg_type = last_msg.get("type")
         if msg_type == "error":
-            # Server-side per-step error (typically INTERNAL when the
-            # bot's mineflayer call timed out / a random action hit an
-            # invalid entity). Mark the episode truncated and move on
-            # — the next reset re-establishes state without crashing
-            # the whole capture.
+            _raise_if_contract_violation(last_msg, context=f"step {tick}")
+            # Transient environment-health error (BUSY / RECONNECTING /
+            # INTERNAL): the environment did not execute this step.
+            # Recorded via protocol_errors, NOT by setting `truncated`
+            # -- that flag's other meaning is "reached the step
+            # budget", and this episode did not.
             protocol_errors += 1
-            truncated = True
             step_count = tick + 1
             logger.warning(
-                "step %d returned protocol error code=%s message=%s; truncating episode",
+                "step %d returned protocol error code=%s message=%s; ending episode",
                 tick,
                 last_msg.get("code"),
                 last_msg.get("message"),
@@ -90,12 +222,27 @@ def drive_episode(
         step_count = tick + 1
         if terminated or truncated:
             break
+    else:
+        # The loop ran to completion without the environment ever
+        # reporting terminated or truncated: this driver's own step
+        # budget was reached first. That is itself a truncation, at
+        # the driver level rather than the environment's.
+        truncated = True
+
+    if protocol_errors > 0:
+        outcome = "environment_error"
+    elif terminated:
+        outcome = "terminated"
+    else:
+        outcome = "truncated"
+
     return {
         "total_reward": total_reward,
         "steps": step_count,
         "terminated": terminated,
         "truncated": truncated,
         "protocol_errors": protocol_errors,
+        "outcome": outcome,
         "last_tick": int(last_msg.get("tick", 0)),
         "obs_dim": len(last_msg.get("obs", [])),
     }
@@ -109,8 +256,10 @@ def iter_episodes(
     episodes: int,
     max_steps: int,
     base_seed: int,
+    max_consecutive_failures: int = DEFAULT_MAX_CONSECUTIVE_ENV_FAILURES,
 ) -> Iterator[dict[str, Any]]:
     action_count = int(hello["action_count"])
+    consecutive_failures = 0
     for episode_seq in range(1, episodes + 1):
         seed = base_seed + episode_seq
         rng = random.Random(seed)
@@ -125,6 +274,16 @@ def iter_episodes(
         result["episode_id"] = f"ep-{episode_seq:06d}"
         result["seed"] = seed
         yield result
+        if result["outcome"] == "environment_error":
+            consecutive_failures += 1
+            if consecutive_failures >= max_consecutive_failures:
+                msg = (
+                    f"{consecutive_failures} consecutive environment failures "
+                    f"through episode {result['episode_id']}; halting capture"
+                )
+                raise SustainedEnvironmentFailure(msg)
+        else:
+            consecutive_failures = 0
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -137,6 +296,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, default=DEFAULT_EPISODES)
     parser.add_argument("--max-steps-per-episode", type=int, default=DEFAULT_MAX_STEPS_PER_EPISODE)
     parser.add_argument("--base-seed", type=int, default=DEFAULT_BASE_SEED)
+    parser.add_argument(
+        "--max-consecutive-failures",
+        type=int,
+        default=DEFAULT_MAX_CONSECUTIVE_ENV_FAILURES,
+        help="Halt the capture after this many consecutive environment-failure episodes.",
+    )
     parser.add_argument("--out", type=Path, default=Path(DEFAULT_OUT_PATH))
     return parser.parse_args(argv)
 
@@ -159,7 +324,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     records: list[dict[str, Any]] = []
+    result_code = EXIT_OK
     try:
+        _assert_schema_id_matches_repo(hello)
         for record in iter_episodes(
             sock,
             buf,
@@ -167,16 +334,25 @@ def main(argv: list[str] | None = None) -> int:
             episodes=args.episodes,
             max_steps=args.max_steps_per_episode,
             base_seed=args.base_seed,
+            max_consecutive_failures=args.max_consecutive_failures,
         ):
             logger.info(
-                "episode %s: steps=%d reward=%.4f term=%s trunc=%s",
+                "episode %s: steps=%d reward=%.4f outcome=%s",
                 record["episode_id"],
                 record["steps"],
                 record["total_reward"],
-                record["terminated"],
-                record["truncated"],
+                record["outcome"],
             )
             records.append(record)
+    except SchemaIdMismatch as exc:
+        logger.error("%s", exc)
+        return EXIT_SCHEMA_MISMATCH
+    except ContractViolation as exc:
+        logger.error("%s", exc)
+        return EXIT_CONTRACT_VIOLATION
+    except SustainedEnvironmentFailure as exc:
+        logger.error("%s", exc)
+        result_code = EXIT_SUSTAINED_FAILURE
     finally:
         with contextlib.suppress(OSError):
             send_text(sock, {"type": "close"})
@@ -211,8 +387,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(snapshot, indent=2, sort_keys=True))
-    logger.info("wrote %s (%d episodes)", args.out, len(records))
-    return 0
+    logger.info("wrote %s (%d episodes, exit=%d)", args.out, len(records), result_code)
+    return result_code
 
 
 if __name__ == "__main__":
