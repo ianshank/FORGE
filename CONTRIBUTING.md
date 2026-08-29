@@ -90,6 +90,14 @@ no per-user setup needed):
   evidence by hand. Packages the single most-repeated pattern in this
   repo's own history — multiple `docs: fix stale ...` commits and several
   Technical Debt rows that turned out to be false when re-checked.
+- **`forge-pr-review` skill** (`.claude/skills/forge-pr-review/SKILL.md`)
+  — dispatches five parallel adversarial-review subagents against a PR or
+  diff (hardcoded values/modularity, dead/redundant code, branch-coverage
+  and mutation-style test quality, independent GitHub CI/review-status
+  re-verification, correctness/security), triages every finding as fixed
+  or declined-with-reason, then pushes and updates the PR body. Run once
+  `forge-verify` is already green — it hunts for what still runs *wrong*,
+  not whether it runs at all.
 - **Tracked-file deletion guard** (`.claude/hooks/guard_tracked_deletion.py`,
   wired via `.claude/settings.json`'s `PreToolUse` hook) — blocks a `Bash`
   `rm`/`find -delete` command whose glob pattern matches a *git-tracked*
