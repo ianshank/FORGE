@@ -81,6 +81,16 @@ _TRANSIENT_ENVIRONMENT_CODES: Final[frozenset[str]] = frozenset(
     {"BUSY", "RECONNECTING", "INTERNAL"}
 )
 
+# The wire's `type` discriminators (mc-bot/src/index.ts), named for the same
+# reason as the error-code vocabulary above: several are compared more than
+# once, and a typo in a bare literal would silently fail to match instead of
+# raising.
+_MSG_TYPE_RESET: Final[str] = "reset"
+_MSG_TYPE_STEP: Final[str] = "step"
+_MSG_TYPE_CLOSE: Final[str] = "close"
+_MSG_TYPE_ERROR: Final[str] = "error"
+_MSG_TYPE_OBSERVATION: Final[str] = "observation"
+
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 _SCHEMA_ID_MODULE_PATH: Final[Path] = (
     REPO_ROOT / "python" / "forge" / "training" / "muzero_mc" / "schema_id.py"
@@ -194,14 +204,15 @@ def drive_episode(
     seed: int,
     rng: random.Random,
 ) -> dict[str, Any]:
-    send_text(sock, {"type": "reset", "seed": seed})
+    send_text(sock, {"type": _MSG_TYPE_RESET, "seed": seed})
     obs_msg = recv_text(sock, buf)
-    if obs_msg.get("type") == "error":
-        _raise_if_contract_violation(obs_msg, context="reset")
+    if obs_msg.get("type") == _MSG_TYPE_ERROR:
+        _raise_if_contract_violation(obs_msg, context=f"reset seed={seed}")
         logger.warning(
-            "reset returned protocol error code=%s message=%s; skipping episode",
+            "reset returned protocol error code=%s message=%s seed=%d; skipping episode",
             obs_msg.get("code"),
             obs_msg.get("message"),
+            seed,
         )
         return {
             "total_reward": 0.0,
@@ -213,9 +224,9 @@ def drive_episode(
             "last_tick": 0,
             "obs_dim": 0,
         }
-    if obs_msg.get("type") != "observation":
-        msg = f"expected observation after reset, got {obs_msg.get('type')}"
-        raise RuntimeError(msg)
+    if obs_msg.get("type") != _MSG_TYPE_OBSERVATION:
+        msg = f"expected observation after reset seed={seed}, got {obs_msg.get('type')!r}"
+        raise ContractViolation(msg)
     total_reward = 0.0
     last_msg = obs_msg
     terminated = bool(obs_msg.get("terminated"))
@@ -224,11 +235,11 @@ def drive_episode(
     protocol_errors = 0
     for tick in range(max_steps):
         action_id = rng.randrange(action_count)
-        send_text(sock, {"type": "step", "action_id": action_id})
+        send_text(sock, {"type": _MSG_TYPE_STEP, "action_id": action_id})
         last_msg = recv_text(sock, buf)
         msg_type = last_msg.get("type")
-        if msg_type == "error":
-            _raise_if_contract_violation(last_msg, context=f"step {tick}")
+        if msg_type == _MSG_TYPE_ERROR:
+            _raise_if_contract_violation(last_msg, context=f"step {tick} seed={seed}")
             # Transient environment-health error (BUSY / RECONNECTING /
             # INTERNAL): the environment did not execute this step, so
             # it does not count toward `step_count` -- that keeps
@@ -238,15 +249,16 @@ def drive_episode(
             # budget", and this episode did not.
             protocol_errors += 1
             logger.warning(
-                "step %d returned protocol error code=%s message=%s; ending episode",
+                "step %d returned protocol error code=%s message=%s seed=%d; ending episode",
                 tick,
                 last_msg.get("code"),
                 last_msg.get("message"),
+                seed,
             )
             break
-        if msg_type != "observation":
-            msg = f"expected observation after step, got {msg_type!r}"
-            raise RuntimeError(msg)
+        if msg_type != _MSG_TYPE_OBSERVATION:
+            msg = f"expected observation after step {tick} seed={seed}, got {msg_type!r}"
+            raise ContractViolation(msg)
         total_reward += float(last_msg.get("reward", 0.0))
         terminated = bool(last_msg.get("terminated"))
         truncated = bool(last_msg.get("truncated"))
@@ -401,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         result_code = EXIT_SUSTAINED_FAILURE
     finally:
         with contextlib.suppress(OSError):
-            send_text(sock, {"type": "close"})
+            send_text(sock, {"type": _MSG_TYPE_CLOSE})
         sock.close()
 
     ended = datetime.now(tz=timezone.utc).isoformat()

@@ -90,12 +90,29 @@ def test_error_frame_is_environment_error_not_truncation(monkeypatch: pytest.Mon
     assert result["steps"] == 0
 
 
+def test_step_error_warning_names_the_seed(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _run_drive_episode(monkeypatch, [_obs(), _error("INTERNAL")])
+    assert "seed=1" in caplog.text
+
+
 def test_reset_error_is_environment_error_with_no_steps(monkeypatch: pytest.MonkeyPatch) -> None:
     result = _run_drive_episode(monkeypatch, [_error("BUSY")])
     assert result["outcome"] == "environment_error"
     assert result["protocol_errors"] == 1
     assert result["steps"] == 0
     assert result["obs_dim"] == 0
+
+
+def test_reset_error_warning_names_the_seed(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # A WARNING with no episode/seed field is only correlatable to a
+    # specific per_episode record by counting intervening INFO lines --
+    # the seed makes that direct instead.
+    _run_drive_episode(monkeypatch, [_error("BUSY")])
+    assert "seed=1" in caplog.text
 
 
 def test_step_budget_exhausted_without_env_signal_is_truncated(
@@ -189,12 +206,16 @@ def test_reset_and_step_payloads_carry_the_expected_fields(
 
 
 def test_unexpected_message_type_at_reset_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    with pytest.raises(RuntimeError, match="expected observation after reset"):
+    # ContractViolation (not a bare RuntimeError) so this gets the same
+    # logger.error + EXIT_CONTRACT_VIOLATION handling as every other
+    # "wire shape disagrees" case in main(), instead of an unhandled
+    # traceback with no log trail.
+    with pytest.raises(v05mb.ContractViolation, match="expected observation after reset"):
         _run_drive_episode(monkeypatch, [{"type": "bogus"}])
 
 
 def test_unexpected_message_type_at_step_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    with pytest.raises(RuntimeError, match="expected observation after step"):
+    with pytest.raises(v05mb.ContractViolation, match="expected observation after step"):
         _run_drive_episode(monkeypatch, [_obs(), {"type": "bogus"}])
 
 
