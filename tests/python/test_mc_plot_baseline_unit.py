@@ -22,6 +22,8 @@ from scripts.mc_plot_baseline import (
     PLANNING_LATENCY_FILENAME,
     REWARD_CURVE_FILENAME,
     VariantSummary,
+    _evidential_rewards,
+    _evidential_steps,
     main,
     render_report,
     render_summary_table,
@@ -360,3 +362,31 @@ def test_min_evidential_episodes_for_comparison_is_pinned() -> None:
         "before a comparison report is considered meaningful. Update "
         "this pin deliberately and say why in the PR description."
     )
+
+
+def test_evidential_rewards_excludes_non_evidential_records() -> None:
+    # write_plots() feeds this into the reward curve, the rolling
+    # mean/std shading, and the reward histogram. If it read
+    # unfiltered per_episode records, a broken run would still shift
+    # the plots even though summarize_snapshot()'s table excludes it.
+    snap = _snapshot(
+        "random",
+        rewards=[1.0, 2.0, 999.0],
+        steps=[10, 20, 1],
+        protocol_errors=[0, 0, 1],
+        terminated=[True, True, False],
+        truncated=[False, False, True],
+    )
+    assert _evidential_rewards(snap) == [1.0, 2.0]
+
+
+def test_evidential_steps_excludes_non_evidential_records() -> None:
+    snap = _snapshot(
+        "random",
+        rewards=[1.0, 2.0, 999.0],
+        steps=[10, 20, 1],
+        protocol_errors=[0, 0, 1],
+        terminated=[True, True, False],
+        truncated=[False, False, True],
+    )
+    assert _evidential_steps(snap) == [10.0, 20.0]

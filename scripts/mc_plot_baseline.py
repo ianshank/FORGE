@@ -20,13 +20,15 @@ from the per-variant trajectory directory by
 ``capture_baseline``) — NOT from the Prometheus scrape, which only
 exposes aggregate counters/gauges (peer-review #14).
 
-Only evidential episodes feed the aggregates below. A record whose
-protocol-error count is non-zero, whose observation dimension
-disagrees with the handshake, or — when its outcome denotes a
-truncation — whose step count falls short of
+Only evidential episodes feed the aggregates below — the summary
+table AND the three plots share the same filter via
+``_evidential_records``, so a record excluded from one cannot still
+shift the other. A record whose protocol-error count is non-zero,
+whose observation dimension disagrees with the handshake, or — when
+its outcome denotes a truncation — whose step count falls short of
 ``MIN_EVIDENTIAL_STEPS_IF_TRUNCATED``, did not measure the system and
-is excluded before any mean, median, deviation, or percentile is
-computed. See ``openspec/changes/refuse-non-evidential-aggregates/``.
+is excluded before any mean, median, deviation, curve, or histogram
+is computed. See ``openspec/changes/refuse-non-evidential-aggregates/``.
 
 matplotlib is an opt-in dependency; install via
 ``pip install -e '.[minecraft-plots]'`` (or just
@@ -136,17 +138,37 @@ def _is_evidential(record: dict[str, Any], hello_obs_dim: Any) -> bool:
     return True
 
 
+def _evidential_records(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """The subset of ``snapshot["per_episode"]`` that measured the system.
+
+    Shared by ``summarize_snapshot`` and ``write_plots`` so a record
+    excluded from the summary table cannot still slip into a plotted
+    mean, curve, or histogram.
+    """
+    hello_obs_dim = (snapshot.get("hello") or {}).get("obs_dim")
+    return [
+        rec for rec in snapshot.get("per_episode", []) if _is_evidential(rec, hello_obs_dim)
+    ]
+
+
+def _evidential_rewards(snapshot: dict[str, Any]) -> list[float]:
+    return [float(rec.get("total_reward", 0.0)) for rec in _evidential_records(snapshot)]
+
+
+def _evidential_steps(snapshot: dict[str, Any]) -> list[float]:
+    return [float(rec.get("steps", 0)) for rec in _evidential_records(snapshot)]
+
+
 def summarize_snapshot(snapshot: dict[str, Any]) -> VariantSummary:
     per_episode = snapshot.get("per_episode", [])
-    hello_obs_dim = (snapshot.get("hello") or {}).get("obs_dim")
-    evidential = [rec for rec in per_episode if _is_evidential(rec, hello_obs_dim)]
-    rewards = [float(rec.get("total_reward", 0.0)) for rec in evidential]
-    steps = [float(rec.get("steps", 0)) for rec in evidential]
+    rewards = _evidential_rewards(snapshot)
+    steps = _evidential_steps(snapshot)
+    evidential_count = len(_evidential_records(snapshot))
     return VariantSummary(
         variant=str(snapshot.get("variant", "?")),
         episodes=len(per_episode),
-        evidential_episodes=len(evidential),
-        excluded_episodes=len(per_episode) - len(evidential),
+        evidential_episodes=evidential_count,
+        excluded_episodes=len(per_episode) - evidential_count,
         reward_mean=statistics.fmean(rewards) if rewards else None,
         reward_median=statistics.median(rewards) if rewards else None,
         reward_std=statistics.pstdev(rewards) if rewards else None,
@@ -240,16 +262,10 @@ def write_plots(  # noqa: PLR0915
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: dict[str, Path] = {}
 
-    def _rewards(snapshot: dict[str, Any]) -> list[float]:
-        return [float(rec.get("total_reward", 0.0)) for rec in snapshot.get("per_episode", [])]
-
-    def _steps(snapshot: dict[str, Any]) -> list[float]:
-        return [float(rec.get("steps", 0)) for rec in snapshot.get("per_episode", [])]
-
     # 1. reward curve (smoothed)
     fig, ax = plt.subplots()
-    random_rewards = _rewards(random_snapshot)
-    trained_rewards = _rewards(trained_snapshot)
+    random_rewards = _evidential_rewards(random_snapshot)
+    trained_rewards = _evidential_rewards(trained_snapshot)
 
     random_rolling = _rolling_mean(random_rewards, smooth_window)
     trained_rolling = _rolling_mean(trained_rewards, smooth_window)
@@ -284,8 +300,12 @@ def write_plots(  # noqa: PLR0915
 
     # 2. episode-length histogram
     fig, ax = plt.subplots()
-    ax.hist(_steps(random_snapshot), bins=20, alpha=0.5, label="random", color="#1f77b4")
-    ax.hist(_steps(trained_snapshot), bins=20, alpha=0.5, label="trained", color="#ff7f0e")
+    ax.hist(
+        _evidential_steps(random_snapshot), bins=20, alpha=0.5, label="random", color="#1f77b4"
+    )
+    ax.hist(
+        _evidential_steps(trained_snapshot), bins=20, alpha=0.5, label="trained", color="#ff7f0e"
+    )
     ax.set_xlabel("Steps per episode")
     ax.set_ylabel("Count")
     ax.set_title("Episode length distribution")
