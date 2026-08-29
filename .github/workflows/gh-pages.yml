@@ -52,7 +52,7 @@ jobs:
         # Emits the JS bindings + .wasm into web/pkg/, which web/app.js imports.
         run: wasm-pack build crates/forge-wasm --target web --out-dir "$GITHUB_WORKSPACE/web/pkg" --no-typescript
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: web
 
