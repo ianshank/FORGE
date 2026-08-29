@@ -20,6 +20,17 @@ from the per-variant trajectory directory by
 ``capture_baseline``) — NOT from the Prometheus scrape, which only
 exposes aggregate counters/gauges (peer-review #14).
 
+Only evidential episodes feed the aggregates below — the summary
+table AND the three plots share the same filter via
+``_evidential_records``, so a record excluded from one cannot still
+shift the other. A record whose protocol-error count is non-zero,
+whose observation dimension disagrees with the handshake, or — for
+any record that is not a confirmed natural terminal, truncated or
+ambiguous alike — whose step count falls short of
+``MIN_EVIDENTIAL_STEPS_IF_TRUNCATED``, did not measure the system and
+is excluded before any mean, median, deviation, curve, or histogram
+is computed. See ``openspec/changes/refuse-non-evidential-aggregates/``.
+
 matplotlib is an opt-in dependency; install via
 ``pip install -e '.[minecraft-plots]'`` (or just
 ``pip install matplotlib>=3.8``). Without it this script exits
@@ -42,6 +53,7 @@ logger = logging.getLogger(__name__)
 
 EXIT_OK = 0
 EXIT_USAGE = 2
+EXIT_INSUFFICIENT_EVIDENCE = 3
 EXIT_IO = 4
 
 # Plot filenames — single source of truth so the Markdown template
@@ -57,26 +69,42 @@ PLANNING_LATENCY_FILENAME = REWARD_HISTOGRAM_FILENAME
 
 DEFAULT_REWARD_SMOOTH_WINDOW = 5
 
+# Pinned floors for evidential-record filtering. Lowering either one
+# changes what counts as evidence, so each is pinned by a paired test
+# in tests/python/test_mc_plot_baseline_unit.py that must be edited in
+# the same change — the review sees the lowering rather than it
+# passing silently. See openspec/changes/refuse-non-evidential-aggregates/.
+MIN_EVIDENTIAL_STEPS_IF_TRUNCATED = 5
+MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON = 3
+
 
 @dataclass(frozen=True)
 class VariantSummary:
-    """Per-variant summary used in the Markdown table."""
+    """Per-variant summary used in the Markdown table.
+
+    ``reward_*``/``steps_*`` are computed over evidential episodes
+    only and are ``None`` when there are zero of them — a mean of no
+    episodes is not a number and must not be silently reported as 0.0.
+    """
 
     variant: str
     episodes: int
-    reward_mean: float
-    reward_median: float
-    reward_std: float
-    reward_p95: float
-    steps_mean: float
-    steps_median: float
-    steps_std: float
-    steps_p95: float
+    evidential_episodes: int
+    excluded_episodes: int
+    missing_evidentiality_signals: bool
+    reward_mean: float | None
+    reward_median: float | None
+    reward_std: float | None
+    reward_p95: float | None
+    steps_mean: float | None
+    steps_median: float | None
+    steps_std: float | None
+    steps_p95: float | None
 
 
-def _percentile(values: list[float], pct: float) -> float:
+def _percentile(values: list[float], pct: float) -> float | None:
     if not values:
-        return 0.0
+        return None
     sorted_values = sorted(values)
     k = (len(sorted_values) - 1) * (pct / 100.0)
     lo = int(k)
@@ -85,35 +113,142 @@ def _percentile(values: list[float], pct: float) -> float:
     return sorted_values[lo] * (1 - frac) + sorted_values[hi] * frac
 
 
+def _is_evidential(record: dict[str, Any], hello_obs_dim: Any) -> bool:
+    """Whether ``record`` measured the system rather than a broken run.
+
+    A record is evidential only when its protocol-error count is
+    zero, its observation dimension equals the handshake's, and — for
+    any record that is not a *confirmed* natural terminal — its
+    realised step count meets ``MIN_EVIDENTIAL_STEPS_IF_TRUNCATED``.
+    The floor is keyed on ``terminated`` rather than ``truncated``:
+    the producer's own truncation loop can exit with both flags false
+    when its driver-side step budget runs out before the environment
+    ever reports either outcome, and that ambiguous case must not
+    bypass the floor just because it isn't explicitly ``truncated``. A
+    confirmed natural terminal (``terminated`` true) is evidential
+    regardless of length — a twelve-step terminal is as much evidence
+    as a two-hundred-step one. A record missing the signals needed to
+    decide any of this is treated as non-evidential rather than
+    assumed clean, matching the documented CLI producer whose records
+    carry no protocol-error count at all.
+    """
+    protocol_errors = record.get("protocol_errors")
+    if protocol_errors is None or protocol_errors != 0:
+        return False
+    obs_dim = record.get("obs_dim")
+    if obs_dim is None or obs_dim != hello_obs_dim:
+        return False
+    if not record.get("terminated"):
+        steps = record.get("steps")
+        if steps is None or steps < MIN_EVIDENTIAL_STEPS_IF_TRUNCATED:
+            return False
+    return True
+
+
+def _evidential_records(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """The subset of ``snapshot["per_episode"]`` that measured the system.
+
+    Shared by ``summarize_snapshot`` and ``write_plots`` so a record
+    excluded from the summary table cannot still slip into a plotted
+    mean, curve, or histogram.
+    """
+    hello_obs_dim = (snapshot.get("hello") or {}).get("obs_dim")
+    return [
+        rec for rec in snapshot.get("per_episode", []) if _is_evidential(rec, hello_obs_dim)
+    ]
+
+
+def _evidential_rewards(snapshot: dict[str, Any]) -> list[float]:
+    return [float(rec.get("total_reward", 0.0)) for rec in _evidential_records(snapshot)]
+
+
+def _evidential_steps(snapshot: dict[str, Any]) -> list[float]:
+    return [float(rec.get("steps", 0)) for rec in _evidential_records(snapshot)]
+
+
+def _missing_evidentiality_signals(snapshot: dict[str, Any]) -> bool:
+    """Whether this snapshot's own schema cannot support evidentiality.
+
+    The documented ``capture_baseline.py`` CLI path's ``BaselineRecord``
+    carries no ``protocol_errors`` field and its snapshot carries no
+    ``hello`` block at all, so every one of its records is excluded
+    regardless of how many real episodes were captured. That is a
+    schema gap in the producer, not evidence the run was broken, and
+    the refusal message should say which one it is rather than
+    reporting a bare exclusion count that reads as "every episode
+    failed."
+    """
+    per_episode = snapshot.get("per_episode", [])
+    if not per_episode:
+        return False
+    if (snapshot.get("hello") or {}).get("obs_dim") is None:
+        return True
+    return all(rec.get("protocol_errors") is None for rec in per_episode)
+
+
 def summarize_snapshot(snapshot: dict[str, Any]) -> VariantSummary:
     per_episode = snapshot.get("per_episode", [])
-    rewards = [float(rec.get("total_reward", 0.0)) for rec in per_episode]
-    steps = [float(rec.get("steps", 0)) for rec in per_episode]
+    rewards = _evidential_rewards(snapshot)
+    steps = _evidential_steps(snapshot)
+    evidential_count = len(_evidential_records(snapshot))
     return VariantSummary(
         variant=str(snapshot.get("variant", "?")),
         episodes=len(per_episode),
-        reward_mean=statistics.fmean(rewards) if rewards else 0.0,
-        reward_median=statistics.median(rewards) if rewards else 0.0,
-        reward_std=statistics.pstdev(rewards) if len(rewards) > 1 else 0.0,
+        evidential_episodes=evidential_count,
+        excluded_episodes=len(per_episode) - evidential_count,
+        missing_evidentiality_signals=_missing_evidentiality_signals(snapshot),
+        reward_mean=statistics.fmean(rewards) if rewards else None,
+        reward_median=statistics.median(rewards) if rewards else None,
+        reward_std=statistics.pstdev(rewards) if rewards else None,
         reward_p95=_percentile(rewards, 95.0),
-        steps_mean=statistics.fmean(steps) if steps else 0.0,
-        steps_median=statistics.median(steps) if steps else 0.0,
-        steps_std=statistics.pstdev(steps) if len(steps) > 1 else 0.0,
+        steps_mean=statistics.fmean(steps) if steps else None,
+        steps_median=statistics.median(steps) if steps else None,
+        steps_std=statistics.pstdev(steps) if steps else None,
         steps_p95=_percentile(steps, 95.0),
     )
 
 
+def _evidential_floor_violation(summaries: list[VariantSummary]) -> str | None:
+    """Error message naming the shortfall, or ``None`` if every summary
+    clears ``MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON``."""
+    shortfalls = []
+    for s in summaries:
+        if s.evidential_episodes >= MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON:
+            continue
+        note = f"{s.variant}: {s.evidential_episodes} evidential, {s.excluded_episodes} excluded"
+        if s.missing_evidentiality_signals:
+            note += (
+                " (its records carry none of the required evidentiality fields — "
+                "this looks like a producer schema gap, not necessarily a broken run)"
+            )
+        shortfalls.append(note)
+    if not shortfalls:
+        return None
+    return (
+        "refusing to render a comparison: need at least "
+        f"{MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON} evidential episodes per variant "
+        f"({'; '.join(shortfalls)})"
+    )
+
+
+def _fmt(value: float | None, spec: str) -> str:
+    return "n/a" if value is None else format(value, spec)
+
+
 def render_summary_table(summaries: list[VariantSummary]) -> str:
     header = (
-        "| Variant | Episodes | Reward mean | Reward median | Reward std | Reward p95 | "
-        "Steps mean | Steps median | Steps std | Steps p95 |\n"
-        "|---|---|---|---|---|---|---|---|---|---|\n"
+        "| Variant | Episodes | Evidential | Excluded | Reward mean | Reward median | "
+        "Reward std | Reward p95 | Steps mean | Steps median | Steps std | Steps p95 |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     rows = [
         (
-            f"| {s.variant} | {s.episodes} | {s.reward_mean:.3f} | {s.reward_median:.3f} | "
-            f"{s.reward_std:.3f} | {s.reward_p95:.3f} | {s.steps_mean:.1f} | "
-            f"{s.steps_median:.1f} | {s.steps_std:.1f} | {s.steps_p95:.1f} |"
+            f"| {s.variant} | {s.episodes} | {s.evidential_episodes} | "
+            f"{s.excluded_episodes} | {_fmt(s.reward_mean, '.3f')} | "
+            f"{_fmt(s.reward_median, '.3f')} | {_fmt(s.reward_std, '.3f')} | "
+            f"{_fmt(s.reward_p95, '.3f')} | {_fmt(s.steps_mean, '.1f')} | "
+            f"{_fmt(s.steps_median, '.1f')} | {_fmt(s.steps_std, '.1f')} | "
+            f"{_fmt(s.steps_p95, '.1f')} |"
         )
         for s in summaries
     ]
@@ -161,16 +296,10 @@ def write_plots(  # noqa: PLR0915
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: dict[str, Path] = {}
 
-    def _rewards(snapshot: dict[str, Any]) -> list[float]:
-        return [float(rec.get("total_reward", 0.0)) for rec in snapshot.get("per_episode", [])]
-
-    def _steps(snapshot: dict[str, Any]) -> list[float]:
-        return [float(rec.get("steps", 0)) for rec in snapshot.get("per_episode", [])]
-
     # 1. reward curve (smoothed)
     fig, ax = plt.subplots()
-    random_rewards = _rewards(random_snapshot)
-    trained_rewards = _rewards(trained_snapshot)
+    random_rewards = _evidential_rewards(random_snapshot)
+    trained_rewards = _evidential_rewards(trained_snapshot)
 
     random_rolling = _rolling_mean(random_rewards, smooth_window)
     trained_rolling = _rolling_mean(trained_rewards, smooth_window)
@@ -205,8 +334,12 @@ def write_plots(  # noqa: PLR0915
 
     # 2. episode-length histogram
     fig, ax = plt.subplots()
-    ax.hist(_steps(random_snapshot), bins=20, alpha=0.5, label="random", color="#1f77b4")
-    ax.hist(_steps(trained_snapshot), bins=20, alpha=0.5, label="trained", color="#ff7f0e")
+    ax.hist(
+        _evidential_steps(random_snapshot), bins=20, alpha=0.5, label="random", color="#1f77b4"
+    )
+    ax.hist(
+        _evidential_steps(trained_snapshot), bins=20, alpha=0.5, label="trained", color="#ff7f0e"
+    )
     ax.set_xlabel("Steps per episode")
     ax.set_ylabel("Count")
     ax.set_title("Episode length distribution")
@@ -235,14 +368,11 @@ def write_plots(  # noqa: PLR0915
 def render_report(
     random_snapshot: dict[str, Any],
     trained_snapshot: dict[str, Any],
+    summaries: list[VariantSummary],
     *,
     plot_paths: dict[str, Path],
     out_path: Path,
 ) -> str:
-    summaries = [
-        summarize_snapshot(random_snapshot),
-        summarize_snapshot(trained_snapshot),
-    ]
     body = "\n".join(
         [
             "# FORGE v0.5 Trained vs. Random Comparative Report",
@@ -320,6 +450,12 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("failed to read snapshot JSON: %s", exc)
         return EXIT_IO
 
+    summaries = [summarize_snapshot(random_snapshot), summarize_snapshot(trained_snapshot)]
+    floor_violation = _evidential_floor_violation(summaries)
+    if floor_violation is not None:
+        logger.error("%s", floor_violation)
+        return EXIT_INSUFFICIENT_EVIDENCE
+
     plot_paths: dict[str, Path]
     if args.no_plots:
         plot_paths = {
@@ -337,6 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     render_report(
         random_snapshot,
         trained_snapshot,
+        summaries,
         plot_paths=plot_paths,
         out_path=args.out,
     )
