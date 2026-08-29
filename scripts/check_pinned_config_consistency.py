@@ -22,6 +22,16 @@ lock-step by hand:
   env (already comment-annotated as "keep in lock-step" -- this script
   makes that comment enforced, not just requested) and
   `e2e-long.yml`'s own `LMSTUDIO_PORT`, which had no such comment at all.
+* The pinned `wasm-pack` release version (canonical: `gh-pages.yml`'s
+  `WASM_PACK_VERSION` step env -- picked as canonical because it's the
+  primary Pages deploy target; `hf-space.yml`'s own header comment
+  already calls itself "Companion to gh-pages.yml -- same build, second
+  publish target"), copied into `hf-space.yml`'s identical `Install
+  wasm-pack` step. Both steps used to take `version:` as a declarative
+  action input; replacing `jetli/wasm-pack-action` with a plain shell
+  install (see its step comment for why) turned that single input into
+  a hand-maintained literal duplicated across two files, with nothing
+  catching a future "bumped one, forgot the other" edit.
 
 Nothing previously enforced that any of these copies stayed in sync --
 e.g. `rust-toolchain.toml` could be bumped without touching a single one
@@ -145,6 +155,13 @@ def _canonical_onnxruntime_version() -> str:
     )
 
 
+def _canonical_wasm_pack_version() -> str:
+    path = REPO_ROOT / ".github" / "workflows" / "gh-pages.yml"
+    return _canonical(
+        path, re.compile(r'WASM_PACK_VERSION:\s*"([^"]+)"'), 'a `WASM_PACK_VERSION: "..."` step env'
+    )
+
+
 def _canonical_lmstudio_base_url() -> tuple[str, str]:
     """Return (base_url, port) derived from the Python default."""
     path = REPO_ROOT / "python" / "forge" / "cognitive" / "providers.py"
@@ -208,6 +225,26 @@ def check_onnxruntime_version() -> list[str]:
     return mismatches
 
 
+def check_wasm_pack_version() -> list[str]:
+    canonical = _canonical_wasm_pack_version()
+    mismatches = []
+
+    dependent = REPO_ROOT / ".github" / "workflows" / "hf-space.yml"
+    occurrences = _find_all(dependent, re.compile(r'WASM_PACK_VERSION:\s*"([^"]+)"'))
+    if not occurrences:
+        mismatches.append(
+            f"{dependent.relative_to(REPO_ROOT)}: expected a "
+            f'WASM_PACK_VERSION: "{canonical}" pin, found none'
+        )
+    mismatches.extend(
+        f'{occ.file}:{occ.line}: WASM_PACK_VERSION "{occ.value}" != '
+        f'gh-pages.yml\'s WASM_PACK_VERSION "{canonical}"'
+        for occ in occurrences
+        if occ.value != canonical
+    )
+    return mismatches
+
+
 def check_lmstudio_endpoint() -> list[str]:
     canonical_url, canonical_port = _canonical_lmstudio_base_url()
     mismatches = []
@@ -239,6 +276,7 @@ def main() -> int:
     mismatches = [
         *check_rust_toolchain(),
         *check_onnxruntime_version(),
+        *check_wasm_pack_version(),
         *check_lmstudio_endpoint(),
     ]
     if mismatches:
@@ -248,13 +286,17 @@ def main() -> int:
         print(
             "\nEvery occurrence above must match its canonical source "
             "(rust-toolchain.toml's channel, docker/mc-runner.Dockerfile's "
-            "ONNXRUNTIME_VERSION, or providers.py's DEFAULT_LMSTUDIO_BASE_URL) "
-            "-- update the drifted line(s), or update the canonical source and "
-            "every dependent line together."
+            "ONNXRUNTIME_VERSION, gh-pages.yml's WASM_PACK_VERSION, or "
+            "providers.py's DEFAULT_LMSTUDIO_BASE_URL) -- update the drifted "
+            "line(s), or update the canonical source and every dependent "
+            "line together."
         )
         return EXIT_MISMATCH
 
-    print("OK: all Rust toolchain, ONNX Runtime, and LM Studio endpoint pins are consistent.")
+    print(
+        "OK: all Rust toolchain, ONNX Runtime, wasm-pack version, and "
+        "LM Studio endpoint pins are consistent."
+    )
     return EXIT_OK
 
 

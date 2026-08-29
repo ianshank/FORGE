@@ -1573,7 +1573,7 @@ single `scripts/mc_run.sh --build` invocation. Branch
 
 **CI additions** in `.github/workflows/ci.yml`:
 
-- `mc-bot-test` — `setup-node@v4` (Node 22) + `npm ci` (or
+- `mc-bot-test` — `setup-node@v5` (Node 22) + `npm ci` (or
   `npm install` on lockfile absence) + `npm run lint` + `npm test`.
   Runs the 116 mc-bot tests on every CI build, which previously did
   not happen.

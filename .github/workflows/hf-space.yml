@@ -59,16 +59,24 @@ jobs:
         # jetli/wasm-pack-action@v0.4.0 is node16 (worse than node20) with
         # no newer tag and no node24 support anywhere, including its
         # master branch -- there is no version bump that fixes it. This
-        # downloads the same pinned wasm-pack release (v0.15.0) directly
-        # from upstream instead: a plain shell step has no Node runtime
-        # at all, so it is permanently immune to this whole class of
+        # downloads the same pinned wasm-pack release directly from
+        # upstream instead: a plain shell step has no Node runtime at
+        # all, so it is permanently immune to this whole class of
         # deprecation. Verified: the asset exists and its top-level entry
         # is the bare `wasm-pack` binary (musl static build, runs on any
-        # ubuntu-latest).
+        # ubuntu-latest). `sudo` because GitHub-hosted runners execute
+        # steps as a non-root user and /usr/local/bin is root-owned;
+        # `-f` on curl so a moved/missing release 404s loudly here
+        # instead of failing downstream in `tar` on the error body.
+        # Same invocation as gh-pages.yml -- keep WASM_PACK_VERSION in
+        # lock-step across both files (enforced by
+        # scripts/check_pinned_config_consistency.py).
+        env:
+          WASM_PACK_VERSION: "0.15.0"
         run: |
-          curl -sSL "https://github.com/rustwasm/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz" \
+          curl -sSLf "https://github.com/rustwasm/wasm-pack/releases/download/v${WASM_PACK_VERSION}/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | tar xz -C /tmp
-          install -m 755 /tmp/wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack
+          sudo install -m 755 "/tmp/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl/wasm-pack" /usr/local/bin/wasm-pack
           wasm-pack --version
       - name: Build forge-wasm (wasm-pack, web target)
         # Same invocation as gh-pages.yml: JS bindings + .wasm into web/pkg/.
