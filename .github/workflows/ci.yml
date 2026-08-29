@@ -338,7 +338,7 @@ jobs:
       - name: Pytest with coverage
         run: |
           pytest tests/python/ -v \
-            --cov=forge --cov=forge_env \
+            --cov=forge --cov=forge_env --cov=scripts.v05_manual_baseline \
             --cov-report=term-missing \
             --cov-fail-under=85 \
             --cov-config=.coveragerc
