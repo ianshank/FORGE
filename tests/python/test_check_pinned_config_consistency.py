@@ -10,12 +10,13 @@ every file access the module makes to a throwaway directory populated
 with the same *relative* paths the module's tuples expect, so the full
 check functions run against fully isolated, controlled fixtures.
 
-Covers: a clean/consistent fixture passing on all three checks (Rust
-toolchain, ONNX Runtime, LM Studio endpoint), a deliberately-introduced
-drift in each of the three, a missing dependent occurrence, and the
-comment-blindness fix (a commented-out stale pin must not be treated as
-a live occurrence -- confirmed a real false-positive bug before fixing,
-not a hypothetical one; see the module's own ``_strip_comment`` docstring).
+Covers: a clean/consistent fixture passing on all four checks (Rust
+toolchain, ONNX Runtime, wasm-pack version, LM Studio endpoint), a
+deliberately-introduced drift in each of the four, a missing dependent
+occurrence, and the comment-blindness fix (a commented-out stale pin
+must not be treated as a live occurrence -- confirmed a real
+false-positive bug before fixing, not a hypothetical one; see the
+module's own ``_strip_comment`` docstring).
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ _HELPER: Path = Path(__file__).resolve().parents[2] / "scripts" / "check_pinned_
 
 _CONSISTENT_TOOLCHAIN = "1.94.1"
 _CONSISTENT_ONNXRUNTIME = "1.23.2"
+_CONSISTENT_WASM_PACK = "0.15.0"
 _CONSISTENT_LMSTUDIO_URL = "http://localhost:1234/v1"
 _CONSISTENT_LMSTUDIO_PORT = "1234"
 
@@ -60,6 +62,7 @@ def _build_consistent_repo(
     *,
     toolchain: str = _CONSISTENT_TOOLCHAIN,
     onnxruntime: str = _CONSISTENT_ONNXRUNTIME,
+    wasm_pack: str = _CONSISTENT_WASM_PACK,
     lmstudio_url: str = _CONSISTENT_LMSTUDIO_URL,
     lmstudio_port: str = _CONSISTENT_LMSTUDIO_PORT,
 ) -> None:
@@ -80,6 +83,8 @@ def _build_consistent_repo(
     )
     for rel in ("e2e-long.yml", "gh-pages.yml", "hf-dataset.yml", "hf-space.yml"):
         extra = f'\n          LMSTUDIO_PORT: "{lmstudio_port}"\n' if rel == "e2e-long.yml" else ""
+        if rel in ("gh-pages.yml", "hf-space.yml"):
+            extra += f'\n          WASM_PACK_VERSION: "{wasm_pack}"\n'
         _write(
             root / ".github" / "workflows" / rel,
             "jobs:\n  build:\n    steps:\n      - uses: dtolnay/rust-toolchain@stable\n        with:\n"
@@ -149,8 +154,18 @@ class TestRustToolchainDrift:
         self, helper_module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _build_consistent_repo(tmp_path)
-        # gh-pages.yml exists but has no toolchain: line at all.
-        _write(tmp_path / ".github" / "workflows" / "gh-pages.yml", "jobs:\n  build:\n    steps: []\n")
+        # gh-pages.yml exists but has no toolchain: line at all. Keeps its
+        # WASM_PACK_VERSION pin -- as a real `env:` key, the only shape the
+        # anchored production regex accepts -- so this stays isolated to
+        # the toolchain check: gh-pages.yml is also the wasm-pack check's
+        # canonical source, and dropping that pin too would fail on an
+        # unrelated SystemExit(EXIT_INPUT_ERROR) instead of the toolchain
+        # mismatch this test exists to verify.
+        _write(
+            tmp_path / ".github" / "workflows" / "gh-pages.yml",
+            "jobs:\n  build:\n    steps:\n      - name: Install wasm-pack\n        env:\n"
+            f'          WASM_PACK_VERSION: "{_CONSISTENT_WASM_PACK}"\n',
+        )
         monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
         assert _run_main(helper_module) == helper_module.EXIT_MISMATCH
 
@@ -189,6 +204,64 @@ class TestOnnxRuntimeDrift:
         _write(tmp_path / "docker" / "trainer.Dockerfile", "ARG ONNXRUNTIME_VERSION=1.20.0\n")
         monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
         assert _run_main(helper_module) == helper_module.EXIT_OK
+
+
+class TestWasmPackVersionDrift:
+    def test_hf_space_version_mismatch_fails(
+        self, helper_module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # gh-pages.yml is canonical; hf-space.yml's copy drifts.
+        _build_consistent_repo(tmp_path)
+        hf_space = tmp_path / ".github" / "workflows" / "hf-space.yml"
+        hf_space.write_text(
+            hf_space.read_text().replace(_CONSISTENT_WASM_PACK, "0.13.1", 1), encoding="utf-8"
+        )
+        monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
+        assert _run_main(helper_module) == helper_module.EXIT_MISMATCH
+
+    def test_missing_hf_space_pin_fails(
+        self, helper_module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # hf-space.yml exists but its WASM_PACK_VERSION step env is gone
+        # entirely (e.g. someone re-adds the old jetli/wasm-pack-action
+        # without the pinned-version env this check now expects).
+        _build_consistent_repo(tmp_path)
+        _write(
+            tmp_path / ".github" / "workflows" / "hf-space.yml",
+            "jobs:\n  build:\n    steps:\n      - uses: dtolnay/rust-toolchain@stable\n        with:\n"
+            f'          toolchain: "{_CONSISTENT_TOOLCHAIN}"\n',
+        )
+        monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
+        assert _run_main(helper_module) == helper_module.EXIT_MISMATCH
+
+    def test_gh_pages_canonical_change_propagates(
+        self, helper_module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Bumping the canonical source AND its one dependent together
+        # must still pass -- this is the "update both" remedy the
+        # mismatch message points to, exercised end-to-end.
+        _build_consistent_repo(tmp_path, wasm_pack="0.16.0")
+        monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
+        assert _run_main(helper_module) == helper_module.EXIT_OK
+
+    def test_pin_inside_a_run_line_is_not_a_pin(
+        self, helper_module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The pin regex is anchored to the start of the (indented) YAML
+        # line, so the same substring inside a `run:` shell command must
+        # NOT count as an occurrence: hf-space.yml carrying the version
+        # only inside shell text has no pin, and the check must report
+        # the missing dependent rather than silently accepting shell
+        # code as configuration.
+        _build_consistent_repo(tmp_path)
+        _write(
+            tmp_path / ".github" / "workflows" / "hf-space.yml",
+            "jobs:\n  build:\n    steps:\n      - uses: dtolnay/rust-toolchain@stable\n        with:\n"
+            f'          toolchain: "{_CONSISTENT_TOOLCHAIN}"\n'
+            f'      - run: echo WASM_PACK_VERSION: "{_CONSISTENT_WASM_PACK}"\n',
+        )
+        monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
+        assert _run_main(helper_module) == helper_module.EXIT_MISMATCH
 
 
 class TestLmStudioEndpointDrift:

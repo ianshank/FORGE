@@ -259,7 +259,7 @@ The full three-service Docker Compose stack is now deployed:
 - ✅ Multi-arch (`linux/amd64` + `linux/arm64`) via `docker buildx` — already
   present in the existing job, now applied to both registries.
 - ✅ Semver tags on GitHub release — already present via
-  `docker/metadata-action@v5` `type=semver,pattern={{version}}` /
+  `docker/metadata-action@v6` `type=semver,pattern={{version}}` /
   `{{major}}.{{minor}}`, now applied to both registries.
 - ✅ Post-push smoke probe: pulls the first GHCR-emitted tag (NOT
   `github.sha`, which is the full 40-char SHA that metadata-action's

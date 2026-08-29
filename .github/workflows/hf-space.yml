@@ -47,7 +47,7 @@ jobs:
             echo "::error::HF_TOKEN secret is not set. Add a write-scoped token under Settings → Secrets and variables → Actions."
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Keep in sync with rust-toolchain.toml -- dtolnay/rust-toolchain
@@ -56,9 +56,28 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Install wasm-pack
-        uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: 'v0.15.0'
+        # jetli/wasm-pack-action@v0.4.0 is node16 (worse than node20) with
+        # no newer tag and no node24 support anywhere, including its
+        # master branch -- there is no version bump that fixes it. This
+        # downloads the same pinned wasm-pack release directly from
+        # upstream instead: a plain shell step has no Node runtime at
+        # all, so it is permanently immune to this whole class of
+        # deprecation. Verified: the asset exists and its top-level entry
+        # is the bare `wasm-pack` binary (musl static build, runs on any
+        # ubuntu-latest). `sudo` because GitHub-hosted runners execute
+        # steps as a non-root user and /usr/local/bin is root-owned;
+        # `-f` on curl so a moved/missing release 404s loudly here
+        # instead of failing downstream in `tar` on the error body.
+        # Same invocation as gh-pages.yml -- keep WASM_PACK_VERSION in
+        # lock-step across both files (enforced by
+        # scripts/check_pinned_config_consistency.py).
+        env:
+          WASM_PACK_VERSION: "0.15.0"
+        run: |
+          curl -sSLf "https://github.com/rustwasm/wasm-pack/releases/download/v${WASM_PACK_VERSION}/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar xz -C /tmp
+          sudo install -m 755 "/tmp/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl/wasm-pack" /usr/local/bin/wasm-pack
+          wasm-pack --version
       - name: Build forge-wasm (wasm-pack, web target)
         # Same invocation as gh-pages.yml: JS bindings + .wasm into web/pkg/.
         run: wasm-pack build crates/forge-wasm --target web --out-dir "$GITHUB_WORKSPACE/web/pkg" --no-typescript

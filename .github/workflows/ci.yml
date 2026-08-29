@@ -58,7 +58,7 @@ jobs:
     name: Format Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -74,7 +74,7 @@ jobs:
     name: Clippy Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -91,7 +91,7 @@ jobs:
     name: Rust Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -107,7 +107,7 @@ jobs:
     name: Unused Dependencies (advisory)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-machete@0.9.2
@@ -124,10 +124,11 @@ jobs:
     name: Markdown Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
+          package-manager-cache: false
       # Config in .markdownlint.json, exclusions in .markdownlintignore.
       - run: npx --yes markdownlint-cli2 "**/*.md"
 
@@ -135,7 +136,7 @@ jobs:
     name: Benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -149,7 +150,7 @@ jobs:
         run: cargo install critcmp --locked || true
       - name: Restore baseline benchmarks
         id: restore-bench
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: target/criterion-baseline
           key: bench-baseline-${{ runner.os }}
@@ -162,7 +163,7 @@ jobs:
             --threshold 5
       - name: Save new baseline
         if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: target/criterion/current
           key: bench-baseline-${{ runner.os }}
@@ -171,7 +172,7 @@ jobs:
     name: Allocation Audit (zero-alloc gate)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -201,7 +202,7 @@ jobs:
             --json alloc_audit_summary.json
       - name: Upload audit artefacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: alloc-audit-report
           path: |
@@ -212,7 +213,7 @@ jobs:
     name: Rust Coverage (tarpaulin)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -224,7 +225,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Cache tarpaulin binary
         id: cache-tarpaulin
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-tarpaulin
           key: tarpaulin-v0.31.0-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
@@ -243,7 +244,7 @@ jobs:
             --out xml \
             --output-dir coverage/
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: coverage-report
@@ -253,7 +254,7 @@ jobs:
     name: Python Lint (fast)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -298,7 +299,7 @@ jobs:
     name: Python Tests (maturin)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -369,7 +370,7 @@ jobs:
       # override is needed — overriding it would mask config drift.
       FORGE_LMSTUDIO_LIVE: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -416,7 +417,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.run_minecraft_e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Verify docker compose is available
         run: docker compose version
       - name: Accept Minecraft EULA in the compose env
@@ -459,7 +460,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.run_minecraft_real_run
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Verify docker compose is available
         run: docker compose version
       - name: Accept Minecraft EULA in the compose env
@@ -519,7 +520,7 @@ jobs:
     name: Python Tests (no native)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -542,12 +543,13 @@ jobs:
     # previously not run in CI, plus a Biome config that lints the JS
     # surface. Both run here on every push touching the bot.
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           # Pinned to the same major version mc-bot/package.json's
           # `engines.node` advertises.
           node-version: "22"
+          package-manager-cache: false
       - name: Install mc-bot dependencies
         working-directory: mc-bot
         # package-lock.json is committed, so this always takes the `npm ci` path.
@@ -580,7 +582,7 @@ jobs:
         working-directory: mc-bot
         run: npm run test:coverage
       - name: Upload mc-bot coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: mc-bot-coverage-report
@@ -593,7 +595,7 @@ jobs:
     # --dry-run smoke path remains green. Cheap, catches regressions in
     # the env+search+writer composition without requiring docker.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -621,7 +623,7 @@ jobs:
     # job keeps it compiling and its tests green, plus a tiny generation
     # smoke so the bin's episode→Parquet path stays wired end-to-end.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -662,7 +664,7 @@ jobs:
     # downloaded .so + ORT_DYLIB_PATH -- no system ONNX Runtime install,
     # pkg-config, or static-link setup required.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Explicit toolchain, not just the action's own "stable" default --
@@ -715,7 +717,7 @@ jobs:
       FORGE_DEMO_PORT: "18765"
       FORGE_STARTUP_WAIT_SECS: "3"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -735,7 +737,7 @@ jobs:
         # deliberately no fail-under yet -- see docs/next_steps.md.
         run: pytest demo_ui/tests/ -v --tb=short
       - name: Upload demo UI coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: demo-ui-coverage-report
@@ -755,8 +757,8 @@ jobs:
     # an enforced 85% coverage threshold (configured in vite.config.ts). This
     # job builds, lints (Biome), and runs the coverage gate on every push.
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -781,8 +783,8 @@ jobs:
     # backends mocked, plus axe-core accessibility scans. NON-BLOCKING for now:
     # not in any job's needs[] and not a required check — promote once stable.
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -794,7 +796,7 @@ jobs:
         working-directory: dashboard
         run: npm run typecheck:e2e
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: pw-${{ runner.os }}-${{ hashFiles('dashboard/package-lock.json') }}
@@ -807,14 +809,14 @@ jobs:
         run: npm run test:e2e
       - name: Upload Playwright HTML report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report
           path: dashboard/playwright-report/
           retention-days: 7
       - name: Upload Playwright traces/videos
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-traces
           path: dashboard/test-results/
@@ -829,20 +831,20 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Set up QEMU (multi-arch)
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract GHCR metadata
         id: meta_ghcr
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -852,7 +854,7 @@ jobs:
             type=sha,prefix=
       - name: Build and push to GHCR
         id: build_ghcr
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
@@ -875,7 +877,7 @@ jobs:
       # ──────────────────────────────────────────────────────────────────
       - name: Log in to Docker Hub
         if: vars.DOCKERHUB_NAMESPACE != ''
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: docker.io
           username: ${{ vars.DOCKERHUB_USERNAME }}
@@ -883,7 +885,7 @@ jobs:
       - name: Extract Docker Hub metadata
         if: vars.DOCKERHUB_NAMESPACE != ''
         id: meta_dockerhub
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: docker.io/${{ vars.DOCKERHUB_NAMESPACE }}/forge
           tags: |
@@ -894,7 +896,7 @@ jobs:
       - name: Build and push to Docker Hub
         if: vars.DOCKERHUB_NAMESPACE != ''
         id: build_dockerhub
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
