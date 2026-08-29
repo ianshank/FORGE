@@ -94,6 +94,15 @@ LMSTUDIO_WORKFLOWS = (
     ".github/workflows/e2e-long.yml",
 )
 
+# The wasm-pack pin is a YAML `env:` key, so anchor to the start of the
+# (whitespace-indented) line: an unanchored pattern would also match the
+# substring inside a `run:` shell command -- e.g. the very install script
+# this pin feeds, `curl ... v${WASM_PACK_VERSION}/...`, in a future
+# refactor that inlines the value -- and count it as a second pin. One
+# shared compiled pattern for the canonical and dependent lookups so the
+# two sides can't drift apart in what they consider a pin.
+WASM_PACK_PIN_RE = re.compile(r'^\s*WASM_PACK_VERSION:\s*"([^"]+)"')
+
 
 @dataclass(frozen=True)
 class Occurrence:
@@ -158,7 +167,7 @@ def _canonical_onnxruntime_version() -> str:
 def _canonical_wasm_pack_version() -> str:
     path = REPO_ROOT / ".github" / "workflows" / "gh-pages.yml"
     return _canonical(
-        path, re.compile(r'WASM_PACK_VERSION:\s*"([^"]+)"'), 'a `WASM_PACK_VERSION: "..."` step env'
+        path, WASM_PACK_PIN_RE, 'a `WASM_PACK_VERSION: "..."` step env'
     )
 
 
@@ -230,7 +239,7 @@ def check_wasm_pack_version() -> list[str]:
     mismatches = []
 
     dependent = REPO_ROOT / ".github" / "workflows" / "hf-space.yml"
-    occurrences = _find_all(dependent, re.compile(r'WASM_PACK_VERSION:\s*"([^"]+)"'))
+    occurrences = _find_all(dependent, WASM_PACK_PIN_RE)
     if not occurrences:
         mismatches.append(
             f"{dependent.relative_to(REPO_ROOT)}: expected a "

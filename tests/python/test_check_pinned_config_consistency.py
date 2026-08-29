@@ -155,14 +155,16 @@ class TestRustToolchainDrift:
     ) -> None:
         _build_consistent_repo(tmp_path)
         # gh-pages.yml exists but has no toolchain: line at all. Keeps its
-        # WASM_PACK_VERSION line so this stays isolated to the toolchain
-        # check -- gh-pages.yml is also the wasm-pack check's canonical
-        # source, and dropping that line too would fail on an unrelated
-        # SystemExit(EXIT_INPUT_ERROR) instead of the toolchain mismatch
-        # this test exists to verify.
+        # WASM_PACK_VERSION pin -- as a real `env:` key, the only shape the
+        # anchored production regex accepts -- so this stays isolated to
+        # the toolchain check: gh-pages.yml is also the wasm-pack check's
+        # canonical source, and dropping that pin too would fail on an
+        # unrelated SystemExit(EXIT_INPUT_ERROR) instead of the toolchain
+        # mismatch this test exists to verify.
         _write(
             tmp_path / ".github" / "workflows" / "gh-pages.yml",
-            f'jobs:\n  build:\n    steps:\n      - run: WASM_PACK_VERSION: "{_CONSISTENT_WASM_PACK}"\n',
+            "jobs:\n  build:\n    steps:\n      - name: Install wasm-pack\n        env:\n"
+            f'          WASM_PACK_VERSION: "{_CONSISTENT_WASM_PACK}"\n',
         )
         monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
         assert _run_main(helper_module) == helper_module.EXIT_MISMATCH
@@ -241,6 +243,25 @@ class TestWasmPackVersionDrift:
         _build_consistent_repo(tmp_path, wasm_pack="0.16.0")
         monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
         assert _run_main(helper_module) == helper_module.EXIT_OK
+
+    def test_pin_inside_a_run_line_is_not_a_pin(
+        self, helper_module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The pin regex is anchored to the start of the (indented) YAML
+        # line, so the same substring inside a `run:` shell command must
+        # NOT count as an occurrence: hf-space.yml carrying the version
+        # only inside shell text has no pin, and the check must report
+        # the missing dependent rather than silently accepting shell
+        # code as configuration.
+        _build_consistent_repo(tmp_path)
+        _write(
+            tmp_path / ".github" / "workflows" / "hf-space.yml",
+            "jobs:\n  build:\n    steps:\n      - uses: dtolnay/rust-toolchain@stable\n        with:\n"
+            f'          toolchain: "{_CONSISTENT_TOOLCHAIN}"\n'
+            f'      - run: echo WASM_PACK_VERSION: "{_CONSISTENT_WASM_PACK}"\n',
+        )
+        monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
+        assert _run_main(helper_module) == helper_module.EXIT_MISMATCH
 
 
 class TestLmStudioEndpointDrift:
