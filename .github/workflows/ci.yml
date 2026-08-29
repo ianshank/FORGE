@@ -181,7 +181,7 @@ jobs:
           # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
           toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Build allocation_audit (dhat-heap)
@@ -254,7 +254,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install lint tools
@@ -308,7 +308,7 @@ jobs:
           # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
           toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Create + activate virtualenv
@@ -379,7 +379,7 @@ jobs:
           # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
           toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Create + activate virtualenv
@@ -428,7 +428,7 @@ jobs:
           cp docker/compose.minecraft.env.example docker/compose.minecraft.env
           sed -i 's/^MC_EULA=FALSE/MC_EULA=TRUE/' docker/compose.minecraft.env
           grep '^MC_EULA' docker/compose.minecraft.env
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install pytest (no other deps needed — test uses stdlib urllib)
@@ -467,7 +467,7 @@ jobs:
           cp docker/compose.minecraft.env.example docker/compose.minecraft.env
           sed -i 's/^MC_EULA=FALSE/MC_EULA=TRUE/' docker/compose.minecraft.env
           grep '^MC_EULA' docker/compose.minecraft.env
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install pytest + matplotlib
@@ -520,7 +520,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install dependencies
@@ -716,7 +716,7 @@ jobs:
       FORGE_STARTUP_WAIT_SECS: "3"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip

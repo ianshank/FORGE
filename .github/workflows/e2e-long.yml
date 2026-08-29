@@ -96,7 +96,7 @@ jobs:
           # never reads that file itself (confirmed against its action.yml).
           toolchain: "1.94.1"
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: "pip"
