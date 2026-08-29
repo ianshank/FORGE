@@ -56,9 +56,20 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Install wasm-pack
-        uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: 'v0.15.0'
+        # jetli/wasm-pack-action@v0.4.0 is node16 (worse than node20) with
+        # no newer tag and no node24 support anywhere, including its
+        # master branch -- there is no version bump that fixes it. This
+        # downloads the same pinned wasm-pack release (v0.15.0) directly
+        # from upstream instead: a plain shell step has no Node runtime
+        # at all, so it is permanently immune to this whole class of
+        # deprecation. Verified: the asset exists and its top-level entry
+        # is the bare `wasm-pack` binary (musl static build, runs on any
+        # ubuntu-latest).
+        run: |
+          curl -sSL "https://github.com/rustwasm/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz" \
+            | tar xz -C /tmp
+          install -m 755 /tmp/wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack
+          wasm-pack --version
       - name: Build forge-wasm (wasm-pack, web target)
         # Same invocation as gh-pages.yml: JS bindings + .wasm into web/pkg/.
         run: wasm-pack build crates/forge-wasm --target web --out-dir "$GITHUB_WORKSPACE/web/pkg" --no-typescript
