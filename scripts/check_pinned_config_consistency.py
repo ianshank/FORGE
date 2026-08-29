@@ -237,10 +237,11 @@ def check_onnxruntime_version() -> list[str]:
 def check_wasm_pack_version() -> list[str]:
     # Only hf-space.yml (the dependent) is scanned below; the canonical is
     # gh-pages.yml's FIRST pin (see _canonical), and any extra occurrence
-    # inside gh-pages.yml itself is not cross-checked -- unlike
-    # check_rust_toolchain, which re-scans every listed file including the
-    # canonical's own. Fine while each file carries exactly one step-level
-    # pin; revisit if gh-pages.yml ever grows a second WASM_PACK_VERSION.
+    # inside gh-pages.yml itself is not cross-checked. (The other checks
+    # share this canonical-side blind spot -- none re-scans its canonical
+    # file for stray duplicates.) Fine while each file carries exactly one
+    # step-level pin; revisit if gh-pages.yml ever grows a second
+    # WASM_PACK_VERSION.
     canonical = _canonical_wasm_pack_version()
     mismatches = []
 
