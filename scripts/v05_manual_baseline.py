@@ -85,6 +85,9 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 _SCHEMA_ID_MODULE_PATH: Final[Path] = (
     REPO_ROOT / "python" / "forge" / "training" / "muzero_mc" / "schema_id.py"
 )
+_REPLAY_MODULE_PATH: Final[Path] = (
+    REPO_ROOT / "python" / "forge" / "training" / "muzero_mc" / "replay.py"
+)
 ACTION_MAP_PATH: Final[Path] = REPO_ROOT / "configs" / "minecraft" / "action_map.toml"
 REWARDS_PATH: Final[Path] = REPO_ROOT / "configs" / "minecraft" / "rewards.toml"
 
@@ -112,25 +115,52 @@ class SchemaIdMismatch(RuntimeError):
     """
 
 
-@functools.lru_cache(maxsize=1)
-def _load_schema_id_module() -> ModuleType:
-    """Load ``schema_id.py`` directly by file path.
+def _load_module_by_path(path: Path, module_name: str, *, what: str) -> ModuleType:
+    """Load a module directly by file path, bypassing any parent
+    package's `__init__` chain -- both modules loaded through this
+    helper live under `forge.training`, whose `__init__` unconditionally
+    imports the MLflow/W&B/TensorBoard-backed logger factories this
+    stdlib-only driver has no other reason to need.
 
-    Bypasses ``forge``/``forge.training``'s package `__init__` chain,
-    which unconditionally imports the MLflow/W&B/TensorBoard-backed
-    logger factories -- a hard dependency this stdlib-only driver
-    should not need just to verify a hash. `schema_id.py` itself only
-    imports `hashlib`, `json`, and `tomllib`.
+    Registers the module in `sys.modules` before executing it -- the
+    standard pattern for by-path loading, and required here: a
+    `@dataclass` in the loaded module (`replay.py`'s `StepBatch`)
+    resolves its lazily-stringified annotations via
+    `sys.modules[cls.__module__]`, which raises `AttributeError` on a
+    module that was `exec_module`-run without ever being registered.
     """
-    spec = importlib.util.spec_from_file_location(
-        "_forge_schema_id", _SCHEMA_ID_MODULE_PATH
-    )
+    spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
-        msg = f"cannot load schema_id module from {_SCHEMA_ID_MODULE_PATH}"
+        msg = f"cannot load {what} from {path}"
         raise RuntimeError(msg)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+@functools.lru_cache(maxsize=1)
+def _load_schema_id_module() -> ModuleType:
+    """Load ``schema_id.py`` by path. It only imports `hashlib`, `json`,
+    and `tomllib`, so this costs nothing beyond the package-init
+    isolation `_load_module_by_path` exists for.
+    """
+    return _load_module_by_path(
+        _SCHEMA_ID_MODULE_PATH, "_forge_schema_id", what="schema_id module"
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def _load_replay_module() -> ModuleType:
+    """Load ``replay.py`` by path, for its cross-language-pinned
+    `format_episode_id` -- the episode-id format this script writes
+    must match `forge_mc_runner::format_episode_id` on the Rust side,
+    not redefine it locally. `replay.py`'s own heavy dependency
+    (`torch`) is deferred past module scope, so loading it is cheap.
+    """
+    return _load_module_by_path(
+        _REPLAY_MODULE_PATH, "_forge_replay", what="replay module"
+    )
 
 
 def _assert_schema_id_matches_repo(hello: dict[str, Any]) -> None:
@@ -200,12 +230,13 @@ def drive_episode(
         if msg_type == "error":
             _raise_if_contract_violation(last_msg, context=f"step {tick}")
             # Transient environment-health error (BUSY / RECONNECTING /
-            # INTERNAL): the environment did not execute this step.
+            # INTERNAL): the environment did not execute this step, so
+            # it does not count toward `step_count` -- that keeps
+            # whatever value the last successfully-executed step set.
             # Recorded via protocol_errors, NOT by setting `truncated`
             # -- that flag's other meaning is "reached the step
             # budget", and this episode did not.
             protocol_errors += 1
-            step_count = tick + 1
             logger.warning(
                 "step %d returned protocol error code=%s message=%s; ending episode",
                 tick,
@@ -258,7 +289,18 @@ def iter_episodes(
     base_seed: int,
     max_consecutive_failures: int = DEFAULT_MAX_CONSECUTIVE_ENV_FAILURES,
 ) -> Iterator[dict[str, Any]]:
-    action_count = int(hello["action_count"])
+    if max_consecutive_failures < 1:
+        msg = (
+            "max_consecutive_failures must be >= 1, got "
+            f"{max_consecutive_failures}"
+        )
+        raise ValueError(msg)
+    try:
+        action_count = int(hello["action_count"])
+    except (KeyError, TypeError, ValueError) as exc:
+        msg = f"handshake missing a usable action_count: {hello.get('action_count')!r}"
+        raise ContractViolation(msg) from exc
+    format_episode_id = _load_replay_module().format_episode_id
     consecutive_failures = 0
     for episode_seq in range(1, episodes + 1):
         seed = base_seed + episode_seq
@@ -271,7 +313,7 @@ def iter_episodes(
             seed=seed,
             rng=rng,
         )
-        result["episode_id"] = f"ep-{episode_seq:06d}"
+        result["episode_id"] = format_episode_id(episode_seq)
         result["seed"] = seed
         yield result
         if result["outcome"] == "environment_error":
@@ -314,18 +356,22 @@ def main(argv: list[str] | None = None) -> int:
     started_mono = time.monotonic()
     sock = open_ws(args.host, args.port)
     buf = bytearray()
-    hello = recv_text(sock, buf)
-    logger.info(
-        "Hello: obs_dim=%s action_count=%s grid_shape=%s schema_id=%s",
-        hello.get("obs_dim"),
-        hello.get("action_count"),
-        hello.get("grid_shape"),
-        hello.get("schema_id"),
-    )
 
     records: list[dict[str, Any]] = []
     result_code = EXIT_OK
     try:
+        # Read inside `try` (not before it): a dropped or malformed
+        # handshake then still reaches `finally` and closes `sock`,
+        # instead of leaking it on an exception raised before the
+        # block began.
+        hello = recv_text(sock, buf)
+        logger.info(
+            "Hello: obs_dim=%s action_count=%s grid_shape=%s schema_id=%s",
+            hello.get("obs_dim"),
+            hello.get("action_count"),
+            hello.get("grid_shape"),
+            hello.get("schema_id"),
+        )
         _assert_schema_id_matches_repo(hello)
         for record in iter_episodes(
             sock,

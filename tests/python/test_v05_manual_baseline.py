@@ -18,6 +18,7 @@ import pytest
 from scripts import v05_manual_baseline as v05mb
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 
@@ -64,6 +65,11 @@ def _error(code: str, message: str = "boom") -> dict[str, Any]:
     return {"type": "error", "code": code, "message": message}
 
 
+def _real_schema_id() -> str:
+    module = v05mb._load_schema_id_module()
+    return module.compute_schema_id_from_paths(v05mb.ACTION_MAP_PATH, v05mb.REWARDS_PATH)
+
+
 def _run_drive_episode(monkeypatch: pytest.MonkeyPatch, messages: list[dict[str, Any]]) -> dict[str, Any]:
     _drive(monkeypatch, messages)
     return v05mb.drive_episode(
@@ -80,6 +86,8 @@ def test_error_frame_is_environment_error_not_truncation(monkeypatch: pytest.Mon
     assert result["protocol_errors"] == 1
     assert result["truncated"] is False
     assert result["terminated"] is False
+    # The failed attempt itself must not count as an executed step.
+    assert result["steps"] == 0
 
 
 def test_reset_error_is_environment_error_with_no_steps(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -123,6 +131,60 @@ def test_environment_reported_truncation_is_truncated_outcome(
     assert result["terminated"] is False
 
 
+def test_protocol_error_outranks_a_stale_terminated_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The reset observation itself reports terminated=True (a
+    # degenerate but not impossible bot response). A transient error
+    # on the very next step must still classify as environment_error:
+    # protocol_errors has to outrank a *stale* `terminated=True` left
+    # over from the reset, not just a `False` one -- this pins the
+    # outcome-priority order against being silently reordered.
+    result = _run_drive_episode(monkeypatch, [_obs(terminated=True), _error("INTERNAL")])
+    assert result["outcome"] == "environment_error"
+    assert result["terminated"] is True
+    assert result["protocol_errors"] == 1
+    assert result["steps"] == 0
+
+
+def test_total_reward_accumulates_across_steps(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Every other reward-bearing test has exactly one nonzero-reward
+    # step, so a `+=` -> `=` regression would slip through unnoticed.
+    result = _run_drive_episode(
+        monkeypatch,
+        [_obs(), _obs(reward=2.0), _obs(reward=3.0, terminated=True)],
+    )
+    assert result["total_reward"] == 5.0
+    assert result["steps"] == 2
+
+
+def test_last_tick_and_obs_dim_reflect_the_final_step_not_the_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_obs = _obs(obs_len=3)
+    reset_obs["tick"] = 0
+    final_obs = _obs(terminated=True, obs_len=5)
+    final_obs["tick"] = 9
+    result = _run_drive_episode(monkeypatch, [reset_obs, final_obs])
+    assert result["last_tick"] == 9
+    assert result["obs_dim"] == 5
+
+
+# --- drive_episode: outbound payloads -------------------------------------
+
+
+def test_reset_and_step_payloads_carry_the_expected_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = _drive(monkeypatch, [_obs(), _obs(terminated=True)])
+    result = v05mb.drive_episode(
+        object(), bytearray(), action_count=4, max_steps=3, seed=42, rng=random.Random(42)
+    )
+    assert transport.sent[0] == {"type": "reset", "seed": 42}
+    step_payload = transport.sent[1]
+    assert step_payload["type"] == "step"
+    assert 0 <= step_payload["action_id"] < 4
+    assert result["outcome"] == "terminated"
+
+
 # --- drive_episode: malformed message types ------------------------------
 
 
@@ -163,14 +225,33 @@ def test_unrecognised_code_fails_closed_as_contract_violation(
 # --- iter_episodes: consecutive-failure tracking ------------------------
 
 
+def _run_iter_episodes(
+    monkeypatch: pytest.MonkeyPatch,
+    messages: list[dict[str, Any]],
+    *,
+    episodes: int,
+    max_steps: int = 5,
+    base_seed: int = 0,
+    action_count: int = 4,
+    max_consecutive_failures: int = v05mb.DEFAULT_MAX_CONSECUTIVE_ENV_FAILURES,
+) -> Iterator[dict[str, Any]]:
+    _drive(monkeypatch, messages)
+    hello = {"action_count": action_count}
+    return v05mb.iter_episodes(
+        object(),
+        bytearray(),
+        hello=hello,
+        episodes=episodes,
+        max_steps=max_steps,
+        base_seed=base_seed,
+        max_consecutive_failures=max_consecutive_failures,
+    )
+
+
 def test_halts_after_consecutive_environment_failures(monkeypatch: pytest.MonkeyPatch) -> None:
     threshold = v05mb.DEFAULT_MAX_CONSECUTIVE_ENV_FAILURES
     messages = [_error("INTERNAL")] * threshold
-    _drive(monkeypatch, messages)
-    hello = {"action_count": 4}
-    gen = v05mb.iter_episodes(
-        object(), bytearray(), hello=hello, episodes=10, max_steps=5, base_seed=0
-    )
+    gen = _run_iter_episodes(monkeypatch, messages, episodes=10)
     records: list[dict[str, Any]] = []
     with pytest.raises(v05mb.SustainedEnvironmentFailure):
         for record in gen:
@@ -186,18 +267,7 @@ def test_isolated_failure_does_not_halt(monkeypatch: pytest.MonkeyPatch) -> None
     below_threshold = v05mb.DEFAULT_MAX_CONSECUTIVE_ENV_FAILURES - 1
     assert below_threshold >= 1
     messages = [_error("INTERNAL")] * below_threshold
-    _drive(monkeypatch, messages)
-    hello = {"action_count": 4}
-    records = list(
-        v05mb.iter_episodes(
-            object(),
-            bytearray(),
-            hello=hello,
-            episodes=below_threshold,
-            max_steps=5,
-            base_seed=0,
-        )
-    )
+    records = list(_run_iter_episodes(monkeypatch, messages, episodes=below_threshold))
     assert len(records) == below_threshold
 
 
@@ -212,13 +282,7 @@ def test_failure_followed_by_success_resets_the_consecutive_count(
         _obs(terminated=True),  # episode 2: step terminates
         _error("BUSY"),  # episode 3: reset fails
     ]
-    _drive(monkeypatch, messages)
-    hello = {"action_count": 4}
-    records = list(
-        v05mb.iter_episodes(
-            object(), bytearray(), hello=hello, episodes=3, max_steps=5, base_seed=0
-        )
-    )
+    records = list(_run_iter_episodes(monkeypatch, messages, episodes=3))
     assert [r["outcome"] for r in records] == [
         "environment_error",
         "terminated",
@@ -226,13 +290,27 @@ def test_failure_followed_by_success_resets_the_consecutive_count(
     ]
 
 
+def test_max_consecutive_failures_below_one_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    for bad_value in (0, -1):
+        gen = _run_iter_episodes(monkeypatch, [], episodes=1, max_consecutive_failures=bad_value)
+        with pytest.raises(ValueError, match="max_consecutive_failures"):
+            next(gen)
+
+
+def test_missing_action_count_is_contract_violation(monkeypatch: pytest.MonkeyPatch) -> None:
+    _drive(monkeypatch, [])
+    gen = v05mb.iter_episodes(
+        object(), bytearray(), hello={}, episodes=1, max_steps=5, base_seed=0
+    )
+    with pytest.raises(v05mb.ContractViolation, match="action_count"):
+        next(gen)
+
+
 # --- schema_id verification ----------------------------------------------
 
 
 def test_schema_id_matching_the_repo_configs_does_not_raise() -> None:
-    module = v05mb._load_schema_id_module()
-    expected = module.compute_schema_id_from_paths(v05mb.ACTION_MAP_PATH, v05mb.REWARDS_PATH)
-    v05mb._assert_schema_id_matches_repo({"schema_id": expected})
+    v05mb._assert_schema_id_matches_repo({"schema_id": _real_schema_id()})
 
 
 def test_schema_id_mismatch_raises() -> None:
@@ -281,15 +359,14 @@ def test_max_consecutive_env_failures_is_pinned() -> None:
 class _FakeSocket:
     """Stand-in for the socket `open_ws` would return. `recv_text`/
     `send_text` are monkeypatched to ignore it entirely, but `main`'s
-    `finally` block unconditionally calls `.close()` on it."""
+    `finally` block unconditionally calls `.close()` on it -- tracked
+    here so a test can confirm that happens even on a failure path."""
+
+    def __init__(self) -> None:
+        self.closed = False
 
     def close(self) -> None:
-        pass
-
-
-def _real_schema_id() -> str:
-    module = v05mb._load_schema_id_module()
-    return module.compute_schema_id_from_paths(v05mb.ACTION_MAP_PATH, v05mb.REWARDS_PATH)
+        self.closed = True
 
 
 def _hello(*, schema_id: str | None = None, action_count: int = 4) -> dict[str, Any]:
@@ -327,6 +404,7 @@ def test_main_happy_path_writes_output_and_returns_ok(
     body = json.loads(out_path.read_text())
     assert body["episodes_observed"] == 1
     assert body["per_episode"][0]["outcome"] == "terminated"
+    assert body["per_episode"][0]["episode_id"] == "ep-000001"
 
 
 def test_main_schema_mismatch_writes_nothing(
@@ -347,6 +425,23 @@ def test_main_contract_violation_writes_nothing(
     assert not out_path.exists()
 
 
+def test_main_contract_violation_on_a_later_episode_still_writes_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A contract violation discards the whole capture, not just the
+    # episode it occurred on -- confirm that holds even after a prior
+    # episode already succeeded and was appended to `records`.
+    messages = [
+        _hello(),
+        _obs(),
+        _obs(terminated=True),  # episode 1 succeeds
+        _error("INVALID_ACTION"),  # episode 2's reset is a contract violation
+    ]
+    rc, out_path = _run_main(monkeypatch, tmp_path, messages, args=["--episodes", "2"])
+    assert rc == v05mb.EXIT_CONTRACT_VIOLATION
+    assert not out_path.exists()
+
+
 def test_main_sustained_failure_writes_partial_output(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -358,3 +453,35 @@ def test_main_sustained_failure_writes_partial_output(
     body = json.loads(out_path.read_text())
     assert body["episodes_observed"] == threshold
     assert body["episodes_target"] == 10
+
+
+def test_main_propagates_invalid_max_consecutive_failures(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    messages = [_hello()]
+    with pytest.raises(ValueError, match="max_consecutive_failures"):
+        _run_main(
+            monkeypatch,
+            tmp_path,
+            messages,
+            args=["--episodes", "1", "--max-consecutive-failures", "0"],
+        )
+
+
+def _raising_recv_text(_sock: object, _buf: object) -> dict[str, Any]:
+    msg = "connection lost while reading hello"
+    raise RuntimeError(msg)
+
+
+def test_main_closes_the_socket_even_if_the_hello_read_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _drive(monkeypatch, [])
+    monkeypatch.setattr(v05mb, "recv_text", _raising_recv_text)
+    fake_socket = _FakeSocket()
+    monkeypatch.setattr(v05mb, "open_ws", lambda *_a, **_k: fake_socket)
+    out_path = tmp_path / "out.json"
+    with pytest.raises(RuntimeError, match="connection lost"):
+        v05mb.main(["--out", str(out_path), "--episodes", "1"])
+    assert fake_socket.closed is True
+    assert not out_path.exists()
