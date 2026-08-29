@@ -5,12 +5,14 @@ that never measured the system, and nothing in the repository stops it.
 
 `scripts/mc_plot_baseline.py`'s `summarize_snapshot` averages `total_reward`
 over every record in a snapshot with no filter. Fed the committed random
-baseline — thirty records of which twenty-nine ran a single step after the
-environment reported it could not execute the step — it yields a mean of
--0.0767, rendered as `-0.077`. The capture script produced those records
-because it marks an environment-reported failure as a truncation and proceeds
-to the next episode, so a bot that cannot act is recorded identically to an
-episode that ran to its budget.
+baseline — thirty records of which twenty-nine made a single step attempt
+that returned an error frame rather than an observation, meaning the
+environment did not confirm the step ran — it yields a mean of -0.0767,
+rendered as `-0.077`. The capture script produced those records because it
+marks an environment-reported step failure as a truncation and proceeds to
+the next episode, so the `terminated`/`truncated` encoding cannot
+distinguish a bot that could not act from an episode that ran to its
+budget; only the protocol-error count does.
 
 The discriminating evidence is already in the artifacts and unused. Every
 record carries a non-zero protocol-error count, and every record reports an
