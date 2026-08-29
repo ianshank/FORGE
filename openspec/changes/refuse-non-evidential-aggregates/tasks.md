@@ -7,17 +7,17 @@
 
 ## 2. Fix the aggregator
 
-- [ ] 2.1 Add the evidential predicate: a record is evidential when its
+- [x] 2.1 Add the evidential predicate: a record is evidential when its
       protocol-error count is zero, its observation dimension equals the
       handshake's, and — for truncated outcomes only — its step count meets
       the pinned floor
-- [ ] 2.2 Filter `summarize_snapshot` to evidential records and carry the
+- [x] 2.2 Filter `summarize_snapshot` to evidential records and carry the
       evidential and excluded counts on the summary
-- [ ] 2.3 Refuse to render a comparison below the pinned evidential floor,
+- [x] 2.3 Refuse to render a comparison below the pinned evidential floor,
       exiting non-zero with a message naming both counts and the floor
-- [ ] 2.4 Pin both floors as named constants with paired tests, each failure
+- [x] 2.4 Pin both floors as named constants with paired tests, each failure
       message naming the review obligation
-- [ ] 2.5 Rewrite all six tests in
+- [x] 2.5 Rewrite all six tests in
       `tests/python/test_mc_plot_baseline_unit.py`; the shared fixture and the
       summary constructor both change shape
 

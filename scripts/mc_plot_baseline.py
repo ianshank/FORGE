@@ -20,6 +20,14 @@ from the per-variant trajectory directory by
 ``capture_baseline``) — NOT from the Prometheus scrape, which only
 exposes aggregate counters/gauges (peer-review #14).
 
+Only evidential episodes feed the aggregates below. A record whose
+protocol-error count is non-zero, whose observation dimension
+disagrees with the handshake, or — when its outcome denotes a
+truncation — whose step count falls short of
+``MIN_EVIDENTIAL_STEPS_IF_TRUNCATED``, did not measure the system and
+is excluded before any mean, median, deviation, or percentile is
+computed. See ``openspec/changes/refuse-non-evidential-aggregates/``.
+
 matplotlib is an opt-in dependency; install via
 ``pip install -e '.[minecraft-plots]'`` (or just
 ``pip install matplotlib>=3.8``). Without it this script exits
@@ -42,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 EXIT_OK = 0
 EXIT_USAGE = 2
+EXIT_INSUFFICIENT_EVIDENCE = 3
 EXIT_IO = 4
 
 # Plot filenames — single source of truth so the Markdown template
@@ -57,26 +66,41 @@ PLANNING_LATENCY_FILENAME = REWARD_HISTOGRAM_FILENAME
 
 DEFAULT_REWARD_SMOOTH_WINDOW = 5
 
+# Pinned floors for evidential-record filtering. Lowering either one
+# changes what counts as evidence, so each is pinned by a paired test
+# in tests/python/test_mc_plot_baseline_unit.py that must be edited in
+# the same change — the review sees the lowering rather than it
+# passing silently. See openspec/changes/refuse-non-evidential-aggregates/.
+MIN_EVIDENTIAL_STEPS_IF_TRUNCATED = 5
+MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON = 3
+
 
 @dataclass(frozen=True)
 class VariantSummary:
-    """Per-variant summary used in the Markdown table."""
+    """Per-variant summary used in the Markdown table.
+
+    ``reward_*``/``steps_*`` are computed over evidential episodes
+    only and are ``None`` when there are zero of them — a mean of no
+    episodes is not a number and must not be silently reported as 0.0.
+    """
 
     variant: str
     episodes: int
-    reward_mean: float
-    reward_median: float
-    reward_std: float
-    reward_p95: float
-    steps_mean: float
-    steps_median: float
-    steps_std: float
-    steps_p95: float
+    evidential_episodes: int
+    excluded_episodes: int
+    reward_mean: float | None
+    reward_median: float | None
+    reward_std: float | None
+    reward_p95: float | None
+    steps_mean: float | None
+    steps_median: float | None
+    steps_std: float | None
+    steps_p95: float | None
 
 
-def _percentile(values: list[float], pct: float) -> float:
+def _percentile(values: list[float], pct: float) -> float | None:
     if not values:
-        return 0.0
+        return None
     sorted_values = sorted(values)
     k = (len(sorted_values) - 1) * (pct / 100.0)
     lo = int(k)
@@ -85,35 +109,90 @@ def _percentile(values: list[float], pct: float) -> float:
     return sorted_values[lo] * (1 - frac) + sorted_values[hi] * frac
 
 
+def _is_evidential(record: dict[str, Any], hello_obs_dim: Any) -> bool:
+    """Whether ``record`` measured the system rather than a broken run.
+
+    A record is evidential only when its protocol-error count is
+    zero, its observation dimension equals the handshake's, and — for
+    a record whose outcome denotes truncation — its realised step
+    count meets ``MIN_EVIDENTIAL_STEPS_IF_TRUNCATED``. A non-truncated
+    (natural terminal) record is evidential regardless of length: a
+    twelve-step terminal is as much evidence as a two-hundred-step
+    one. A record missing the signals needed to decide any of this is
+    treated as non-evidential rather than assumed clean, matching the
+    documented CLI producer whose records carry no protocol-error
+    count at all.
+    """
+    protocol_errors = record.get("protocol_errors")
+    if protocol_errors is None or protocol_errors != 0:
+        return False
+    obs_dim = record.get("obs_dim")
+    if obs_dim is None or obs_dim != hello_obs_dim:
+        return False
+    if record.get("truncated"):
+        steps = record.get("steps")
+        if steps is None or steps < MIN_EVIDENTIAL_STEPS_IF_TRUNCATED:
+            return False
+    return True
+
+
 def summarize_snapshot(snapshot: dict[str, Any]) -> VariantSummary:
     per_episode = snapshot.get("per_episode", [])
-    rewards = [float(rec.get("total_reward", 0.0)) for rec in per_episode]
-    steps = [float(rec.get("steps", 0)) for rec in per_episode]
+    hello_obs_dim = (snapshot.get("hello") or {}).get("obs_dim")
+    evidential = [rec for rec in per_episode if _is_evidential(rec, hello_obs_dim)]
+    rewards = [float(rec.get("total_reward", 0.0)) for rec in evidential]
+    steps = [float(rec.get("steps", 0)) for rec in evidential]
     return VariantSummary(
         variant=str(snapshot.get("variant", "?")),
         episodes=len(per_episode),
-        reward_mean=statistics.fmean(rewards) if rewards else 0.0,
-        reward_median=statistics.median(rewards) if rewards else 0.0,
-        reward_std=statistics.pstdev(rewards) if len(rewards) > 1 else 0.0,
+        evidential_episodes=len(evidential),
+        excluded_episodes=len(per_episode) - len(evidential),
+        reward_mean=statistics.fmean(rewards) if rewards else None,
+        reward_median=statistics.median(rewards) if rewards else None,
+        reward_std=statistics.pstdev(rewards) if rewards else None,
         reward_p95=_percentile(rewards, 95.0),
-        steps_mean=statistics.fmean(steps) if steps else 0.0,
-        steps_median=statistics.median(steps) if steps else 0.0,
-        steps_std=statistics.pstdev(steps) if len(steps) > 1 else 0.0,
+        steps_mean=statistics.fmean(steps) if steps else None,
+        steps_median=statistics.median(steps) if steps else None,
+        steps_std=statistics.pstdev(steps) if steps else None,
         steps_p95=_percentile(steps, 95.0),
     )
 
 
+def _evidential_floor_violation(summaries: list[VariantSummary]) -> str | None:
+    """Error message naming the shortfall, or ``None`` if every summary
+    clears ``MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON``."""
+    shortfalls = [
+        f"{s.variant}: {s.evidential_episodes} evidential, {s.excluded_episodes} excluded"
+        for s in summaries
+        if s.evidential_episodes < MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON
+    ]
+    if not shortfalls:
+        return None
+    return (
+        "refusing to render a comparison: need at least "
+        f"{MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON} evidential episodes per variant "
+        f"({'; '.join(shortfalls)})"
+    )
+
+
+def _fmt(value: float | None, spec: str) -> str:
+    return "n/a" if value is None else format(value, spec)
+
+
 def render_summary_table(summaries: list[VariantSummary]) -> str:
     header = (
-        "| Variant | Episodes | Reward mean | Reward median | Reward std | Reward p95 | "
-        "Steps mean | Steps median | Steps std | Steps p95 |\n"
-        "|---|---|---|---|---|---|---|---|---|---|\n"
+        "| Variant | Episodes | Evidential | Excluded | Reward mean | Reward median | "
+        "Reward std | Reward p95 | Steps mean | Steps median | Steps std | Steps p95 |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     rows = [
         (
-            f"| {s.variant} | {s.episodes} | {s.reward_mean:.3f} | {s.reward_median:.3f} | "
-            f"{s.reward_std:.3f} | {s.reward_p95:.3f} | {s.steps_mean:.1f} | "
-            f"{s.steps_median:.1f} | {s.steps_std:.1f} | {s.steps_p95:.1f} |"
+            f"| {s.variant} | {s.episodes} | {s.evidential_episodes} | "
+            f"{s.excluded_episodes} | {_fmt(s.reward_mean, '.3f')} | "
+            f"{_fmt(s.reward_median, '.3f')} | {_fmt(s.reward_std, '.3f')} | "
+            f"{_fmt(s.reward_p95, '.3f')} | {_fmt(s.steps_mean, '.1f')} | "
+            f"{_fmt(s.steps_median, '.1f')} | {_fmt(s.steps_std, '.1f')} | "
+            f"{_fmt(s.steps_p95, '.1f')} |"
         )
         for s in summaries
     ]
@@ -235,14 +314,11 @@ def write_plots(  # noqa: PLR0915
 def render_report(
     random_snapshot: dict[str, Any],
     trained_snapshot: dict[str, Any],
+    summaries: list[VariantSummary],
     *,
     plot_paths: dict[str, Path],
     out_path: Path,
 ) -> str:
-    summaries = [
-        summarize_snapshot(random_snapshot),
-        summarize_snapshot(trained_snapshot),
-    ]
     body = "\n".join(
         [
             "# FORGE v0.5 Trained vs. Random Comparative Report",
@@ -320,6 +396,12 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("failed to read snapshot JSON: %s", exc)
         return EXIT_IO
 
+    summaries = [summarize_snapshot(random_snapshot), summarize_snapshot(trained_snapshot)]
+    floor_violation = _evidential_floor_violation(summaries)
+    if floor_violation is not None:
+        logger.error("%s", floor_violation)
+        return EXIT_INSUFFICIENT_EVIDENCE
+
     plot_paths: dict[str, Path]
     if args.no_plots:
         plot_paths = {
@@ -337,6 +419,7 @@ def main(argv: list[str] | None = None) -> int:
     render_report(
         random_snapshot,
         trained_snapshot,
+        summaries,
         plot_paths=plot_paths,
         out_path=args.out,
     )
