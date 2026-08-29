@@ -149,7 +149,7 @@ jobs:
         run: cargo install critcmp --locked || true
       - name: Restore baseline benchmarks
         id: restore-bench
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: target/criterion-baseline
           key: bench-baseline-${{ runner.os }}
@@ -162,7 +162,7 @@ jobs:
             --threshold 5
       - name: Save new baseline
         if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: target/criterion/current
           key: bench-baseline-${{ runner.os }}
@@ -224,7 +224,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Cache tarpaulin binary
         id: cache-tarpaulin
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-tarpaulin
           key: tarpaulin-v0.31.0-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
@@ -794,7 +794,7 @@ jobs:
         working-directory: dashboard
         run: npm run typecheck:e2e
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: pw-${{ runner.os }}-${{ hashFiles('dashboard/package-lock.json') }}
