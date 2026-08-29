@@ -125,9 +125,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
+          package-manager-cache: false
       # Config in .markdownlint.json, exclusions in .markdownlintignore.
       - run: npx --yes markdownlint-cli2 "**/*.md"
 
@@ -543,11 +544,12 @@ jobs:
     # surface. Both run here on every push touching the bot.
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # Pinned to the same major version mc-bot/package.json's
           # `engines.node` advertises.
           node-version: "22"
+          package-manager-cache: false
       - name: Install mc-bot dependencies
         working-directory: mc-bot
         # package-lock.json is committed, so this always takes the `npm ci` path.
@@ -756,7 +758,7 @@ jobs:
     # job builds, lints (Biome), and runs the coverage gate on every push.
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -782,7 +784,7 @@ jobs:
     # not in any job's needs[] and not a required check — promote once stable.
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
