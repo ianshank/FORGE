@@ -90,6 +90,7 @@ class VariantSummary:
     episodes: int
     evidential_episodes: int
     excluded_episodes: int
+    missing_evidentiality_signals: bool
     reward_mean: float | None
     reward_median: float | None
     reward_std: float | None
@@ -116,14 +117,19 @@ def _is_evidential(record: dict[str, Any], hello_obs_dim: Any) -> bool:
 
     A record is evidential only when its protocol-error count is
     zero, its observation dimension equals the handshake's, and — for
-    a record whose outcome denotes truncation — its realised step
-    count meets ``MIN_EVIDENTIAL_STEPS_IF_TRUNCATED``. A non-truncated
-    (natural terminal) record is evidential regardless of length: a
-    twelve-step terminal is as much evidence as a two-hundred-step
-    one. A record missing the signals needed to decide any of this is
-    treated as non-evidential rather than assumed clean, matching the
-    documented CLI producer whose records carry no protocol-error
-    count at all.
+    any record that is not a *confirmed* natural terminal — its
+    realised step count meets ``MIN_EVIDENTIAL_STEPS_IF_TRUNCATED``.
+    The floor is keyed on ``terminated`` rather than ``truncated``:
+    the producer's own truncation loop can exit with both flags false
+    when its driver-side step budget runs out before the environment
+    ever reports either outcome, and that ambiguous case must not
+    bypass the floor just because it isn't explicitly ``truncated``. A
+    confirmed natural terminal (``terminated`` true) is evidential
+    regardless of length — a twelve-step terminal is as much evidence
+    as a two-hundred-step one. A record missing the signals needed to
+    decide any of this is treated as non-evidential rather than
+    assumed clean, matching the documented CLI producer whose records
+    carry no protocol-error count at all.
     """
     protocol_errors = record.get("protocol_errors")
     if protocol_errors is None or protocol_errors != 0:
@@ -131,7 +137,7 @@ def _is_evidential(record: dict[str, Any], hello_obs_dim: Any) -> bool:
     obs_dim = record.get("obs_dim")
     if obs_dim is None or obs_dim != hello_obs_dim:
         return False
-    if record.get("truncated"):
+    if not record.get("terminated"):
         steps = record.get("steps")
         if steps is None or steps < MIN_EVIDENTIAL_STEPS_IF_TRUNCATED:
             return False
@@ -159,6 +165,26 @@ def _evidential_steps(snapshot: dict[str, Any]) -> list[float]:
     return [float(rec.get("steps", 0)) for rec in _evidential_records(snapshot)]
 
 
+def _missing_evidentiality_signals(snapshot: dict[str, Any]) -> bool:
+    """Whether this snapshot's own schema cannot support evidentiality.
+
+    The documented ``capture_baseline.py`` CLI path's ``BaselineRecord``
+    carries no ``protocol_errors`` field and its snapshot carries no
+    ``hello`` block at all, so every one of its records is excluded
+    regardless of how many real episodes were captured. That is a
+    schema gap in the producer, not evidence the run was broken, and
+    the refusal message should say which one it is rather than
+    reporting a bare exclusion count that reads as "every episode
+    failed."
+    """
+    per_episode = snapshot.get("per_episode", [])
+    if not per_episode:
+        return False
+    if (snapshot.get("hello") or {}).get("obs_dim") is None:
+        return True
+    return all(rec.get("protocol_errors") is None for rec in per_episode)
+
+
 def summarize_snapshot(snapshot: dict[str, Any]) -> VariantSummary:
     per_episode = snapshot.get("per_episode", [])
     rewards = _evidential_rewards(snapshot)
@@ -169,6 +195,7 @@ def summarize_snapshot(snapshot: dict[str, Any]) -> VariantSummary:
         episodes=len(per_episode),
         evidential_episodes=evidential_count,
         excluded_episodes=len(per_episode) - evidential_count,
+        missing_evidentiality_signals=_missing_evidentiality_signals(snapshot),
         reward_mean=statistics.fmean(rewards) if rewards else None,
         reward_median=statistics.median(rewards) if rewards else None,
         reward_std=statistics.pstdev(rewards) if rewards else None,
@@ -183,11 +210,17 @@ def summarize_snapshot(snapshot: dict[str, Any]) -> VariantSummary:
 def _evidential_floor_violation(summaries: list[VariantSummary]) -> str | None:
     """Error message naming the shortfall, or ``None`` if every summary
     clears ``MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON``."""
-    shortfalls = [
-        f"{s.variant}: {s.evidential_episodes} evidential, {s.excluded_episodes} excluded"
-        for s in summaries
-        if s.evidential_episodes < MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON
-    ]
+    shortfalls = []
+    for s in summaries:
+        if s.evidential_episodes >= MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON:
+            continue
+        note = f"{s.variant}: {s.evidential_episodes} evidential, {s.excluded_episodes} excluded"
+        if s.missing_evidentiality_signals:
+            note += (
+                " (its records carry none of the required evidentiality fields — "
+                "this looks like a producer schema gap, not necessarily a broken run)"
+            )
+        shortfalls.append(note)
     if not shortfalls:
         return None
     return (

@@ -24,6 +24,7 @@ from scripts.mc_plot_baseline import (
     VariantSummary,
     _evidential_rewards,
     _evidential_steps,
+    _missing_evidentiality_signals,
     main,
     render_report,
     render_summary_table,
@@ -150,23 +151,44 @@ def test_summarize_snapshot_excludes_obs_dim_mismatch() -> None:
 
 def test_summarize_snapshot_excludes_short_truncated_episodes() -> None:
     below_floor = MIN_EVIDENTIAL_STEPS_IF_TRUNCATED - 1
-    snap = _snapshot("random", [1.0], [below_floor], truncated=True)
+    snap = _snapshot(
+        "random", [1.0], [below_floor], terminated=False, truncated=True
+    )
     summary = summarize_snapshot(snap)
     assert summary.evidential_episodes == 0
     assert summary.excluded_episodes == 1
 
 
 def test_summarize_snapshot_includes_truncated_episode_at_step_floor() -> None:
-    snap = _snapshot("random", [1.0], [MIN_EVIDENTIAL_STEPS_IF_TRUNCATED], truncated=True)
+    snap = _snapshot(
+        "random",
+        [1.0],
+        [MIN_EVIDENTIAL_STEPS_IF_TRUNCATED],
+        terminated=False,
+        truncated=True,
+    )
     summary = summarize_snapshot(snap)
     assert summary.evidential_episodes == 1
     assert summary.excluded_episodes == 0
 
 
+def test_summarize_snapshot_excludes_short_ambiguous_outcome() -> None:
+    # Neither terminated nor truncated: the producer's own driver loop
+    # can exit in this state when its step budget runs out before the
+    # environment ever reports either outcome. The floor is keyed on
+    # `terminated`, not `truncated`, precisely so this ambiguous case
+    # cannot bypass it just because it isn't explicitly truncated.
+    short = MIN_EVIDENTIAL_STEPS_IF_TRUNCATED - 1
+    snap = _snapshot("random", [1.0], [short], terminated=False, truncated=False)
+    summary = summarize_snapshot(snap)
+    assert summary.evidential_episodes == 0
+    assert summary.excluded_episodes == 1
+
+
 def test_summarize_snapshot_includes_short_natural_terminal() -> None:
-    # A non-truncated (natural terminal) episode is evidential
-    # regardless of length — the step floor applies only to
-    # truncated outcomes.
+    # A confirmed natural terminal is evidential regardless of length
+    # — the step floor applies to everything that is NOT a confirmed
+    # natural terminal, truncated or ambiguous alike.
     short = MIN_EVIDENTIAL_STEPS_IF_TRUNCATED - 1
     snap = _snapshot("random", [1.0], [short], terminated=True, truncated=False)
     summary = summarize_snapshot(snap)
@@ -191,6 +213,7 @@ def test_render_summary_table_pins_columns() -> None:
             episodes=10,
             evidential_episodes=8,
             excluded_episodes=2,
+            missing_evidentiality_signals=False,
             reward_mean=1.0,
             reward_median=1.0,
             reward_std=0.5,
@@ -216,6 +239,7 @@ def test_render_summary_table_renders_na_for_missing_stats() -> None:
             episodes=5,
             evidential_episodes=0,
             excluded_episodes=5,
+            missing_evidentiality_signals=False,
             reward_mean=None,
             reward_median=None,
             reward_std=None,
@@ -279,7 +303,9 @@ def test_main_no_plots_path_writes_table_only_report(tmp_path: Path) -> None:
     assert "## Summary table" in body
 
 
-def test_main_refuses_below_evidential_floor_and_writes_nothing(tmp_path: Path) -> None:
+def test_main_refuses_below_evidential_floor_and_writes_nothing(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     random_snap_path = tmp_path / "baseline_random.json"
     trained_snap_path = tmp_path / "baseline_trained.json"
     out_path = tmp_path / "report.md"
@@ -302,19 +328,74 @@ def test_main_refuses_below_evidential_floor_and_writes_nothing(tmp_path: Path) 
         json.dumps(_snapshot("trained", [5.0] * below_floor, [50] * below_floor))
     )
 
-    rc = main(
-        [
-            "--random",
-            str(random_snap_path),
-            "--trained",
-            str(trained_snap_path),
-            "--out",
-            str(out_path),
-            "--no-plots",
-        ]
-    )
+    with caplog.at_level("ERROR"):
+        rc = main(
+            [
+                "--random",
+                str(random_snap_path),
+                "--trained",
+                str(trained_snap_path),
+                "--out",
+                str(out_path),
+                "--no-plots",
+            ]
+        )
     assert rc == EXIT_INSUFFICIENT_EVIDENCE
     assert not out_path.exists()
+    # The message must name both shortfalls with their real counts and
+    # the floor -- a regression that swapped counts or dropped a
+    # variant would otherwise still pass on exit code alone.
+    message = caplog.text
+    assert f"need at least {MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON}" in message
+    assert "random: 0 evidential, 30 excluded" in message
+    assert f"trained: {below_floor} evidential, 0 excluded" in message
+
+
+def test_main_refusal_message_flags_producer_schema_gap(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The documented capture_baseline.py CLI path's BaselineRecord
+    # carries no protocol_errors field and its snapshot carries no
+    # hello block, so every record it writes is excluded regardless
+    # of how many real episodes were captured. The refusal message
+    # must say that's a schema gap, not report a bare count that
+    # reads as "every episode failed."
+    random_snap_path = tmp_path / "baseline_random.json"
+    trained_snap_path = tmp_path / "baseline_trained.json"
+    out_path = tmp_path / "report.md"
+    schema_gap_snapshot = {
+        "variant": "random",
+        "per_episode": [
+            {
+                "episode_id": f"ep-{i:06d}",
+                "total_reward": 1.0,
+                "steps": 50,
+                "terminated": True,
+                "truncated": False,
+                "obs_dim": _OBS_DIM,
+                "action_dim": 12,
+                "schema_id": "abc",
+            }
+            for i in range(5)
+        ],
+    }
+    random_snap_path.write_text(json.dumps(schema_gap_snapshot))
+    trained_snap_path.write_text(json.dumps(_snapshot("trained", [5.0, 6.0, 7.0], [50, 60, 70])))
+
+    with caplog.at_level("ERROR"):
+        rc = main(
+            [
+                "--random",
+                str(random_snap_path),
+                "--trained",
+                str(trained_snap_path),
+                "--out",
+                str(out_path),
+                "--no-plots",
+            ]
+        )
+    assert rc == EXIT_INSUFFICIENT_EVIDENCE
+    assert "producer schema gap" in caplog.text
 
 
 def test_main_with_plots_generates_pngs(tmp_path: Path) -> None:
@@ -390,3 +471,44 @@ def test_evidential_steps_excludes_non_evidential_records() -> None:
         truncated=[False, False, True],
     )
     assert _evidential_steps(snap) == [10.0, 20.0]
+
+
+def test_missing_evidentiality_signals_false_for_empty_snapshot() -> None:
+    assert _missing_evidentiality_signals({"variant": "random", "per_episode": []}) is False
+
+
+def test_missing_evidentiality_signals_false_for_well_formed_snapshot() -> None:
+    snap = _snapshot("random", [1.0, 2.0], [10, 20])
+    assert _missing_evidentiality_signals(snap) is False
+
+
+def test_missing_evidentiality_signals_true_when_hello_block_absent() -> None:
+    # The shape capture_baseline.py actually writes: per_episode
+    # present, no "hello" key at all.
+    snap = {
+        "variant": "random",
+        "per_episode": [{"episode_id": "ep-000001", "total_reward": 1.0, "steps": 10}],
+    }
+    assert _missing_evidentiality_signals(snap) is True
+
+
+def test_missing_evidentiality_signals_true_when_no_record_carries_protocol_errors() -> None:
+    # hello present, but every BaselineRecord-shaped row lacks the
+    # field entirely -- capture_baseline.py's actual dataclass shape.
+    snap = {
+        "variant": "random",
+        "hello": {"obs_dim": _OBS_DIM},
+        "per_episode": [
+            {
+                "episode_id": "ep-000001",
+                "total_reward": 1.0,
+                "steps": 10,
+                "terminated": True,
+                "truncated": False,
+                "obs_dim": _OBS_DIM,
+                "action_dim": 12,
+                "schema_id": "abc",
+            }
+        ],
+    }
+    assert _missing_evidentiality_signals(snap) is True
