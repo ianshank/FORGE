@@ -185,6 +185,21 @@ def test_last_tick_and_obs_dim_reflect_the_final_step_not_the_reset(
     assert result["obs_dim"] == 5
 
 
+def test_last_tick_and_obs_dim_survive_a_later_step_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A step error must not overwrite the last real observation's
+    # tick/obs_dim with the error frame's (typically tick-less,
+    # obs-less) defaults -- those fields should still describe what was
+    # actually last observed before the failure, not the failure itself.
+    good_obs = _obs(obs_len=5)
+    good_obs["tick"] = 3
+    result = _run_drive_episode(monkeypatch, [_obs(), good_obs, _error("INTERNAL")])
+    assert result["outcome"] == "environment_error"
+    assert result["last_tick"] == 3
+    assert result["obs_dim"] == 5
+
+
 # --- drive_episode: outbound payloads -------------------------------------
 
 
@@ -325,6 +340,17 @@ def test_missing_action_count_is_contract_violation(monkeypatch: pytest.MonkeyPa
     )
     with pytest.raises(v05mb.ContractViolation, match="action_count"):
         next(gen)
+
+
+def test_non_positive_action_count_is_contract_violation(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A syntactically valid but non-positive action_count would
+    # otherwise reach rng.randrange(action_count) inside drive_episode
+    # and raise an uncaught ValueError there, bypassing this module's
+    # ContractViolation/EXIT_* taxonomy entirely.
+    for bad_value in (0, -1):
+        gen = _run_iter_episodes(monkeypatch, [], episodes=1, action_count=bad_value)
+        with pytest.raises(v05mb.ContractViolation, match="action_count"):
+            next(gen)
 
 
 # --- schema_id verification ----------------------------------------------

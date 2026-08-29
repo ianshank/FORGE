@@ -6,9 +6,12 @@ bot's WebSocket protocol directly from Python: sends one `reset`
 followed by N `step` messages per episode, samples random actions,
 and writes the trajectory + per-episode summary to disk.
 
-The output schema mirrors `forge.training.muzero_mc.capture_baseline`'s
-`BaselineRecord` so the existing `mc_plot_baseline.py` can consume
-it once the operator pivots to the proper runner-driven flow.
+The output schema is compatible with (not an exact mirror of)
+`forge.training.muzero_mc.capture_baseline`'s `BaselineRecord` -- close
+enough for the existing `mc_plot_baseline.py` to consume via
+`dict.get`, though this script's records add `protocol_errors`/
+`outcome`/`seed` and omit `action_dim`/`schema_id` -- once the operator
+pivots to the proper runner-driven flow.
 
 Outcome classification (openspec/changes/refuse-non-evidential-aggregates/):
 an environment-reported step failure is recorded as a distinct
@@ -236,29 +239,33 @@ def drive_episode(
     for tick in range(max_steps):
         action_id = rng.randrange(action_count)
         send_text(sock, {"type": _MSG_TYPE_STEP, "action_id": action_id})
-        last_msg = recv_text(sock, buf)
-        msg_type = last_msg.get("type")
+        recv_msg = recv_text(sock, buf)
+        msg_type = recv_msg.get("type")
         if msg_type == _MSG_TYPE_ERROR:
-            _raise_if_contract_violation(last_msg, context=f"step {tick} seed={seed}")
+            _raise_if_contract_violation(recv_msg, context=f"step {tick} seed={seed}")
             # Transient environment-health error (BUSY / RECONNECTING /
             # INTERNAL): the environment did not execute this step, so
             # it does not count toward `step_count` -- that keeps
             # whatever value the last successfully-executed step set.
             # Recorded via protocol_errors, NOT by setting `truncated`
             # -- that flag's other meaning is "reached the step
-            # budget", and this episode did not.
+            # budget", and this episode did not. `last_msg` is also
+            # deliberately NOT updated to this frame -- it's typically
+            # tick-less/obs-less, and `last_tick`/`obs_dim` below should
+            # still describe the last real observation, not the failure.
             protocol_errors += 1
             logger.warning(
                 "step %d returned protocol error code=%s message=%s seed=%d; ending episode",
                 tick,
-                last_msg.get("code"),
-                last_msg.get("message"),
+                recv_msg.get("code"),
+                recv_msg.get("message"),
                 seed,
             )
             break
         if msg_type != _MSG_TYPE_OBSERVATION:
             msg = f"expected observation after step {tick} seed={seed}, got {msg_type!r}"
             raise ContractViolation(msg)
+        last_msg = recv_msg
         total_reward += float(last_msg.get("reward", 0.0))
         terminated = bool(last_msg.get("terminated"))
         truncated = bool(last_msg.get("truncated"))
@@ -312,6 +319,9 @@ def iter_episodes(
     except (KeyError, TypeError, ValueError) as exc:
         msg = f"handshake missing a usable action_count: {hello.get('action_count')!r}"
         raise ContractViolation(msg) from exc
+    if action_count < 1:
+        msg = f"handshake reports a non-positive action_count: {action_count}"
+        raise ContractViolation(msg)
     format_episode_id = _load_replay_module().format_episode_id
     consecutive_failures = 0
     for episode_seq in range(1, episodes + 1):
