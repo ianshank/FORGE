@@ -17,6 +17,8 @@ import pytest
 from . import _helpers
 from ._helpers import (
     COMPOSE_DOWN_TIMEOUT_SECS,
+    COMPOSE_UP_BUILD_TIMEOUT_SECS,
+    COMPOSE_UP_TIMEOUT_ENV_VAR,
     COMPOSE_UP_TIMEOUT_SECS,
     DEFAULT_DOCKER_LOGS_TAIL,
     DEFAULT_RUNNER_CONTAINER,
@@ -24,9 +26,14 @@ from ._helpers import (
     DOCKER_LOGS_TIMEOUT_SECS,
     POLL_INTERVAL_SECS,
     POLL_TIMEOUT_SECS,
+    REQUIRE_E2E_ENV_VAR,
+    USE_PREBUILT_ENV_VAR,
+    compose_up_timeout_secs,
     docker_compose_available,
     docker_logs,
+    require_e2e_execution,
     runner_container_state,
+    use_prebuilt_images,
     wait_until,
 )
 
@@ -43,6 +50,11 @@ def test_constants_are_positive() -> None:
     assert DOCKER_INTROSPECT_TIMEOUT_SECS > 0
     assert DOCKER_LOGS_TIMEOUT_SECS > 0
     assert COMPOSE_UP_TIMEOUT_SECS > 0
+    assert COMPOSE_UP_BUILD_TIMEOUT_SECS > 0
+    # The build path compiles the Rust runner from scratch; it must be
+    # allowed strictly more time than the pull-only path, or the
+    # nightly's whole reason for using prebuilt images disappears.
+    assert COMPOSE_UP_BUILD_TIMEOUT_SECS > COMPOSE_UP_TIMEOUT_SECS
     assert COMPOSE_DOWN_TIMEOUT_SECS > 0
     assert DEFAULT_DOCKER_LOGS_TAIL > 0
     assert DEFAULT_RUNNER_CONTAINER
@@ -289,3 +301,66 @@ def test_docker_logs_returns_marker_on_oserror(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr(f"{_HELPERS_MOD}.subprocess.run", fake_run)
     assert "docker logs failed" in docker_logs("foo")
+
+
+# ---------- env-driven flags + timeout resolution ---------------------
+
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on", " on "])
+def test_env_flags_recognise_truthy_values(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """Truthy spellings work from a shell, compose, or an Actions `env:`."""
+    monkeypatch.setenv(USE_PREBUILT_ENV_VAR, value)
+    monkeypatch.setenv(REQUIRE_E2E_ENV_VAR, value)
+    assert use_prebuilt_images() is True
+    assert require_e2e_execution() is True
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "no", "off", "maybe"])
+def test_env_flags_reject_other_values(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """Anything not explicitly truthy is off — a typo must not silently
+    enable prebuilt images or convert skips into failures."""
+    monkeypatch.setenv(USE_PREBUILT_ENV_VAR, value)
+    monkeypatch.setenv(REQUIRE_E2E_ENV_VAR, value)
+    assert use_prebuilt_images() is False
+    assert require_e2e_execution() is False
+
+
+def test_env_flags_default_to_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset means off, so a plain `pytest` run is unaffected."""
+    monkeypatch.delenv(USE_PREBUILT_ENV_VAR, raising=False)
+    monkeypatch.delenv(REQUIRE_E2E_ENV_VAR, raising=False)
+    assert use_prebuilt_images() is False
+    assert require_e2e_execution() is False
+
+
+def test_compose_up_timeout_picks_path_specific_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prebuilt gets the pull budget; building gets the compile budget."""
+    monkeypatch.delenv(COMPOSE_UP_TIMEOUT_ENV_VAR, raising=False)
+
+    monkeypatch.setenv(USE_PREBUILT_ENV_VAR, "1")
+    assert compose_up_timeout_secs() == COMPOSE_UP_TIMEOUT_SECS
+
+    monkeypatch.delenv(USE_PREBUILT_ENV_VAR, raising=False)
+    assert compose_up_timeout_secs() == COMPOSE_UP_BUILD_TIMEOUT_SECS
+
+
+def test_compose_up_timeout_honours_explicit_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit override wins over both path defaults."""
+    monkeypatch.setenv(USE_PREBUILT_ENV_VAR, "1")
+    monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, "1234")
+    assert compose_up_timeout_secs() == 1234
+
+
+@pytest.mark.parametrize("bad", ["not-a-number", "0", "-5", "12.5"])
+def test_compose_up_timeout_falls_back_on_bad_override(
+    monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    """A typo degrades to the default rather than aborting the run
+    before the stack has had a chance to start."""
+    monkeypatch.setenv(USE_PREBUILT_ENV_VAR, "1")
+    monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, bad)
+    assert compose_up_timeout_secs() == COMPOSE_UP_TIMEOUT_SECS

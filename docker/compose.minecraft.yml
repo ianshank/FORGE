@@ -67,7 +67,13 @@ services:
       args:
         WS_PORT: ${MC_BOT_WS_PORT:-8765}
         VIEWER_PORT: ${MC_BOT_VIEWER_PORT:-3007}
-    image: ${MC_BOT_IMAGE:-forge-mc-bot:dev}
+    image: ${MC_BOT_IMAGE:-ghcr.io/ianshank/forge-mc-bot:dev}
+    # Services with a `build:` section build locally when the image is
+    # absent; they never pull. `build` (the default here) preserves
+    # local-dev behaviour exactly. CI jobs that consume already-published
+    # images set FORGE_MC_PULL_POLICY=always so bring-up is a pull rather
+    # than a cold `cargo build --release` inside Docker.
+    pull_policy: ${FORGE_MC_PULL_POLICY:-build}
     container_name: forge-mc-bot
     restart: ${MC_BOT_RESTART_POLICY:-on-failure}
     deploy:
@@ -132,7 +138,13 @@ services:
     build:
       context: ..
       dockerfile: docker/mc-runner.Dockerfile
-    image: ${FORGE_MC_RUNNER_IMAGE:-forge-mc-runner:dev}
+    image: ${FORGE_MC_RUNNER_IMAGE:-ghcr.io/ianshank/forge-mc-runner:dev}
+    # Services with a `build:` section build locally when the image is
+    # absent; they never pull. `build` (the default here) preserves
+    # local-dev behaviour exactly. CI jobs that consume already-published
+    # images set FORGE_MC_PULL_POLICY=always so bring-up is a pull rather
+    # than a cold `cargo build --release` inside Docker.
+    pull_policy: ${FORGE_MC_PULL_POLICY:-build}
     container_name: forge-mc-runner
     restart: ${RUNNER_RESTART_POLICY:-on-failure}
     deploy:
@@ -147,12 +159,16 @@ services:
       mc-bot:
         condition: service_healthy
     environment:
-      FORGE_MC_BOT_URL: ws://mc-bot:${MC_BOT_WS_PORT:-8765}
+      # The env-var ladder in `RunnerConfig::with_env_var_overrides`
+      # lets an operator override the static runner.toml without
+      # patching it. Only the vars that ladder actually reads belong
+      # here -- FORGE_MC_BOT_URL and FORGE_MC_RUNNER_CONFIG were set
+      # for years with zero readers in `crates/`; the bot URL comes
+      # from the env.docker.toml overlay mounted below, and the config
+      # path from the `command:` block.
       FORGE_MC_RUNNER_EPISODES: ${RUNNER_EPISODES:-10}
-      FORGE_MC_RUNNER_CONFIG: /app/configs/runner.toml
-      # v0.4: env-var ladder lets `mc_self_play.sh` propagate the
-      # freshly-computed schema_id without patching the static
-      # runner.toml. See `RunnerConfig::with_env_var_overrides`.
+      # v0.4: propagates the freshly-computed schema_id from
+      # `mc_self_play.sh`.
       FORGE_MC_SCHEMA_ID: ${FORGE_MC_SCHEMA_ID:-}
       RUST_LOG: ${RUST_LOG:-forge_mc_runner=info,forge_env_mc=info,forge_agent=info}
     volumes:
@@ -177,7 +193,13 @@ services:
       dockerfile: docker/trainer.Dockerfile
       args:
         TORCH_VARIANT: ${TRAINER_TORCH_VARIANT:-cpu}
-    image: ${TRAINER_IMAGE:-forge-mc-trainer:dev}
+    image: ${TRAINER_IMAGE:-ghcr.io/ianshank/forge-mc-trainer:dev}
+    # Services with a `build:` section build locally when the image is
+    # absent; they never pull. `build` (the default here) preserves
+    # local-dev behaviour exactly. CI jobs that consume already-published
+    # images set FORGE_MC_PULL_POLICY=always so bring-up is a pull rather
+    # than a cold `cargo build --release` inside Docker.
+    pull_policy: ${FORGE_MC_PULL_POLICY:-build}
     container_name: forge-mc-trainer
     profiles: ["self-play"]
     restart: ${TRAINER_RESTART_POLICY:-on-failure}
@@ -253,7 +275,13 @@ services:
       dockerfile: docker/trainer.Dockerfile
       args:
         TORCH_VARIANT: ${TRAINER_TORCH_VARIANT:-cpu}
-    image: ${TRAINER_IMAGE:-forge-mc-trainer:dev}
+    image: ${TRAINER_IMAGE:-ghcr.io/ianshank/forge-mc-trainer:dev}
+    # Services with a `build:` section build locally when the image is
+    # absent; they never pull. `build` (the default here) preserves
+    # local-dev behaviour exactly. CI jobs that consume already-published
+    # images set FORGE_MC_PULL_POLICY=always so bring-up is a pull rather
+    # than a cold `cargo build --release` inside Docker.
+    pull_policy: ${FORGE_MC_PULL_POLICY:-build}
     container_name: forge-mc-trainer-bootstrap
     profiles: ["self-play"]
     # No `restart` policy — one-shot.
