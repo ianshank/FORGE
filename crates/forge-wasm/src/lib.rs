@@ -44,7 +44,7 @@ pub enum WasmEnvError {
     ConfigJson(#[from] serde_json::Error),
     /// The parsed config did not satisfy `WorldState`'s validation rules.
     #[error("invalid ForgeConfig: {0}")]
-    InvalidConfig(String),
+    InvalidConfig(#[from] forge_types::ForgeError),
 }
 
 /// A FORGE simulation environment exposed to WebAssembly.
@@ -85,8 +85,7 @@ impl ForgeWasmEnv {
         } else {
             serde_json::from_str(config_json)?
         };
-        let world = WorldState::new(config.clone())
-            .map_err(|e| WasmEnvError::InvalidConfig(e.to_string()))?;
+        let world = WorldState::new(config.clone())?;
         Ok(Self { world, config })
     }
 }

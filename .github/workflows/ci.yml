@@ -917,6 +917,14 @@ jobs:
       - name: Type-check E2E sources
         working-directory: tests/web-e2e
         run: npm run typecheck:e2e
+      - name: Run app.js unit tests
+        # node:test against web/app.js directly (no browser) -- covers the
+        # parseSeed() boundary and BigInt-overflow-guard edge cases that a
+        # DOM-driven Playwright spec can't reach cheaply. Runs after the
+        # bundle build above so app.js's top-level `./pkg/forge_wasm.js`
+        # import resolves.
+        working-directory: tests/web-e2e
+        run: npm run test:unit
       - name: Cache Playwright browsers
         uses: actions/cache@v5
         with:

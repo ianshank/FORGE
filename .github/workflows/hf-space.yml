@@ -125,6 +125,14 @@ jobs:
         # serves from a CDN that can lag the commit, so retry before failing.
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          # Named rather than inlined so the retry budget is visible without
+          # reading loop syntax. gh-pages.yml's Post-publish smoke carries the
+          # same two numbers for the same reason (CDN propagation lag) under
+          # its own env: block -- not sourced from one place, since the two
+          # publish targets' propagation characteristics aren't guaranteed to
+          # match, unlike e.g. WASM_PACK_VERSION's cross-language build pin.
+          RETRY_ATTEMPTS: "5"
+          RETRY_DELAY_SECONDS: "10"
         run: |
           python - <<'EOF'
           import os
@@ -135,6 +143,8 @@ jobs:
 
           repo_id = os.environ["HF_SPACE_REPO_ID"]
           api = HfApi(token=os.environ["HF_TOKEN"])
+          retry_attempts = int(os.environ["RETRY_ATTEMPTS"])
+          retry_delay_seconds = int(os.environ["RETRY_DELAY_SECONDS"])
 
           required = {
               "index.html",
@@ -144,14 +154,14 @@ jobs:
               "pkg/forge_wasm_bg.wasm",
           }
 
-          for attempt in range(1, 6):
+          for attempt in range(1, retry_attempts + 1):
               files = set(api.list_repo_files(repo_id, repo_type="space"))
               missing = required - files
               if not missing:
                   print(f"Post-publish smoke OK: {sorted(required)}")
                   break
-              print(f"attempt {attempt}: still missing {sorted(missing)}; retrying in 10s")
-              time.sleep(10)
+              print(f"attempt {attempt}: still missing {sorted(missing)}; retrying in {retry_delay_seconds}s")
+              time.sleep(retry_delay_seconds)
           else:
               print(f"::error::Space {repo_id} is missing {sorted(missing)} after upload")
               sys.exit(1)

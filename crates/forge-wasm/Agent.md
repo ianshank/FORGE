@@ -87,7 +87,6 @@ Useful for debugging and text-based displays in the browser console.
 
 | Tool | Purpose |
 |------|---------|
-| `wasm-pack build crates/forge-wasm` | Build WASM package for browser |
 | `make wasm-test` (`scripts/wasm_test_node.sh`) | Run the `#[wasm_bindgen_test]`s in Node.js. Wraps `wasm-pack test --node`, which exits 0 when a crate has no wasm tests |
 | `make wasm` (`scripts/build_wasm_demo.sh`) | Build the browser bundle into `web/pkg/` |
 | `make wasm-check` | Clippy for `wasm32-unknown-unknown` (CI's blocking `wasm` job) |

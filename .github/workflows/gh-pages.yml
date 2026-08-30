@@ -97,17 +97,25 @@ jobs:
         # WebAssembly.instantiateStreaming for every visitor.
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          # Named rather than inlined so the retry budget is visible without
+          # reading loop syntax. hf-space.yml's Post-publish smoke carries the
+          # same two numbers for the same reason (CDN propagation lag) under
+          # its own env: block -- not sourced from one place, since the two
+          # publish targets' propagation characteristics aren't guaranteed to
+          # match, unlike e.g. WASM_PACK_VERSION's cross-language build pin.
+          RETRY_ATTEMPTS: "5"
+          RETRY_DELAY_SECONDS: "10"
         run: |
           set -euo pipefail
           base="${PAGE_URL%/}"
           echo "Smoke-testing $base"
 
           # Pages propagation is not instant; retry briefly before failing.
-          for attempt in 1 2 3 4 5; do
+          for attempt in $(seq 1 "$RETRY_ATTEMPTS"); do
             code="$(curl -sS -o /dev/null -w '%{http_code}' "$base/" || echo 000)"
             [ "$code" = "200" ] && break
-            echo "attempt $attempt: index.html -> $code, retrying in 10s"
-            sleep 10
+            echo "attempt $attempt: index.html -> $code, retrying in ${RETRY_DELAY_SECONDS}s"
+            sleep "$RETRY_DELAY_SECONDS"
           done
           [ "$code" = "200" ] || { echo "::error::index.html returned $code"; exit 1; }
 

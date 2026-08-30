@@ -19,6 +19,26 @@ const WASM = fileURLToPath(new URL("../../web/pkg/forge_wasm_bg.wasm", import.me
 // sets it -- it builds the bundle in its own step and leaves this to rebuild.
 const skipBuild = process.env.WEB_E2E_SKIP_BUILD === "1";
 
+// build_wasm_demo.sh supports FORGE_WASM_OUT_DIR for a standalone `make wasm`
+// build redirected elsewhere, but this suite can't honour it: serve.mjs always
+// serves web/ byte-for-byte -- the same tree gh-pages.yml uploads -- so the
+// bundle under test has to land at the default web/pkg/. Fail fast with a
+// clear reason rather than building to a path nothing here looks at and then
+// failing the present() check below with a confusing "no wasm bundle" error.
+if (process.env.FORGE_WASM_OUT_DIR) {
+  console.error(
+    [
+      "E2E preflight failed: FORGE_WASM_OUT_DIR is set, but this suite always",
+      "serves web/pkg/ -- the same path gh-pages.yml publishes from -- so the",
+      "demo under test matches the real deploy artifact byte-for-byte.",
+      "",
+      "Unset FORGE_WASM_OUT_DIR before running the E2E suite; it's only for a",
+      "standalone `make wasm` / build_wasm_demo.sh invocation.",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
 async function present() {
   try {
     await Promise.all([access(GLUE), access(WASM)]);

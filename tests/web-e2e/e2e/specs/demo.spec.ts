@@ -123,6 +123,26 @@ test.describe("WASM demo", () => {
     expect(await page.locator("#grid").innerText()).toBe(first);
   });
 
+  test("a seed above 2^64-1 falls back to a random seed with a status message", async ({ page }) => {
+    await page.goto("/");
+    await waitForReady(page);
+
+    // One past MAX_SEED (2^64 - 1): passes parseSeed's digits-only check but
+    // fails the <= MAX_SEED comparison, exercising both that boundary and
+    // resetFromInput()'s invalid-seed fallback branch. parseSeed() itself has
+    // unit coverage (tests/web-e2e/unit/app.test.mjs); this is the reachable
+    // end of that contract -- what a visitor actually sees when they hit it.
+    await page.locator("#seed").fill("18446744073709551616");
+    await page.locator("#reset").click();
+
+    await expect(page.locator("#status")).toHaveText("invalid seed (0..2^64-1) — used a random one");
+    // The fallback still resets the episode: #seed-used shows whatever random
+    // seed was actually used, not the rejected input parroted back.
+    const used = await page.locator("#seed-used").innerText();
+    expect(used).toMatch(/^\d+$/);
+    expect(used).not.toBe("18446744073709551616");
+  });
+
   test("reset takes a BigInt seed and rejects a Number", async ({ page }) => {
     await page.goto("/");
     await waitForReady(page);

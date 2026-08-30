@@ -27,11 +27,22 @@ const el = (id) => document.getElementById(id);
 // `reset` takes a Rust Option<u64>, which wasm-bindgen lowers to an i64 wasm
 // parameter — so seeds cross this boundary as BigInt. Passing a JS Number
 // throws a TypeError; passing undefined means "no seed".
-function parseSeed(text) {
+//
+// Exported (only) so tests/web-e2e/unit/app.test.mjs can exercise it in
+// isolation with node:test -- nothing in this module imports it back.
+export function parseSeed(text) {
   const trimmed = text.trim();
   if (!/^\d+$/.test(trimmed)) return null;
-  const value = BigInt(trimmed);
-  return value <= MAX_SEED ? value : null;
+  // A string can pass the digits-only check above yet still be too long for
+  // BigInt to represent (V8 enforces its own internal size cap independent of
+  // MAX_SEED), in which case BigInt() throws synchronously rather than
+  // returning a value. Treat that the same as any other unparseable seed.
+  try {
+    const value = BigInt(trimmed);
+    return value <= MAX_SEED ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 // Generated here rather than letting Rust derive one internally, so the demo
@@ -161,8 +172,15 @@ async function main() {
   el("pause").addEventListener("click", pause);
 }
 
-main().catch((err) => {
-  console.error(err);
-  setStatus(`error: ${err}`);
-  el("grid").textContent = String(err);
-});
+// Guarded rather than an unconditional call: this module is imported by
+// tests/web-e2e/unit/app.test.mjs to reach parseSeed() in isolation, and an
+// unconditional main() would run as a side effect of that import alone --
+// touching `document` (undefined under Node) and fetching the wasm binary.
+// A real browser always has `document`, so this changes nothing there.
+if (typeof document !== "undefined") {
+  main().catch((err) => {
+    console.error(err);
+    setStatus(`error: ${err}`);
+    el("grid").textContent = String(err);
+  });
+}

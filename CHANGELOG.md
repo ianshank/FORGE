@@ -47,6 +47,51 @@ unset). Both need one-time repository settings — see
 - `deny.toml` gains the `wasm32-unknown-unknown` triple, so cargo-deny now
   evaluates the wasm dependency graph at all.
 
+### Fixed — WASM E2E adversarial review pass (PR #134)
+
+A five-lens adversarial review of the work above (hardcoded values, dead
+code, test coverage, independent CI re-verification, correctness/security)
+found several real gaps the original pass missed:
+
+- `WasmEnvError::InvalidConfig` now wraps the structured
+  `forge_types::ForgeError` instead of flattening it to a string, so a Rust
+  caller (`try_new`'s documented audience) can inspect which config field
+  failed and why, not just read a pre-rendered message.
+- `web/app.js`'s `parseSeed` no longer throws for a digit string too long
+  for `BigInt` to represent — V8 enforces its own internal size cap
+  independent of `MAX_SEED` — it now returns `null` like every other
+  unparseable seed. `app.js`'s bottom-of-file `main()` call is guarded
+  behind a `document` check so the module can be imported from a
+  non-browser test without running the whole app as a side effect.
+- `tests/web-e2e/playwright.config.ts`'s `HOST` now reads `WEB_E2E_HOST`
+  like `serve.mjs` already did, instead of a second, independently
+  hardcoded `127.0.0.1` that could silently disagree with it.
+- The post-publish smoke retry cadence in `gh-pages.yml` and `hf-space.yml`
+  is now named (`RETRY_ATTEMPTS` / `RETRY_DELAY_SECONDS` env vars) instead
+  of a magic `5`/`10` inlined in loop syntax, once in bash and once in
+  Python.
+- `tests/web-e2e/preflight.mjs` now fails fast with a clear message if
+  `FORGE_WASM_OUT_DIR` is set, rather than silently building to a path the
+  E2E harness's `serve.mjs` never looks at and then failing a confusing
+  "no wasm bundle" check.
+- `crates/forge-wasm/Agent.md`'s tools table dropped a stale, unpinned
+  `wasm-pack build` row left over from before this PR's own `make wasm`
+  wrapper existed. `web/README.md`'s local build instructions now match
+  root `README.md`'s (pinned wasm-pack via `scripts/install_wasm_pack.sh`,
+  `make wasm`, `tests/web-e2e/serve.mjs`) instead of an unpinned
+  `cargo install wasm-pack` and `python3 -m http.server`, which would have
+  served the `.wasm` with the wrong content type.
+- New test coverage: a Playwright spec for the seed-above-`MAX_SEED`
+  fallback path and its status message, and
+  `tests/web-e2e/unit/app.test.mjs` (`node:test`, no browser — the
+  BigInt-overflow case needs a ~350-million-digit string, impractical to
+  drive through a real DOM input) for `parseSeed`'s boundary and
+  overflow-guard behaviour in isolation.
+- **Line-ending drift guard** (`.claude/hooks/guard_line_ending_drift.py`,
+  documented in full under this same Unreleased section's hooks list) —
+  added in the same pass, directly modeled on this changelog's own
+  CRLF-corruption entry.
+
 ### Added — pinned-config consistency check (`scripts/check_pinned_config_consistency.py`)
 
 Cross-checks three values that get duplicated across files which can't
@@ -149,6 +194,27 @@ CI's `python-lint` job; documented in `docs/hardcoded-values-audit.md`.
   themselves when it's absent; `security.yml`'s `gitleaks` job (which
   already fetches the binary for the history scan) now also adds it to
   `$GITHUB_PATH` and runs this hook's suite unskipped there.
+- **Line-ending drift guard** (`.claude/hooks/guard_line_ending_drift.py`,
+  same `PreToolUse`/`Bash` wiring): blocks a `git commit` that flips more
+  than half of an already-tracked file's lines between CRLF and LF (or the
+  reverse) — the signature of a whole-file EOL rewrite, never a legitimate
+  content edit. Modeled directly on this same changelog entry's own
+  incident: preparing this file's corruption fix, a Python
+  `open(p).read()` / `open(p, 'w').write(s)` round-trip would have
+  silently re-flattened it back to LF, and nothing would have caught that
+  before the commit. Compares the CRLF-line fraction of the `HEAD` blob
+  against the staged (index) blob; skips brand-new files, which have no
+  prior convention to drift from, and any path with an explicit
+  `.gitattributes` line-ending declaration (`-text` or `eol=`) — such as
+  this file's own new entry above, which records a deliberate choice, not
+  drift. Fails open on any git or parse error. Verified against this
+  session's real git history: replaying the actual pre-corruption and
+  corrupted `CHANGELOG.md` blobs through the guard's own comparison
+  reproduces a full 0-to-1 CRLF-fraction swing, confirming it would have
+  blocked the real incident had it existed at the time. Self-tests
+  (stdlib + `git` only, no external binary): `python3
+  .claude/hooks/test_guard_line_ending_drift.py -v`, picked up
+  automatically by `make hooks-test`'s `unittest discover`.
 
 ### Added — Hugging Face publication pipelines (`docs/hf/README.md`)
 

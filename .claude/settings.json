@@ -13,6 +13,11 @@
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_staged_secrets.py\"",
             "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_line_ending_drift.py\"",
+            "timeout": 15
           }
         ]
       }

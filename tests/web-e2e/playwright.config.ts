@@ -11,7 +11,9 @@ import { defineConfig, devices } from "@playwright/test";
  * uploads. Chromium only, matching `dashboard/playwright.config.ts`.
  */
 const PORT = Number(process.env.WEB_E2E_PORT ?? 4174);
-const HOST = "127.0.0.1";
+// Must track serve.mjs's own WEB_E2E_HOST default -- Playwright needs to know
+// which host the webServer it launches actually bound to.
+const HOST = process.env.WEB_E2E_HOST ?? "127.0.0.1";
 const BASE_URL = `http://${HOST}:${PORT}`;
 
 export default defineConfig({
