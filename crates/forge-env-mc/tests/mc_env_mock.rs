@@ -228,6 +228,15 @@ fn concurrently_bound_mocks_get_distinct_ports() {
         "each bound mock must hold its own port"
     );
     assert!(first.ws_url().starts_with("ws://127.0.0.1:"));
+
+    // The distinct-ports assertion above would hold even if `bind()`
+    // released the port, because the kernel hands out a fresh one each
+    // time. This is what actually pins "held": re-binding a live mock's
+    // address must fail.
+    assert!(
+        TcpListener::bind(first.local_addr()).is_err(),
+        "bind() must HOLD its port; re-binding it must fail with AddrInUse"
+    );
 }
 
 /// A genuine server-side fault must reach the test thread. The mock
@@ -282,6 +291,63 @@ fn join_stays_quiet_on_an_orderly_client_disconnect() {
 
     // No panic: an early client exit is not a fault.
     server.join();
+}
+
+/// A client that sends a text frame which is not a valid `ClientMsg`
+/// is committing a protocol violation. The mock must surface it rather
+/// than dropping the frame and replying anyway — silently ignoring it
+/// would let exactly the wire regressions this mock exists to catch
+/// slip through green.
+#[test]
+fn malformed_client_frame_is_a_fault_not_a_silent_drop() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    let bot = MockBot::bind(hello, vec![obs_msg(0)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    // Hand-rolled client: `MinecraftEnv` cannot send malformed frames,
+    // which is precisely why this needs a raw one.
+    let (mut client, _response) = tungstenite::connect(&url).expect("client connect");
+    client
+        .send(Message::Text("{\"type\":\"not-a-real-variant\"}".into()))
+        .expect("send malformed frame");
+
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
+    std::panic::set_hook(previous_hook);
+
+    assert!(
+        joined.is_err(),
+        "a text frame that is not a valid ClientMsg must fail the test, not be dropped"
+    );
+}
+
+/// The same for a binary frame: the protocol is text-only, so a binary
+/// frame from the client is a fault.
+#[test]
+fn binary_client_frame_is_a_fault_not_a_silent_drop() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    let bot = MockBot::bind(hello, vec![obs_msg(0)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    let (mut client, _response) = tungstenite::connect(&url).expect("client connect");
+    client
+        .send(Message::Binary(vec![0x00, 0x01]))
+        .expect("send binary frame");
+
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
+    std::panic::set_hook(previous_hook);
+
+    assert!(
+        joined.is_err(),
+        "a binary frame from the client must fail the test, not be dropped"
+    );
 }
 
 #[test]
@@ -647,4 +713,105 @@ fn server_error_message_propagates() {
     assert!(matches!(err, McEnvError::Protocol { .. }));
     let _ = env.close();
     server.join();
+}
+
+/// A client that closes gracefully mid-script must end the session, not
+/// fail the test.
+///
+/// `ws.read()` returns `Ok(Message::Close(_))` for a proper close — not
+/// an `Err` — so the disconnect classifier never sees it. tungstenite
+/// has already moved to `ClosedByPeer`, so replying fails with
+/// `SendAfterClosing`. Before the fix, every test escaped only because
+/// its reply script length exactly equalled the client's message count:
+/// one spare reply turned a textbook-correct shutdown into a panic
+/// blaming the mock's internals.
+#[test]
+fn graceful_client_close_mid_script_is_not_a_fault() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    // Deliberately MORE replies than the client will consume.
+    let bot = MockBot::bind(hello, vec![obs_msg(0), obs_msg(1), obs_msg(2)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    let mut env = MinecraftEnv::connect(cfg_with_url(url), map).expect("connect");
+    env.reset(Some(1)).expect("reset");
+    // `Env::close` sends a WebSocket Close frame.
+    env.close().expect("close");
+
+    // No panic: this is how a well-behaved client leaves.
+    server.join();
+}
+
+/// A control frame must not consume a scripted reply.
+///
+/// The script advances per `ClientMsg`, not per frame. If a Ping ate a
+/// slot, every later observation would shift by one — and `received()`
+/// would still look correct, because control frames are not recorded.
+#[test]
+fn control_frames_do_not_consume_scripted_replies() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    // Exactly one reply, reserved for the one real ClientMsg.
+    let bot = MockBot::bind(hello, vec![obs_msg(7)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    // Raw client: `MinecraftEnv` never emits pings, which is why this
+    // needs a hand-rolled one.
+    let (mut client, _response) = tungstenite::connect(&url).expect("client connect");
+    let _hello_frame = client.read().expect("read hello");
+    client.send(Message::Ping(Vec::new())).expect("send ping");
+    client
+        .send(Message::Text(
+            serde_json::to_string(&ClientMsg::Reset { seed: Some(1) }).unwrap(),
+        ))
+        .expect("send reset");
+
+    // The single reply must answer the Reset, not the Ping. tungstenite
+    // auto-replies Pong, so skip any control frames on the way.
+    let observation = loop {
+        match client.read().expect("read reply") {
+            Message::Text(text) => break text,
+            _ => continue,
+        }
+    };
+    let parsed: ServerMsg = serde_json::from_str(&observation).expect("parse reply");
+    assert!(
+        matches!(parsed, ServerMsg::Observation { tick: 7, .. }),
+        "the scripted reply must go to the Reset, not be eaten by the Ping: {parsed:?}"
+    );
+    assert_eq!(
+        server.received(),
+        vec![ClientMsg::Reset { seed: Some(1) }],
+        "control frames must not be recorded as ClientMsgs"
+    );
+    server.join();
+}
+
+/// A client that never connects must fail fast, not hang the harness.
+///
+/// `TcpListener::accept` blocks with no timeout, and the io timeout
+/// applies only once a stream exists. libtest has no per-test timeout,
+/// so before the fix this parked the whole `cargo test` process.
+#[test]
+fn absent_client_fails_fast_instead_of_hanging() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    let bot = MockBot::bind(hello, vec![]).with_accept_timeout(Duration::from_millis(50));
+    let server = bot.run();
+
+    // Never connect.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let started = std::time::Instant::now();
+    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
+    std::panic::set_hook(previous_hook);
+
+    assert!(joined.is_err(), "an absent client must fail, not hang");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "must fail within the accept budget, not the io timeout: took {:?}",
+        started.elapsed()
+    );
 }

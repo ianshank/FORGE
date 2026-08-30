@@ -40,10 +40,11 @@
 //! handle.join();
 //! ```
 
+use std::io::ErrorKind;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tungstenite::Message;
 
@@ -55,6 +56,20 @@ use crate::protocol::{ClientMsg, ServerMsg};
 /// timeout: if the client never sends the next message, the mock
 /// thread errors out instead of parking forever.
 pub const DEFAULT_IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Default budget for a client to connect.
+///
+/// `TcpListener::accept` blocks with no timeout of its own, and
+/// [`DEFAULT_IO_TIMEOUT`] applies only to the *stream*, i.e. after a
+/// connection exists. Without this bound a test whose client never
+/// connects — because `MinecraftEnv::connect` validates the action map
+/// before opening a socket, so any client-side precondition failure
+/// returns early — would park in [`MockBotHandle::join`] forever, and
+/// libtest has no per-test timeout to rescue it.
+pub const DEFAULT_ACCEPT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Poll interval while waiting for a connection.
+const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
 /// Loopback address the mock binds to. Port `0` asks the OS for a free
 /// port, which [`MockBot::bind`] then reads back from the bound
@@ -69,7 +84,7 @@ const BIND_ADDR: &str = "127.0.0.1:0";
 /// exhausted; that is an orderly end to the session, not a fault. Every
 /// other error — a timeout, a malformed frame, a capacity violation —
 /// stays fatal so [`MockBotHandle::join`] can surface it.
-fn is_orderly_disconnect(err: &tungstenite::Error) -> bool {
+pub(crate) fn is_orderly_disconnect(err: &tungstenite::Error) -> bool {
     match err {
         tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed => true,
         // A client dropped without sending a Close frame — which is
@@ -102,6 +117,7 @@ pub struct MockBot {
     hello: ServerMsg,
     replies: Vec<ServerMsg>,
     io_timeout: Duration,
+    accept_timeout: Duration,
 }
 
 impl MockBot {
@@ -127,6 +143,7 @@ impl MockBot {
             hello,
             replies,
             io_timeout: DEFAULT_IO_TIMEOUT,
+            accept_timeout: DEFAULT_ACCEPT_TIMEOUT,
         }
     }
 
@@ -138,6 +155,22 @@ impl MockBot {
     pub fn with_io_timeout(mut self, timeout: Duration) -> Self {
         self.io_timeout = timeout;
         self
+    }
+
+    /// Override how long the mock waits for a client to connect.
+    ///
+    /// Lower it to assert quickly on a client that is expected never to
+    /// arrive; raise it for a deliberately slow starter.
+    #[must_use]
+    pub fn with_accept_timeout(mut self, timeout: Duration) -> Self {
+        self.accept_timeout = timeout;
+        self
+    }
+
+    /// The socket read/write timeout this mock will apply.
+    #[must_use]
+    pub fn io_timeout(&self) -> Duration {
+        self.io_timeout
     }
 
     /// The bound address, including the OS-assigned port.
@@ -173,7 +206,31 @@ impl MockBot {
         let received = Arc::new(Mutex::new(Vec::new()));
         let recorder = Arc::clone(&received);
         let handle = thread::spawn(move || {
-            let (stream, _peer) = self.listener.accept().expect("accept");
+            // `accept()` blocks with no timeout of its own, so poll it
+            // against a deadline. Otherwise a test whose client never
+            // connects parks here forever and takes the whole libtest
+            // process with it -- a hang, not a failure.
+            self.listener
+                .set_nonblocking(true)
+                .expect("set listener non-blocking");
+            let deadline = Instant::now() + self.accept_timeout;
+            let (stream, _peer) = loop {
+                match self.listener.accept() {
+                    Ok(accepted) => break accepted,
+                    Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                        assert!(
+                            Instant::now() < deadline,
+                            "mock bot: no client connected within {:?}",
+                            self.accept_timeout
+                        );
+                        thread::sleep(ACCEPT_POLL_INTERVAL);
+                    }
+                    Err(err) => panic!("mock bot failed to accept a connection: {err}"),
+                }
+            };
+            stream
+                .set_nonblocking(false)
+                .expect("restore blocking mode");
             stream
                 .set_read_timeout(Some(self.io_timeout))
                 .expect("set read timeout");
@@ -185,25 +242,60 @@ impl MockBot {
             let hello = serde_json::to_string(&self.hello).expect("serialize hello");
             ws.send(Message::Text(hello)).expect("send hello");
 
-            for reply in self.replies {
+            // Peek rather than consume: the script must advance once per
+            // `ClientMsg`, NOT once per frame. A control frame that ate a
+            // reply slot would silently shift every later observation by
+            // one, and `received()` would look correct because control
+            // frames are not recorded. Peeking also preserves the
+            // no-replies case: an empty script reads nothing and closes
+            // immediately, rather than blocking until the read timeout.
+            let mut replies = self.replies.into_iter().peekable();
+            while replies.peek().is_some() {
                 let msg = match ws.read() {
                     Ok(msg) => msg,
                     Err(err) if is_orderly_disconnect(&err) => break,
                     Err(err) => panic!("mock bot failed reading a client message: {err}"),
                 };
-                // Text frames are the only thing the real client sends;
-                // record them so tests can assert on what was sent.
-                // Anything else is left unrecorded rather than
-                // panicking, so a test can script a non-text frame
-                // without the recorder deciding the outcome.
-                if let Message::Text(text) = &msg {
-                    if let Ok(parsed) = serde_json::from_str::<ClientMsg>(text) {
-                        recorder.lock().expect("recorder mutex").push(parsed);
-                    }
+                // A conforming client sends `ClientMsg` as text and
+                // nothing else. Silently ignoring anything other than a
+                // well-formed text frame would let exactly the
+                // regressions this mock exists to catch -- a client
+                // emitting binary, or malformed JSON -- pass while the
+                // mock cheerfully sent its scripted reply.
+                match &msg {
+                    Message::Text(text) => match serde_json::from_str::<ClientMsg>(text) {
+                        Ok(parsed) => recorder.lock().expect("recorder mutex").push(parsed),
+                        Err(err) => panic!(
+                            "client sent a text frame that is not a valid ClientMsg: {err}\n\
+                             frame: {text}"
+                        ),
+                    },
+                    // A graceful close ends the session. tungstenite has
+                    // already moved to `ClosedByPeer`, so replying would
+                    // fail with `SendAfterClosing` -- reading this as a
+                    // fault would make a textbook-correct client shutdown
+                    // fail the test.
+                    Message::Close(_) => break,
+                    // Control frames carry no `ClientMsg`; skip without
+                    // consuming a scripted reply.
+                    Message::Ping(_) | Message::Pong(_) => continue,
+                    other => panic!(
+                        "client sent a non-text frame, which the protocol does not permit: \
+                         {other:?}"
+                    ),
                 }
+                let reply = replies.next().expect("peeked reply must exist");
                 let encoded = serde_json::to_string(&reply).expect("serialize reply");
                 match ws.send(Message::Text(encoded)) {
                     Ok(()) => {}
+                    // Defensive, and deliberately unexercised by the
+                    // suite: `read()` above always runs first, so every
+                    // reachable disconnect is classified there. This arm
+                    // only fires in a narrow race (the read succeeds from
+                    // the socket buffer, the peer's RST lands before the
+                    // write). Constructing that deterministically needs
+                    // SO_LINGER, which is unstable, so it is left
+                    // untested rather than pinned by a flaky test.
                     Err(err) if is_orderly_disconnect(&err) => break,
                     Err(err) => panic!("mock bot failed sending a reply: {err}"),
                 }
@@ -254,5 +346,61 @@ impl MockBotHandle {
         if let Err(payload) = self.handle.join() {
             std::panic::resume_unwind(payload);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Error as IoError, ErrorKind};
+    use tungstenite::error::ProtocolError;
+
+    /// Pins every arm of [`is_orderly_disconnect`] directly.
+    ///
+    /// The behavioural tests reach only one arm: a dropped
+    /// `MinecraftEnv` yields `Protocol(ResetWithoutClosingHandshake)`,
+    /// so deleting the `ConnectionClosed`/`AlreadyClosed` arm or the
+    /// whole `Io` arm was invisible to the suite — both mutations left
+    /// every test green, because the fallthrough preserved the outcome
+    /// the one covered test asserts.
+    #[test]
+    fn orderly_disconnect_classifies_every_arm() {
+        // Socket-level ways a client can vanish.
+        for kind in [
+            ErrorKind::BrokenPipe,
+            ErrorKind::ConnectionReset,
+            ErrorKind::ConnectionAborted,
+            ErrorKind::UnexpectedEof,
+        ] {
+            assert!(
+                is_orderly_disconnect(&tungstenite::Error::Io(IoError::from(kind))),
+                "{kind:?} is an abrupt client exit and must be orderly"
+            );
+        }
+
+        // A stalled client must stay fatal, or a hung test looks clean.
+        for kind in [
+            ErrorKind::WouldBlock,
+            ErrorKind::TimedOut,
+            ErrorKind::PermissionDenied,
+        ] {
+            assert!(
+                !is_orderly_disconnect(&tungstenite::Error::Io(IoError::from(kind))),
+                "{kind:?} is a fault, not a disconnect"
+            );
+        }
+
+        assert!(is_orderly_disconnect(&tungstenite::Error::ConnectionClosed));
+        assert!(is_orderly_disconnect(&tungstenite::Error::AlreadyClosed));
+        assert!(is_orderly_disconnect(&tungstenite::Error::Protocol(
+            ProtocolError::ResetWithoutClosingHandshake
+        )));
+
+        // Only that ONE protocol error is orderly; the rest are real
+        // violations and must not be swallowed.
+        assert!(!is_orderly_disconnect(&tungstenite::Error::Protocol(
+            ProtocolError::SendAfterClosing
+        )));
+        assert!(!is_orderly_disconnect(&tungstenite::Error::Utf8));
     }
 }
