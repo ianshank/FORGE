@@ -67,13 +67,7 @@ services:
       args:
         WS_PORT: ${MC_BOT_WS_PORT:-8765}
         VIEWER_PORT: ${MC_BOT_VIEWER_PORT:-3007}
-    image: ${MC_BOT_IMAGE:-ghcr.io/ianshank/forge-mc-bot:dev}
-    # Services with a `build:` section build locally when the image is
-    # absent; they never pull. `build` (the default here) preserves
-    # local-dev behaviour exactly. CI jobs that consume already-published
-    # images set FORGE_MC_PULL_POLICY=always so bring-up is a pull rather
-    # than a cold `cargo build --release` inside Docker.
-    pull_policy: ${FORGE_MC_PULL_POLICY:-build}
+    image: ${MC_BOT_IMAGE:-forge-mc-bot:dev}
     container_name: forge-mc-bot
     restart: ${MC_BOT_RESTART_POLICY:-on-failure}
     deploy:
@@ -138,13 +132,7 @@ services:
     build:
       context: ..
       dockerfile: docker/mc-runner.Dockerfile
-    image: ${FORGE_MC_RUNNER_IMAGE:-ghcr.io/ianshank/forge-mc-runner:dev}
-    # Services with a `build:` section build locally when the image is
-    # absent; they never pull. `build` (the default here) preserves
-    # local-dev behaviour exactly. CI jobs that consume already-published
-    # images set FORGE_MC_PULL_POLICY=always so bring-up is a pull rather
-    # than a cold `cargo build --release` inside Docker.
-    pull_policy: ${FORGE_MC_PULL_POLICY:-build}
+    image: ${FORGE_MC_RUNNER_IMAGE:-forge-mc-runner:dev}
     container_name: forge-mc-runner
     restart: ${RUNNER_RESTART_POLICY:-on-failure}
     deploy:
@@ -166,7 +154,11 @@ services:
       # for years with zero readers in `crates/`; the bot URL comes
       # from the env.docker.toml overlay mounted below, and the config
       # path from the `command:` block.
-      FORGE_MC_RUNNER_EPISODES: ${RUNNER_EPISODES:-10}
+      # Empty by default so `runner.toml`'s `episodes` stays in charge --
+      # this var only gained a reader recently, and a non-empty default
+      # here would silently override the TOML for every operator.
+      # Precedence is CLI > env > TOML.
+      FORGE_MC_RUNNER_EPISODES: ${RUNNER_EPISODES:-}
       # v0.4: propagates the freshly-computed schema_id from
       # `mc_self_play.sh`.
       FORGE_MC_SCHEMA_ID: ${FORGE_MC_SCHEMA_ID:-}
@@ -193,13 +185,7 @@ services:
       dockerfile: docker/trainer.Dockerfile
       args:
         TORCH_VARIANT: ${TRAINER_TORCH_VARIANT:-cpu}
-    image: ${TRAINER_IMAGE:-ghcr.io/ianshank/forge-mc-trainer:dev}
-    # Services with a `build:` section build locally when the image is
-    # absent; they never pull. `build` (the default here) preserves
-    # local-dev behaviour exactly. CI jobs that consume already-published
-    # images set FORGE_MC_PULL_POLICY=always so bring-up is a pull rather
-    # than a cold `cargo build --release` inside Docker.
-    pull_policy: ${FORGE_MC_PULL_POLICY:-build}
+    image: ${TRAINER_IMAGE:-forge-mc-trainer:dev}
     container_name: forge-mc-trainer
     profiles: ["self-play"]
     restart: ${TRAINER_RESTART_POLICY:-on-failure}
@@ -275,13 +261,7 @@ services:
       dockerfile: docker/trainer.Dockerfile
       args:
         TORCH_VARIANT: ${TRAINER_TORCH_VARIANT:-cpu}
-    image: ${TRAINER_IMAGE:-ghcr.io/ianshank/forge-mc-trainer:dev}
-    # Services with a `build:` section build locally when the image is
-    # absent; they never pull. `build` (the default here) preserves
-    # local-dev behaviour exactly. CI jobs that consume already-published
-    # images set FORGE_MC_PULL_POLICY=always so bring-up is a pull rather
-    # than a cold `cargo build --release` inside Docker.
-    pull_policy: ${FORGE_MC_PULL_POLICY:-build}
+    image: ${TRAINER_IMAGE:-forge-mc-trainer:dev}
     container_name: forge-mc-trainer-bootstrap
     profiles: ["self-play"]
     # No `restart` policy — one-shot.
