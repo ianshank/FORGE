@@ -33,6 +33,7 @@ from ._helpers import (
     DEFAULT_DOCKER_LOGS_TAIL,
     DEFAULT_RUNNER_CONTAINER,
     REQUIRE_E2E_ENV_VAR,
+    compose_up_timeout_override,
     compose_up_timeout_secs,
     docker_compose_available,
     docker_logs,
@@ -153,9 +154,12 @@ def compose_up_minecraft_stack() -> Iterator[dict[str, Any]]:
         prebuilt,
         timeout_secs,
     )
-    if prebuilt and timeout_secs > COMPOSE_UP_TIMEOUT_SECS:
+    if prebuilt and compose_up_timeout_override() is None:
         # Operator guidance, not a warning: the long budget is correct
         # by default because a pull can still fall back to a build.
+        # Gated on the *absence* of an override, not on the resolved
+        # value: an operator who set a longer budget on purpose does not
+        # need to be told to export the variable they just exported.
         logger.info(
             "prebuilt bring-up is budgeted for a build fallback; export %s=%d "
             "to make a missing image fail fast instead",

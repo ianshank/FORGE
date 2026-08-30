@@ -158,25 +158,44 @@ def compose_up_timeout_secs() -> int:
     with ``FORGE_MC_COMPOSE_UP_TIMEOUT`` — :data:`COMPOSE_UP_TIMEOUT_SECS`
     is the value to use.
     """
+    override = compose_up_timeout_override()
+    return COMPOSE_UP_BUILD_TIMEOUT_SECS if override is None else override
+
+
+def compose_up_timeout_override() -> int | None:
+    """The operator's explicit bring-up budget, or ``None`` for the default.
+
+    Split out of :func:`compose_up_timeout_secs` so a caller can tell
+    "the operator chose this budget" from "nobody chose, so we
+    defaulted", without re-reading and re-validating the variable itself.
+    :mod:`conftest` uses it to decide whether its pull-only hint is worth
+    printing — telling someone to export a variable they have already
+    exported is noise, and slightly wrong.
+
+    A typo or a non-positive value is deliberately **not** an override.
+    Both degrade to the default, so a caller offering guidance about the
+    default should still offer it.
+    """
     raw = os.environ.get(COMPOSE_UP_TIMEOUT_ENV_VAR, "").strip()
-    if raw:
-        try:
-            parsed = int(raw)
-        except ValueError:
-            logger.warning(
-                "ignoring non-integer %s=%r; using the default",
-                COMPOSE_UP_TIMEOUT_ENV_VAR,
-                raw,
-            )
-        else:
-            if parsed > 0:
-                return parsed
-            logger.warning(
-                "ignoring non-positive %s=%d; using the default",
-                COMPOSE_UP_TIMEOUT_ENV_VAR,
-                parsed,
-            )
-    return COMPOSE_UP_BUILD_TIMEOUT_SECS
+    if not raw:
+        return None
+    try:
+        parsed = int(raw)
+    except ValueError:
+        logger.warning(
+            "ignoring non-integer %s=%r; using the default",
+            COMPOSE_UP_TIMEOUT_ENV_VAR,
+            raw,
+        )
+        return None
+    if parsed > 0:
+        return parsed
+    logger.warning(
+        "ignoring non-positive %s=%d; using the default",
+        COMPOSE_UP_TIMEOUT_ENV_VAR,
+        parsed,
+    )
+    return None
 
 
 def docker_compose_available() -> bool:

@@ -28,6 +28,7 @@ from ._helpers import (
     POLL_TIMEOUT_SECS,
     REQUIRE_E2E_ENV_VAR,
     USE_PREBUILT_ENV_VAR,
+    compose_up_timeout_override,
     compose_up_timeout_secs,
     docker_compose_available,
     docker_logs,
@@ -401,6 +402,38 @@ def test_each_flag_reads_its_own_env_var(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv(REQUIRE_E2E_ENV_VAR, "1")
     assert use_prebuilt_images() is False, "prebuilt must not read the require-E2E flag"
     assert require_e2e_execution() is True
+
+
+def test_timeout_override_reports_only_a_deliberate_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`compose_up_timeout_override` must distinguish "the operator
+    chose this" from "we defaulted".
+
+    `conftest` gates its pull-only hint on this. Gating on the resolved
+    value instead — `timeout_secs > COMPOSE_UP_TIMEOUT_SECS`, which is
+    what shipped first — tells an operator who deliberately exported a
+    *longer* budget to export the variable they have already exported.
+
+    A typo or a non-positive value is not a choice: both degrade to the
+    default, so the hint about the default stays worth printing.
+    """
+    monkeypatch.delenv(COMPOSE_UP_TIMEOUT_ENV_VAR, raising=False)
+    assert compose_up_timeout_override() is None, "unset is not a choice"
+
+    monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, "1234")
+    assert compose_up_timeout_override() == 1234
+
+    # The case the nit was about: an override LONGER than the pull-only
+    # budget is still an override, and must silence the hint.
+    monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, str(COMPOSE_UP_BUILD_TIMEOUT_SECS * 2))
+    assert compose_up_timeout_override() == COMPOSE_UP_BUILD_TIMEOUT_SECS * 2
+
+    for rejected in ("not-a-number", "0", "-5", "12.5"):
+        monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, rejected)
+        assert compose_up_timeout_override() is None, (
+            f"{rejected!r} degrades to the default, so it is not a choice"
+        )
 
 
 @pytest.mark.parametrize("bad", ["not-a-number", "0", "-5", "12.5"])
