@@ -460,7 +460,15 @@ string makes the constructor throw a JavaScript `Error` naming the problem.
 
 `.github/workflows/gh-pages.yml` builds `crates/forge-wasm` with `wasm-pack`
 and deploys the static client in [`web/`](web/) — a fully client-side,
-server-free simulation. Build it locally with:
+server-free simulation.
+
+> **Not currently published.** The build is green and gated on every PR, but the
+> deploy needs GitHub Pages enabled on the repository with
+> *Source = "GitHub Actions"*; until then `actions/deploy-pages` 404s. The
+> companion Hugging Face Space needs a write-scoped `HF_TOKEN` secret. See
+> [`docs/next_steps.md`](docs/next_steps.md) §6.
+
+Build and run it locally with:
 
 ```bash
 # Wraps wasm-pack with an absolute --out-dir: wasm-pack resolves a relative one

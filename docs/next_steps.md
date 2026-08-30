@@ -11,7 +11,7 @@ Three non-Minecraft tracks shipped in the `0.5.0` release-hygiene cut:
   (`CooperativeMctsProtocol`, `JointMctsPlanner`, centralized/independent
   critic). Regression coverage in `tests/rust/integration_swarm.rs`.
 - **REST env API** — Section 9 below (`[STATUS: LANDED v0.5.0]`).
-- **WASM GitHub Pages demo** — Section 6 below (`[STATUS: LANDED v0.5.0]`).
+- **WASM GitHub Pages demo** — Section 6 below (built + CI-gated; publishing blocked on repo settings — see the correction there).
 
 Plus release hygiene: workspace `0.1.0` → `0.5.0` and reconciliation of stale
 tech-debt rows against verified source (see the Technical Debt table).
@@ -387,24 +387,51 @@ scope" + the first-real-run report's next-steps):
 - **DPO / preference-trainer consuming teacher decision traces.** The trace schema already carries `top_k_probs` / `value_hat`. A DPO-style trainer would consume them as an alternative to the current value+policy distillation loss. `[STATUS: not-started]`
 - **Replay-compression level tuning sweep.** Completed. Trajectory compression sweep benchmarks are documented in `docs/results/replay-compression-sweep.md`. `[STATUS: COMPLETED]`
 
-### 6. GitHub Pages / WASM Live Demo  `[STATUS: LANDED v0.5.0]`
+### 6. GitHub Pages / WASM Live Demo  `[STATUS: BUILT + GATED; PUBLISH BLOCKED ON REPO SETTINGS]`
 
-Landed: `.github/workflows/gh-pages.yml` builds `crates/forge-wasm` with
-`wasm-pack` and deploys the static `web/` client (fully in-browser, no server).
-`forge-wasm` gained the `getrandom/js` + wasm-target wiring for the browser
-build. The REST env API (Section 9) mirrors the same reset/step/render JSON
-shapes. Original description retained below for history.
+**Correction (2026-08).** This section previously read `[STATUS: LANDED v0.5.0]`.
+The build landed; the *publish* never did. An audit of the Actions history found
+`gh-pages.yml` had failed on **all 7** runs since 2026-06-03 and `hf-space.yml`
+on **all 3**. In every gh-pages run the `build` job succeeded — wasm-pack
+produces a valid bundle in ~63s — and the `deploy` job failed in under a second
+with `Failed to create deployment (status: 404) … Ensure GitHub Pages has been
+enabled`. `hf-space.yml` died at its first step on an unset `HF_TOKEN`, so
+wasm-pack never even ran there, and the Space `ianshank/forge-wasm-demo` was
+never created. There has never been a live demo at either target.
+
+Neither failure is fixable from the repository. Two one-time settings are
+required:
+
+1. Enable GitHub Pages with **Source = "GitHub Actions"**
+   (`https://github.com/ianshank/FORGE/settings/pages`).
+2. Add a write-scoped `HF_TOKEN` repository secret.
+
+**What is done.** The demo builds, is verified on every PR, and both publishers
+now check their own output:
+
+- `crates/forge-wasm` has the `getrandom/js` + wasm-target wiring, a
+  `Result`-returning constructor (bad config throws a readable JS `Error`
+  instead of an opaque wasm trap), and `console_error_panic_hook`.
+- CI gates it: the blocking `wasm` job runs clippy for
+  `wasm32-unknown-unknown` and executes `#[wasm_bindgen_test]`s under Node —
+  including a determinism check on the target the demo actually ships to, which
+  nothing previously verified. The non-blocking `wasm-e2e` job drives the real
+  `web/` page in Chromium.
+- `web/` gained a seed input, so the reproducibility the Space card advertises
+  is demonstrable rather than merely claimed. It previously could not be:
+  `reset` takes `Option<u64>`, which crosses to JS as `BigInt`, and both
+  `README.md` and `web/app.js` got that wrong.
+- `gh-pages.yml` and `hf-space.yml` both gained a post-publish smoke, matching
+  the convention `hf-dataset.yml` and `hf-model.yml` already followed.
+
+The REST env API (Section 9) mirrors the same reset/step/render JSON shapes.
+Original description retained below for history.
 
 Compile `forge-wasm` and serve a **fully-static** demo directly from `gh-pages`:
 
 - No server required — all simulation runs in the browser via WASM
 - Replace the SSE backend with in-browser WASM calls
 - Enables public shareable demo link
-
-The `crates/forge-wasm/` crate exists and builds (verified during PR #45
-post-merge validation, 2026-05-16); the gap is the
-`.github/workflows/gh-pages.yml` workflow, the wasm-pack pipeline, and the
-demo glue code.
 
 ### 7. ✅ Benchmark Regression Tracking — COMPLETED
 

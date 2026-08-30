@@ -795,6 +795,25 @@ with `wasm-pack` and deploys the static `web/` client — a fully client-side,
 server-free demo. The REST and WASM surfaces deliberately mirror each other so
 the same observation/action JSON shapes work in both.
 
+Three layers verify it, each catching what the others cannot:
+
+| Layer | Job / command | Catches |
+|---|---|---|
+| Compile | `wasm` (clippy, `--target wasm32-unknown-unknown`) | Anything that fails to build for the target — a new dependency with a C build script, a `std` API absent on wasm32 |
+| Runtime | `wasm` (`scripts/wasm_test_node.sh`) | Breakage that compiles fine: wasm32's 32-bit `usize`, its trap-based panics, a `SystemTime::now()` reaching the wasm path. Determinism is asserted here, on the target the demo ships to |
+| Browser | `wasm-e2e` (Playwright, non-blocking) | The generated JS glue — the only layer that can reach it. `reset`'s `Option<u64>` crosses as `BigInt`, a contract invisible from Rust |
+
+Both publishers (`gh-pages.yml`, `hf-space.yml`) end with a post-publish smoke
+that fetches the deployed artifact back — the same convention `hf-dataset.yml`
+and `hf-model.yml` follow. Publishing itself is gated on repository settings
+that are not in this repo; see [`next_steps.md`](next_steps.md) §6.
+
+Known divergence: `forge-wasm`'s `SerializableState` and `forge-server`'s
+`SimulationSnapshot` describe the same world state in different shapes
+(snake_case vs camelCase, no `schemaVersion` on the WASM side). Unifying them
+means hoisting `SimulationSnapshot` down into `forge-types`, since `forge-server`
+pulls axum/tokio and a wasm crate cannot depend on it.
+
 ### 3.7 Python Bindings — Data Flow
 
 ```

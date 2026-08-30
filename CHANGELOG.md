@@ -9,13 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — WASM demo verified end to end
+
+Nothing on a PR had ever compiled `crates/forge-wasm` for
+`wasm32-unknown-unknown`, nothing had ever executed the compiled module, and
+nothing had ever loaded the demo page. An audit of the Actions history also
+found the demo had never actually published: `gh-pages.yml` failed all 7 of its
+runs (Pages not enabled on the repo) and `hf-space.yml` all 3 (`HF_TOKEN`
+unset). Both need one-time repository settings — see
+`docs/next_steps.md` §6.
+
+- **Blocking `wasm` CI job** — clippy for `wasm32-unknown-unknown` with
+  `-D warnings`, plus `#[wasm_bindgen_test]`s executed under Node. The wasm
+  tests include a determinism check on the target the browser demo ships to,
+  which nothing previously verified (wasm32 has a 32-bit `usize`, a different
+  float ABI, and trap-based panics).
+- **Non-blocking `wasm-e2e` CI job** — Playwright drives the real `web/` page in
+  Chromium against the wasm-pack build, with no mocks.
+- **`ForgeWasmEnv::new` returns `Result<_, JsError>`** and installs
+  `console_error_panic_hook`, so an invalid config throws a readable JS `Error`
+  rather than `RuntimeError: unreachable executed`. `try_new` is the Rust-side
+  equivalent.
+- **Seed control in the demo.** `reset` takes `Option<u64>`, which wasm-bindgen
+  lowers to an `i64` wasm parameter — so seeds cross as `BigInt`. The call
+  documented in `README.md` (`env.reset(42)`) threw, and `web/app.js` never
+  passed a seed at all, leaving the demo unable to demonstrate the
+  reproducibility it advertises. Both fixed, and pinned by an E2E spec.
+- **Post-publish smoke in `gh-pages.yml` and `hf-space.yml`**, matching the
+  convention `hf-dataset.yml` and `hf-model.yml` already followed: fetch the
+  published artifact back and assert on it, including that the `.wasm` is
+  served as `application/wasm`.
+- **Shared `scripts/install_wasm_pack.sh` / `build_wasm_demo.sh` /
+  `wasm_test_node.sh`.** The build script always passes an absolute
+  `--out-dir` (wasm-pack resolves a relative one against the crate directory);
+  the test wrapper fails on `wasm-pack test`'s vacuous exit-0 when a crate has
+  no wasm tests.
+- `deny.toml` gains the `wasm32-unknown-unknown` triple, so cargo-deny now
+  evaluates the wasm dependency graph at all.
+
 ### Added — pinned-config consistency check (`scripts/check_pinned_config_consistency.py`)
 
 Cross-checks three values that get duplicated across files which can't
 share one source (a Dockerfile `ARG`, a GH Actions `env:`/`with:` entry,
 and a Python/TOML source can't all read the same file without much more
 invasive templating) — so instead of eliminating the duplication, the
-script re-derives every copy and fails on drift:
+script re-derives every copy and fails on drift (the wasm-pack pin now has
+two dependent workflows, `hf-space.yml` and `ci.yml`):
 
 - The Rust toolchain version (`rust-toolchain.toml`'s `channel`) against
   its 15 `dtolnay/rust-toolchain@stable` `toolchain:` copies (5 workflow
@@ -408,6 +447,10 @@ search rather than reinventing it:
 
 - `.github/workflows/gh-pages.yml` builds `crates/forge-wasm` with `wasm-pack`
   and deploys a fully client-side demo (`web/`) — no server, shareable link.
+  **Correction (2026-08):** the build shipped, the deploy never did. Every run
+  of this workflow failed at `actions/deploy-pages` because GitHub Pages was
+  not enabled on the repository, so no demo was ever published. See the
+  Unreleased entry below.
 - `crates/forge-wasm` gains the `getrandom/js` + wasm-target wiring needed for a
   browser build.
 

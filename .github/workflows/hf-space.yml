@@ -73,14 +73,10 @@ jobs:
         # scripts/check_pinned_config_consistency.py).
         env:
           WASM_PACK_VERSION: "0.15.0"
-        run: |
-          curl -sSLf "https://github.com/rustwasm/wasm-pack/releases/download/v${WASM_PACK_VERSION}/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-            | tar xz -C /tmp
-          sudo install -m 755 "/tmp/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl/wasm-pack" /usr/local/bin/wasm-pack
-          wasm-pack --version
+        run: scripts/install_wasm_pack.sh
       - name: Build forge-wasm (wasm-pack, web target)
-        # Same invocation as gh-pages.yml: JS bindings + .wasm into web/pkg/.
-        run: wasm-pack build crates/forge-wasm --target web --out-dir "$GITHUB_WORKSPACE/web/pkg" --no-typescript
+        # Same script as gh-pages.yml, `make wasm`, and the wasm-e2e job.
+        run: scripts/build_wasm_demo.sh
       - name: Assemble Space staging directory
         run: |
           staging="$RUNNER_TEMP/space"
@@ -121,4 +117,42 @@ jobs:
               delete_patterns="*",
           )
           print(f"Space synced: https://huggingface.co/spaces/{repo_id}")
+          EOF
+      - name: Post-publish smoke
+        # Same convention as gh-pages.yml's smoke and hf-dataset.yml's
+        # "Post-publish load smoke": fetch the published files back rather than
+        # trusting that a green upload means a working Space. A static Space
+        # serves from a CDN that can lag the commit, so retry before failing.
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import os
+          import sys
+          import time
+
+          from huggingface_hub import HfApi
+
+          repo_id = os.environ["HF_SPACE_REPO_ID"]
+          api = HfApi(token=os.environ["HF_TOKEN"])
+
+          required = {
+              "index.html",
+              "app.js",
+              "README.md",
+              "pkg/forge_wasm.js",
+              "pkg/forge_wasm_bg.wasm",
+          }
+
+          for attempt in range(1, 6):
+              files = set(api.list_repo_files(repo_id, repo_type="space"))
+              missing = required - files
+              if not missing:
+                  print(f"Post-publish smoke OK: {sorted(required)}")
+                  break
+              print(f"attempt {attempt}: still missing {sorted(missing)}; retrying in 10s")
+              time.sleep(10)
+          else:
+              print(f"::error::Space {repo_id} is missing {sorted(missing)} after upload")
+              sys.exit(1)
           EOF
