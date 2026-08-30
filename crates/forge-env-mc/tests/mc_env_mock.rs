@@ -812,3 +812,55 @@ fn absent_client_fails_fast_instead_of_hanging() {
         started.elapsed()
     );
 }
+
+/// Every expected-panic join must go through [`join_expecting_panic`].
+///
+/// This file once swapped the **process-global** panic hook at four
+/// sites to silence expected backtraces. The hook is shared by every
+/// test libtest runs concurrently in this binary, so each swap could
+/// suppress the diagnostics that explain an unrelated failure — and it
+/// did not even silence its own target reliably, since a 50 ms read or
+/// accept timeout can fire before `set_hook` executes.
+///
+/// The first fix removed one of the four and the other three survived
+/// unnoticed, which is why this is a test and not a comment: reviewing
+/// four near-identical blocks is exactly the task humans and bots both
+/// did badly here. `catch_unwind` alone is sufficient, and confining it
+/// to the helper leaves one place for the rule to be broken.
+///
+/// The needles are assembled at runtime so this test's own source does
+/// not contain the very patterns it forbids — a self-match would make
+/// the assertions unfixable rather than merely failing.
+#[test]
+fn expected_panic_joins_do_not_touch_the_global_panic_hook() {
+    const SOURCE: &str = include_str!("mc_env_mock.rs");
+
+    // Guard the guard: if `include_str!` ever resolved to something
+    // else, every assertion below would pass vacuously.
+    assert!(
+        SOURCE.contains(&format!("fn {}", "join_expecting_panic")),
+        "the embedded source is not this file; this guard has drifted"
+    );
+
+    for suffix in ["set_hook", "take_hook"] {
+        let needle = format!("std::panic::{suffix}");
+        assert_eq!(
+            SOURCE.matches(&needle).count(),
+            0,
+            "{needle} mutates process-global state every concurrent test \
+             shares; use join_expecting_panic, which asserts the panic \
+             without it"
+        );
+    }
+
+    // One unwind catch, inside the helper. A second means a call site
+    // has grown its own copy again. Counts *calls* rather than the bare
+    // name, so the prose in these doc comments does not inflate it.
+    let call = format!("catch_{}(", "unwind");
+    assert_eq!(
+        SOURCE.matches(&call).count(),
+        1,
+        "expected exactly one `{call}` call, the one inside \
+         join_expecting_panic; a second means a call site grew its own"
+    );
+}
