@@ -323,8 +323,12 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
+          # `pyyaml` is required, not optional: the compose- and
+          # workflow-contract tests parse those files, and they are
+          # written to FAIL rather than skip without it (see
+          # tests/python/integration/_helpers.py::load_yaml_document).
           pip install maturin pytest pytest-cov numpy gymnasium httpx jsonschema \
-            stable-baselines3
+            pyyaml stable-baselines3
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           # v0.4: install onnx + onnxruntime + onnxscript so the new
           # `minecraft_e2e_smoke` tests + the T4a `_export_bundle`

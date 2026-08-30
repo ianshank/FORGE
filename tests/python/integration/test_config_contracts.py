@@ -32,7 +32,11 @@ from typing import Any
 
 import pytest
 
-from ._helpers import COMPOSE_UP_BUILD_TIMEOUT_SECS, REQUIRE_E2E_ENV_VAR
+from ._helpers import (
+    COMPOSE_UP_BUILD_TIMEOUT_SECS,
+    REQUIRE_E2E_ENV_VAR,
+    load_yaml_document,
+)
 
 #: Workflow job that exists to run the opt-in Minecraft E2E suite.
 E2E_JOB_ID = "python-test-minecraft-e2e"
@@ -53,6 +57,14 @@ READER_ROOTS = ("crates", "python", "scripts", "mc-bot/src", "tests/python")
 #: Source suffixes worth grepping for a reader.
 READER_SUFFIXES = (".rs", ".py", ".ts", ".js", ".sh", ".toml")
 
+#: Files that name env vars without reading them, and so must not count
+#: as readers. This module is the whole list: its docstrings name
+#: `FORGE_MC_BOT_URL` and `FORGE_MC_RUNNER_CONFIG` as the historical dead
+#: knobs, so without this exclusion those exact variables could be
+#: re-added to compose and still pass — the guard defeated by its own
+#: documentation.
+NON_READER_FILES = (Path(__file__).resolve(),)
+
 #: `pull_policy` values that force a build rather than preferring a
 #: published image. Compose's documented default (the key absent) pulls
 #: first and falls back to building, which is what this stack wants.
@@ -67,22 +79,20 @@ def repo_root() -> Path:
 
 @pytest.fixture(scope="module")
 def compose_data(repo_root: Path) -> dict[str, Any]:
-    """Parsed `docker/compose.minecraft.yml`."""
-    yaml = pytest.importorskip("yaml")
-    text = (repo_root / "docker" / "compose.minecraft.yml").read_text(encoding="utf-8")
-    data = yaml.safe_load(text)
-    assert isinstance(data, dict)
-    return data
+    """Parsed `docker/compose.minecraft.yml`.
+
+    Loaded via :func:`~._helpers.load_yaml_document`, which raises rather
+    than skipping when PyYAML is missing. `pytest.importorskip` would
+    turn a provisioning gap into a silent pass, and a guard against inert
+    fixes has no business being inert itself.
+    """
+    return load_yaml_document(repo_root / "docker" / "compose.minecraft.yml")
 
 
 @pytest.fixture(scope="module")
 def ci_workflow(repo_root: Path) -> dict[str, Any]:
-    """Parsed `.github/workflows/ci.yml`."""
-    yaml = pytest.importorskip("yaml")
-    text = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    data = yaml.safe_load(text)
-    assert isinstance(data, dict)
-    return data
+    """Parsed `.github/workflows/ci.yml`. Fails loudly, as above."""
+    return load_yaml_document(repo_root / ".github" / "workflows" / "ci.yml")
 
 
 def _service_environment(service: dict[str, Any]) -> dict[str, str]:
@@ -216,6 +226,34 @@ def test_no_build_service_forces_a_rebuild(compose_data: dict[str, Any]) -> None
 # --- Every declared knob must have a reader --------------------------
 
 
+def variables_without_readers(names: set[str], repo_root: Path) -> list[str]:
+    """Which of `names` no source file under :data:`READER_ROOTS` reads.
+
+    Searches file by file and drops each name at its first hit, rather
+    than joining every source in the repo into one string: the roots span
+    26 crates, and the join was both slow and needlessly total.
+
+    Files in :data:`NON_READER_FILES` are skipped, so a file that
+    documents a dead knob cannot make that knob look alive.
+    """
+    excluded = {path.resolve() for path in NON_READER_FILES}
+    remaining = set(names)
+    scanned = 0
+    for root in READER_ROOTS:
+        for path in (repo_root / root).rglob("*"):
+            if not path.is_file() or path.suffix not in READER_SUFFIXES:
+                continue
+            if path.resolve() in excluded:
+                continue
+            scanned += 1
+            if not remaining:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            remaining.difference_update({name for name in remaining if name in text})
+    assert scanned, "no source files found — this guard has drifted"
+    return sorted(remaining)
+
+
 def test_every_forge_env_var_in_compose_has_a_reader(
     compose_data: dict[str, Any], repo_root: Path
 ) -> None:
@@ -239,18 +277,39 @@ def test_every_forge_env_var_in_compose_has_a_reader(
         )
     assert declared, "no FORGE_* env vars found — this guard has drifted"
 
-    sources = [
-        path
-        for root in READER_ROOTS
-        for path in (repo_root / root).rglob("*")
-        if path.is_file() and path.suffix in READER_SUFFIXES
-    ]
-    assert sources, "no source files found — this guard has drifted"
-    haystack = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in sources)
-
-    unread = sorted(name for name in declared if name not in haystack)
+    unread = variables_without_readers(declared, repo_root)
     assert unread == [], (
         f"declared in docker/compose.minecraft.yml but read nowhere in "
         f"{list(READER_ROOTS)}: {unread}. Either wire it up or delete it — "
         "a knob that does nothing is worse than no knob."
+    )
+
+
+def test_the_reader_scan_is_not_satisfied_by_this_file(repo_root: Path) -> None:
+    """The guard must not be defeated by its own documentation.
+
+    This module's docstrings name `FORGE_MC_BOT_URL` and
+    `FORGE_MC_RUNNER_CONFIG` as the historical dead knobs. Because the
+    scan searches `tests/python`, those literals made the two variables
+    look *read* — so re-adding either to compose would have passed the
+    very test named for them, while an invented name still failed. That
+    asymmetry is what made the hole easy to miss.
+
+    Uses names this file genuinely mentions, so it fails the moment the
+    exclusion is dropped.
+    """
+    documented_dead_knobs = {"FORGE_MC_BOT_URL", "FORGE_MC_RUNNER_CONFIG"}
+    source = Path(__file__).read_text(encoding="utf-8")
+    for name in documented_dead_knobs:
+        assert name in source, (
+            f"{name} is no longer mentioned here, so this test no longer "
+            "exercises the self-match it exists to catch"
+        )
+
+    assert variables_without_readers(documented_dead_knobs, repo_root) == sorted(
+        documented_dead_knobs
+    ), (
+        "a variable mentioned only in this file's prose must still count "
+        "as unread; otherwise the guard passes on exactly the knobs it "
+        "documents as dead"
     )

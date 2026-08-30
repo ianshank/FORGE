@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from pathlib import Path
+    from typing import Any
 
 #: Maximum seconds to wait for a polling predicate to flip true.
 #: The longest realistic compose-stack startup we've seen is ~60s
@@ -196,6 +197,37 @@ def compose_up_timeout_override() -> int | None:
         parsed,
     )
     return None
+
+
+def load_yaml_document(path: Path) -> dict[str, Any]:
+    """Parse a YAML file, failing loudly when PyYAML is absent.
+
+    Deliberately **not** ``pytest.importorskip``. The callers are
+    config-contract guards, and a skipped test exits pytest ``0`` — the
+    same green-hole this package exists to close, turned on the guards
+    themselves. A missing parser is a CI provisioning bug, not a reason
+    to quietly stop checking that the compose file and the workflow
+    still agree with the code.
+
+    Raises:
+        RuntimeError: PyYAML is not installed.
+        TypeError: the document does not parse to a mapping.
+    """
+    try:
+        import yaml
+    except ImportError as exc:  # pragma: no cover - provisioning failure
+        raise RuntimeError(
+            "PyYAML is required to validate the compose and workflow "
+            "contracts and is not installed. These guards must not skip: "
+            "a skipped guard exits 0 and reports success while checking "
+            "nothing. Install it (`pip install pyyaml`) or fix the CI "
+            "install step for the job running this suite."
+        ) from exc
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise TypeError(f"{path} did not parse to a mapping: {type(data).__name__}")
+    return data
 
 
 def docker_compose_available() -> bool:
