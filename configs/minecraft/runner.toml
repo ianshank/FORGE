@@ -7,7 +7,8 @@
 
 # 100 episodes is the v0.5 first-real-run baseline target.  Operators
 # can lower this for smoke testing via the runner's --episodes flag or
-# the FORGE_MC_RUNNER_EPISODES env var (set by mc_self_play.sh).
+# the FORGE_MC_RUNNER_EPISODES env var, which docker/compose.minecraft.yml
+# plumbs through as ${RUNNER_EPISODES}.
 episodes = 100
 
 # Capped at env_cfg.episode.max_ticks via the bot's truncation signal.
