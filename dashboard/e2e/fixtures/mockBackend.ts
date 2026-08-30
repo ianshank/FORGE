@@ -21,4 +21,23 @@ export async function installRestMocks(page: Page): Promise<void> {
       body: sseBody(DEMO_LINES),
     }),
   );
+
+  // The three history endpoints the app polls on /live, /training and
+  // /runs. Without these the fetches escape to the real apiBaseUrl
+  // (http://localhost:8080), which nothing serves under `vite preview`,
+  // so Chromium logs `net::ERR_CONNECTION_REFUSED` and the
+  // "loads the shell without console errors" spec fails whenever that
+  // rejection lands before its assertion — an intermittent failure with
+  // no relation to the code under test.
+  //
+  // Empty arrays deliberately: they reproduce today's rendered state
+  // exactly, so the existing empty-state assertions stay valid. Specs
+  // that want populated data re-`route` these before navigating.
+  for (const path of [
+    "**/api/runs",
+    "**/api/training-metrics/history*",
+    "**/api/decision-traces/history*",
+  ]) {
+    await page.route(path, (route) => route.fulfill({ json: [] }));
+  }
 }
