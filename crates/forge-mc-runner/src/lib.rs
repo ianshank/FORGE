@@ -41,7 +41,7 @@ pub mod random_baseline;
 pub mod runner;
 pub mod trajectory;
 
-pub use config::{RunnerConfig, SCHEMA_ID_ENV_VAR};
+pub use config::{RunnerConfig, EPISODES_ENV_VAR, SCHEMA_ID_ENV_VAR};
 pub use error::RunnerError;
 pub use hot_reload::{HotReloadWatcher, ReloadEvent};
 #[cfg(feature = "mc-live")]
