@@ -58,7 +58,19 @@ order (cheapest/highest-signal first):
    that the prior claim might be exactly what's wrong.
 3. When a claim is confirmed accurate, leave it alone — don't touch
    correct content just to reformat it.
-4. When a claim has drifted, fix it in place using the house style already
+4. **Before editing `CHANGELOG.md` specifically: check its line endings
+   first** (`file CHANGELOG.md`, or `git check-attr text eol -- CHANGELOG.md`
+   — it's `-text` in `.gitattributes`). It is the one file in this repo
+   carrying CRLF; every other `.md` is LF. A Python `open(p).read()` /
+   `open(p, 'w').write(s)` round-trip silently strips CRLF to LF on read
+   and never restores it — this exact accident once turned a ~40-line
+   `CHANGELOG.md` edit into a ~2000-line whole-file rewrite (see its own
+   `[Unreleased]` entry). Use `sed`/the Edit tool, not a Python text-mode
+   read/write, and re-check `file CHANGELOG.md` after editing. (A
+   `PreToolUse` hook, `.claude/hooks/guard_line_ending_drift.py`, blocks a
+   commit that flips most of a tracked file's line endings — a safety net
+   for this specific mistake, not a reason to skip checking first.)
+   When a claim has drifted, fix it in place using the house style already
    established in `docs/next_steps.md`:
    `**Stale entry, verified false during the <YYYY-MM> pass.** <what's
    actually true, with the specific evidence — file:line, test name, or

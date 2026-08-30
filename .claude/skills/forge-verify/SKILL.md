@@ -1,11 +1,12 @@
 ---
 name: forge-verify
-description: Run FORGE's pre-PR validation gate (Rust fmt/clippy/test, Python ruff/mypy/pytest, mc-bot, dashboard, and optionally coverage/cargo-deny/gitleaks) and report a clear per-category pass/fail summary. Use before opening or updating a PR, or when the user asks to "verify", "run the full test suite", or "check CI will pass" locally.
+description: Run FORGE's pre-PR validation gate (Rust fmt/clippy/test, Python ruff/mypy/pytest, mc-bot, dashboard, and optionally coverage/cargo-deny/gitleaks, or the wasm-runtime + browser-E2E stack for changes touching crates/forge-wasm or web/) and report a clear per-category pass/fail summary. Use before opening or updating a PR, or when the user asks to "verify", "run the full test suite", or "check CI will pass" locally.
 ---
 
 Run this repo's pre-PR validation sequence and report results per category
 (Rust, Python, mc-bot, dashboard, and — for `verify-full` — coverage/deny/
-gitleaks), not just a final pass/fail. Every step here is a thin wrapper
+gitleaks, or — for `verify-wasm` — the wasm-runtime and browser-E2E
+layers), not just a final pass/fail. Every step here is a thin wrapper
 around a target in the root `Makefile`, which is itself just the commands
 documented in `CONTRIBUTING.md`; if this skill and those two files ever
 disagree, they've drifted and the drift itself is worth flagging.
@@ -18,15 +19,30 @@ disagree, they've drifted and the drift itself is worth flagging.
    - `make verify-full` — everything in `verify`, plus `cargo tarpaulin`
      (85% floor), `cargo deny check`, and `gitleaks`. Slower; run before
      a PR that changes dependencies or when coverage regressions matter.
-   Skip asking if the user already said "full", "with coverage", or named
-   one of coverage/deny/gitleaks specifically — that means `verify-full`.
+   - `verify-wasm` — `make verify` plus the two carve-outs below that
+     structurally can't be part of it (`make wasm-test`, `make web-e2e`):
+     the full wasm-specific gate stack for a PR touching
+     `crates/forge-wasm`, `forge-core`, `forge-types`, `web/`, or
+     `tests/web-e2e/`. Needs `wasm-pack` and a Chromium download (both
+     network-fetched by the targets themselves). Use this instead of
+     plain `verify` whenever the change is in that surface — `verify`
+     alone would pass while leaving the wasm-runtime and browser-E2E
+     layers, which have each caught real defects `clippy`/`cargo test`
+     didn't (see PR #134's "why three verification layers"), unchecked.
+   Skip asking if the user already said "full"/"with coverage" (→
+   `verify-full`) or "wasm"/named `crates/forge-wasm`/`web/` specifically
+   (→ `verify-wasm`).
 
 2. Run `make -n <target>` first (dry-run) if there's any doubt about what
    will execute — it's free and prints the resolved command list without
    side effects.
 
-3. Run the chosen target (`make verify` or `make verify-full`) via Bash.
-   These take several minutes; do not interrupt early on a slow step.
+3. Run the chosen target via Bash. `verify` and `verify-full` are each one
+   Makefile target; `verify-wasm` is `make verify` followed by
+   `make wasm-test && make web-e2e` — run as separate commands (not
+   chained into one target) so a `wasm-test` failure is attributed clearly
+   rather than reported as a generic `verify-wasm` failure. These take
+   several minutes; do not interrupt early on a slow step.
 
 4. If it fails, don't just report "verify failed" — identify which
    sub-target failed (the Makefile stops at the first failing prerequisite,
@@ -36,12 +52,16 @@ disagree, they've drifted and the drift itself is worth flagging.
    re-running everything else.
 
 5. Report a per-category table: Rust (fmt/clippy/test), Python (ruff/
-   mypy/pytest), mc-bot, dashboard, and (if `verify-full`) coverage/deny/
-   gitleaks — pass/fail each, with the specific failing command and a
-   short excerpt of the error for anything that failed. Don't claim
-   something is green without having actually run it in this pass.
+   mypy/pytest), mc-bot, dashboard, (if `verify-full`) coverage/deny/
+   gitleaks, and (if `verify-wasm`) wasm-runtime tests/browser E2E —
+   pass/fail each, with the specific failing command and a short excerpt
+   of the error for anything that failed. Don't claim something is green
+   without having actually run it in this pass.
 
 ## Not covered by `make verify` / `make verify-full`
+
+(`wasm-test` and `web-e2e` below are covered by the `verify-wasm` mode
+above — this section is about what plain `verify`/`verify-full` skip.)
 
 - **ONNX feature surface** (`onnx` / `onnx-reload` / `mc-live-bundled`):
   `make onnx-check` needs a real ONNX Runtime ≥1.23.2 shared library and
