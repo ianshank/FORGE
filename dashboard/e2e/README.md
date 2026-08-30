@@ -14,6 +14,7 @@ e2e/
   pages/                # Page Object Models
   specs/                # functional flows (app, live, replay, demos, pages)
   aqa/                  # a11y.spec.ts (axe-core) + allowlist.ts (triage)
+                        # network.spec.ts (no request escapes the mocks)
   test-data/            # trajectory JSON fixtures for the replay upload
 ```
 
@@ -22,14 +23,21 @@ e2e/
 - **WebSocket**: a fake `window.WebSocket` is injected via `addInitScript`
   before the app mounts (`fixtures/mockWebSocket.ts`). It auto-opens and emits a
   seeded `StateUpdate`; specs push more frames with `emitWsMessage`.
-- **REST/SSE**: `page.route(...)` fulfils `/api/metrics`, `/api/scenario/remix`,
-  the demo `/api/run/*` SSE stream, and the three history endpoints
-  (`/api/runs`, `/api/training-metrics/history`,
-  `/api/decision-traces/history`) that the app polls (`fixtures/mockBackend.ts`).
-  Every endpoint the app calls must be mocked: an unmocked fetch escapes to the
-  real `apiBaseUrl`, which nothing serves here, and the resulting console error
-  fails the "loads the shell without console errors" spec. Error cases
-  re-`route` before navigating (last handler wins).
+- **REST/SSE**: `fixtures/mockBackend.ts` declares one `API_MOCKS` map —
+  `/api/metrics`, `/api/scenario/remix`, the demo `/api/run/*` SSE stream, and
+  the three history endpoints (`/api/runs`, `/api/training-metrics/history`,
+  `/api/decision-traces/history`) the app polls. Error cases re-`route` before
+  navigating (last handler wins).
+- **Escape guard**: every endpoint the app calls *must* be in that map. An
+  unmocked fetch escapes to the real `apiBaseUrl`, which nothing serves here,
+  and used to surface only as an intermittent console error in whichever spec
+  happened to observe the rejection — never in the spec that introduced it.
+  `fixtures/networkGuard.ts` closes that: the shared fixture fails any test
+  whose page reaches an origin that is neither the preview server nor an entry
+  in `API_MOCKS` / `ALLOWED_EXTERNAL_ORIGINS`. It keys on origin and pattern,
+  not on whether the request failed, so an escape cannot hide behind a backend
+  a developer happens to be running locally. Adding a hook that polls a new
+  endpoint therefore fails immediately, naming the URL.
 
 ## Running
 
@@ -38,7 +46,7 @@ npm ci
 npm run test:e2e:install   # one-time: downloads Chromium (+ OS deps)
 npm run test:e2e           # build → preview → run specs + a11y
 npm run test:e2e:ui        # interactive debugging
-npm run test:a11y          # accessibility scans only
+npm run test:a11y          # accessibility + network-isolation scans only
 npm run typecheck:e2e      # type-check e2e/ without emitting
 ```
 
@@ -60,3 +68,9 @@ HTML report + traces as artifacts (open with `npx playwright show-trace`).
 `aqa/allowlist.ts` holds the explicit, reviewable exceptions: the `<canvas>` is
 excluded (no accessible representation; state mirrored in the Agent Inspector),
 and `color-contrast` is temporarily disabled pending a dark-theme design pass.
+
+`fixtures/networkGuard.ts` carries the equivalent list for the network scan:
+`ALLOWED_EXTERNAL_ORIGINS` names the third-party origins the app may reach
+(today, the two Google Fonts hosts `src/index.css` imports). It is an
+allowlist rather than a blanket exemption so a new third-party dependency in
+the dashboard fails the AQA suite until someone adds it on purpose.
