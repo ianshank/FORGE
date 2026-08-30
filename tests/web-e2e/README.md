@@ -16,7 +16,9 @@ preflight.mjs          # builds/verifies web/pkg/ before the server starts
 serve.mjs              # dependency-free static server for web/
 e2e/
   tsconfig.json        # strict typecheck for the specs
-  specs/demo.spec.ts   # the suite
+  specs/demo.spec.ts   # the browser suite (Playwright)
+unit/
+  app.test.mjs         # node:test unit tests for web/app.js's pure helpers
 ```
 
 ## Why it lives here and not in `web/`
@@ -40,6 +42,7 @@ current.
 
 ```bash
 npm ci
+npm run test:unit            # fast, no browser: web/app.js's pure helpers
 npm run test:e2e:install     # one-time: download Chromium
 npm run test:e2e
 ```
@@ -64,6 +67,7 @@ hatches, neither set in CI:
 | Step advances the tick | the step call or the DOM wiring |
 | Play advances, Pause stops | the timer loop not driving real wasm steps |
 | **same seed reproduces the same world** | CHARTER Invariant 6, checked through the browser and across a page reload |
+| seed above `2^64-1` falls back to a random seed | `resetFromInput()`'s invalid-seed branch, and its status message |
 | **BigInt seed contract** | `reset` taking a `number` again — unreachable from Rust, since the coercion lives only in the generated JS glue |
 | readable config error | a panic crossing the boundary as an opaque wasm trap |
 | no console or page errors | any Rust panic, which arrives as a `pageerror` |
@@ -72,3 +76,15 @@ The demo picks actions with `Math.random()`, so the determinism spec deliberatel
 compares only the **post-reset** grid, which the seed alone determines. Action-
 sequence determinism is covered on the wasm target by
 [`crates/forge-wasm/tests/wasm_bindings.rs`](../../crates/forge-wasm/tests/wasm_bindings.rs).
+
+## `unit/` — `node:test` coverage for `app.js`'s pure helpers
+
+`parseSeed()`'s BigInt-overflow guard needs a ~350-million-digit string to
+exceed V8's own internal BigInt size cap and actually exercise the `catch`
+branch — impractical to drive through a real DOM `fill()` (slow, memory-heavy,
+and the exact-size assertion matters more than anything visual). `node:test`
+calls `parseSeed` directly, no browser, in about a second. It's a real import
+of `web/app.js`, not a reimplementation, so it can't drift from the deployed
+code — but see the note in `app.js` itself: importing it unconditionally runs
+the app's `main()`, so that call is guarded behind a `typeof document !==
+"undefined"` check specifically so this file can import it safely.

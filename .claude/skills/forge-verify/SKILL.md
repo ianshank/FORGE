@@ -60,6 +60,12 @@ disagree, they've drifted and the drift itself is worth flagging.
   users always have it. Run `wasm-test` when the change touches
   `crates/forge-wasm`, `forge-core`, `forge-types`, or `web/`; see the
   `wasm` job in `.github/workflows/ci.yml`.
+- **WASM demo E2E** (`make web-e2e`): `node:test` unit coverage for
+  `web/app.js`'s pure helpers plus Playwright driving the real demo page in
+  Chromium against a fresh wasm-pack build — needs `wasm-pack` and a
+  Chromium download, so it isn't in the default sequence either. Run it
+  when the change touches `web/` or `tests/web-e2e/`; see the non-blocking
+  `wasm-e2e` job in `.github/workflows/ci.yml`.
 - **Markdown lint** (`npx --yes markdownlint-cli2 "**/*.md"`) isn't a
   Makefile target; run it directly if the change touches docs. (Hook
   self-tests *are* covered — `make hooks-test` runs as part of `verify`.)

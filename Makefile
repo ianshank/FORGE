@@ -105,8 +105,8 @@ mc-bot-test: ## mc-bot: typecheck + Biome lint + node:test + coverage
 dashboard-test: ## dashboard: build + Biome lint + Vitest coverage gate (85%)
 	cd dashboard && npm ci && npm run build && npm run lint && npm run test:coverage
 
-web-e2e: ## WASM demo: Playwright E2E against the real web/ demo (needs wasm-pack + a Chromium download)
-	cd tests/web-e2e && npm ci && npm run typecheck:e2e && npm run test:e2e
+web-e2e: ## WASM demo: unit + Playwright E2E against the real web/ demo (needs wasm-pack + a Chromium download)
+	cd tests/web-e2e && npm ci && npm run typecheck:e2e && npm run test:unit && npm run test:e2e
 
 # ---- Aggregate -----------------------------------------------------------
 

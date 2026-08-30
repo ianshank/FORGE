@@ -30,6 +30,7 @@ cargo test --workspace --features forge-cloud/gcs
 # for you. wasm-test additionally needs wasm-pack (scripts/install_wasm_pack.sh).
 make wasm-check   # clippy on wasm32 -- part of `make verify`
 make wasm-test    # #[wasm_bindgen_test]s under Node -- NOT part of `make verify`
+make web-e2e      # unit + Playwright E2E for web/ -- also NOT part of `make verify` (needs a Chromium download)
 
 # Rust coverage (85% workspace floor; install a tarpaulin that builds under the pin)
 cargo tarpaulin --workspace --exclude forge-python --exclude forge-wasm \
