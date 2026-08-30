@@ -7,10 +7,14 @@
 //! such as `forge-mc-runner`'s episode loop — over the *real* wire
 //! protocol without a Minecraft server, a JVM, or Docker.
 //!
-//! It also **records every [`ClientMsg`] it receives**, so a test can
-//! assert what the client actually sent (which action ids a planner
-//! chose, whether `Close` was sent on drop) rather than only what it
-//! did with the replies.
+//! It also **records the [`ClientMsg`]s that advance the reply
+//! script**, so a test can assert what the client actually sent —
+//! which action ids a planner chose, and in what order — rather than
+//! only what it did with the replies. The recording is scoped to that:
+//! the mock reads exactly once per scripted reply and stops when the
+//! script is exhausted, so a client message sent after the last reply
+//! (a trailing `Close` on drop, say) is not generally observed, and
+//! control frames are skipped without being recorded.
 //!
 //! Gated behind the `testing` feature so the mock never ships in a
 //! release binary. Consumers enable it as a dev-dependency:
@@ -318,8 +322,13 @@ pub struct MockBotHandle {
 impl MockBotHandle {
     /// Snapshot of the [`ClientMsg`]s received so far, in order.
     ///
-    /// Safe to call while the mock is still serving; call it after
-    /// [`MockBotHandle::join`] for the complete sequence.
+    /// Safe to call while the mock is still serving. The sequence is
+    /// complete once the serving thread has stopped — when the reply
+    /// script is exhausted or the client disconnects — so take the
+    /// snapshot *before* [`MockBotHandle::join`], which consumes the
+    /// handle. In practice a test that has already observed the
+    /// episode's last reply (a terminating observation, or a returned
+    /// `Runner` outcome) has that guarantee.
     ///
     /// # Panics
     ///

@@ -179,16 +179,14 @@ fn runner_drives_a_full_episode_over_the_real_protocol() {
         "episode must open with Reset, got {:?}",
         sent[0]
     );
-    for (i, msg) in sent[1..].iter().enumerate() {
-        match msg {
-            ClientMsg::Step { action_id } => assert!(
-                *action_id < map.action_count(),
-                "step {i} sent action_id {action_id}, outside the {} declared actions",
-                map.action_count()
-            ),
+    let wire_actions: Vec<u32> = sent[1..]
+        .iter()
+        .enumerate()
+        .map(|(i, msg)| match msg {
+            ClientMsg::Step { action_id } => *action_id,
             other => panic!("expected Step at index {}, got {other:?}", i + 1),
-        }
-    }
+        })
+        .collect();
     server.join();
 
     // The trajectory must carry the observations the mock actually
@@ -207,9 +205,38 @@ fn runner_drives_a_full_episode_over_the_real_protocol() {
     assert_eq!(traj.action_count, map.action_count());
     assert_eq!(traj.schema_id, schema_id);
     assert_eq!(traj.steps.len(), STEPS as usize);
-    // Step 0's observation is the Reset reply, whose obs was filled
-    // with its tick (0.0). Proves the floats survived the wire.
-    assert_eq!(traj.steps[0].obs, vec![0.0_f32; OBS_DIM]);
+
+    // The observations must be the ones the mock put on the wire, tick
+    // by tick. Asserting only step 0 would prove nothing: its obs is
+    // the Reset reply at tick 0, i.e. all zeroes, which is exactly what
+    // a freshly-zeroed buffer holds — a runner that never copied the
+    // payload would pass. The later ticks are non-zero and distinct.
+    let expected_obs: Vec<Vec<f32>> = (0..STEPS).map(|tick| vec![tick as f32; OBS_DIM]).collect();
+    let actual_obs: Vec<Vec<f32>> = traj.steps.iter().map(|s| s.obs.clone()).collect();
+    assert_eq!(
+        actual_obs, expected_obs,
+        "trajectory observations must be the floats the mock sent, in order"
+    );
+    assert!(
+        actual_obs.iter().any(|o| o.iter().any(|f| *f != 0.0)),
+        "at least one observation must be non-zero, or a zeroed buffer would satisfy this test"
+    );
+
+    // The action ids the planner put on the WIRE must be the ones it
+    // recorded in the trajectory. Range-checking the wire values alone
+    // re-proves what `MinecraftEnv::step_into` already enforces: a
+    // regression that serialised a different in-range action would
+    // still pass. Only this comparison ties the two sides together.
+    let recorded_actions: Vec<u32> = traj.steps.iter().map(|s| s.action_id).collect();
+    assert_eq!(
+        wire_actions, recorded_actions,
+        "each action the planner chose must reach the socket unchanged, in order"
+    );
+    assert!(
+        wire_actions.iter().all(|a| *a < map.action_count()),
+        "every action id must fall inside the {} declared actions: {wire_actions:?}",
+        map.action_count()
+    );
 }
 
 /// A `Hello` that disagrees with the action map fails the handshake

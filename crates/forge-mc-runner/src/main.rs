@@ -443,6 +443,26 @@ mod resolve_config_tests {
     use clap::Parser;
     use forge_mc_runner::EPISODES_ENV_VAR;
 
+    /// Serialises every test that touches the process-global
+    /// environment table, mirroring the `ENV_LOCK` idiom already used
+    /// in `config.rs`, `forge-server::config` and `forge-bench::env`.
+    ///
+    /// Owning a variable's mutations is not sufficient on its own:
+    /// `resolve_config` calls `with_env_var_overrides`, which *reads*
+    /// [`EPISODES_ENV_VAR`], so the test below that only reads it still
+    /// races the one that sets it. Rust 2024 requires excluding
+    /// concurrent environment access, not just concurrent mutation.
+    ///
+    /// A poisoned guard is recovered: the panic that poisoned it has
+    /// already failed its own test, and cascading it would replace real
+    /// assertion failures with mutex noise.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Acquire [`ENV_LOCK`], tolerating poisoning.
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Episode count carried by the simulated `runner.toml`.
     const TOML_EPISODES: u64 = 100;
     /// Episode count an operator exports into the environment.
@@ -460,11 +480,11 @@ mod resolve_config_tests {
     /// Precedence is CLI > env > TOML, verified across all four
     /// combinations in one `#[test]`.
     ///
-    /// Consolidated deliberately: cargo's parallel runner races the
-    /// process-global env table, so every mutator of a given variable
-    /// must sit in a single test function. This is the sole owner of
-    /// [`EPISODES_ENV_VAR`] in this binary's test target; the library's
-    /// own owner lives in `config.rs`.
+    /// Consolidated deliberately, and run under [`ENV_LOCK`]: cargo's
+    /// parallel runner races the process-global env table, and
+    /// consolidation alone only sequences the cases *within* this test.
+    /// The lock is what excludes the sibling test, which reads the same
+    /// variable through `resolve_config`.
     ///
     /// Regression guard: `--episodes` predates the env reader, so it
     /// always won. Applying the ladder after the CLI overlay silently
@@ -472,14 +492,16 @@ mod resolve_config_tests {
     /// the variable ambiently, an explicitly typed flag became a no-op.
     #[test]
     fn cli_beats_env_beats_toml_for_episodes() {
+        let _env = env_guard();
         let saved = std::env::var(EPISODES_ENV_VAR).ok();
         let with_flag =
             Cli::parse_from(["forge-mc-runner", "--episodes", &CLI_EPISODES.to_string()]);
         let without_flag = Cli::parse_from(["forge-mc-runner"]);
 
         // --- env unset: TOML wins, flag still wins over it ---
-        // SAFETY: all mutation of EPISODES_ENV_VAR in this test target is
-        // confined to this function, so the parallel runner cannot race us.
+        // SAFETY: `_env` holds ENV_LOCK for this test's whole body, and
+        // every other environment-touching test here takes the same
+        // lock, so no concurrent access to the table is possible.
         unsafe {
             std::env::remove_var(EPISODES_ENV_VAR);
         }
@@ -523,6 +545,9 @@ mod resolve_config_tests {
     /// OR-ed on (it can enable, never disable).
     #[test]
     fn non_episode_flags_keep_their_semantics() {
+        // `resolve_config` reads the env table, so this test must hold
+        // the lock even though it never writes to it.
+        let _env = env_guard();
         let cli = Cli::parse_from([
             "forge-mc-runner",
             "--mc-config",

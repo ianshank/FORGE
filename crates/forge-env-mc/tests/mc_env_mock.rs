@@ -260,12 +260,15 @@ fn join_surfaces_a_real_server_fault() {
     // means the mock sees a timeout rather than a disconnect.
     let (_client, _response) = tungstenite::connect(&url).expect("client connect");
 
-    // Silence the panic backtrace this deliberately provokes, so the
-    // test output stays readable.
-    let previous_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
+    // `catch_unwind` alone, deliberately: the panic hook is
+    // process-global, so swapping it out here would suppress panic
+    // diagnostics for every OTHER test libtest is running concurrently
+    // in this process — trading one tidy backtrace for the loss of the
+    // message that explains an unrelated failure. It would not even
+    // reliably silence this one: the mock's 50 ms read timeout can fire
+    // before the swap executes. The expected backtrace below is noise
+    // worth living with.
     let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
-    std::panic::set_hook(previous_hook);
 
     assert!(
         joined.is_err(),

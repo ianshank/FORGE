@@ -451,6 +451,28 @@ impl RunnerConfig {
 mod tests {
     use super::*;
 
+    /// Serialises every test that touches the process-global
+    /// environment table.
+    ///
+    /// Confining each variable's mutations to one `#[test]` is not
+    /// enough. [`RunnerConfig::with_env_var_overrides`] reads *both*
+    /// [`SCHEMA_ID_ENV_VAR`] and [`EPISODES_ENV_VAR`], so the schema
+    /// test's `set_var` races the episodes test's read of the same
+    /// variable, and vice versa. Rust 2024 made `set_var` `unsafe`
+    /// because it requires excluding concurrent environment *access*,
+    /// not merely concurrent mutation of the same key — so any test
+    /// that mutates or observes the table must hold this lock.
+    ///
+    /// A poisoned guard is recovered rather than propagated: the panic
+    /// that poisoned it has already failed its own test, and cascading
+    /// it here would replace real assertion failures with mutex noise.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Acquire [`ENV_LOCK`], tolerating poisoning.
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn default_is_valid() {
         let cfg = RunnerConfig::default();
@@ -798,14 +820,13 @@ mod tests {
     }
 
     /// All three env-var override scenarios consolidated into one
-    /// `#[test]` so cargo's parallel test runner cannot interleave
-    /// our env-var mutations across threads.
+    /// `#[test]`, run under [`ENV_LOCK`].
     ///
-    /// Rust 2024 made `std::env::set_var` `unsafe` precisely because
-    /// concurrent mutators race the process-global env table; the
-    /// peer-review-flagged "single-threaded test scope" claim only
-    /// holds when ALL mutators of the same env var sit in the same
-    /// `#[test]` function.
+    /// Consolidation alone is not sufficient. It keeps the *cases*
+    /// sequential, but `with_env_var_overrides` reads
+    /// [`EPISODES_ENV_VAR`] as well, so the sibling episodes test's
+    /// `set_var` still races this one's read of that variable. The
+    /// lock is what actually excludes concurrent access.
     ///
     /// Sequential cases (cleared between each):
     /// 1. env set → overrides TOML.
@@ -813,12 +834,13 @@ mod tests {
     /// 3. env set to empty string → treated as unset; TOML wins.
     #[test]
     fn with_env_var_overrides_covers_all_scenarios() {
+        let _env = env_guard();
         let saved = std::env::var(SCHEMA_ID_ENV_VAR).ok();
 
         // --- case 1: env set ---
-        // SAFETY: All env mutation is contained in this single test;
-        // no other test in the suite touches SCHEMA_ID_ENV_VAR, so
-        // cargo's parallel runner cannot race us.
+        // SAFETY: `_env` holds ENV_LOCK for this test's whole body, and
+        // every other test that touches the environment takes the same
+        // lock, so no concurrent access to the table is possible.
         unsafe {
             std::env::set_var(SCHEMA_ID_ENV_VAR, "sha-from-env");
         }
@@ -862,11 +884,8 @@ mod tests {
     }
 
     /// Episode-count override scenarios, consolidated into one
-    /// `#[test]` for the same reason as
-    /// [`with_env_var_overrides_covers_all_scenarios`]: every mutator
-    /// of a given env var must live in a single test function, or
-    /// cargo's parallel runner races the process-global env table.
-    /// This test is the sole owner of [`EPISODES_ENV_VAR`].
+    /// `#[test]` and run under [`ENV_LOCK`], for the same reasons as
+    /// [`with_env_var_overrides_covers_all_scenarios`].
     ///
     /// Sequential cases (cleared between each):
     /// 1. env set to a valid count → overrides TOML.
@@ -877,6 +896,7 @@ mod tests {
     ///    is a meaningful override rather than a sentinel for unset).
     #[test]
     fn episodes_env_var_override_covers_all_scenarios() {
+        let _env = env_guard();
         let saved = std::env::var(EPISODES_ENV_VAR).ok();
         let toml_cfg = || RunnerConfig {
             episodes: 100,
@@ -884,9 +904,8 @@ mod tests {
         };
 
         // --- case 1: env set to a valid count ---
-        // SAFETY: All mutation of EPISODES_ENV_VAR in this crate is
-        // contained in this single test, so cargo's parallel runner
-        // cannot race us.
+        // SAFETY: as above — `_env` holds ENV_LOCK, which every
+        // environment-touching test in this module takes.
         unsafe {
             std::env::set_var(EPISODES_ENV_VAR, "2");
         }
