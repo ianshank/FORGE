@@ -14,7 +14,7 @@ use forge_env::{Env, FlatObsEnv};
 use forge_env_mc::action_map::{ActionEntry, ActionKind, ActionMap};
 use forge_env_mc::config::MinecraftEnvConfig;
 use forge_env_mc::protocol::{ClientMsg, GridShape, ServerMsg, SCHEMA_VERSION};
-use forge_env_mc::testing::MockBot;
+use forge_env_mc::testing::{MockBot, MockBotHandle};
 use forge_env_mc::{McEnvError, MinecraftEnv};
 use tungstenite::Message;
 
@@ -32,6 +32,23 @@ fn build_hello(action_count: u32, obs_dim: usize, schema_id: impl Into<String>) 
         schema_id: schema_id.into(),
         grid_shape: None,
     }
+}
+
+/// Join a mock server that is expected to panic, reporting whether it
+/// did — **without** disturbing the process-global panic hook.
+///
+/// `catch_unwind` alone captures the panic. Swapping the hook to
+/// silence the expected backtrace would suppress panic diagnostics for
+/// every other test libtest runs concurrently in this process, trading
+/// one tidy backtrace for the message that would explain an unrelated
+/// failure. It would not even silence this one reliably: a short server
+/// timeout can fire before the swap executes. The expected backtraces
+/// are noise worth living with.
+///
+/// Every test here that provokes a server-side panic must go through
+/// this helper, so the rule has exactly one place to be broken.
+fn join_expecting_panic(server: MockBotHandle) -> bool {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join())).is_err()
 }
 
 fn sample_map() -> ActionMap {
@@ -260,18 +277,8 @@ fn join_surfaces_a_real_server_fault() {
     // means the mock sees a timeout rather than a disconnect.
     let (_client, _response) = tungstenite::connect(&url).expect("client connect");
 
-    // `catch_unwind` alone, deliberately: the panic hook is
-    // process-global, so swapping it out here would suppress panic
-    // diagnostics for every OTHER test libtest is running concurrently
-    // in this process — trading one tidy backtrace for the loss of the
-    // message that explains an unrelated failure. It would not even
-    // reliably silence this one: the mock's 50 ms read timeout can fire
-    // before the swap executes. The expected backtrace below is noise
-    // worth living with.
-    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
-
     assert!(
-        joined.is_err(),
+        join_expecting_panic(server),
         "join() must re-raise a real server fault, not swallow it"
     );
 }
@@ -316,13 +323,8 @@ fn malformed_client_frame_is_a_fault_not_a_silent_drop() {
         .send(Message::Text("{\"type\":\"not-a-real-variant\"}".into()))
         .expect("send malformed frame");
 
-    let previous_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
-    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
-    std::panic::set_hook(previous_hook);
-
     assert!(
-        joined.is_err(),
+        join_expecting_panic(server),
         "a text frame that is not a valid ClientMsg must fail the test, not be dropped"
     );
 }
@@ -342,13 +344,8 @@ fn binary_client_frame_is_a_fault_not_a_silent_drop() {
         .send(Message::Binary(vec![0x00, 0x01]))
         .expect("send binary frame");
 
-    let previous_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
-    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
-    std::panic::set_hook(previous_hook);
-
     assert!(
-        joined.is_err(),
+        join_expecting_panic(server),
         "a binary frame from the client must fail the test, not be dropped"
     );
 }
@@ -805,13 +802,10 @@ fn absent_client_fails_fast_instead_of_hanging() {
     let server = bot.run();
 
     // Never connect.
-    let previous_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
     let started = std::time::Instant::now();
-    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
-    std::panic::set_hook(previous_hook);
+    let panicked = join_expecting_panic(server);
 
-    assert!(joined.is_err(), "an absent client must fail, not hang");
+    assert!(panicked, "an absent client must fail, not hang");
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "must fail within the accept budget, not the io timeout: took {:?}",

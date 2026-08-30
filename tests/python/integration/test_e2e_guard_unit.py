@@ -11,13 +11,24 @@ every PR alongside the rest of the fast suite.
 
 from __future__ import annotations
 
+import ast
 import types
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from . import conftest as guard
 from ._helpers import REQUIRE_E2E_ENV_VAR
+
+#: The E2E module whose test ordering is guarded below.
+_E2E_MODULE = "test_minecraft_e2e.py"
+
+#: Fixture name that marks a test as depending on the shared stack.
+_STACK_FIXTURE = "compose_up_minecraft_stack"
+
+#: Flag that makes a test destructive — it stops the shared stack.
+_TEARDOWN_FLAG = "--down"
 
 
 class _Report:
@@ -132,3 +143,52 @@ def test_skip_or_fail_raises_failure_when_required(monkeypatch: pytest.MonkeyPat
         guard._skip_or_fail("docker missing")
     assert excinfo.typename == "Failed"
     assert REQUIRE_E2E_ENV_VAR in str(excinfo.value)
+
+
+def test_stack_destroying_tests_run_last_in_the_e2e_module() -> None:
+    """A test that tears the stack down must be the last one that uses it.
+
+    The E2E stack fixture is session-scoped and pytest runs a module's
+    tests in source order, so a test that runs ``mc_run.sh --down``
+    leaves every later stack-dependent test with a dead stack. The
+    symptom is a poll timeout against an endpoint that no longer
+    answers — with nothing pointing at the real cause — and it is
+    deterministic, not flaky, which makes it worse: the suite would
+    never pass.
+
+    Detected structurally rather than by name: any test taking the
+    stack fixture whose body mentions the teardown flag is destructive.
+    Parsed with :mod:`ast` so this needs neither Docker nor the
+    module's own imports.
+    """
+    module_path = Path(__file__).with_name(_E2E_MODULE)
+    tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
+
+    stack_dependent: list[str] = []
+    destructive: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or not node.name.startswith("test_"):
+            continue
+        params = {arg.arg for arg in node.args.args}
+        if _STACK_FIXTURE not in params:
+            continue
+        stack_dependent.append(node.name)
+        source = ast.unparse(node)
+        if _TEARDOWN_FLAG in source:
+            destructive.append(node.name)
+
+    assert stack_dependent, (
+        f"no test in {_E2E_MODULE} takes the {_STACK_FIXTURE!r} fixture — "
+        "this guard has drifted from the module it protects"
+    )
+    assert destructive, (
+        f"no test in {_E2E_MODULE} runs {_TEARDOWN_FLAG!r} — as above, "
+        "the guard is no longer watching anything"
+    )
+    for name in destructive:
+        assert name == stack_dependent[-1], (
+            f"{name} tears the shared stack down but is not the last "
+            f"stack-dependent test in {_E2E_MODULE}; the tests after it "
+            f"({stack_dependent[stack_dependent.index(name) + 1 :]}) would "
+            "run against a stopped stack. Move it to the end of the file."
+        )

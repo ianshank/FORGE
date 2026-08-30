@@ -63,22 +63,27 @@ USE_PREBUILT_ENV_VAR: str = "FORGE_MC_USE_PREBUILT"
 #: execute. See :func:`require_e2e_execution`.
 REQUIRE_E2E_ENV_VAR: str = "FORGE_MC_REQUIRE_E2E"
 
-#: Default subprocess timeout for the `scripts/mc_run.sh` stack
-#: bring-up when images are PREBUILT: a pull of the published images
-#: plus Minecraft world-gen. Ten minutes, unchanged from the value this
-#: constant has always carried.
+#: Budget for a bring-up that only PULLS: a pull of the published
+#: images plus Minecraft world-gen. Ten minutes, unchanged from the
+#: value this constant has always carried.
+#:
+#: This is **not** the default for either path — see
+#: :func:`compose_up_timeout_secs`, which cannot know that a build is
+#: impossible. It is the value an operator sets via
+#: :data:`COMPOSE_UP_TIMEOUT_ENV_VAR` when they know every image is
+#: already present and want a missing one to fail fast rather than
+#: quietly compile.
 #:
 #: NOTE: this constant previously claimed the *build* path also landed
 #: "well under 5 minutes". It does not. `--build` triggers a cold
 #: `cargo build --release` of forge-mc-runner inside Docker, and GitHub
 #: Actions does not persist BuildKit cache mounts across runners, so
-#: every CI build starts from scratch. That path uses
-#: :data:`COMPOSE_UP_BUILD_TIMEOUT_SECS` instead.
+#: every CI build starts from scratch.
 COMPOSE_UP_TIMEOUT_SECS: int = 600
 
-#: Subprocess timeout for the bring-up when images must be BUILT
-#: locally. Sized for a cold release compile of the Rust runner plus a
-#: ~200 MB ONNX Runtime download, and deliberately kept below the
+#: Subprocess timeout for a bring-up in which a BUILD can happen.
+#: Sized for a cold release compile of the Rust runner plus a ~200 MB
+#: ONNX Runtime download, and deliberately kept below the
 #: `timeout-minutes: 60` cap on the `python-test-minecraft-e2e` job so
 #: the suite fails with a diagnosable message rather than the runner
 #: killing the job mid-build. Keep the two in step.
@@ -132,10 +137,26 @@ def compose_up_timeout_secs() -> int:
     """Resolve the bring-up timeout.
 
     Precedence: :data:`COMPOSE_UP_TIMEOUT_ENV_VAR` if set to a positive
-    integer, else the build-path or prebuilt-path default depending on
-    :func:`use_prebuilt_images`. A non-numeric or non-positive override
-    falls back to the default rather than raising, so a typo cannot
-    abort a long run before it starts.
+    integer, else :data:`COMPOSE_UP_BUILD_TIMEOUT_SECS`. A non-numeric
+    or non-positive override falls back to the default rather than
+    raising, so a typo cannot abort a long run before it starts.
+
+    The default does **not** depend on :func:`use_prebuilt_images`,
+    even though it once did. Dropping ``--build`` does not remove the
+    possibility of a build: a Compose service with ``build:`` and
+    ``image:`` and no ``pull_policy`` falls back to building from
+    source when the image is not found. So a prebuilt run whose image
+    tag is wrong, or whose registry is unreachable, silently enters
+    exactly the cold `cargo build --release` this module budgets 2700s
+    for — and giving it the 600s pull budget would kill it mid-compile
+    with a timeout that looks like a hung stack.
+
+    A budget can only be too small in one direction. Over-budgeting
+    costs a slower failure and is still bounded by the job's own
+    ``timeout-minutes``; under-budgeting kills a legitimate run. When
+    the operator knows every image is present, they say so explicitly
+    with ``FORGE_MC_COMPOSE_UP_TIMEOUT`` — :data:`COMPOSE_UP_TIMEOUT_SECS`
+    is the value to use.
     """
     raw = os.environ.get(COMPOSE_UP_TIMEOUT_ENV_VAR, "").strip()
     if raw:
@@ -155,7 +176,7 @@ def compose_up_timeout_secs() -> int:
                 COMPOSE_UP_TIMEOUT_ENV_VAR,
                 parsed,
             )
-    return COMPOSE_UP_TIMEOUT_SECS if use_prebuilt_images() else COMPOSE_UP_BUILD_TIMEOUT_SECS
+    return COMPOSE_UP_BUILD_TIMEOUT_SECS
 
 
 def docker_compose_available() -> bool:

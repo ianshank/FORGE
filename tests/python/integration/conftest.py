@@ -29,6 +29,7 @@ import pytest
 from ._helpers import (
     COMPOSE_DOWN_TIMEOUT_SECS,
     COMPOSE_UP_TIMEOUT_ENV_VAR,
+    COMPOSE_UP_TIMEOUT_SECS,
     DEFAULT_DOCKER_LOGS_TAIL,
     DEFAULT_RUNNER_CONTAINER,
     REQUIRE_E2E_ENV_VAR,
@@ -140,7 +141,9 @@ def compose_up_minecraft_stack() -> Iterator[dict[str, Any]]:
     # `--build` forces a cold `cargo build --release` of the runner
     # inside Docker. Omitting it lets Compose's own default take over:
     # with `build:` + `image:` and no `pull_policy`, it pulls first and
-    # falls back to building only if the image is not found.
+    # falls back to building only if the image is not found. That
+    # fallback is why the timeout does not shrink here -- see
+    # `compose_up_timeout_secs`.
     prebuilt = use_prebuilt_images()
     up_args = ["--detach"] if prebuilt else ["--build", "--detach"]
     timeout_secs = compose_up_timeout_secs()
@@ -150,6 +153,15 @@ def compose_up_minecraft_stack() -> Iterator[dict[str, Any]]:
         prebuilt,
         timeout_secs,
     )
+    if prebuilt and timeout_secs > COMPOSE_UP_TIMEOUT_SECS:
+        # Operator guidance, not a warning: the long budget is correct
+        # by default because a pull can still fall back to a build.
+        logger.info(
+            "prebuilt bring-up is budgeted for a build fallback; export %s=%d "
+            "to make a missing image fail fast instead",
+            COMPOSE_UP_TIMEOUT_ENV_VAR,
+            COMPOSE_UP_TIMEOUT_SECS,
+        )
     with lf_normalized_script(script) as posix_script:
         try:
             up = subprocess.run(
