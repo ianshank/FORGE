@@ -230,6 +230,60 @@ fn concurrently_bound_mocks_get_distinct_ports() {
     assert!(first.ws_url().starts_with("ws://127.0.0.1:"));
 }
 
+/// A genuine server-side fault must reach the test thread. The mock
+/// used to swallow every panic from its serving thread, which could
+/// let a wire-protocol test pass while the protocol was broken —
+/// exactly the failure mode these tests exist to catch.
+///
+/// Drives a real fault (a read timeout, not a disconnect) and asserts
+/// `join()` re-raises it.
+#[test]
+fn join_surfaces_a_real_server_fault() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    // A reply is scripted, so the mock will wait for a client message
+    // that never comes and time out.
+    let bot = MockBot::bind(hello, vec![obs_msg(0)]).with_io_timeout(Duration::from_millis(50));
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    // Complete the handshake, then sit idle. Holding the socket open
+    // means the mock sees a timeout rather than a disconnect.
+    let (_client, _response) = tungstenite::connect(&url).expect("client connect");
+
+    // Silence the panic backtrace this deliberately provokes, so the
+    // test output stays readable.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
+    std::panic::set_hook(previous_hook);
+
+    assert!(
+        joined.is_err(),
+        "join() must re-raise a real server fault, not swallow it"
+    );
+}
+
+/// The counterpart: a client that disconnects before the reply script
+/// is exhausted is an orderly end to the session, so `join()` must
+/// stay quiet. Guards against over-correcting the fix above into
+/// spurious failures.
+#[test]
+fn join_stays_quiet_on_an_orderly_client_disconnect() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    // Two replies scripted, but the client leaves after the handshake.
+    let bot = MockBot::bind(hello, vec![obs_msg(0), obs_msg(1)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    let env = MinecraftEnv::connect(cfg_with_url(url), map).expect("connect");
+    drop(env);
+
+    // No panic: an early client exit is not a fault.
+    server.join();
+}
+
 #[test]
 fn step_with_action_out_of_range_returns_invalid_action() {
     let map = sample_map();

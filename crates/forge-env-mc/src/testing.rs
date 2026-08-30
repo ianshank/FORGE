@@ -62,6 +62,37 @@ pub const DEFAULT_IO_TIMEOUT: Duration = Duration::from_secs(5);
 /// other process can claim the port in between.
 const BIND_ADDR: &str = "127.0.0.1:0";
 
+/// True for errors that mean "the client went away", as opposed to a
+/// protocol or timeout failure.
+///
+/// Several tests deliberately drop the env before the reply script is
+/// exhausted; that is an orderly end to the session, not a fault. Every
+/// other error — a timeout, a malformed frame, a capacity violation —
+/// stays fatal so [`MockBotHandle::join`] can surface it.
+fn is_orderly_disconnect(err: &tungstenite::Error) -> bool {
+    match err {
+        tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed => true,
+        // A client dropped without sending a Close frame — which is
+        // what `drop(env)` does — surfaces here, not as an `Io` error.
+        // Only this one protocol error is orderly; a malformed frame or
+        // a capacity violation still panics.
+        tungstenite::Error::Protocol(
+            tungstenite::error::ProtocolError::ResetWithoutClosingHandshake,
+        ) => true,
+        // An abrupt drop can also surface at the socket layer. A read
+        // timeout is `WouldBlock`/`TimedOut` and is deliberately NOT
+        // matched here, so a hung client still fails the test.
+        tungstenite::Error::Io(io) => matches!(
+            io.kind(),
+            std::io::ErrorKind::BrokenPipe
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::UnexpectedEof
+        ),
+        _ => false,
+    }
+}
+
 /// A scripted stand-in for the Node `mc-bot` WebSocket server.
 ///
 /// Construct with [`MockBot::bind`], read the address off it, then
@@ -132,6 +163,11 @@ impl MockBot {
     /// sends the `Hello`, then alternates read-then-reply until the
     /// reply script is exhausted, recording each received
     /// [`ClientMsg`] as it goes.
+    ///
+    /// A client that disconnects before the script is exhausted ends
+    /// the session cleanly. Any other failure — a timeout, a malformed
+    /// frame — panics the serving thread, and
+    /// [`MockBotHandle::join`] re-raises it in the test thread.
     #[must_use]
     pub fn run(self) -> MockBotHandle {
         let received = Arc::new(Mutex::new(Vec::new()));
@@ -150,7 +186,11 @@ impl MockBot {
             ws.send(Message::Text(hello)).expect("send hello");
 
             for reply in self.replies {
-                let msg = ws.read().expect("read client msg");
+                let msg = match ws.read() {
+                    Ok(msg) => msg,
+                    Err(err) if is_orderly_disconnect(&err) => break,
+                    Err(err) => panic!("mock bot failed reading a client message: {err}"),
+                };
                 // Text frames are the only thing the real client sends;
                 // record them so tests can assert on what was sent.
                 // Anything else is left unrecorded rather than
@@ -162,7 +202,11 @@ impl MockBot {
                     }
                 }
                 let encoded = serde_json::to_string(&reply).expect("serialize reply");
-                ws.send(Message::Text(encoded)).expect("send reply");
+                match ws.send(Message::Text(encoded)) {
+                    Ok(()) => {}
+                    Err(err) if is_orderly_disconnect(&err) => break,
+                    Err(err) => panic!("mock bot failed sending a reply: {err}"),
+                }
             }
             let _ = ws.close(None);
         });
@@ -194,12 +238,21 @@ impl MockBotHandle {
         self.received.lock().expect("recorder mutex").clone()
     }
 
-    /// Wait for the serving thread to finish.
+    /// Wait for the serving thread to finish, re-raising any panic.
     ///
-    /// Errors are swallowed: the thread panics on protocol misuse, but
-    /// several tests deliberately drop the client before the reply
-    /// script is exhausted, and that is not a failure of the test.
+    /// A mock that quietly swallowed its own failures could let a test
+    /// pass while the protocol was broken, which would defeat the
+    /// point of testing against a real wire. Orderly client
+    /// disconnects are handled inside [`MockBot::run`] and do not
+    /// panic, so anything that reaches here is a genuine fault and is
+    /// re-raised in the calling thread with its original message.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the serving thread panicked.
     pub fn join(self) {
-        let _ = self.handle.join();
+        if let Err(payload) = self.handle.join() {
+            std::panic::resume_unwind(payload);
+        }
     }
 }
