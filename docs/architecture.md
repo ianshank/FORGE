@@ -795,6 +795,25 @@ with `wasm-pack` and deploys the static `web/` client — a fully client-side,
 server-free demo. The REST and WASM surfaces deliberately mirror each other so
 the same observation/action JSON shapes work in both.
 
+Three layers verify it, each catching what the others cannot:
+
+| Layer | Job / command | Catches |
+|---|---|---|
+| Compile | `wasm` (clippy, `--target wasm32-unknown-unknown`) | Anything that fails to build for the target — a new dependency with a C build script, a `std` API absent on wasm32 |
+| Runtime | `wasm` (`scripts/wasm_test_node.sh`) | Breakage that compiles fine: wasm32's 32-bit `usize`, its trap-based panics, a `SystemTime::now()` reaching the wasm path. Determinism is asserted here, on the target the demo ships to |
+| Browser | `wasm-e2e` (Playwright, non-blocking) | The generated JS glue — the only layer that can reach it. `reset`'s `Option<u64>` crosses as `BigInt`, a contract invisible from Rust |
+
+Both publishers (`gh-pages.yml`, `hf-space.yml`) end with a post-publish smoke
+that fetches the deployed artifact back — the same convention `hf-dataset.yml`
+and `hf-model.yml` follow. Publishing itself is gated on repository settings
+that are not in this repo; see [`next_steps.md`](next_steps.md) §6.
+
+Known divergence: `forge-wasm`'s `SerializableState` and `forge-server`'s
+`SimulationSnapshot` describe the same world state in different shapes
+(snake_case vs camelCase, no `schemaVersion` on the WASM side). Unifying them
+means hoisting `SimulationSnapshot` down into `forge-types`, since `forge-server`
+pulls axum/tokio and a wasm crate cannot depend on it.
+
 ### 3.7 Python Bindings — Data Flow
 
 ```
@@ -2522,8 +2541,9 @@ The CI pipeline runs on every push and pull request targeting `main`, `master`, 
 | Job (`ci.yml` unless noted) | Gate type | Trigger |
 |---|---|---|
 | `fmt`, `clippy`, `test`, `alloc-audit`, `coverage`, `python-lint`, `python-test`, `mc-bot-test`, `forge-mc-runner-bin` | **Blocking** (CHARTER.md Invariant 6) | push / PR |
+| `wasm` | **Blocking** | push / PR — clippy + `wasm-pack test --node` for `crates/forge-wasm` on `wasm32-unknown-unknown` (added 2026-08; previously **zero** PR-time coverage — the target was built only by `gh-pages.yml` / `hf-space.yml` on default-branch pushes) |
 | `onnx-features` | **Blocking** | push / PR — builds/tests the `onnx`/`onnx-reload`/`mc-live-bundled` surface (added 2026-08; previously **zero** CI coverage) |
-| `machete`, `dashboard-e2e` | Advisory / non-required | push / PR |
+| `machete`, `dashboard-e2e`, `wasm-e2e` | Advisory / non-required | push / PR — `wasm-e2e` drives the real `web/` demo in Chromium against the wasm-pack build |
 | `markdownlint`, `bench`, `hf-export`, `demo-ui`, `dashboard`, `python-test-fast` | Runs on push/PR; not in CHARTER.md's blocking list but not marked advisory either — check branch protection for current required-check status | push / PR |
 | `python-test-lmstudio`, `python-test-minecraft-e2e`, `python-test-minecraft-real-run` | Opt-in | `workflow_dispatch` only |
 | `docker` | Build + push to GHCR | default branch / version tags only, `needs: [test, clippy, fmt, python-test]` |

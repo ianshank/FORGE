@@ -7,3 +7,9 @@
 # bump deliberately when there's a reason to, not automatically.
 channel = "1.94.1"
 components = ["rustfmt", "clippy"]
+# wasm32 is a first-class FORGE target: crates/forge-wasm builds the in-browser
+# demo published by gh-pages.yml / hf-space.yml. Listing it here makes rustup
+# install it automatically, so `make wasm-check` and `make wasm` work out of the
+# box. CI passes `targets:` to dtolnay/rust-toolchain explicitly -- that action
+# does not read this file.
+targets = ["wasm32-unknown-unknown"]

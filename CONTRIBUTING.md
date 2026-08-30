@@ -25,6 +25,13 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --features forge-cloud/gcs -- -D warnings
 cargo test --workspace --features forge-cloud/gcs
 
+# WebAssembly target (crates/forge-wasm -> the in-browser demo in web/).
+# `rust-toolchain.toml` lists wasm32-unknown-unknown, so rustup installs it
+# for you. wasm-test additionally needs wasm-pack (scripts/install_wasm_pack.sh).
+make wasm-check   # clippy on wasm32 -- part of `make verify`
+make wasm-test    # #[wasm_bindgen_test]s under Node -- NOT part of `make verify`
+make web-e2e      # unit + Playwright E2E for web/ -- also NOT part of `make verify` (needs a Chromium download)
+
 # Rust coverage (85% workspace floor; install a tarpaulin that builds under the pin)
 cargo tarpaulin --workspace --exclude forge-python --exclude forge-wasm \
   --features forge-cloud/gcs --skip-clean --fail-under 85
@@ -121,6 +128,23 @@ no per-user setup needed):
   `python3 .claude/hooks/test_guard_staged_secrets.py -v` (the two cases
   needing a real `gitleaks` binary skip themselves without one, so `make
   hooks-test` still exercises the rest everywhere).
+- **Line-ending drift guard** (`.claude/hooks/guard_line_ending_drift.py`,
+  same `PreToolUse`/`Bash` wiring) — blocks a `git commit` that flips more
+  than half of an already-tracked file's lines between CRLF and LF (or
+  back), the signature of a whole-file EOL rewrite rather than a real
+  content edit. Added after a real incident on this repo's own WASM-E2E
+  branch: a Python `open(p).read()` / `open(p, 'w').write(s)` round-trip
+  silently flattened `CHANGELOG.md` from CRLF to LF, turning a ~40-line
+  edit into a ~2000-line rewrite that nothing caught until an abnormally
+  large `git diff --stat` after the fact. Compares the CRLF-line fraction
+  of the committed blob (`HEAD`) against the staged blob (the index);
+  skips brand-new files (nothing to drift from) and any path with an
+  explicit `.gitattributes` line-ending declaration (`-text` or `eol=`),
+  which records a deliberate choice rather than drift. Fails open on any
+  git or parse error. Self-tests:
+  `python3 .claude/hooks/test_guard_line_ending_drift.py -v` (stdlib +
+  `git` only, no external binary — always runs as part of `make
+  hooks-test`).
 
 ## Conventions
 

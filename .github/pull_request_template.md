@@ -20,6 +20,7 @@ isn't true. See CONTRIBUTING.md for the full gate list.
 - [ ] `cargo fmt --all --check`
 - [ ] `cargo clippy --workspace --all-targets --features forge-cloud/gcs -- -D warnings`
 - [ ] `cargo test --workspace --features forge-cloud/gcs`
+- [ ] `make wasm-check` (if `crates/forge-wasm`, `forge-core`, `forge-types`, or `web/` changed)
 - [ ] `cargo tarpaulin … --fail-under 85` (if Rust coverage-affecting)
 - [ ] `cargo deny check` (if dependencies changed)
 - [ ] Python: `ruff check` + `mypy --config-file pyproject.toml` + `pytest tests/python`

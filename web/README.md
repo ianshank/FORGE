@@ -13,16 +13,24 @@ WebAssembly. Published to GitHub Pages by `.github/workflows/gh-pages.yml`.
 ## Build & run locally
 
 ```bash
-# One-time: wasm target + wasm-pack
+# One-time: wasm32 target (rust-toolchain.toml lists it, so rustup installs it
+# for you) + the pinned wasm-pack release (scripts/install_wasm_pack.sh; the
+# version is set by the caller -- see CONTRIBUTING.md -- so there's no second
+# copy of the pin to drift).
 rustup target add wasm32-unknown-unknown
-cargo install wasm-pack
+WASM_PACK_VERSION=0.15.0 scripts/install_wasm_pack.sh
 
-# Build the bindings into web/pkg/
-wasm-pack build crates/forge-wasm --target web --out-dir "$PWD/web/pkg" --no-typescript
+# Build the bindings into web/pkg/. Wraps wasm-pack with an absolute --out-dir:
+# wasm-pack resolves a relative one against the *crate* directory, so a raw
+# `--out-dir web/pkg` would silently emit to crates/forge-wasm/web/pkg.
+make wasm            # or: scripts/build_wasm_demo.sh
 
-# Serve statically (any static server works; ES modules need http://, not file://)
-python3 -m http.server -d web 8000
-# open http://localhost:8000
+# Serve statically. ES modules need http://, not file://, and the .wasm must be
+# served as `application/wasm` or `WebAssembly.instantiateStreaming` silently
+# falls back (a console.warn, not an error) -- a generic static server isn't
+# guaranteed to set that, so use the harness's own server:
+node tests/web-e2e/serve.mjs
+# open http://localhost:4174
 ```
 
 ## Configuring the world

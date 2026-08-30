@@ -61,6 +61,8 @@ Useful for debugging and text-based displays in the browser console.
 - **Empty/null config string triggers defaults**: `new("")` and `new("null")` both use `ForgeConfig::default()`
 - **Single-agent interface**: `step(action: u32)` controls one agent; multi-agent requires API extension
 - **Built as `cdylib` + `rlib`**: `cdylib` for WASM compilation, `rlib` for Rust-side testing
+- **Seeds cross the JS boundary as `BigInt`**: `reset` takes `Option<u64>`, which wasm-bindgen lowers to an `i64` wasm parameter. `env.reset(42)` throws a `TypeError` from JavaScript; callers must pass `42n`. `undefined`/`null` both mean "no seed"
+- **Construction is fallible, not panicking**: the `#[wasm_bindgen(constructor)]` returns `Result<_, JsError>`, so a bad config string throws a readable JS `Error` rather than an opaque wasm trap. `try_new` is the Rust-side equivalent
 
 ## Skills
 
@@ -85,8 +87,9 @@ Useful for debugging and text-based displays in the browser console.
 
 | Tool | Purpose |
 |------|---------|
-| `wasm-pack build crates/forge-wasm` | Build WASM package for browser |
-| `wasm-pack test --node crates/forge-wasm` | Run WASM tests in Node.js |
+| `make wasm-test` (`scripts/wasm_test_node.sh`) | Run the `#[wasm_bindgen_test]`s in Node.js. Wraps `wasm-pack test --node`, which exits 0 when a crate has no wasm tests |
+| `make wasm` (`scripts/build_wasm_demo.sh`) | Build the browser bundle into `web/pkg/` |
+| `make wasm-check` | Clippy for `wasm32-unknown-unknown` (CI's blocking `wasm` job) |
 | `cargo test -p forge-wasm` | Run Rust-side unit tests |
 | `cargo clippy --workspace -- -D warnings` | Lint with zero-warning policy |
 | `cargo fmt` | Format before committing |

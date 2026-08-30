@@ -13,6 +13,14 @@ secret is missing.
 
 ## 1. Live demo Space — `ianshank/forge-wasm-demo`
 
+> **Not live yet.** Every run of `hf-space.yml` to date has failed at the
+> "Check HF_TOKEN secret" step, before wasm-pack even runs — this is exactly
+> the missing secret the "One-time setup" section above names. The Space does
+> not exist yet; visiting the URL 404s. Add the token (below) and the next
+> push to a release branch creates and populates it — `create_repo(...,
+> exist_ok=True)` in the workflow means the first successful run is all it
+> takes, nothing else to configure.
+
 `.github/workflows/hf-space.yml` builds `crates/forge-wasm` with
 wasm-pack and mirrors the static demo (`web/index.html`, `web/app.js`,
 `web/pkg/`, plus the Space card `web/space/README.md`) to a static-SDK

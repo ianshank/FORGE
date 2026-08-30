@@ -438,25 +438,46 @@ The MCTS planner uses PUCT selection (`Q(s,a) + c * P(s,a) * sqrt(N_parent) / (1
 ## WebAssembly
 
 ```javascript
-import { ForgeWasmEnv } from 'forge_wasm';
+// wasm-pack's `--target web` output is an ES module with a default export that
+// must be awaited before any binding is touched.
+import init, { ForgeWasmEnv } from './pkg/forge_wasm.js';
+
+await init();
 
 const env = new ForgeWasmEnv('{"world": {"width": 32, "height": 32}}');
-const obsJson = env.reset(42);
+// Seeds are `bigint`, not `number`: `reset` takes a Rust `Option<u64>`, and
+// wasm-bindgen maps 64-bit integers to JS BigInt. `env.reset(42)` throws a
+// TypeError; pass `42n`. Omitting the argument entirely selects a random seed.
+const obsJson = env.reset(42n);
 const stepJson = env.step(1); // Move Up
 console.log(env.render_ascii());
 ```
 
-All WASM I/O uses JSON strings for JavaScript compatibility.
+All WASM I/O uses JSON strings for JavaScript compatibility. An invalid config
+string makes the constructor throw a JavaScript `Error` naming the problem.
 
 ### Live in-browser demo (GitHub Pages)
 
 `.github/workflows/gh-pages.yml` builds `crates/forge-wasm` with `wasm-pack`
 and deploys the static client in [`web/`](web/) — a fully client-side,
-server-free simulation. Build it locally with:
+server-free simulation.
+
+> **Not currently published.** The build is green and gated on every PR, but the
+> deploy needs GitHub Pages enabled on the repository with
+> *Source = "GitHub Actions"*; until then `actions/deploy-pages` 404s. The
+> companion Hugging Face Space needs a write-scoped `HF_TOKEN` secret. See
+> [`docs/next_steps.md`](docs/next_steps.md) §6.
+
+Build and run it locally with:
 
 ```bash
-wasm-pack build --target web --out-dir web/pkg crates/forge-wasm
-# then serve web/ statically, e.g.:  python -m http.server -d web 8000
+# Wraps wasm-pack with an absolute --out-dir: wasm-pack resolves a relative one
+# against the *crate* directory, so `--out-dir web/pkg` would silently emit to
+# crates/forge-wasm/web/pkg.
+make wasm            # or: scripts/build_wasm_demo.sh
+
+# then serve web/ statically (ES modules need http://, not file://):
+node tests/web-e2e/serve.mjs
 ```
 
 ## Interactive Demo UI

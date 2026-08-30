@@ -764,6 +764,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "const-random"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1572,11 +1582,13 @@ dependencies = [
 name = "forge-wasm"
 version = "0.5.0"
 dependencies = [
+ "console_error_panic_hook",
  "forge-core",
  "forge-types",
  "getrandom 0.2.17",
  "serde",
  "serde_json",
+ "thiserror 2.0.20",
  "tracing",
  "wasm-bindgen",
  "wasm-bindgen-test",

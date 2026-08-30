@@ -215,7 +215,9 @@ that must stay green.
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — `fmt`, `clippy`
 (`-D warnings`), `test`, `alloc-audit`, `coverage` (tarpaulin), `python-lint`
 / `python-test` (ruff + mypy, pytest), `mc-bot-test` (tsc + Biome +
-`node:test`), and the `forge-mc-runner-bin` smoke. Coverage thresholds and
+`node:test`), the `forge-mc-runner-bin` smoke, and `wasm` — which lints and
+runs the crate's tests on the wasm32 target, the one place determinism is
+verified for the environment the browser demo actually ships to. Coverage thresholds and
 lint rules are defined in CI and its config (`.coveragerc`, `pyproject.toml`,
 `dashboard/vite.config.ts`) — those files are the source of truth, so this
 charter names the gates without pinning numbers that would drift.
@@ -223,7 +225,7 @@ charter names the gates without pinning numbers that would drift.
 `ci.yml` also runs jobs this list deliberately omits, because they are not
 blocking gates: advisory checks (`machete`), `workflow_dispatch`-only opt-ins
 (`python-test-lmstudio`, `python-test-minecraft-e2e`), and explicitly
-non-required jobs (`dashboard-e2e`). Alongside them,
+non-required jobs (`dashboard-e2e`, `wasm-e2e`). Alongside them,
 [`.github/workflows/security.yml`](../.github/workflows/security.yml) runs the
 supply-chain and static-analysis layer — `cargo-deny` (policy in `deny.toml`),
 `pip-audit`, `npm-audit`, `trivy-fs`, and CodeQL. `cargo-deny` is **advisory

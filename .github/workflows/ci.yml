@@ -52,6 +52,10 @@ env:
   # two strings in lock-step. Used by the opt-in `python-test-lmstudio` job.
   LMSTUDIO_PORT: "1234"
   LMSTUDIO_BASE_URL: "http://localhost:1234/v1"
+  # Mirrors gh-pages.yml's WASM_PACK_VERSION (the canonical pin) -- keep these
+  # in lock-step. Consumed by scripts/install_wasm_pack.sh in the `wasm` and
+  # `wasm-e2e` jobs; enforced by scripts/check_pinned_config_consistency.py.
+  WASM_PACK_VERSION: "0.15.0"
 
 jobs:
   fmt:
@@ -847,6 +851,122 @@ jobs:
         with:
           name: playwright-traces
           path: dashboard/test-results/
+          retention-days: 7
+
+  wasm:
+    name: WASM Target Check + Node Runtime Tests
+    runs-on: ubuntu-latest
+    # BLOCKING. Until this job existed, nothing on a PR ever compiled
+    # crates/forge-wasm for wasm32-unknown-unknown: gh-pages.yml and
+    # hf-space.yml build it only on `push` to the release branches, so a
+    # wasm32-breaking change merged green and broke the deploy after the fact.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Keep in sync with rust-toolchain.toml -- dtolnay/rust-toolchain
+          # never reads that file itself.
+          toolchain: "1.94.1"
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (wasm32-unknown-unknown)
+        # --all-targets matters here: the crate's wasm-runtime tests are
+        # #![cfg(target_arch = "wasm32")], so the workspace-wide `clippy` job
+        # compiles them to an empty crate on the host and never lints them.
+        run: cargo clippy -p forge-wasm --all-targets --target wasm32-unknown-unknown -- -D warnings
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Install wasm-pack
+        run: scripts/install_wasm_pack.sh
+      - name: Run forge-wasm's tests in a real wasm runtime
+        # --node, not --headless --chrome: this step proves the compiled module
+        # instantiates and executes under wasm32 (32-bit usize, trap-based
+        # panics). Browser-specific behaviour -- the `--target web` glue, ES
+        # module loading, the real DOM -- is covered by the `wasm-e2e` job
+        # against the actual demo page, which is strictly more representative
+        # than wasm-pack's headless harness, so running both would be redundant.
+        #
+        # Wrapped rather than called directly: bare `wasm-pack test --node`
+        # exits 0 when a crate has no #[wasm_bindgen_test] functions, which
+        # would make this gate vacuously green. See the script's header.
+        run: scripts/wasm_test_node.sh
+
+  wasm-e2e:
+    name: WASM Demo E2E (Playwright)
+    runs-on: ubuntu-latest
+    # Drives the REAL static demo -- web/index.html + web/app.js + the wasm-pack
+    # `--target web` output -- in Chromium. Nothing is mocked: the demo is fully
+    # client-side, so these bytes are the ones gh-pages.yml uploads.
+    #
+    # NON-BLOCKING for now, mirroring how `dashboard-e2e` was introduced: not in
+    # any job's needs[] and not a required check. Promote once it has been green
+    # for a full release cycle.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Keep in sync with rust-toolchain.toml (dtolnay never reads it).
+          toolchain: "1.94.1"
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/web-e2e/package-lock.json
+      - name: Install wasm-pack
+        run: scripts/install_wasm_pack.sh
+      - name: Build the demo bundle into web/pkg/
+        # The same script `make wasm` and the Playwright webServer use, so the
+        # E2E can never test a differently-built artifact than local dev. A
+        # separate step for clean failure attribution; the webServer's own
+        # rebuild is then a warm-cache no-op.
+        run: scripts/build_wasm_demo.sh
+      - name: Install E2E dependencies
+        working-directory: tests/web-e2e
+        run: npm ci
+      - name: Type-check E2E sources
+        working-directory: tests/web-e2e
+        run: npm run typecheck:e2e
+      - name: Run app.js unit tests
+        # node:test against web/app.js directly (no browser) -- covers the
+        # parseSeed() boundary and BigInt-overflow-guard edge cases that a
+        # DOM-driven Playwright spec can't reach cheaply. Runs after the
+        # bundle build above so app.js's top-level `./pkg/forge_wasm.js`
+        # import resolves.
+        working-directory: tests/web-e2e
+        run: npm run test:unit
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          # Distinct `pw-web-` prefix: dashboard-e2e's `pw-${{ runner.os }}-`
+          # restore-key would otherwise cross-restore a Chromium built for a
+          # different @playwright/test version.
+          key: pw-web-${{ runner.os }}-${{ hashFiles('tests/web-e2e/package-lock.json') }}
+          restore-keys: pw-web-${{ runner.os }}-
+      - name: Install Playwright Chromium
+        working-directory: tests/web-e2e
+        run: npx playwright install --with-deps chromium
+      - name: Run browser E2E suite
+        working-directory: tests/web-e2e
+        run: npm run test:e2e
+      - name: Upload Playwright HTML report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: wasm-e2e-report
+          path: tests/web-e2e/playwright-report/
+          retention-days: 7
+      - name: Upload Playwright traces/videos
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: wasm-e2e-traces
+          path: tests/web-e2e/test-results/
           retention-days: 7
 
   docker:

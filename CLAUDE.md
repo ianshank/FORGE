@@ -10,6 +10,9 @@
 - `cargo clippy --workspace -- -D warnings` — Lint (must pass with zero warnings)
 - `cargo fmt --check` — Format check
 - `cargo bench -p forge-bench` — Run benchmarks
+- `make wasm-check` — Clippy `crates/forge-wasm` for `wasm32-unknown-unknown` with `-D warnings` (CI: the blocking `wasm` job). Part of `make verify`; skips with an actionable message if the target isn't installed
+- `make wasm` / `make wasm-test` — Build the browser bundle into `web/pkg/` via `scripts/build_wasm_demo.sh`, and run the crate's `#[wasm_bindgen_test]`s in a real wasm runtime via `scripts/wasm_test_node.sh`. Both need `wasm-pack` (`scripts/install_wasm_pack.sh`); `wasm-test` is deliberately **not** in `make verify` because it requires a network-installed binary
+- `make web-e2e` — `node:test` unit coverage for `web/app.js`'s pure helpers (`tests/web-e2e/unit/`) plus Playwright driving the real demo page in Chromium (`tests/web-e2e/e2e/specs/`) against a fresh wasm-pack build. CI: the non-blocking `wasm-e2e` job. Needs `wasm-pack` + a Chromium download, so also **not** in `make verify`
 - `python -m pytest tests/python/ -v` — Run Python tests using the local environment (e.g. Python 3.11.9) to bind core dependencies like `onnx`, `torch` and `onnxruntime` (requires `maturin develop` first)
 - `cd mc-bot && npm test` — Run Node-side mc-bot unit/integration/security tests in strict TS using `tsx --test`
 - `cd mc-bot && npm run lint` — Biome lint + format check on the TypeScript source
