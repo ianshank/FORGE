@@ -52,6 +52,10 @@ env:
   # two strings in lock-step. Used by the opt-in `python-test-lmstudio` job.
   LMSTUDIO_PORT: "1234"
   LMSTUDIO_BASE_URL: "http://localhost:1234/v1"
+  # Mirrors gh-pages.yml's WASM_PACK_VERSION (the canonical pin) -- keep these
+  # in lock-step. Consumed by scripts/install_wasm_pack.sh in the `wasm` and
+  # `wasm-e2e` jobs; enforced by scripts/check_pinned_config_consistency.py.
+  WASM_PACK_VERSION: "0.15.0"
 
 jobs:
   fmt:
@@ -834,6 +838,29 @@ jobs:
           name: playwright-traces
           path: dashboard/test-results/
           retention-days: 7
+
+  wasm:
+    name: WASM Target Check
+    runs-on: ubuntu-latest
+    # BLOCKING. Until this job existed, nothing on a PR ever compiled
+    # crates/forge-wasm for wasm32-unknown-unknown: gh-pages.yml and
+    # hf-space.yml build it only on `push` to the release branches, so a
+    # wasm32-breaking change merged green and broke the deploy after the fact.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Keep in sync with rust-toolchain.toml -- dtolnay/rust-toolchain
+          # never reads that file itself.
+          toolchain: "1.94.1"
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (wasm32-unknown-unknown)
+        # --all-targets matters here: the crate's wasm-runtime tests are
+        # #![cfg(target_arch = "wasm32")], so the workspace-wide `clippy` job
+        # compiles them to an empty crate on the host and never lints them.
+        run: cargo clippy -p forge-wasm --all-targets --target wasm32-unknown-unknown -- -D warnings
 
   docker:
     name: Docker Build & Publish (GHCR + optional Docker Hub)

@@ -25,6 +25,12 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --features forge-cloud/gcs -- -D warnings
 cargo test --workspace --features forge-cloud/gcs
 
+# WebAssembly target (crates/forge-wasm -> the in-browser demo in web/).
+# `rust-toolchain.toml` lists wasm32-unknown-unknown, so rustup installs it
+# for you. wasm-test additionally needs wasm-pack (scripts/install_wasm_pack.sh).
+make wasm-check   # clippy on wasm32 -- part of `make verify`
+make wasm-test    # #[wasm_bindgen_test]s under Node -- NOT part of `make verify`
+
 # Rust coverage (85% workspace floor; install a tarpaulin that builds under the pin)
 cargo tarpaulin --workspace --exclude forge-python --exclude forge-wasm \
   --features forge-cloud/gcs --skip-clean --fail-under 85

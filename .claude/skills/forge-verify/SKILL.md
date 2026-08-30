@@ -51,6 +51,15 @@ disagree, they've drifted and the drift itself is worth flagging.
   `onnx-reload`/`mc-live*` paths, or their Cargo features; see the
   `onnx-features` job in `.github/workflows/ci.yml` for how to fetch the
   runtime if it's needed.
+- **WASM runtime tests** (`make wasm-test`): runs the crate's
+  `#[wasm_bindgen_test]`s under Node via `wasm-pack`, which has to be
+  network-installed (`scripts/install_wasm_pack.sh`), so it isn't in the
+  default sequence. `make wasm-check` (clippy on `wasm32-unknown-unknown`)
+  **is** part of `verify` — it self-skips with an actionable message when
+  the target is missing, though `rust-toolchain.toml` lists it so rustup
+  users always have it. Run `wasm-test` when the change touches
+  `crates/forge-wasm`, `forge-core`, `forge-types`, or `web/`; see the
+  `wasm` job in `.github/workflows/ci.yml`.
 - **Markdown lint** (`npx --yes markdownlint-cli2 "**/*.md"`) isn't a
   Makefile target; run it directly if the change touches docs. (Hook
   self-tests *are* covered — `make hooks-test` runs as part of `verify`.)

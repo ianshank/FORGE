@@ -6,7 +6,7 @@ SHELL := /bin/bash
 # it just saves re-typing the exact CI invocations. Keep both in sync.
 
 .PHONY: help build fmt fmt-check lint test coverage \
-        onnx-check deny gitleaks pin-check \
+        onnx-check wasm wasm-check wasm-test deny gitleaks pin-check \
         py-lint py-test hooks-test \
         mc-bot-test dashboard-test \
         verify verify-full clean
@@ -48,6 +48,29 @@ onnx-check: ## Build/test the onnx/onnx-reload/mc-live-bundled feature surface (
 	cargo test -p forge-agent --features onnx-bundled
 	cargo test -p forge-mc-runner --features mc-live-bundled
 
+wasm: ## Build crates/forge-wasm into web/pkg/ for the static browser demo (needs wasm-pack)
+	@command -v wasm-pack >/dev/null || { \
+		echo "wasm not found on PATH -- see scripts/install_wasm_pack.sh (CI) or web/README.md"; \
+		exit 1; \
+	}
+	scripts/build_wasm_demo.sh
+
+wasm-check: ## Clippy the wasm32 build of forge-wasm (matches CI's `wasm` job). Skips if the target is missing.
+	@if rustup target list --installed 2>/dev/null | grep -qx wasm32-unknown-unknown; then \
+		cargo clippy -p forge-wasm --all-targets --target wasm32-unknown-unknown -- -D warnings; \
+	else \
+		echo "wasm-check: SKIPPED -- wasm32-unknown-unknown is not installed."; \
+		echo "  rustup users get it from rust-toolchain.toml's targets key;"; \
+		echo "  otherwise: rustup target add wasm32-unknown-unknown"; \
+	fi
+
+wasm-test: ## Run forge-wasm's tests inside a real wasm runtime (matches CI's `wasm` job; needs wasm-pack)
+	@command -v wasm-pack >/dev/null || { \
+		echo "wasm-test: wasm-pack not on PATH -- see scripts/install_wasm_pack.sh"; \
+		exit 1; \
+	}
+	scripts/wasm_test_node.sh
+
 deny: ## cargo-deny supply-chain check (advisory; installs cargo-deny if missing)
 	@command -v cargo-deny >/dev/null || cargo install cargo-deny --locked
 	cargo deny check --all-features
@@ -84,7 +107,7 @@ dashboard-test: ## dashboard: build + Biome lint + Vitest coverage gate (85%)
 
 # ---- Aggregate -----------------------------------------------------------
 
-verify: fmt-check lint test py-lint py-test hooks-test pin-check mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/deny/gitleaks -- see verify-full)
+verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/wasm-test/deny/gitleaks -- see verify-full)
 	@echo "verify: all standard gates passed."
 
 verify-full: verify coverage deny gitleaks ## verify, plus the slower/environment-dependent gates (tarpaulin, cargo-deny, gitleaks). Does NOT include onnx-check (needs ORT_DYLIB_PATH set manually).

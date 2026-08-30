@@ -30,8 +30,10 @@ lock-step by hand:
   wasm-pack` step. Both steps used to take `version:` as a declarative
   action input; replacing `jetli/wasm-pack-action` with a plain shell
   install (see its step comment for why) turned that single input into
-  a hand-maintained literal duplicated across two files, with nothing
-  catching a future "bumped one, forgot the other" edit.
+  a hand-maintained literal duplicated across files, with nothing
+  catching a future "bumped one, forgot the other" edit. `ci.yml`'s
+  workflow-level `WASM_PACK_VERSION` is the second dependent -- it feeds
+  `scripts/install_wasm_pack.sh` for the `wasm` / `wasm-e2e` jobs.
 
 Nothing previously enforced that any of these copies stayed in sync --
 e.g. `rust-toolchain.toml` could be bumped without touching a single one
@@ -102,6 +104,18 @@ LMSTUDIO_WORKFLOWS = (
 # shared compiled pattern for the canonical and dependent lookups so the
 # two sides can't drift apart in what they consider a pin.
 WASM_PACK_PIN_RE = re.compile(r'^\s*WASM_PACK_VERSION:\s*"([^"]+)"')
+
+# Workflow files that carry a *dependent* copy of the wasm-pack pin
+# (gh-pages.yml is the canonical source -- see the module docstring).
+# An explicit list, same rationale as RUST_TOOLCHAIN_WORKFLOWS above: a
+# newly-added wasm workflow has to opt in rather than silently going
+# unchecked.
+WASM_PACK_DEPENDENT_WORKFLOWS = (
+    ".github/workflows/hf-space.yml",
+    # ci.yml's workflow-level env feeds scripts/install_wasm_pack.sh for
+    # the `wasm` and `wasm-e2e` jobs.
+    ".github/workflows/ci.yml",
+)
 
 
 @dataclass(frozen=True)
@@ -235,29 +249,29 @@ def check_onnxruntime_version() -> list[str]:
 
 
 def check_wasm_pack_version() -> list[str]:
-    # Only hf-space.yml (the dependent) is scanned below; the canonical is
-    # gh-pages.yml's FIRST pin (see _canonical), and any extra occurrence
-    # inside gh-pages.yml itself is not cross-checked. (The other checks
-    # share this canonical-side blind spot -- none re-scans its canonical
-    # file for stray duplicates.) Fine while each file carries exactly one
-    # step-level pin; revisit if gh-pages.yml ever grows a second
-    # WASM_PACK_VERSION.
+    # Only the dependents in WASM_PACK_DEPENDENT_WORKFLOWS are scanned
+    # below; the canonical is gh-pages.yml's FIRST pin (see _canonical),
+    # and any extra occurrence inside gh-pages.yml itself is not
+    # cross-checked. (The other checks share this canonical-side blind
+    # spot -- none re-scans its canonical file for stray duplicates.)
+    # Fine while each file carries exactly one pin; revisit if gh-pages.yml
+    # ever grows a second WASM_PACK_VERSION.
     canonical = _canonical_wasm_pack_version()
     mismatches = []
 
-    dependent = REPO_ROOT / ".github" / "workflows" / "hf-space.yml"
-    occurrences = _find_all(dependent, WASM_PACK_PIN_RE)
-    if not occurrences:
-        mismatches.append(
-            f"{dependent.relative_to(REPO_ROOT)}: expected a "
-            f'WASM_PACK_VERSION: "{canonical}" pin, found none'
+    for rel in WASM_PACK_DEPENDENT_WORKFLOWS:
+        occurrences = _find_all(REPO_ROOT / rel, WASM_PACK_PIN_RE)
+        if not occurrences:
+            mismatches.append(
+                f"{rel}: expected a "
+                f'WASM_PACK_VERSION: "{canonical}" pin, found none'
+            )
+        mismatches.extend(
+            f'{occ.file}:{occ.line}: WASM_PACK_VERSION "{occ.value}" != '
+            f'gh-pages.yml\'s WASM_PACK_VERSION "{canonical}"'
+            for occ in occurrences
+            if occ.value != canonical
         )
-    mismatches.extend(
-        f'{occ.file}:{occ.line}: WASM_PACK_VERSION "{occ.value}" != '
-        f'gh-pages.yml\'s WASM_PACK_VERSION "{canonical}"'
-        for occ in occurrences
-        if occ.value != canonical
-    )
     return mismatches
 
 

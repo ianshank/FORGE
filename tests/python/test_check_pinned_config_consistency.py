@@ -68,7 +68,8 @@ def _build_consistent_repo(
 ) -> None:
     """Populate `root` with a minimal, fully-consistent fixture tree
     covering every path the module's RUST_TOOLCHAIN_WORKFLOWS /
-    RUST_TOOLCHAIN_DOCKERFILES / LMSTUDIO_WORKFLOWS tuples expect.
+    RUST_TOOLCHAIN_DOCKERFILES / LMSTUDIO_WORKFLOWS /
+    WASM_PACK_DEPENDENT_WORKFLOWS tuples expect.
     """
     _write(root / "rust-toolchain.toml", f'[toolchain]\nchannel = "{toolchain}"\n')
 
@@ -79,7 +80,13 @@ def _build_consistent_repo(
         + workflow_toolchain_line
         + f'  onnx-features:\n    steps:\n      - run: ORT_VERSION={onnxruntime}\n'
         + f'      - run: LMSTUDIO_PORT: "{lmstudio_port}"\n'
-        + f'      - run: LMSTUDIO_BASE_URL: "{lmstudio_url}"\n',
+        + f'      - run: LMSTUDIO_BASE_URL: "{lmstudio_url}"\n'
+        # ci.yml is the second WASM_PACK_DEPENDENT_WORKFLOWS entry: its
+        # workflow-level env feeds scripts/install_wasm_pack.sh for the
+        # `wasm` / `wasm-e2e` jobs. Two-space indent, matching the real
+        # file -- a `- run:` prefix would not be a pin (see
+        # test_pin_inside_a_run_line_is_not_a_pin).
+        + f'  WASM_PACK_VERSION: "{wasm_pack}"\n',
     )
     for rel in ("e2e-long.yml", "gh-pages.yml", "hf-dataset.yml", "hf-space.yml"):
         extra = f'\n          LMSTUDIO_PORT: "{lmstudio_port}"\n' if rel == "e2e-long.yml" else ""
@@ -215,6 +222,41 @@ class TestWasmPackVersionDrift:
         hf_space = tmp_path / ".github" / "workflows" / "hf-space.yml"
         hf_space.write_text(
             hf_space.read_text().replace(_CONSISTENT_WASM_PACK, "0.13.1", 1), encoding="utf-8"
+        )
+        monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
+        assert _run_main(helper_module) == helper_module.EXIT_MISMATCH
+
+    def test_ci_version_mismatch_fails(
+        self, helper_module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # gh-pages.yml is canonical; ci.yml's copy (the second dependent,
+        # feeding scripts/install_wasm_pack.sh) drifts.
+        _build_consistent_repo(tmp_path)
+        ci = tmp_path / ".github" / "workflows" / "ci.yml"
+        ci.write_text(
+            ci.read_text().replace(
+                f'WASM_PACK_VERSION: "{_CONSISTENT_WASM_PACK}"',
+                'WASM_PACK_VERSION: "0.13.1"',
+                1,
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
+        assert _run_main(helper_module) == helper_module.EXIT_MISMATCH
+
+    def test_missing_ci_pin_fails(
+        self, helper_module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # ci.yml exists but its workflow-level WASM_PACK_VERSION is gone
+        # (e.g. a job stops using scripts/install_wasm_pack.sh and someone
+        # drops the env without removing ci.yml from the dependent list).
+        _build_consistent_repo(tmp_path)
+        ci = tmp_path / ".github" / "workflows" / "ci.yml"
+        ci.write_text(
+            ci.read_text().replace(
+                f'  WASM_PACK_VERSION: "{_CONSISTENT_WASM_PACK}"\n', "", 1
+            ),
+            encoding="utf-8",
         )
         monkeypatch.setattr(helper_module, "REPO_ROOT", tmp_path)
         assert _run_main(helper_module) == helper_module.EXIT_MISMATCH

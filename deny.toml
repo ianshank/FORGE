@@ -7,10 +7,17 @@
 # single edit changes both local and CI behaviour.
 
 [graph]
-# All target triples we ship for (mirrors the Docker multi-arch matrix).
+# All target triples we ship for: the Docker multi-arch matrix, plus the
+# WebAssembly target the browser demo is published to.
 targets = [
     { triple = "x86_64-unknown-linux-gnu" },
     { triple = "aarch64-unknown-linux-gnu" },
+    # crates/forge-wasm ships to browsers via gh-pages.yml / hf-space.yml, and
+    # pulls target-only dependencies (getrandom's `js` feature,
+    # console_error_panic_hook) that the two Linux triples above never see.
+    # Without this triple those crates are invisible to the licence/advisory
+    # gate entirely.
+    { triple = "wasm32-unknown-unknown" },
 ]
 all-features = false
 
