@@ -229,9 +229,12 @@ def test_no_build_service_forces_a_rebuild(compose_data: dict[str, Any]) -> None
 def variables_without_readers(names: set[str], repo_root: Path) -> list[str]:
     """Which of `names` no source file under :data:`READER_ROOTS` reads.
 
-    Searches file by file and drops each name at its first hit, rather
-    than joining every source in the repo into one string: the roots span
-    26 crates, and the join was both slow and needlessly total.
+    Searches file by file, drops each name at its first hit, and stops as
+    soon as every name is accounted for — rather than joining every
+    source in the repo into one string. The roots span 26 crates (~540
+    source files across ~690 paths), so the join was both slow and
+    needlessly total, and walking on after the answer is known is pure
+    waste.
 
     Files in :data:`NON_READER_FILES` are skipped, so a file that
     documents a dead knob cannot make that knob look alive.
@@ -245,11 +248,15 @@ def variables_without_readers(names: set[str], repo_root: Path) -> list[str]:
                 continue
             if path.resolve() in excluded:
                 continue
+            # Counted before the early exit so the drift assertion below
+            # still holds when every name is found in the first file.
             scanned += 1
             if not remaining:
-                continue
+                break
             text = path.read_text(encoding="utf-8", errors="ignore")
             remaining.difference_update({name for name in remaining if name in text})
+        if not remaining and scanned:
+            break
     assert scanned, "no source files found — this guard has drifted"
     return sorted(remaining)
 
