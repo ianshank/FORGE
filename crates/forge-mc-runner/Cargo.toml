@@ -52,6 +52,13 @@ toml = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# Non-optional (unlike the `mc-live`-gated dependency above) so
+# `tests/mc_runner_integration.rs` runs under a bare
+# `cargo test -p forge-mc-runner`. Gating it on `mc-live` instead would
+# confine that test to the `onnx-features` job. Cargo permits the same
+# package in both tables; with resolver 2 the `testing` feature unifies
+# for test targets only.
+forge-env-mc = { workspace = true, features = ["testing"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
 

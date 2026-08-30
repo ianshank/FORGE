@@ -136,12 +136,12 @@ pub fn run_live(cfg: RunnerConfig, metrics: Option<MetricsRecorder>) -> Result<(
              Random-baseline mode (`random_actions = true` in runner.toml) \
              does not need ORT and works in this build."
         );
-        return Err(RunnerError::ConfigLoad(
+        Err(RunnerError::ConfigLoad(
             "trained-mode live runner requires the `onnx-reload` Cargo \
              feature; rebuild with `--features mc-live --features onnx-reload` \
              (or `--features mc-live-bundled`)."
                 .into(),
-        ));
+        ))
     }
 
     #[cfg(feature = "onnx-reload")]
