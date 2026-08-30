@@ -840,7 +840,7 @@ jobs:
           retention-days: 7
 
   wasm:
-    name: WASM Target Check
+    name: WASM Target Check + Node Runtime Tests
     runs-on: ubuntu-latest
     # BLOCKING. Until this job existed, nothing on a PR ever compiled
     # crates/forge-wasm for wasm32-unknown-unknown: gh-pages.yml and
@@ -861,6 +861,24 @@ jobs:
         # #![cfg(target_arch = "wasm32")], so the workspace-wide `clippy` job
         # compiles them to an empty crate on the host and never lints them.
         run: cargo clippy -p forge-wasm --all-targets --target wasm32-unknown-unknown -- -D warnings
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Install wasm-pack
+        run: scripts/install_wasm_pack.sh
+      - name: Run forge-wasm's tests in a real wasm runtime
+        # --node, not --headless --chrome: this step proves the compiled module
+        # instantiates and executes under wasm32 (32-bit usize, trap-based
+        # panics). Browser-specific behaviour -- the `--target web` glue, ES
+        # module loading, the real DOM -- is covered by the `wasm-e2e` job
+        # against the actual demo page, which is strictly more representative
+        # than wasm-pack's headless harness, so running both would be redundant.
+        #
+        # Wrapped rather than called directly: bare `wasm-pack test --node`
+        # exits 0 when a crate has no #[wasm_bindgen_test] functions, which
+        # would make this gate vacuously green. See the script's header.
+        run: scripts/wasm_test_node.sh
 
   docker:
     name: Docker Build & Publish (GHCR + optional Docker Hub)

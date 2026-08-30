@@ -20,16 +20,19 @@ trap 'rm -f "$log"' EXIT
 # wasm-pack writes the harness output to stderr; capture both streams.
 wasm-pack test --node "$REPO_ROOT/crates/forge-wasm" 2>&1 | tee "$log"
 
-if grep -q "no tests to run!" "$log"; then
-  echo "ERROR: wasm-pack found no #[wasm_bindgen_test] functions in forge-wasm." >&2
-  echo "       It exits 0 in that case, so this gate would be vacuously green." >&2
-  echo "       Check crates/forge-wasm/tests/ -- the tests are gated on" >&2
-  echo "       #![cfg(target_arch = \"wasm32\")] and must use #[wasm_bindgen_test]." >&2
-  exit 1
-fi
-
-if ! grep -qE "running [1-9][0-9]* test" "$log"; then
-  echo "ERROR: wasm-pack output contained no 'running N tests' line with N > 0." >&2
-  echo "       Refusing to report success without evidence that tests executed." >&2
+# wasm-pack builds one wasm binary per test target. The lib target (src/lib.rs)
+# holds this crate's 22 plain `#[test]` unit tests, which the wasm harness never
+# executes -- it collects only `__wbgt_*` exports, which only
+# `#[wasm_bindgen_test]` emits -- so "no tests to run!" from *that* binary is
+# expected and correct. What must never happen is every binary reporting
+# nothing, which is the state the crate was in before tests/wasm_bindings.rs
+# existed, and which wasm-pack reports with exit code 0.
+if ! grep -qE "^running [1-9][0-9]* test" "$log"; then
+  echo "ERROR: no wasm test binary reported 'running N tests' with N > 0." >&2
+  echo "       wasm-pack exits 0 in that case, so this gate would be" >&2
+  echo "       vacuously green. Check crates/forge-wasm/tests/: the tests are" >&2
+  echo "       gated on #![cfg(target_arch = \"wasm32\")] and must be marked" >&2
+  echo "       #[wasm_bindgen_test] -- a plain #[test] emits no __wbgt_ export" >&2
+  echo "       and is invisible to this runner." >&2
   exit 1
 fi

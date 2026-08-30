@@ -34,7 +34,12 @@ getrandom = { version = "0.2", features = ["js"] }
 # the pattern wasm-pack's own project template prescribes.
 console_error_panic_hook = "0.1"
 
-[dev-dependencies]
+# wasm-bindgen-test only does anything on the wasm target -- its harness works
+# by emitting `__wbgt_*` wasm exports. Target-gating it keeps its transitive
+# `minicov` -> `cc` C build script out of every host `cargo test --workspace`
+# and `cargo clippy --workspace --all-targets`. wasm-pack still resolves it:
+# its presence check reads Cargo.lock, which is target-independent.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
 
 [lints]
