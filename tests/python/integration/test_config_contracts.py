@@ -313,3 +313,75 @@ def test_the_reader_scan_is_not_satisfied_by_this_file(repo_root: Path) -> None:
         "as unread; otherwise the guard passes on exactly the knobs it "
         "documents as dead"
     )
+
+
+# --- A job that runs pytest must be able to load its plugins ---------
+
+
+#: Pattern matching a pytest invocation in a workflow `run:` block.
+PYTEST_INVOCATION = re.compile(r"(?:^|[\s;&|])(?:python -m )?pytest\s", re.MULTILINE)
+
+#: Pattern matching an editable install with extras, e.g.
+#: `pip install -e 'demo_ui[dev]'` — the extra can supply the plugin
+#: without naming it in the workflow.
+EDITABLE_EXTRA_INSTALL = re.compile(r"pip install -e ['\"]?([^\s'\"\[]+)\[")
+
+#: The plugin the root `addopts` makes mandatory.
+REQUIRED_PYTEST_PLUGIN = "pytest-cov"
+
+
+def _job_run_blob(job: dict[str, Any]) -> str:
+    """All `run:` script text in a workflow job, concatenated."""
+    steps = job.get("steps") or []
+    return "\n".join(str(step.get("run", "")) for step in steps if isinstance(step, dict))
+
+
+def _plugin_reachable(blob: str, repo_root: Path) -> bool:
+    """Whether `pytest-cov` is installed by this job, directly or via an extra."""
+    if REQUIRED_PYTEST_PLUGIN in blob:
+        return True
+    # An editable install with extras can pull the plugin in transitively;
+    # resolve the referenced project rather than assuming either way.
+    for package_dir in EDITABLE_EXTRA_INSTALL.findall(blob):
+        manifest = repo_root / package_dir / "pyproject.toml"
+        if manifest.is_file() and REQUIRED_PYTEST_PLUGIN in manifest.read_text(encoding="utf-8"):
+            return True
+    return False
+
+
+def test_every_job_running_pytest_installs_the_coverage_plugin(
+    ci_workflow: dict[str, Any], repo_root: Path
+) -> None:
+    """`pytest-cov` is mandatory for any job that runs pytest.
+
+    `pyproject.toml`'s `[tool.pytest.ini_options].addopts` carries
+    `--cov`, `--cov-report` and `--cov-fail-under` unconditionally, and
+    several jobs add `--no-cov`. All four are pytest-cov options, so
+    without the plugin pytest exits **4 at argument parsing** — before
+    conftest, before any fixture, and before `FORGE_MC_REQUIRE_E2E` can
+    mean anything:
+
+        error: unrecognized arguments: --cov=python ... --no-cov
+
+    Two opt-in jobs shipped this way — `python-test-minecraft-e2e` and
+    `python-test-lmstudio` — and neither had ever run, so nothing caught
+    it. It is the same "unrun code rots" class the rest of this module
+    guards, one layer earlier: the job could not reach the code whose
+    contracts these tests check.
+
+    An extras install counts: `demo-ui` runs `pip install -e
+    'demo_ui[dev]'`, and `demo_ui/pyproject.toml` pins the plugin. That
+    is resolved rather than assumed, so the guard neither false-positives
+    on it nor lets a job that merely *looks* similar through.
+    """
+    offenders = sorted(
+        job_id
+        for job_id, job in ci_workflow["jobs"].items()
+        if PYTEST_INVOCATION.search(_job_run_blob(job))
+        and not _plugin_reachable(_job_run_blob(job), repo_root)
+    )
+    assert offenders == [], (
+        f"these jobs run pytest without {REQUIRED_PYTEST_PLUGIN}: {offenders}. "
+        "The shared addopts make it mandatory — pytest exits 4 at argument "
+        "parsing, so the job fails before running a single test."
+    )

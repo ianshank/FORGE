@@ -396,7 +396,10 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install maturin pytest numpy gymnasium httpx jsonschema
+          # pytest-cov for the same reason as the Minecraft E2E job: the
+          # shared addopts carry --cov*, and this job's run step passes
+          # --no-cov, so the plugin must be present or pytest exits 4.
+          pip install maturin pytest pytest-cov numpy gymnasium httpx jsonschema
       - name: Build native extension
         run: maturin develop
       - name: Run lmstudio smoke (marker-selected, no coverage)
@@ -449,9 +452,16 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - name: Install pytest (no other deps needed — test uses stdlib urllib)
+      - name: Install pytest + pytest-cov
+        # `pytest-cov` is REQUIRED, not optional. pyproject.toml's
+        # [tool.pytest.ini_options].addopts carries --cov/--cov-report/
+        # --cov-fail-under unconditionally, and the run step adds
+        # --no-cov; all four are pytest-cov options. Without the plugin
+        # pytest exits 4 at argument parsing -- before conftest, before
+        # Docker, and before FORGE_MC_REQUIRE_E2E can mean anything:
+        #   error: unrecognized arguments: --cov=python ... --no-cov
         # Pin versions explicitly; no extra deps drift in CI.
-        run: pip install 'pytest==8.3.4'
+        run: pip install 'pytest==8.3.4' 'pytest-cov==6.0.0'
       - name: Run Minecraft E2E suite
         run: pytest tests/python/integration/test_minecraft_e2e.py -m minecraft_e2e --no-cov -v
       - name: Dump compose service logs on failure
