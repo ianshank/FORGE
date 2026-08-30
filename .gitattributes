@@ -1,0 +1,34 @@
+# Explicit line-ending declarations for files this PR touches or that are
+# structurally risky to diff as plain text. Deliberately NOT a blanket
+# `* text=auto` policy: an audit while preparing this PR found 13 other
+# pre-existing files across the repo (.gitignore, several *.rs sources,
+# mc-bot/package.json, two docs) already carrying CRLF line endings while the
+# rest of the repo is LF. Renormalizing those is a legitimate but separate
+# cleanup with its own review surface -- out of scope here, and not something
+# this PR should decide unilaterally by dropping a repo-wide attribute.
+#
+# CHANGELOG.md: declared explicitly because it was accidentally flattened
+# from CRLF to LF by a Python text-mode read/write round-trip while preparing
+# this PR (Python's universal-newlines translation strips \r on read; the
+# write side does not restore it on Linux). That turned a ~40-line content
+# edit into a ~2000-line diff.
+#
+# `-text` (not `text eol=crlf`): the `text` attribute always normalizes the
+# STORED blob to LF regardless of `eol=`, which only controls what gets
+# materialized on checkout -- so `text eol=crlf` would silently re-flatten
+# this file to LF in the repository on every commit while merely rendering it
+# as CRLF locally, reproducing the exact bug this line exists to prevent.
+# `-text` (without `-diff`): opts the path out of EOL processing entirely
+# -- git stores and checks out exactly the bytes on disk, in either
+# direction -- while still generating a normal line-based diff (unlike
+# Cargo.lock/*.wasm below, a CHANGELOG is meant to be read in review).
+CHANGELOG.md -text
+
+# Lockfiles and generated binaries: never text-diff or line-ending-convert.
+# A regenerated lockfile is reviewed by its dependency delta, not a
+# line-by-line text diff, and a wasm-pack .wasm binary must never have EOL
+# translation applied (which would corrupt it on a Windows clone with
+# core.autocrlf enabled).
+Cargo.lock -text -diff
+package-lock.json -text -diff
+*.wasm -text -diff binary
