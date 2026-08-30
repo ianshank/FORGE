@@ -880,6 +880,73 @@ jobs:
         # would make this gate vacuously green. See the script's header.
         run: scripts/wasm_test_node.sh
 
+  wasm-e2e:
+    name: WASM Demo E2E (Playwright)
+    runs-on: ubuntu-latest
+    # Drives the REAL static demo -- web/index.html + web/app.js + the wasm-pack
+    # `--target web` output -- in Chromium. Nothing is mocked: the demo is fully
+    # client-side, so these bytes are the ones gh-pages.yml uploads.
+    #
+    # NON-BLOCKING for now, mirroring how `dashboard-e2e` was introduced: not in
+    # any job's needs[] and not a required check. Promote once it has been green
+    # for a full release cycle.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Keep in sync with rust-toolchain.toml (dtolnay never reads it).
+          toolchain: "1.94.1"
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/web-e2e/package-lock.json
+      - name: Install wasm-pack
+        run: scripts/install_wasm_pack.sh
+      - name: Build the demo bundle into web/pkg/
+        # The same script `make wasm` and the Playwright webServer use, so the
+        # E2E can never test a differently-built artifact than local dev. A
+        # separate step for clean failure attribution; the webServer's own
+        # rebuild is then a warm-cache no-op.
+        run: scripts/build_wasm_demo.sh
+      - name: Install E2E dependencies
+        working-directory: tests/web-e2e
+        run: npm ci
+      - name: Type-check E2E sources
+        working-directory: tests/web-e2e
+        run: npm run typecheck:e2e
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          # Distinct `pw-web-` prefix: dashboard-e2e's `pw-${{ runner.os }}-`
+          # restore-key would otherwise cross-restore a Chromium built for a
+          # different @playwright/test version.
+          key: pw-web-${{ runner.os }}-${{ hashFiles('tests/web-e2e/package-lock.json') }}
+          restore-keys: pw-web-${{ runner.os }}-
+      - name: Install Playwright Chromium
+        working-directory: tests/web-e2e
+        run: npx playwright install --with-deps chromium
+      - name: Run browser E2E suite
+        working-directory: tests/web-e2e
+        run: npm run test:e2e
+      - name: Upload Playwright HTML report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: wasm-e2e-report
+          path: tests/web-e2e/playwright-report/
+          retention-days: 7
+      - name: Upload Playwright traces/videos
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: wasm-e2e-traces
+          path: tests/web-e2e/test-results/
+          retention-days: 7
+
   docker:
     name: Docker Build & Publish (GHCR + optional Docker Hub)
     runs-on: ubuntu-latest

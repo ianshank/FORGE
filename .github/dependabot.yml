@@ -50,6 +50,16 @@ updates:
       dashboard-minor-patch:
         update-types: ["minor", "patch"]
 
+  # Node — WASM demo E2E harness (Playwright).
+  - package-ecosystem: npm
+    directory: "/tests/web-e2e"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      web-e2e-minor-patch:
+        update-types: ["minor", "patch"]
+
   # GitHub Actions used by the workflows themselves.
   - package-ecosystem: github-actions
     directory: "/"

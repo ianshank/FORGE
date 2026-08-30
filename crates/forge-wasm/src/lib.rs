@@ -127,6 +127,12 @@ impl ForgeWasmEnv {
     /// * `seed` - Optional RNG seed for the new episode. When `None`, a seed is
     ///   derived from the internal RNG.
     ///
+    ///   **From JavaScript this is a `bigint`, not a `number`.** wasm-bindgen
+    ///   maps Rust's 64-bit integers to JS `BigInt`, and the generated glue
+    ///   forwards the value to an `i64` wasm parameter with no coercion, so
+    ///   `env.reset(42)` throws a `TypeError` — pass `env.reset(42n)`.
+    ///   `undefined` and `null` both arrive here as `None`.
+    ///
     /// # Returns
     ///
     /// A JSON-encoded [`StepResponse`] containing the initial observations,

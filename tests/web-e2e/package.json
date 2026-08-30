@@ -1,0 +1,19 @@
+{
+  "name": "forge-web-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E for the static in-browser WASM demo in web/",
+  "scripts": {
+    "build:wasm": "../../scripts/build_wasm_demo.sh",
+    "serve": "node serve.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "typecheck:e2e": "tsc -p e2e/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.3.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -8,7 +8,7 @@ SHELL := /bin/bash
 .PHONY: help build fmt fmt-check lint test coverage \
         onnx-check wasm wasm-check wasm-test deny gitleaks pin-check \
         py-lint py-test hooks-test \
-        mc-bot-test dashboard-test \
+        mc-bot-test dashboard-test web-e2e \
         verify verify-full clean
 
 help: ## Show this help
@@ -104,6 +104,9 @@ mc-bot-test: ## mc-bot: typecheck + Biome lint + node:test + coverage
 
 dashboard-test: ## dashboard: build + Biome lint + Vitest coverage gate (85%)
 	cd dashboard && npm ci && npm run build && npm run lint && npm run test:coverage
+
+web-e2e: ## WASM demo: Playwright E2E against the real web/ demo (needs wasm-pack + a Chromium download)
+	cd tests/web-e2e && npm ci && npm run typecheck:e2e && npm run test:e2e
 
 # ---- Aggregate -----------------------------------------------------------
 

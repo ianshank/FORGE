@@ -46,6 +46,8 @@
 /mc-bot/                            @ianshank
 /python/                           @ianshank
 /dashboard/                        @ianshank
+/web/                              @ianshank
+/tests/web-e2e/                    @ianshank
 /demo_ui/                          @ianshank
 
 # --- CI / infra / governance -------------------------------------------------

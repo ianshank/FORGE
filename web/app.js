@@ -4,13 +4,17 @@
 // reset/step/render surface entirely client-side. All simulation parameters
 // come from DEMO_CONFIG below (passed to the env constructor) — nothing about
 // the world is hard-coded in this file beyond the demo's own playback cadence,
-// which is itself a named constant.
+// which is itself a named constant, and the u64 seed ceiling.
 
 import init, { ForgeWasmEnv } from "./pkg/forge_wasm.js";
 
 // Simulation config handed to the env. An empty object makes the Rust side use
 // ForgeConfig::default(); override fields here to customise the demo world.
 const DEMO_CONFIG = {};
+
+// Largest value a Rust u64 seed can hold. Seeds outside this range are
+// rejected rather than silently truncated.
+const MAX_SEED = (1n << 64n) - 1n;
 
 // Milliseconds between auto-play steps.
 const PLAY_INTERVAL_MS = 120;
@@ -19,6 +23,25 @@ const PLAY_INTERVAL_MS = 120;
 const MAX_STEPS_PER_EPISODE = 600;
 
 const el = (id) => document.getElementById(id);
+
+// `reset` takes a Rust Option<u64>, which wasm-bindgen lowers to an i64 wasm
+// parameter — so seeds cross this boundary as BigInt. Passing a JS Number
+// throws a TypeError; passing undefined means "no seed".
+function parseSeed(text) {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const value = BigInt(trimmed);
+  return value <= MAX_SEED ? value : null;
+}
+
+// Generated here rather than letting Rust derive one internally, so the demo
+// can always display the seed it used. That is what makes the reproducibility
+// claim checkable by a visitor instead of merely asserted.
+function randomSeed() {
+  const buf = new BigUint64Array(1);
+  crypto.getRandomValues(buf);
+  return buf[0];
+}
 
 const state = {
   env: null,
@@ -48,15 +71,39 @@ function readActionCount(env) {
   return 1;
 }
 
+// `seed` is a BigInt, or undefined to draw a fresh random one. The seed that
+// actually ran is always written to #seed-used, whichever branch supplied it.
 function resetEpisode(seed) {
-  const response = JSON.parse(state.env.reset(seed));
+  const effective = seed === undefined ? randomSeed() : seed;
+  const response = JSON.parse(state.env.reset(effective));
   state.steps = 0;
   state.episode += 1;
   el("tick").textContent = "0";
   el("reward").textContent = "—";
   el("episode").textContent = String(state.episode);
+  el("seed-used").textContent = String(effective);
   render();
   return response;
+}
+
+// Read the seed box for an explicit Reset. An empty box means "surprise me";
+// anything unparseable falls back to random and says so, rather than silently
+// ignoring what the user typed.
+function resetFromInput() {
+  const raw = el("seed").value;
+  if (raw.trim() === "") {
+    resetEpisode();
+    setStatus("ready");
+    return;
+  }
+  const seed = parseSeed(raw);
+  if (seed === null) {
+    resetEpisode();
+    setStatus(`invalid seed (0..2^64-1) — used a random one`);
+    return;
+  }
+  resetEpisode(seed);
+  setStatus("ready");
 }
 
 function stepOnce() {
@@ -70,6 +117,8 @@ function stepOnce() {
   render();
 
   if (result.terminated || result.truncated || state.steps >= MAX_STEPS_PER_EPISODE) {
+    // Deliberately seedless: honouring the seed box here would make Play loop
+    // the same episode forever. An explicit Reset is what applies a seed.
     resetEpisode();
   }
 }
@@ -102,8 +151,7 @@ async function main() {
 
   el("reset").addEventListener("click", () => {
     pause();
-    resetEpisode();
-    setStatus("ready");
+    resetFromInput();
   });
   el("step").addEventListener("click", () => {
     pause();
