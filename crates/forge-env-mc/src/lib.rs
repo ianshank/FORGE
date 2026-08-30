@@ -31,6 +31,11 @@ pub mod mc_env;
 pub mod protocol;
 pub mod reward_config;
 
+/// Scripted mock bot server for tests. Enabled by the `testing`
+/// feature; see [`testing`] for the rationale and an example.
+#[cfg(feature = "testing")]
+pub mod testing;
+
 pub use action_map::{ActionEntry, ActionKind, ActionMap};
 pub use client::ProtocolClient;
 pub use config::MinecraftEnvConfig;

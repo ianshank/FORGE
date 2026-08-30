@@ -1305,6 +1305,7 @@ name = "forge-env-mc"
 version = "0.5.0"
 dependencies = [
  "forge-env",
+ "forge-env-mc",
  "proptest",
  "serde",
  "serde_json",
