@@ -21,7 +21,18 @@ tungstenite = "0.24"
 url = { workspace = true }
 sha2 = { workspace = true }
 
+[features]
+# Exposes `testing::MockBot`, a scripted stand-in for the Node mc-bot
+# WebSocket server. Off by default so the mock never ships in a release
+# binary. Note the gate is on the feature ALONE, not `any(test, ...)`:
+# an integration test under `tests/` links this crate compiled WITHOUT
+# `--cfg test`, so a `cfg(test)` arm would not exist from its point of
+# view. The self dev-dependency below is what turns the feature on for
+# this crate's own integration tests.
+testing = []
+
 [dev-dependencies]
+forge-env-mc = { path = ".", features = ["testing"] }
 proptest = { workspace = true }
 tempfile = { workspace = true }
 

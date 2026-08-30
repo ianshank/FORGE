@@ -14,6 +14,7 @@ module-level constants — single source of truth.
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import shutil
 import subprocess
@@ -48,11 +49,40 @@ DOCKER_INTROSPECT_TIMEOUT_SECS: int = 10
 #: engine.
 DOCKER_LOGS_TIMEOUT_SECS: int = 30
 
-#: Subprocess timeout for the `scripts/mc_run.sh --build --detach`
-#: stack bring-up. The realistic worst case (cold image pull +
-#: Minecraft world-gen + runner build) lands well under 5 minutes;
-#: ten is the safety ceiling.
+logger = logging.getLogger(__name__)
+
+#: Env var overriding :data:`COMPOSE_UP_TIMEOUT_SECS`.
+COMPOSE_UP_TIMEOUT_ENV_VAR: str = "FORGE_MC_COMPOSE_UP_TIMEOUT"
+
+#: Env var that, when truthy, makes the stack bring-up reuse prebuilt
+#: images instead of passing ``--build``. See :func:`use_prebuilt_images`.
+USE_PREBUILT_ENV_VAR: str = "FORGE_MC_USE_PREBUILT"
+
+#: Env var that, when truthy, turns environment-related skips into hard
+#: failures and requires at least one Minecraft E2E test to actually
+#: execute. See :func:`require_e2e_execution`.
+REQUIRE_E2E_ENV_VAR: str = "FORGE_MC_REQUIRE_E2E"
+
+#: Default subprocess timeout for the `scripts/mc_run.sh` stack
+#: bring-up when images are PREBUILT: a pull of the published images
+#: plus Minecraft world-gen. Ten minutes, unchanged from the value this
+#: constant has always carried.
+#:
+#: NOTE: this constant previously claimed the *build* path also landed
+#: "well under 5 minutes". It does not. `--build` triggers a cold
+#: `cargo build --release` of forge-mc-runner inside Docker, and GitHub
+#: Actions does not persist BuildKit cache mounts across runners, so
+#: every CI build starts from scratch. That path uses
+#: :data:`COMPOSE_UP_BUILD_TIMEOUT_SECS` instead.
 COMPOSE_UP_TIMEOUT_SECS: int = 600
+
+#: Subprocess timeout for the bring-up when images must be BUILT
+#: locally. Sized for a cold release compile of the Rust runner plus a
+#: ~200 MB ONNX Runtime download, and deliberately kept below the
+#: `timeout-minutes: 60` cap on the `python-test-minecraft-e2e` job so
+#: the suite fails with a diagnosable message rather than the runner
+#: killing the job mid-build. Keep the two in step.
+COMPOSE_UP_BUILD_TIMEOUT_SECS: int = 2700
 
 #: Subprocess timeout for `scripts/mc_run.sh --down` stack teardown.
 COMPOSE_DOWN_TIMEOUT_SECS: int = 120
@@ -61,6 +91,71 @@ COMPOSE_DOWN_TIMEOUT_SECS: int = 120
 #: in :mod:`conftest`. Pinned so all error messages quote the same
 #: log volume.
 DEFAULT_DOCKER_LOGS_TAIL: int = 50
+
+
+def _env_flag(name: str) -> bool:
+    """True iff env var ``name`` is set to a recognised truthy value.
+
+    Accepts ``1``/``true``/``yes``/``on`` case-insensitively so the
+    flag behaves the same from a shell, a compose file, and a GitHub
+    Actions ``env:`` block.
+    """
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def use_prebuilt_images() -> bool:
+    """True iff the stack should reuse already-published images.
+
+    When true, the bring-up drops ``--build``. A Compose service that
+    declares both ``build:`` and ``image:`` and leaves ``pull_policy``
+    unset already "attempts to pull the image first and falls back to
+    building from source if the image is not found" (Compose spec), so
+    omitting ``--build`` is by itself enough to prefer a published image
+    — and still degrades to a build when there is none.
+    """
+    return _env_flag(USE_PREBUILT_ENV_VAR)
+
+
+def require_e2e_execution() -> bool:
+    """True iff a missing prerequisite must fail rather than skip.
+
+    The Minecraft E2E fixtures ``pytest.skip`` when Docker is absent or
+    the stack fails to come up. Skipped tests exit pytest ``0``, so a
+    scheduled job would report success while executing nothing. Jobs
+    that exist *to run* this suite set
+    :data:`REQUIRE_E2E_ENV_VAR` to convert those skips into failures.
+    """
+    return _env_flag(REQUIRE_E2E_ENV_VAR)
+
+
+def compose_up_timeout_secs() -> int:
+    """Resolve the bring-up timeout.
+
+    Precedence: :data:`COMPOSE_UP_TIMEOUT_ENV_VAR` if set to a positive
+    integer, else the build-path or prebuilt-path default depending on
+    :func:`use_prebuilt_images`. A non-numeric or non-positive override
+    falls back to the default rather than raising, so a typo cannot
+    abort a long run before it starts.
+    """
+    raw = os.environ.get(COMPOSE_UP_TIMEOUT_ENV_VAR, "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+        except ValueError:
+            logger.warning(
+                "ignoring non-integer %s=%r; using the default",
+                COMPOSE_UP_TIMEOUT_ENV_VAR,
+                raw,
+            )
+        else:
+            if parsed > 0:
+                return parsed
+            logger.warning(
+                "ignoring non-positive %s=%d; using the default",
+                COMPOSE_UP_TIMEOUT_ENV_VAR,
+                parsed,
+            )
+    return COMPOSE_UP_TIMEOUT_SECS if use_prebuilt_images() else COMPOSE_UP_BUILD_TIMEOUT_SECS
 
 
 def docker_compose_available() -> bool:

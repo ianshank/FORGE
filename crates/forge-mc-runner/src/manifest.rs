@@ -8,8 +8,11 @@
 //! - `version` — strictly monotonic counter; bumped per trainer export.
 //! - `schema_id` — sha256 the runner cross-checks against the env's
 //!   `Hello.schema_id`. Mismatch = action/reward space drift, hard fail.
-//! - `files.<role>.sha256` — content hash so the runner can detect
-//!   corrupted or partially-written files before loading.
+//! - `files.<role>.sha256` — content hash recorded by the trainer at
+//!   export time. NOTE: [`ModelManifest::validate`] only checks that
+//!   this field is non-empty; it does **not** re-hash the file on
+//!   disk, so a corrupted bundle is not detected here. Partial-write
+//!   protection comes from the atomic rename below, not from this hash.
 //!
 //! ## Atomic write
 //!

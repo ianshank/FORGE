@@ -23,7 +23,12 @@ e2e/
   before the app mounts (`fixtures/mockWebSocket.ts`). It auto-opens and emits a
   seeded `StateUpdate`; specs push more frames with `emitWsMessage`.
 - **REST/SSE**: `page.route(...)` fulfils `/api/metrics`, `/api/scenario/remix`,
-  and the demo `/api/run/*` SSE stream (`fixtures/mockBackend.ts`). Error cases
+  the demo `/api/run/*` SSE stream, and the three history endpoints
+  (`/api/runs`, `/api/training-metrics/history`,
+  `/api/decision-traces/history`) that the app polls (`fixtures/mockBackend.ts`).
+  Every endpoint the app calls must be mocked: an unmocked fetch escapes to the
+  real `apiBaseUrl`, which nothing serves here, and the resulting console error
+  fails the "loads the shell without console errors" spec. Error cases
   re-`route` before navigating (last handler wins).
 
 ## Running

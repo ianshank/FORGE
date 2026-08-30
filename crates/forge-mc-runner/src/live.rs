@@ -136,12 +136,12 @@ pub fn run_live(cfg: RunnerConfig, metrics: Option<MetricsRecorder>) -> Result<(
              Random-baseline mode (`random_actions = true` in runner.toml) \
              does not need ORT and works in this build."
         );
-        return Err(RunnerError::ConfigLoad(
+        Err(RunnerError::ConfigLoad(
             "trained-mode live runner requires the `onnx-reload` Cargo \
              feature; rebuild with `--features mc-live --features onnx-reload` \
              (or `--features mc-live-bundled`)."
                 .into(),
-        ));
+        ))
     }
 
     #[cfg(feature = "onnx-reload")]
@@ -420,9 +420,12 @@ mod tests {
 
     #[test]
     fn build_reload_fn_with_metrics_returns_callable_box() {
-        // Type-shape assertion only. The reload path itself is unverified
-        // end-to-end: `--features onnx-reload` does not currently build
-        // (pre-existing forge-agent/`ort` incompatibility, out of scope here).
+        // Type-shape assertion only. The `ort` incompatibility this
+        // comment used to cite is fixed: the `onnx-features` CI job
+        // builds and tests `--features mc-live-bundled` (which implies
+        // `onnx-reload`) on every push. What remains unverified here is
+        // the reload path end-to-end against a real bundle -- the
+        // callable is only checked for its type shape.
         let _fn: ReloadFn<OnnxMuZeroModel> =
             build_reload_fn_with_metrics(PathBuf::from("."), 4, 8, 1, None);
     }

@@ -1,8 +1,10 @@
 //! Integration test against a mock WebSocket server.
 //!
-//! Spins up a `std::thread` running `tungstenite::accept` and a scripted
-//! sequence of `ServerMsg` replies, then exercises [`MinecraftEnv`]
-//! against it.
+//! Drives [`MinecraftEnv`] against [`forge_env_mc::testing::MockBot`],
+//! the scripted stand-in for the Node `mc-bot` bridge. The mock lives
+//! in the library (behind the `testing` feature) rather than here so
+//! downstream crates -- notably `forge-mc-runner` -- can exercise the
+//! same real wire protocol without duplicating it.
 
 use std::net::TcpListener;
 use std::thread;
@@ -11,7 +13,8 @@ use std::time::Duration;
 use forge_env::{Env, FlatObsEnv};
 use forge_env_mc::action_map::{ActionEntry, ActionKind, ActionMap};
 use forge_env_mc::config::MinecraftEnvConfig;
-use forge_env_mc::protocol::{GridShape, ServerMsg, SCHEMA_VERSION};
+use forge_env_mc::protocol::{ClientMsg, GridShape, ServerMsg, SCHEMA_VERSION};
+use forge_env_mc::testing::MockBot;
 use forge_env_mc::{McEnvError, MinecraftEnv};
 use tungstenite::Message;
 
@@ -51,56 +54,6 @@ fn sample_map() -> ActionMap {
     }
 }
 
-fn pick_port() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    port
-}
-
-/// Mock bot. `replies` is a sequence of `ServerMsg`s emitted after each
-/// `ClientMsg` is read. The first message sent (before any client
-/// message is read) is always a `Hello` with the provided params.
-struct Mock {
-    listener: TcpListener,
-    hello: ServerMsg,
-    replies: Vec<ServerMsg>,
-}
-
-impl Mock {
-    fn spawn(addr: &str, hello: ServerMsg, replies: Vec<ServerMsg>) -> Self {
-        let listener = TcpListener::bind(addr).unwrap();
-        Self {
-            listener,
-            hello,
-            replies,
-        }
-    }
-
-    fn run(self) -> thread::JoinHandle<()> {
-        thread::spawn(move || {
-            let (stream, _peer) = self.listener.accept().expect("accept");
-            stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .unwrap();
-            stream
-                .set_write_timeout(Some(Duration::from_secs(5)))
-                .unwrap();
-            let mut ws = tungstenite::accept(stream).expect("ws handshake");
-            // Send Hello first.
-            let hello = serde_json::to_string(&self.hello).unwrap();
-            ws.send(Message::Text(hello)).unwrap();
-            // Then for each subsequent client message, send a scripted reply.
-            for reply in self.replies {
-                let _msg = ws.read().expect("read client msg");
-                let s = serde_json::to_string(&reply).unwrap();
-                ws.send(Message::Text(s)).unwrap();
-            }
-            let _ = ws.close(None);
-        })
-    }
-}
-
 fn cfg_with_url(url: String) -> MinecraftEnvConfig {
     MinecraftEnvConfig {
         ws_url: url,
@@ -136,43 +89,38 @@ fn obs_msg(tick: u64) -> ServerMsg {
 
 #[test]
 fn handshake_validates_action_count_and_obs_dim() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url_and_expected(url, OBS_DIM);
 
     let env = MinecraftEnv::connect(cfg, map.clone()).expect("connect");
     assert_eq!(env.obs_dim(), OBS_DIM);
     assert_eq!(env.num_actions(), map.action_count());
     drop(env);
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn handshake_rejects_action_count_mismatch() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(999, OBS_DIM, "x"); // wrong action_count on purpose
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url(url);
 
     let err = MinecraftEnv::connect(cfg, map)
         .err()
         .expect("expected error");
     assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn handshake_rejects_schema_version_mismatch() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     // Hand-rolled here (not via build_hello) so we can flip the schema
     // version on purpose.
@@ -183,43 +131,43 @@ fn handshake_rejects_schema_version_mismatch() {
         schema_id: "x".into(),
         grid_shape: None,
     };
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url(url);
     let err = MinecraftEnv::connect(cfg, map)
         .err()
         .expect("expected error");
     assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn handshake_rejects_schema_id_mismatch_when_expected_set() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, "server-schema");
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_expected_schema(url, "client-schema");
     let err = MinecraftEnv::connect(cfg, map)
         .err()
         .expect("expected error");
     assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn reset_and_steps_drive_a_full_short_episode() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
     let mut replies = vec![obs_msg(0)]; // reply to Reset
     for t in 1..=5u64 {
         replies.push(obs_msg(t));
     }
-    let server = Mock::spawn(&addr, hello, replies).run();
+    let bot = MockBot::bind(hello, replies);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url(url);
 
     let mut env = MinecraftEnv::connect(cfg, map).unwrap();
@@ -230,18 +178,189 @@ fn reset_and_steps_drive_a_full_short_episode() {
         assert_eq!(s.info.tick, expected_tick);
     }
     let _ = env.close();
-    let _ = server.join();
+    server.join();
+}
+
+/// The mock records what the client SENT, not just what it did with
+/// the replies. That is the capability downstream crates need: a
+/// `forge-mc-runner` test can assert which action ids its planner
+/// actually chose, which no stub env can show.
+#[test]
+fn mock_records_the_client_message_sequence() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    // One reply per client message: Reset, then two Steps.
+    let bot = MockBot::bind(hello, vec![obs_msg(0), obs_msg(1), obs_msg(2)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    let mut env = MinecraftEnv::connect(cfg_with_url(url), map).unwrap();
+    env.reset(Some(7)).unwrap();
+    env.step(2).unwrap();
+    env.step(1).unwrap();
+    let _ = env.close();
+
+    let sent = server.received();
+    assert_eq!(
+        sent,
+        vec![
+            ClientMsg::Reset { seed: Some(7) },
+            ClientMsg::Step { action_id: 2 },
+            ClientMsg::Step { action_id: 1 },
+        ],
+        "mock should record the exact ClientMsg sequence, in order"
+    );
+    server.join();
+}
+
+/// Two mocks bound at once must not collide. Guards the bind-and-hold
+/// contract: the old helper picked a port, dropped the listener, then
+/// re-bound it later, leaving a window for another test to claim it.
+#[test]
+fn concurrently_bound_mocks_get_distinct_ports() {
+    let map = sample_map();
+    let hello = || build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    let first = MockBot::bind(hello(), vec![]);
+    let second = MockBot::bind(hello(), vec![]);
+    assert_ne!(
+        first.local_addr().port(),
+        second.local_addr().port(),
+        "each bound mock must hold its own port"
+    );
+    assert!(first.ws_url().starts_with("ws://127.0.0.1:"));
+
+    // The distinct-ports assertion above would hold even if `bind()`
+    // released the port, because the kernel hands out a fresh one each
+    // time. This is what actually pins "held": re-binding a live mock's
+    // address must fail.
+    assert!(
+        TcpListener::bind(first.local_addr()).is_err(),
+        "bind() must HOLD its port; re-binding it must fail with AddrInUse"
+    );
+}
+
+/// A genuine server-side fault must reach the test thread. The mock
+/// used to swallow every panic from its serving thread, which could
+/// let a wire-protocol test pass while the protocol was broken —
+/// exactly the failure mode these tests exist to catch.
+///
+/// Drives a real fault (a read timeout, not a disconnect) and asserts
+/// `join()` re-raises it.
+#[test]
+fn join_surfaces_a_real_server_fault() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    // A reply is scripted, so the mock will wait for a client message
+    // that never comes and time out.
+    let bot = MockBot::bind(hello, vec![obs_msg(0)]).with_io_timeout(Duration::from_millis(50));
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    // Complete the handshake, then sit idle. Holding the socket open
+    // means the mock sees a timeout rather than a disconnect.
+    let (_client, _response) = tungstenite::connect(&url).expect("client connect");
+
+    // `catch_unwind` alone, deliberately: the panic hook is
+    // process-global, so swapping it out here would suppress panic
+    // diagnostics for every OTHER test libtest is running concurrently
+    // in this process — trading one tidy backtrace for the loss of the
+    // message that explains an unrelated failure. It would not even
+    // reliably silence this one: the mock's 50 ms read timeout can fire
+    // before the swap executes. The expected backtrace below is noise
+    // worth living with.
+    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
+
+    assert!(
+        joined.is_err(),
+        "join() must re-raise a real server fault, not swallow it"
+    );
+}
+
+/// The counterpart: a client that disconnects before the reply script
+/// is exhausted is an orderly end to the session, so `join()` must
+/// stay quiet. Guards against over-correcting the fix above into
+/// spurious failures.
+#[test]
+fn join_stays_quiet_on_an_orderly_client_disconnect() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    // Two replies scripted, but the client leaves after the handshake.
+    let bot = MockBot::bind(hello, vec![obs_msg(0), obs_msg(1)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    let env = MinecraftEnv::connect(cfg_with_url(url), map).expect("connect");
+    drop(env);
+
+    // No panic: an early client exit is not a fault.
+    server.join();
+}
+
+/// A client that sends a text frame which is not a valid `ClientMsg`
+/// is committing a protocol violation. The mock must surface it rather
+/// than dropping the frame and replying anyway — silently ignoring it
+/// would let exactly the wire regressions this mock exists to catch
+/// slip through green.
+#[test]
+fn malformed_client_frame_is_a_fault_not_a_silent_drop() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    let bot = MockBot::bind(hello, vec![obs_msg(0)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    // Hand-rolled client: `MinecraftEnv` cannot send malformed frames,
+    // which is precisely why this needs a raw one.
+    let (mut client, _response) = tungstenite::connect(&url).expect("client connect");
+    client
+        .send(Message::Text("{\"type\":\"not-a-real-variant\"}".into()))
+        .expect("send malformed frame");
+
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
+    std::panic::set_hook(previous_hook);
+
+    assert!(
+        joined.is_err(),
+        "a text frame that is not a valid ClientMsg must fail the test, not be dropped"
+    );
+}
+
+/// The same for a binary frame: the protocol is text-only, so a binary
+/// frame from the client is a fault.
+#[test]
+fn binary_client_frame_is_a_fault_not_a_silent_drop() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    let bot = MockBot::bind(hello, vec![obs_msg(0)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    let (mut client, _response) = tungstenite::connect(&url).expect("client connect");
+    client
+        .send(Message::Binary(vec![0x00, 0x01]))
+        .expect("send binary frame");
+
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
+    std::panic::set_hook(previous_hook);
+
+    assert!(
+        joined.is_err(),
+        "a binary frame from the client must fail the test, not be dropped"
+    );
 }
 
 #[test]
 fn step_with_action_out_of_range_returns_invalid_action() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
     // Only need the obs for reset; the bad step won't reach the server.
-    let server = Mock::spawn(&addr, hello, vec![obs_msg(0)]).run();
+    let bot = MockBot::bind(hello, vec![obs_msg(0)]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url(url);
 
     let mut env = MinecraftEnv::connect(cfg, map.clone()).unwrap();
@@ -249,18 +368,17 @@ fn step_with_action_out_of_range_returns_invalid_action() {
     let err = env.step(map.action_count() + 5).unwrap_err();
     assert!(matches!(err, McEnvError::InvalidAction { .. }));
     let _ = env.close();
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn accessors_expose_schema_id_action_map_config_and_specs() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let known_id = "deadbeef";
     let hello = build_hello(map.action_count(), OBS_DIM, known_id);
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url(url);
     let env = MinecraftEnv::connect(cfg, map.clone()).unwrap();
     assert_eq!(env.schema_id(), known_id);
@@ -272,17 +390,16 @@ fn accessors_expose_schema_id_action_map_config_and_specs() {
     let name = env.name();
     assert!(name.contains("minecraft-"));
     drop(env);
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn close_then_step_returns_closed_error() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url(url);
     let mut env = MinecraftEnv::connect(cfg, map).unwrap();
     use forge_env::Env;
@@ -293,31 +410,27 @@ fn close_then_step_returns_closed_error() {
     assert!(matches!(err, McEnvError::Closed));
     let err2 = env.reset(None).unwrap_err();
     assert!(matches!(err2, McEnvError::Closed));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn duplicate_hello_mid_episode_is_unexpected() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
     let mid_hello = build_hello(map.action_count(), OBS_DIM, "x");
-    let server = Mock::spawn(&addr, hello, vec![mid_hello]).run();
+    let bot = MockBot::bind(hello, vec![mid_hello]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url(url);
     let mut env = MinecraftEnv::connect(cfg, map).unwrap();
     use forge_env::Env;
     let err = env.reset(None).unwrap_err();
     assert!(matches!(err, McEnvError::Unexpected(_)));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn obs_dim_mismatch_in_observation_returns_obs_dim_error() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
     let bad_obs = ServerMsg::Observation {
@@ -328,36 +441,36 @@ fn obs_dim_mismatch_in_observation_returns_obs_dim_error() {
         truncated: false,
         info: serde_json::json!({}),
     };
-    let server = Mock::spawn(&addr, hello, vec![bad_obs]).run();
+    let bot = MockBot::bind(hello, vec![bad_obs]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url(url);
     let mut env = MinecraftEnv::connect(cfg, map).unwrap();
     use forge_env::Env;
     let err = env.reset(None).unwrap_err();
     assert!(matches!(err, McEnvError::ObsDimMismatch { .. }));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn handshake_rejects_obs_dim_mismatch_when_expected_set() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     // Expected_dim != OBS_DIM the bot reports.
     let cfg = cfg_with_url_and_expected(url, OBS_DIM + 7);
     let err = MinecraftEnv::connect(cfg, map).err().expect("expected err");
     assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn binary_frame_after_handshake_returns_unexpected() {
     // Mock that emits a raw Binary frame instead of an Observation.
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("ws://{}", listener.local_addr().unwrap());
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
     let server = thread::spawn(move || {
@@ -383,9 +496,8 @@ fn binary_frame_after_handshake_returns_unexpected() {
 
 #[test]
 fn close_frame_from_server_returns_websocket_error() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("ws://{}", listener.local_addr().unwrap());
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
     let server = thread::spawn(move || {
@@ -425,9 +537,6 @@ fn hello_with_grid(
 
 #[test]
 fn handshake_accepts_matching_grid_shape() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let grid = GridShape {
         height: 11,
@@ -442,7 +551,9 @@ fn handshake_accepts_matching_grid_shape() {
         * (grid.channels as usize)
         + (grid.vector_dim as usize);
     let hello = hello_with_grid(map.action_count(), obs_dim, map.canonical_sha256(), grid);
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
 
     let mut cfg = cfg_with_url(url);
     cfg.observation.expected_dim = Some(obs_dim);
@@ -450,14 +561,11 @@ fn handshake_accepts_matching_grid_shape() {
     let env = MinecraftEnv::connect(cfg, map).expect("connect");
     assert_eq!(env.obs_dim(), obs_dim);
     drop(env);
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn handshake_rejects_grid_shape_mismatch() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     // Bot advertises channels=6, client expects channels=7. Total
     // obs_dim happens to match — without the grid_shape cross-check
@@ -485,7 +593,9 @@ fn handshake_rejects_grid_shape_mismatch() {
         map.canonical_sha256(),
         server_grid,
     );
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
 
     let mut cfg = cfg_with_url(url);
     cfg.observation.expected_grid_shape = Some(client_grid);
@@ -493,17 +603,16 @@ fn handshake_rejects_grid_shape_mismatch() {
         .err()
         .expect("expected handshake mismatch");
     assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn handshake_rejects_missing_grid_shape_when_expected_set() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256()); // grid_shape: None
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let mut cfg = cfg_with_url(url);
     cfg.observation.expected_grid_shape = Some(GridShape {
         height: 7,
@@ -516,7 +625,7 @@ fn handshake_rejects_missing_grid_shape_when_expected_set() {
         .err()
         .expect("expected handshake mismatch");
     assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
@@ -526,9 +635,6 @@ fn handshake_accepts_any_grid_shape_when_expected_is_none() {
     // advertise any grid_shape (or none) and the handshake must
     // accept it.  Catches a regression where the v0.5 grid_shape
     // gate accidentally becomes mandatory.
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let server_grid = GridShape {
         height: 3,
@@ -546,21 +652,20 @@ fn handshake_accepts_any_grid_shape_when_expected_is_none() {
         map.canonical_sha256(),
         server_grid,
     );
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let mut cfg = cfg_with_url(url);
     cfg.observation.expected_dim = Some(obs_dim);
     cfg.observation.expected_grid_shape = None;
     let env = MinecraftEnv::connect(cfg, map).expect("connect (no expected grid_shape)");
     assert_eq!(env.obs_dim(), obs_dim);
     drop(env);
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn handshake_rejects_grid_dims_that_dont_sum_to_obs_dim() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let grid = GridShape {
         height: 3,
@@ -577,21 +682,20 @@ fn handshake_rejects_grid_dims_that_dont_sum_to_obs_dim() {
         map.canonical_sha256(),
         grid,
     );
-    let server = Mock::spawn(&addr, hello, vec![]).run();
+    let bot = MockBot::bind(hello, vec![]);
+    let url = bot.ws_url();
+    let server = bot.run();
     let mut cfg = cfg_with_url(url);
     cfg.observation.expected_grid_shape = Some(grid);
     let err = MinecraftEnv::connect(cfg, map)
         .err()
         .expect("expected handshake mismatch");
     assert!(matches!(err, McEnvError::HandshakeMismatch { .. }));
-    let _ = server.join();
+    server.join();
 }
 
 #[test]
 fn server_error_message_propagates() {
-    let port = pick_port();
-    let url = format!("ws://127.0.0.1:{port}");
-    let addr = format!("127.0.0.1:{port}");
     let map = sample_map();
     let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
     let replies = vec![
@@ -601,7 +705,9 @@ fn server_error_message_propagates() {
             message: "synthetic".into(),
         },
     ];
-    let server = Mock::spawn(&addr, hello, replies).run();
+    let bot = MockBot::bind(hello, replies);
+    let url = bot.ws_url();
+    let server = bot.run();
     let cfg = cfg_with_url(url);
 
     let mut env = MinecraftEnv::connect(cfg, map).unwrap();
@@ -609,5 +715,106 @@ fn server_error_message_propagates() {
     let err = env.step(0).unwrap_err();
     assert!(matches!(err, McEnvError::Protocol { .. }));
     let _ = env.close();
-    let _ = server.join();
+    server.join();
+}
+
+/// A client that closes gracefully mid-script must end the session, not
+/// fail the test.
+///
+/// `ws.read()` returns `Ok(Message::Close(_))` for a proper close — not
+/// an `Err` — so the disconnect classifier never sees it. tungstenite
+/// has already moved to `ClosedByPeer`, so replying fails with
+/// `SendAfterClosing`. Before the fix, every test escaped only because
+/// its reply script length exactly equalled the client's message count:
+/// one spare reply turned a textbook-correct shutdown into a panic
+/// blaming the mock's internals.
+#[test]
+fn graceful_client_close_mid_script_is_not_a_fault() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    // Deliberately MORE replies than the client will consume.
+    let bot = MockBot::bind(hello, vec![obs_msg(0), obs_msg(1), obs_msg(2)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    let mut env = MinecraftEnv::connect(cfg_with_url(url), map).expect("connect");
+    env.reset(Some(1)).expect("reset");
+    // `Env::close` sends a WebSocket Close frame.
+    env.close().expect("close");
+
+    // No panic: this is how a well-behaved client leaves.
+    server.join();
+}
+
+/// A control frame must not consume a scripted reply.
+///
+/// The script advances per `ClientMsg`, not per frame. If a Ping ate a
+/// slot, every later observation would shift by one — and `received()`
+/// would still look correct, because control frames are not recorded.
+#[test]
+fn control_frames_do_not_consume_scripted_replies() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    // Exactly one reply, reserved for the one real ClientMsg.
+    let bot = MockBot::bind(hello, vec![obs_msg(7)]);
+    let url = bot.ws_url();
+    let server = bot.run();
+
+    // Raw client: `MinecraftEnv` never emits pings, which is why this
+    // needs a hand-rolled one.
+    let (mut client, _response) = tungstenite::connect(&url).expect("client connect");
+    let _hello_frame = client.read().expect("read hello");
+    client.send(Message::Ping(Vec::new())).expect("send ping");
+    client
+        .send(Message::Text(
+            serde_json::to_string(&ClientMsg::Reset { seed: Some(1) }).unwrap(),
+        ))
+        .expect("send reset");
+
+    // The single reply must answer the Reset, not the Ping. tungstenite
+    // auto-replies Pong, so skip any control frames on the way.
+    let observation = loop {
+        match client.read().expect("read reply") {
+            Message::Text(text) => break text,
+            _ => continue,
+        }
+    };
+    let parsed: ServerMsg = serde_json::from_str(&observation).expect("parse reply");
+    assert!(
+        matches!(parsed, ServerMsg::Observation { tick: 7, .. }),
+        "the scripted reply must go to the Reset, not be eaten by the Ping: {parsed:?}"
+    );
+    assert_eq!(
+        server.received(),
+        vec![ClientMsg::Reset { seed: Some(1) }],
+        "control frames must not be recorded as ClientMsgs"
+    );
+    server.join();
+}
+
+/// A client that never connects must fail fast, not hang the harness.
+///
+/// `TcpListener::accept` blocks with no timeout, and the io timeout
+/// applies only once a stream exists. libtest has no per-test timeout,
+/// so before the fix this parked the whole `cargo test` process.
+#[test]
+fn absent_client_fails_fast_instead_of_hanging() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    let bot = MockBot::bind(hello, vec![]).with_accept_timeout(Duration::from_millis(50));
+    let server = bot.run();
+
+    // Never connect.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let started = std::time::Instant::now();
+    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.join()));
+    std::panic::set_hook(previous_hook);
+
+    assert!(joined.is_err(), "an absent client must fail, not hang");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "must fail within the accept budget, not the io timeout: took {:?}",
+        started.elapsed()
+    );
 }

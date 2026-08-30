@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use forge_replay::v2::TrajectoryGzipLevel;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 /// Knobs used by the `--dry-run` smoke mode in the runner binary.
 ///
@@ -312,6 +313,15 @@ impl Default for RunnerConfig {
 /// "no override" — the TOML value wins.
 pub const SCHEMA_ID_ENV_VAR: &str = "FORGE_MC_SCHEMA_ID";
 
+/// Environment variable that overrides `RunnerConfig.episodes` at
+/// runtime. Lets an operator (or a CI job) run a short smoke without
+/// editing the static `runner.toml`, which ships the full
+/// baseline-capture episode count. Empty / unset is treated as "no
+/// override"; a value that does not parse as `u64` is ignored with a
+/// warning so a typo degrades to the TOML default rather than
+/// aborting a long run.
+pub const EPISODES_ENV_VAR: &str = "FORGE_MC_RUNNER_EPISODES";
+
 impl RunnerConfig {
     /// Returns `true` iff `episodes == 0` (run forever).
     pub fn runs_forever(&self) -> bool {
@@ -323,10 +333,10 @@ impl RunnerConfig {
         self.metrics_port == 0
     }
 
-    /// Apply env-var overrides in-place. Currently honours
-    /// [`SCHEMA_ID_ENV_VAR`]; future env-var overrides land here.
-    /// Returns `Self` for chainability after `Default::default()` or
-    /// `toml::from_str`.
+    /// Apply env-var overrides in-place. Honours
+    /// [`SCHEMA_ID_ENV_VAR`] and [`EPISODES_ENV_VAR`]; future env-var
+    /// overrides land here. Returns `Self` for chainability after
+    /// `Default::default()` or `toml::from_str`.
     ///
     /// Empty env-var values are treated as unset — the TOML value
     /// wins. This avoids surprising operators who export an empty
@@ -336,6 +346,19 @@ impl RunnerConfig {
         if let Ok(v) = std::env::var(SCHEMA_ID_ENV_VAR) {
             if !v.is_empty() {
                 self.schema_id = v;
+            }
+        }
+        if let Ok(v) = std::env::var(EPISODES_ENV_VAR) {
+            if !v.is_empty() {
+                match v.parse::<u64>() {
+                    Ok(episodes) => self.episodes = episodes,
+                    Err(err) => warn!(
+                        env_var = EPISODES_ENV_VAR,
+                        value = %v,
+                        error = %err,
+                        "ignoring unparseable episode-count override; keeping the configured value"
+                    ),
+                }
             }
         }
         self
@@ -427,6 +450,28 @@ impl RunnerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serialises every test that touches the process-global
+    /// environment table.
+    ///
+    /// Confining each variable's mutations to one `#[test]` is not
+    /// enough. [`RunnerConfig::with_env_var_overrides`] reads *both*
+    /// [`SCHEMA_ID_ENV_VAR`] and [`EPISODES_ENV_VAR`], so the schema
+    /// test's `set_var` races the episodes test's read of the same
+    /// variable, and vice versa. Rust 2024 made `set_var` `unsafe`
+    /// because it requires excluding concurrent environment *access*,
+    /// not merely concurrent mutation of the same key — so any test
+    /// that mutates or observes the table must hold this lock.
+    ///
+    /// A poisoned guard is recovered rather than propagated: the panic
+    /// that poisoned it has already failed its own test, and cascading
+    /// it here would replace real assertion failures with mutex noise.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Acquire [`ENV_LOCK`], tolerating poisoning.
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     #[test]
     fn default_is_valid() {
@@ -775,14 +820,13 @@ mod tests {
     }
 
     /// All three env-var override scenarios consolidated into one
-    /// `#[test]` so cargo's parallel test runner cannot interleave
-    /// our env-var mutations across threads.
+    /// `#[test]`, run under [`ENV_LOCK`].
     ///
-    /// Rust 2024 made `std::env::set_var` `unsafe` precisely because
-    /// concurrent mutators race the process-global env table; the
-    /// peer-review-flagged "single-threaded test scope" claim only
-    /// holds when ALL mutators of the same env var sit in the same
-    /// `#[test]` function.
+    /// Consolidation alone is not sufficient. It keeps the *cases*
+    /// sequential, but `with_env_var_overrides` reads
+    /// [`EPISODES_ENV_VAR`] as well, so the sibling episodes test's
+    /// `set_var` still races this one's read of that variable. The
+    /// lock is what actually excludes concurrent access.
     ///
     /// Sequential cases (cleared between each):
     /// 1. env set → overrides TOML.
@@ -790,12 +834,13 @@ mod tests {
     /// 3. env set to empty string → treated as unset; TOML wins.
     #[test]
     fn with_env_var_overrides_covers_all_scenarios() {
+        let _env = env_guard();
         let saved = std::env::var(SCHEMA_ID_ENV_VAR).ok();
 
         // --- case 1: env set ---
-        // SAFETY: All env mutation is contained in this single test;
-        // no other test in the suite touches SCHEMA_ID_ENV_VAR, so
-        // cargo's parallel runner cannot race us.
+        // SAFETY: `_env` holds ENV_LOCK for this test's whole body, and
+        // every other test that touches the environment takes the same
+        // lock, so no concurrent access to the table is possible.
         unsafe {
             std::env::set_var(SCHEMA_ID_ENV_VAR, "sha-from-env");
         }
@@ -834,6 +879,70 @@ mod tests {
                 std::env::set_var(SCHEMA_ID_ENV_VAR, v);
             } else {
                 std::env::remove_var(SCHEMA_ID_ENV_VAR);
+            }
+        }
+    }
+
+    /// Episode-count override scenarios, consolidated into one
+    /// `#[test]` and run under [`ENV_LOCK`], for the same reasons as
+    /// [`with_env_var_overrides_covers_all_scenarios`].
+    ///
+    /// Sequential cases (cleared between each):
+    /// 1. env set to a valid count → overrides TOML.
+    /// 2. env unset → TOML wins.
+    /// 3. env set to empty string → treated as unset; TOML wins.
+    /// 4. env set to an unparseable value → ignored; TOML wins.
+    /// 5. env set to `0` → honoured (`0` means "run forever", so it
+    ///    is a meaningful override rather than a sentinel for unset).
+    #[test]
+    fn episodes_env_var_override_covers_all_scenarios() {
+        let _env = env_guard();
+        let saved = std::env::var(EPISODES_ENV_VAR).ok();
+        let toml_cfg = || RunnerConfig {
+            episodes: 100,
+            ..RunnerConfig::default()
+        };
+
+        // --- case 1: env set to a valid count ---
+        // SAFETY: as above — `_env` holds ENV_LOCK, which every
+        // environment-touching test in this module takes.
+        unsafe {
+            std::env::set_var(EPISODES_ENV_VAR, "2");
+        }
+        assert_eq!(toml_cfg().with_env_var_overrides().episodes, 2);
+
+        // --- case 2: env unset ---
+        unsafe {
+            std::env::remove_var(EPISODES_ENV_VAR);
+        }
+        assert_eq!(toml_cfg().with_env_var_overrides().episodes, 100);
+
+        // --- case 3: env set to empty string (treated as unset) ---
+        unsafe {
+            std::env::set_var(EPISODES_ENV_VAR, "");
+        }
+        assert_eq!(toml_cfg().with_env_var_overrides().episodes, 100);
+
+        // --- case 4: unparseable value is ignored, not fatal ---
+        unsafe {
+            std::env::set_var(EPISODES_ENV_VAR, "not-a-number");
+        }
+        assert_eq!(toml_cfg().with_env_var_overrides().episodes, 100);
+
+        // --- case 5: `0` is a real value ("run forever"), not unset ---
+        unsafe {
+            std::env::set_var(EPISODES_ENV_VAR, "0");
+        }
+        let cfg = toml_cfg().with_env_var_overrides();
+        assert_eq!(cfg.episodes, 0);
+        assert!(cfg.runs_forever());
+
+        // Restore prior env so the suite stays hygienic.
+        unsafe {
+            if let Some(v) = saved {
+                std::env::set_var(EPISODES_ENV_VAR, v);
+            } else {
+                std::env::remove_var(EPISODES_ENV_VAR);
             }
         }
     }

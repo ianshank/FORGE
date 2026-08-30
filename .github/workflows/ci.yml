@@ -417,6 +417,18 @@ jobs:
     name: Python Minecraft E2E (opt-in)
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.run_minecraft_e2e
+    # The bring-up compiles forge-mc-runner from source inside Docker (no
+    # image is published for it yet), so the fixture's build-path budget
+    # applies. Cap the job above that budget rather than letting a hung
+    # build ride GitHub's 6-hour default.
+    timeout-minutes: 60
+    env:
+      # This job exists to RUN the suite, so a missing prerequisite must
+      # fail it. Without this the fixtures `pytest.skip`, skipped tests
+      # exit pytest 0, and a broken image tag or unaccepted EULA reports
+      # success while verifying nothing. See tests/python/integration/
+      # _helpers.py::require_e2e_execution.
+      FORGE_MC_REQUIRE_E2E: "1"
     steps:
       - uses: actions/checkout@v5
       - name: Verify docker compose is available

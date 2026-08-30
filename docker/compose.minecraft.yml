@@ -147,12 +147,20 @@ services:
       mc-bot:
         condition: service_healthy
     environment:
-      FORGE_MC_BOT_URL: ws://mc-bot:${MC_BOT_WS_PORT:-8765}
-      FORGE_MC_RUNNER_EPISODES: ${RUNNER_EPISODES:-10}
-      FORGE_MC_RUNNER_CONFIG: /app/configs/runner.toml
-      # v0.4: env-var ladder lets `mc_self_play.sh` propagate the
-      # freshly-computed schema_id without patching the static
-      # runner.toml. See `RunnerConfig::with_env_var_overrides`.
+      # The env-var ladder in `RunnerConfig::with_env_var_overrides`
+      # lets an operator override the static runner.toml without
+      # patching it. Only the vars that ladder actually reads belong
+      # here -- FORGE_MC_BOT_URL and FORGE_MC_RUNNER_CONFIG were set
+      # for years with zero readers in `crates/`; the bot URL comes
+      # from the env.docker.toml overlay mounted below, and the config
+      # path from the `command:` block.
+      # Empty by default so `runner.toml`'s `episodes` stays in charge --
+      # this var only gained a reader recently, and a non-empty default
+      # here would silently override the TOML for every operator.
+      # Precedence is CLI > env > TOML.
+      FORGE_MC_RUNNER_EPISODES: ${RUNNER_EPISODES:-}
+      # v0.4: propagates the freshly-computed schema_id from
+      # `mc_self_play.sh`.
       FORGE_MC_SCHEMA_ID: ${FORGE_MC_SCHEMA_ID:-}
       RUST_LOG: ${RUST_LOG:-forge_mc_runner=info,forge_env_mc=info,forge_agent=info}
     volumes:

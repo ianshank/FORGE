@@ -63,6 +63,50 @@ struct Cli {
     random_actions: bool,
 }
 
+/// Layer the CLI flags and env-var ladder onto a TOML-loaded config.
+///
+/// **Precedence is CLI > env > TOML.** The env ladder is applied *first*
+/// so an explicitly typed flag still wins: `episodes` is the only field
+/// both layers can set, and before [`RunnerConfig::with_env_var_overrides`]
+/// gained a reader for it `--episodes` always won. Applying the ladder
+/// last would silently reverse that for anyone running the container,
+/// where `FORGE_MC_RUNNER_EPISODES` may be set ambiently.
+///
+/// Split out of `main` so the precedence is unit-testable without a
+/// process, per CHARTER Invariant 3 (testability without hardware).
+fn resolve_config(cli: &Cli, config: RunnerConfig) -> RunnerConfig {
+    let config = config.with_env_var_overrides();
+
+    let config = match cli.episodes {
+        Some(n) => RunnerConfig {
+            episodes: n,
+            ..config
+        },
+        None => config,
+    };
+    // `--mc-config` overrides `runner.toml`'s `mc_env_config_path`. No
+    // CLI flag sets `schema_id`, so the orchestrator's
+    // `FORGE_MC_SCHEMA_ID` still wins over TOML.
+    let config = if let Some(path) = cli.mc_config.clone() {
+        RunnerConfig {
+            mc_env_config_path: Some(path),
+            ..config
+        }
+    } else {
+        config
+    };
+    // `--random-actions` is OR-ed with the TOML field so operators can
+    // flip the baseline on without editing runner.toml.
+    if cli.random_actions {
+        RunnerConfig {
+            random_actions: true,
+            ..config
+        }
+    } else {
+        config
+    }
+}
+
 fn main() -> ExitCode {
     // Format (text/JSON) is env-driven via FORGE_LOG_FORMAT; the default filter
     // preserves the historical per-binary directive.
@@ -78,36 +122,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let config = match cli.episodes {
-        Some(n) => RunnerConfig {
-            episodes: n,
-            ..config
-        },
-        None => config,
-    };
-    // `--mc-config` CLI flag overrides `runner.toml`'s
-    // `mc_env_config_path`. Env-var ladder on `schema_id` is applied
-    // last so the orchestrator's `FORGE_MC_SCHEMA_ID` wins over both
-    // TOML and `--mc-config`.
-    let config = if let Some(path) = cli.mc_config.clone() {
-        RunnerConfig {
-            mc_env_config_path: Some(path),
-            ..config
-        }
-    } else {
-        config
-    };
-    // `--random-actions` CLI flag is OR-ed with the TOML field so
-    // operators can flip the baseline on without editing runner.toml.
-    let config = if cli.random_actions {
-        RunnerConfig {
-            random_actions: true,
-            ..config
-        }
-    } else {
-        config
-    };
-    let config = config.with_env_var_overrides();
+    let config = resolve_config(&cli, config);
 
     if let Err(e) = config.validate() {
         error!("invalid config: {e}");
@@ -419,5 +434,142 @@ mod dry_run {
         fn num_actions(&self) -> u32 {
             self.action_count
         }
+    }
+}
+
+#[cfg(test)]
+mod resolve_config_tests {
+    use super::*;
+    use clap::Parser;
+    use forge_mc_runner::EPISODES_ENV_VAR;
+
+    /// Serialises every test that touches the process-global
+    /// environment table, mirroring the `ENV_LOCK` idiom already used
+    /// in `config.rs`, `forge-server::config` and `forge-bench::env`.
+    ///
+    /// Owning a variable's mutations is not sufficient on its own:
+    /// `resolve_config` calls `with_env_var_overrides`, which *reads*
+    /// [`EPISODES_ENV_VAR`], so the test below that only reads it still
+    /// races the one that sets it. Rust 2024 requires excluding
+    /// concurrent environment access, not just concurrent mutation.
+    ///
+    /// A poisoned guard is recovered: the panic that poisoned it has
+    /// already failed its own test, and cascading it would replace real
+    /// assertion failures with mutex noise.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Acquire [`ENV_LOCK`], tolerating poisoning.
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Episode count carried by the simulated `runner.toml`.
+    const TOML_EPISODES: u64 = 100;
+    /// Episode count an operator exports into the environment.
+    const ENV_EPISODES: u64 = 10;
+    /// Episode count an operator types on the command line.
+    const CLI_EPISODES: u64 = 3;
+
+    fn toml_config() -> RunnerConfig {
+        RunnerConfig {
+            episodes: TOML_EPISODES,
+            ..RunnerConfig::default()
+        }
+    }
+
+    /// Precedence is CLI > env > TOML, verified across all four
+    /// combinations in one `#[test]`.
+    ///
+    /// Consolidated deliberately, and run under [`ENV_LOCK`]: cargo's
+    /// parallel runner races the process-global env table, and
+    /// consolidation alone only sequences the cases *within* this test.
+    /// The lock is what excludes the sibling test, which reads the same
+    /// variable through `resolve_config`.
+    ///
+    /// Regression guard: `--episodes` predates the env reader, so it
+    /// always won. Applying the ladder after the CLI overlay silently
+    /// reversed that — in the container, where the compose file may set
+    /// the variable ambiently, an explicitly typed flag became a no-op.
+    #[test]
+    fn cli_beats_env_beats_toml_for_episodes() {
+        let _env = env_guard();
+        let saved = std::env::var(EPISODES_ENV_VAR).ok();
+        let with_flag =
+            Cli::parse_from(["forge-mc-runner", "--episodes", &CLI_EPISODES.to_string()]);
+        let without_flag = Cli::parse_from(["forge-mc-runner"]);
+
+        // --- env unset: TOML wins, flag still wins over it ---
+        // SAFETY: `_env` holds ENV_LOCK for this test's whole body, and
+        // every other environment-touching test here takes the same
+        // lock, so no concurrent access to the table is possible.
+        unsafe {
+            std::env::remove_var(EPISODES_ENV_VAR);
+        }
+        assert_eq!(
+            resolve_config(&without_flag, toml_config()).episodes,
+            TOML_EPISODES,
+            "no flag, no env: the TOML value must survive"
+        );
+        assert_eq!(
+            resolve_config(&with_flag, toml_config()).episodes,
+            CLI_EPISODES,
+            "flag must beat TOML"
+        );
+
+        // --- env set: it beats TOML, but NOT the flag ---
+        unsafe {
+            std::env::set_var(EPISODES_ENV_VAR, ENV_EPISODES.to_string());
+        }
+        assert_eq!(
+            resolve_config(&without_flag, toml_config()).episodes,
+            ENV_EPISODES,
+            "env must beat TOML when no flag is given"
+        );
+        assert_eq!(
+            resolve_config(&with_flag, toml_config()).episodes,
+            CLI_EPISODES,
+            "an explicitly typed --episodes must beat an ambient env var"
+        );
+
+        unsafe {
+            if let Some(v) = saved {
+                std::env::set_var(EPISODES_ENV_VAR, v);
+            } else {
+                std::env::remove_var(EPISODES_ENV_VAR);
+            }
+        }
+    }
+
+    /// The non-overlapping flags keep their documented semantics:
+    /// `--mc-config` replaces the TOML path, `--random-actions` is
+    /// OR-ed on (it can enable, never disable).
+    #[test]
+    fn non_episode_flags_keep_their_semantics() {
+        // `resolve_config` reads the env table, so this test must hold
+        // the lock even though it never writes to it.
+        let _env = env_guard();
+        let cli = Cli::parse_from([
+            "forge-mc-runner",
+            "--mc-config",
+            "/tmp/env.toml",
+            "--random-actions",
+        ]);
+        let resolved = resolve_config(&cli, RunnerConfig::default());
+        assert_eq!(
+            resolved.mc_env_config_path.as_deref(),
+            Some(std::path::Path::new("/tmp/env.toml"))
+        );
+        assert!(resolved.random_actions);
+
+        // Absent flags must not clear a TOML-enabled value.
+        let bare = Cli::parse_from(["forge-mc-runner"]);
+        let from_toml = RunnerConfig {
+            random_actions: true,
+            ..RunnerConfig::default()
+        };
+        assert!(
+            resolve_config(&bare, from_toml).random_actions,
+            "--random-actions is OR-ed, so omitting it must not disable the TOML value"
+        );
     }
 }
