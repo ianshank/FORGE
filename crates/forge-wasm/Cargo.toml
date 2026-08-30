@@ -18,6 +18,7 @@ forge-types = { workspace = true }
 forge-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 wasm-bindgen = "0.2"
 
@@ -26,6 +27,12 @@ wasm-bindgen = "0.2"
 # applies to wasm builds, so native builds are unaffected.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
+# Routes Rust panics to console.error with a readable stack trace. Without it a
+# panic crossing the wasm boundary surfaces as an opaque
+# `RuntimeError: unreachable executed`, which is what every `.expect()` in this
+# crate used to look like in a browser. Installed once in the constructor --
+# the pattern wasm-pack's own project template prescribes.
+console_error_panic_hook = "0.1"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

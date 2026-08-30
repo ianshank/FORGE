@@ -32,6 +32,21 @@ struct StepResponse {
     info: forge_types::observation::StepInfo,
 }
 
+/// Errors that can occur while constructing a [`ForgeWasmEnv`].
+///
+/// Crossing the `wasm_bindgen` boundary these become a JavaScript `Error`
+/// carrying the `Display` text, so a caller sees *why* the config was
+/// rejected rather than an opaque wasm trap.
+#[derive(Debug, thiserror::Error)]
+pub enum WasmEnvError {
+    /// The supplied string was not valid `ForgeConfig` JSON.
+    #[error("failed to parse ForgeConfig JSON: {0}")]
+    ConfigJson(#[from] serde_json::Error),
+    /// The parsed config did not satisfy `WorldState`'s validation rules.
+    #[error("invalid ForgeConfig: {0}")]
+    InvalidConfig(String),
+}
+
 /// A FORGE simulation environment exposed to WebAssembly.
 ///
 /// All public methods accept and return JSON strings so they can be called
@@ -44,6 +59,38 @@ pub struct ForgeWasmEnv {
     config: ForgeConfig,
 }
 
+impl ForgeWasmEnv {
+    /// Fallible Rust-side constructor.
+    ///
+    /// This is deliberately outside the `#[wasm_bindgen]` block: every `pub fn`
+    /// in that block is exported to JavaScript, and this one is for Rust
+    /// callers (including this crate's own tests, which reach the private
+    /// fields). The JS-facing constructor is [`ForgeWasmEnv::new`], a thin
+    /// wrapper that maps the error to a JS `Error`.
+    ///
+    /// # Arguments
+    ///
+    /// * `config_json` - A JSON string that deserializes into a `ForgeConfig`.
+    ///   An empty string or `"null"` selects all default values.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WasmEnvError::ConfigJson`] if `config_json` is not valid
+    /// `ForgeConfig` JSON, or [`WasmEnvError::InvalidConfig`] if the resulting
+    /// config fails `WorldState` validation.
+    pub fn try_new(config_json: &str) -> Result<Self, WasmEnvError> {
+        let trimmed = config_json.trim();
+        let config: ForgeConfig = if trimmed.is_empty() || trimmed == "null" {
+            ForgeConfig::default()
+        } else {
+            serde_json::from_str(config_json)?
+        };
+        let world = WorldState::new(config.clone())
+            .map_err(|e| WasmEnvError::InvalidConfig(e.to_string()))?;
+        Ok(Self { world, config })
+    }
+}
+
 #[wasm_bindgen]
 impl ForgeWasmEnv {
     /// Creates a new FORGE environment from a JSON configuration string.
@@ -53,21 +100,24 @@ impl ForgeWasmEnv {
     /// * `config_json` - A JSON string that deserializes into a `ForgeConfig`.
     ///   Pass an empty string or `"null"` to use all default values.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `config_json` contains invalid JSON or fields that cannot be
-    /// parsed into a `ForgeConfig`.
+    /// Throws a JavaScript `Error` carrying a human-readable message when
+    /// `config_json` is not valid `ForgeConfig` JSON, or when the resulting
+    /// config fails validation. See [`ForgeWasmEnv::try_new`] for the Rust-side
+    /// error type.
     #[instrument(skip_all)]
     #[wasm_bindgen(constructor)]
-    pub fn new(config_json: &str) -> Self {
-        let trimmed = config_json.trim();
-        let config: ForgeConfig = if trimmed.is_empty() || trimmed == "null" {
-            ForgeConfig::default()
-        } else {
-            serde_json::from_str(config_json).expect("failed to parse ForgeConfig JSON")
-        };
-        let world = WorldState::new(config.clone()).expect("invalid config");
-        Self { world, config }
+    pub fn new(config_json: &str) -> Result<ForgeWasmEnv, JsError> {
+        // Idempotent, and cheap enough to do on every construction. Installing
+        // it here -- the first thing any JS caller touches -- is the pattern
+        // wasm-pack's own template prescribes, and it is what makes the
+        // remaining infallible-in-practice `.expect()`s below surface as a
+        // readable console trace instead of `unreachable executed`.
+        #[cfg(target_arch = "wasm32")]
+        console_error_panic_hook::set_once();
+
+        Self::try_new(config_json).map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// Resets the simulation and returns the initial observation as a JSON string.
@@ -254,25 +304,25 @@ mod tests {
 
     #[test]
     fn test_new_default_config() {
-        let env = ForgeWasmEnv::new(&default_config_json());
+        let env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         assert!(!env.world.terminated);
     }
 
     #[test]
     fn test_new_with_empty_string_uses_defaults() {
-        let env = ForgeWasmEnv::new("");
+        let env = ForgeWasmEnv::try_new("").unwrap();
         assert!(!env.world.terminated);
     }
 
     #[test]
     fn test_new_with_null_uses_defaults() {
-        let env = ForgeWasmEnv::new("null");
+        let env = ForgeWasmEnv::try_new("null").unwrap();
         assert!(!env.world.terminated);
     }
 
     #[test]
     fn test_reset_returns_valid_json() {
-        let mut env = ForgeWasmEnv::new(&default_config_json());
+        let mut env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         let json = env.reset(Some(42));
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value.get("observations").is_some());
@@ -283,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_step_returns_valid_json() {
-        let mut env = ForgeWasmEnv::new(&default_config_json());
+        let mut env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         let json = env.step(0); // Noop
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value.get("observations").is_some());
@@ -292,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_render_ascii_nonempty() {
-        let env = ForgeWasmEnv::new(&default_config_json());
+        let env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         let grid = env.render_ascii();
         assert!(!grid.is_empty());
         assert!(grid.contains('A')); // At least one agent
@@ -300,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_get_state_json() {
-        let env = ForgeWasmEnv::new(&default_config_json());
+        let env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         let json = env.get_state_json();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value.get("tick").is_some());
@@ -310,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_observation_space_json() {
-        let env = ForgeWasmEnv::new(&default_config_json());
+        let env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         let json = env.observation_space_json();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value.get("flat_shape").is_some());
@@ -319,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_action_space_json() {
-        let env = ForgeWasmEnv::new(&default_config_json());
+        let env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         let json = env.action_space_json();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value.get("n").is_some());
@@ -330,7 +380,7 @@ mod tests {
     fn test_partial_config_json() {
         // Provide JSON with only some fields; the rest should use defaults
         let partial_json = r#"{"world": {"width": 16, "height": 16, "seed": 42}}"#;
-        let env = ForgeWasmEnv::new(partial_json);
+        let env = ForgeWasmEnv::try_new(partial_json).unwrap();
         assert_eq!(env.world.grid.width, 16);
         assert_eq!(env.world.grid.height, 16);
         assert!(!env.world.terminated);
@@ -340,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_multi_step_episode() {
-        let mut env = ForgeWasmEnv::new(&default_config_json());
+        let mut env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         let reset_json = env.reset(Some(123));
         let reset_val: serde_json::Value = serde_json::from_str(&reset_json).unwrap();
         assert_eq!(reset_val["terminated"].as_bool(), Some(false));
@@ -371,8 +421,8 @@ mod tests {
     fn test_determinism_same_seed_same_actions() {
         let config_json =
             r#"{"world":{"width":16,"height":16,"seed":42},"agents":{"num_agents":1}}"#;
-        let mut env_a = ForgeWasmEnv::new(config_json);
-        let mut env_b = ForgeWasmEnv::new(config_json);
+        let mut env_a = ForgeWasmEnv::try_new(config_json).unwrap();
+        let mut env_b = ForgeWasmEnv::try_new(config_json).unwrap();
 
         env_a.reset(Some(42));
         env_b.reset(Some(42));
@@ -386,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_reset_with_none_seed() {
-        let mut env = ForgeWasmEnv::new(&default_config_json());
+        let mut env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         let json = env.reset(None);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value.get("observations").is_some());
@@ -395,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_get_state_json_tick_advances() {
-        let mut env = ForgeWasmEnv::new(&default_config_json());
+        let mut env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         env.reset(Some(1));
 
         let state_before = env.get_state_json();
@@ -413,7 +463,7 @@ mod tests {
     #[test]
     fn test_tiny_world() {
         let config_json = r#"{"world":{"width":8,"height":8,"seed":7},"agents":{"num_agents":1,"default_vision_radius":2}}"#;
-        let mut env = ForgeWasmEnv::new(config_json);
+        let mut env = ForgeWasmEnv::try_new(config_json).unwrap();
         let json = env.reset(Some(7));
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value.get("observations").is_some());
@@ -429,7 +479,7 @@ mod tests {
     fn test_observation_space_matches_config() {
         let config_json =
             r#"{"world":{"width":32,"height":32},"agents":{"default_vision_radius":3}}"#;
-        let env = ForgeWasmEnv::new(config_json);
+        let env = ForgeWasmEnv::try_new(config_json).unwrap();
         let json = env.observation_space_json();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
 
@@ -442,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_action_space_n_matches() {
-        let env = ForgeWasmEnv::new(&default_config_json());
+        let env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         let json = env.action_space_json();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         let n = value["n"].as_u64().unwrap();
@@ -458,7 +508,7 @@ mod tests {
 
     #[test]
     fn test_multiple_resets_produce_valid_output() {
-        let mut env = ForgeWasmEnv::new(&default_config_json());
+        let mut env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         for seed in [1, 2, 3, 42, 999] {
             let json = env.reset(Some(seed));
             let value: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -469,8 +519,8 @@ mod tests {
 
     #[test]
     fn test_different_seeds_produce_different_states() {
-        let mut env_a = ForgeWasmEnv::new(&default_config_json());
-        let mut env_b = ForgeWasmEnv::new(&default_config_json());
+        let mut env_a = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
+        let mut env_b = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
 
         env_a.reset(Some(1));
         env_b.reset(Some(9999));
@@ -489,8 +539,35 @@ mod tests {
     }
 
     #[test]
+    fn test_try_new_rejects_malformed_json_with_readable_error() {
+        let err = ForgeWasmEnv::try_new("{ not json")
+            .err()
+            .expect("malformed JSON must be rejected");
+        assert!(matches!(err, WasmEnvError::ConfigJson(_)));
+        // The message is what crosses to JS as the Error text, so it has to
+        // name the thing that was wrong rather than being an opaque trap.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("ForgeConfig"),
+            "error message should name ForgeConfig, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_try_new_rejects_config_that_fails_validation() {
+        // A zero-width world cannot produce a grid; WorldState::new rejects it.
+        let err = ForgeWasmEnv::try_new(r#"{"world":{"width":0,"height":0}}"#)
+            .err()
+            .expect("a zero-sized world must be rejected");
+        assert!(
+            matches!(err, WasmEnvError::InvalidConfig(_)),
+            "expected InvalidConfig, got: {err:?}"
+        );
+    }
+
+    #[test]
     fn test_step_with_invalid_action_falls_back_to_noop() {
-        let mut env = ForgeWasmEnv::new(&default_config_json());
+        let mut env = ForgeWasmEnv::try_new(&default_config_json()).unwrap();
         // Very large action index should fall back to Noop
         let json = env.step(99999);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();

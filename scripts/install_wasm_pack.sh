@@ -23,7 +23,15 @@ asset="wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl"
 curl -sSLf "https://github.com/rustwasm/wasm-pack/releases/download/v${WASM_PACK_VERSION}/${asset}.tar.gz" \
   | tar xz -C /tmp
 
-# sudo: GitHub-hosted runners execute steps as a non-root user, and
-# /usr/local/bin is root-owned.
-sudo install -m 755 "/tmp/${asset}/wasm-pack" /usr/local/bin/wasm-pack
+# GitHub-hosted runners execute steps as a non-root user and /usr/local/bin is
+# root-owned, so the install needs sudo there. Containers and dev boxes often
+# run as root with no sudo binary at all -- hardcoding `sudo` would make this
+# script unusable in exactly the environments where you want to reproduce CI
+# locally, so pick at runtime.
+if [ "$(id -u)" -eq 0 ]; then
+  install -m 755 "/tmp/${asset}/wasm-pack" /usr/local/bin/wasm-pack
+else
+  sudo install -m 755 "/tmp/${asset}/wasm-pack" /usr/local/bin/wasm-pack
+fi
+
 wasm-pack --version
