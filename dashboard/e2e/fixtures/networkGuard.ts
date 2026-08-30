@@ -1,0 +1,135 @@
+import type { Page, Request } from "@playwright/test";
+import { MOCKED_API_PATTERNS } from "./mockBackend";
+
+/**
+ * Third-party origins the app is allowed to reach.
+ *
+ * `src/index.css` `@import`s the Inter and JetBrains Mono webfonts, so
+ * these are legitimate. Keeping them as an explicit allowlist rather
+ * than a blanket exemption makes the guard double as a review surface:
+ * a new third-party origin appearing in the dashboard fails the AQA
+ * suite until someone adds it here on purpose.
+ */
+export const ALLOWED_EXTERNAL_ORIGINS: readonly string[] = [
+  "https://fonts.googleapis.com",
+  "https://fonts.gstatic.com",
+];
+
+/**
+ * Translate a Playwright URL glob into an anchored `RegExp`.
+ *
+ * Playwright's matcher is not exported, so the guard reimplements the
+ * two rules the patterns in {@link MOCKED_API_PATTERNS} rely on: `**`
+ * matches across path separators, a single `*` does not. Everything else
+ * is escaped, so a `.` or `?` in a pattern stays literal.
+ *
+ * Splits on `**` rather than substituting a placeholder for it. An
+ * earlier version used a sentinel character to survive the escape pass;
+ * the sentinel was written as a raw control character, which made the
+ * whole file binary to git and so unreviewable in a diff. Splitting
+ * needs no sentinel and produces byte-identical patterns.
+ */
+export function globToRegExp(glob: string): RegExp {
+  const escapeLiterals = (segment: string): string =>
+    segment.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const body = glob
+    .split("**")
+    .map((segment) => escapeLiterals(segment).replaceAll(String.raw`\*`, "[^/]*"))
+    .join(".*");
+  return new RegExp(`^${body}$`);
+}
+
+const MOCKED_API_MATCHERS = MOCKED_API_PATTERNS.map(globToRegExp);
+
+/** A request that left the page's origin with no mock to answer it. */
+export interface NetworkEscape {
+  readonly url: string;
+  readonly method: string;
+  /** Whether the request ultimately errored (nothing served it). */
+  readonly failed: boolean;
+}
+
+/**
+ * Fail-fast guard against a request escaping the in-browser mocks.
+ *
+ * Every backend the dashboard talks to is stubbed by `page.route`, so a
+ * page here should only ever reach its own preview origin or an
+ * allowlisted font CDN. A fetch to an endpoint nobody mocked escapes
+ * instead to the real `apiBaseUrl` (`http://localhost:8080`) or
+ * `demoApiBaseUrl` (`:8000`).
+ *
+ * That was a live defect, not a hypothetical: `useDecisionTraces` polled
+ * `/api/decision-traces/history` every 2s against an unmocked route, and
+ * the resulting `net::ERR_CONNECTION_REFUSED` failed the "loads the
+ * shell without console errors" spec only when the rejection happened to
+ * land before its assertion — intermittent, and pointing nowhere near
+ * the cause.
+ *
+ * The guard therefore keys on **origin and pattern, not on failure**.
+ * Keying on failure would miss a developer running a real backend on
+ * :8080, where the escape succeeds locally and fails only in CI — the
+ * worst of both. An off-origin request matching no entry in
+ * {@link MOCKED_API_PATTERNS} is recorded whether or not it was answered.
+ *
+ * @param page - the page to watch.
+ * @param origin - the origin the page legitimately serves from
+ *   (Playwright's `baseURL`). Requests to it are never escapes.
+ * @returns a live array of offending requests; assert it is empty at
+ *   teardown via {@link describeEscapes}.
+ */
+export function installNetworkEscapeGuard(
+  page: Page,
+  origin: string | undefined,
+): Request[] {
+  const allowed = origin === undefined
+    ? [...ALLOWED_EXTERNAL_ORIGINS]
+    : [origin, ...ALLOWED_EXTERNAL_ORIGINS];
+  const allowedOrigins = new Set(
+    allowed.flatMap((candidate) => {
+      try {
+        return [new URL(candidate).origin];
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  const escaped: Request[] = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    // `data:` and `blob:` URLs never leave the page — the replay upload
+    // spec creates them — and have no origin to compare.
+    if (!url.startsWith("http")) return;
+    let requestOrigin: string;
+    try {
+      requestOrigin = new URL(url).origin;
+    } catch {
+      return;
+    }
+    if (allowedOrigins.has(requestOrigin)) return;
+    if (MOCKED_API_MATCHERS.some((matcher) => matcher.test(url))) return;
+    if (escaped.some((seen) => seen.url() === url)) return;
+    escaped.push(request);
+  });
+  return escaped;
+}
+
+/** Render escaped requests as an assertion message. */
+export function describeEscapes(escaped: readonly Request[]): string {
+  if (escaped.length === 0) return "";
+  const lines = escaped.map((request) => {
+    const failure = request.failure();
+    const outcome = failure ? failure.errorText : "answered by a real server";
+    return `  ${request.method()} ${request.url()} — ${outcome}`;
+  });
+  return [
+    "Request(s) escaped the E2E mocks and reached a real origin:",
+    ...lines,
+    "",
+    "Every endpoint the app calls must be declared in API_MOCKS",
+    "(dashboard/e2e/fixtures/mockBackend.ts); every third-party origin it",
+    "loads must be in ALLOWED_EXTERNAL_ORIGINS. An unmocked fetch hits the",
+    "real apiBaseUrl, which nothing serves here, and surfaces later as an",
+    "intermittent console-error failure unrelated to the code under test.",
+  ].join("\n");
+}

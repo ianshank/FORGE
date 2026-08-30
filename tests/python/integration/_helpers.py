@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from pathlib import Path
+    from typing import Any
 
 #: Maximum seconds to wait for a polling predicate to flip true.
 #: The longest realistic compose-stack startup we've seen is ~60s
@@ -63,22 +64,27 @@ USE_PREBUILT_ENV_VAR: str = "FORGE_MC_USE_PREBUILT"
 #: execute. See :func:`require_e2e_execution`.
 REQUIRE_E2E_ENV_VAR: str = "FORGE_MC_REQUIRE_E2E"
 
-#: Default subprocess timeout for the `scripts/mc_run.sh` stack
-#: bring-up when images are PREBUILT: a pull of the published images
-#: plus Minecraft world-gen. Ten minutes, unchanged from the value this
-#: constant has always carried.
+#: Budget for a bring-up that only PULLS: a pull of the published
+#: images plus Minecraft world-gen. Ten minutes, unchanged from the
+#: value this constant has always carried.
+#:
+#: This is **not** the default for either path — see
+#: :func:`compose_up_timeout_secs`, which cannot know that a build is
+#: impossible. It is the value an operator sets via
+#: :data:`COMPOSE_UP_TIMEOUT_ENV_VAR` when they know every image is
+#: already present and want a missing one to fail fast rather than
+#: quietly compile.
 #:
 #: NOTE: this constant previously claimed the *build* path also landed
 #: "well under 5 minutes". It does not. `--build` triggers a cold
 #: `cargo build --release` of forge-mc-runner inside Docker, and GitHub
 #: Actions does not persist BuildKit cache mounts across runners, so
-#: every CI build starts from scratch. That path uses
-#: :data:`COMPOSE_UP_BUILD_TIMEOUT_SECS` instead.
+#: every CI build starts from scratch.
 COMPOSE_UP_TIMEOUT_SECS: int = 600
 
-#: Subprocess timeout for the bring-up when images must be BUILT
-#: locally. Sized for a cold release compile of the Rust runner plus a
-#: ~200 MB ONNX Runtime download, and deliberately kept below the
+#: Subprocess timeout for a bring-up in which a BUILD can happen.
+#: Sized for a cold release compile of the Rust runner plus a ~200 MB
+#: ONNX Runtime download, and deliberately kept below the
 #: `timeout-minutes: 60` cap on the `python-test-minecraft-e2e` job so
 #: the suite fails with a diagnosable message rather than the runner
 #: killing the job mid-build. Keep the two in step.
@@ -132,30 +138,96 @@ def compose_up_timeout_secs() -> int:
     """Resolve the bring-up timeout.
 
     Precedence: :data:`COMPOSE_UP_TIMEOUT_ENV_VAR` if set to a positive
-    integer, else the build-path or prebuilt-path default depending on
-    :func:`use_prebuilt_images`. A non-numeric or non-positive override
-    falls back to the default rather than raising, so a typo cannot
-    abort a long run before it starts.
+    integer, else :data:`COMPOSE_UP_BUILD_TIMEOUT_SECS`. A non-numeric
+    or non-positive override falls back to the default rather than
+    raising, so a typo cannot abort a long run before it starts.
+
+    The default does **not** depend on :func:`use_prebuilt_images`,
+    even though it once did. Dropping ``--build`` does not remove the
+    possibility of a build: a Compose service with ``build:`` and
+    ``image:`` and no ``pull_policy`` falls back to building from
+    source when the image is not found. So a prebuilt run whose image
+    tag is wrong, or whose registry is unreachable, silently enters
+    exactly the cold `cargo build --release` this module budgets 2700s
+    for — and giving it the 600s pull budget would kill it mid-compile
+    with a timeout that looks like a hung stack.
+
+    A budget can only be too small in one direction. Over-budgeting
+    costs a slower failure and is still bounded by the job's own
+    ``timeout-minutes``; under-budgeting kills a legitimate run. When
+    the operator knows every image is present, they say so explicitly
+    with ``FORGE_MC_COMPOSE_UP_TIMEOUT`` — :data:`COMPOSE_UP_TIMEOUT_SECS`
+    is the value to use.
+    """
+    override = compose_up_timeout_override()
+    return COMPOSE_UP_BUILD_TIMEOUT_SECS if override is None else override
+
+
+def compose_up_timeout_override() -> int | None:
+    """The operator's explicit bring-up budget, or ``None`` for the default.
+
+    Split out of :func:`compose_up_timeout_secs` so a caller can tell
+    "the operator chose this budget" from "nobody chose, so we
+    defaulted", without re-reading and re-validating the variable itself.
+    :mod:`conftest` uses it to decide whether its pull-only hint is worth
+    printing — telling someone to export a variable they have already
+    exported is noise, and slightly wrong.
+
+    A typo or a non-positive value is deliberately **not** an override.
+    Both degrade to the default, so a caller offering guidance about the
+    default should still offer it.
     """
     raw = os.environ.get(COMPOSE_UP_TIMEOUT_ENV_VAR, "").strip()
-    if raw:
-        try:
-            parsed = int(raw)
-        except ValueError:
-            logger.warning(
-                "ignoring non-integer %s=%r; using the default",
-                COMPOSE_UP_TIMEOUT_ENV_VAR,
-                raw,
-            )
-        else:
-            if parsed > 0:
-                return parsed
-            logger.warning(
-                "ignoring non-positive %s=%d; using the default",
-                COMPOSE_UP_TIMEOUT_ENV_VAR,
-                parsed,
-            )
-    return COMPOSE_UP_TIMEOUT_SECS if use_prebuilt_images() else COMPOSE_UP_BUILD_TIMEOUT_SECS
+    if not raw:
+        return None
+    try:
+        parsed = int(raw)
+    except ValueError:
+        logger.warning(
+            "ignoring non-integer %s=%r; using the default",
+            COMPOSE_UP_TIMEOUT_ENV_VAR,
+            raw,
+        )
+        return None
+    if parsed > 0:
+        return parsed
+    logger.warning(
+        "ignoring non-positive %s=%d; using the default",
+        COMPOSE_UP_TIMEOUT_ENV_VAR,
+        parsed,
+    )
+    return None
+
+
+def load_yaml_document(path: Path) -> dict[str, Any]:
+    """Parse a YAML file, failing loudly when PyYAML is absent.
+
+    Deliberately **not** ``pytest.importorskip``. The callers are
+    config-contract guards, and a skipped test exits pytest ``0`` — the
+    same green-hole this package exists to close, turned on the guards
+    themselves. A missing parser is a CI provisioning bug, not a reason
+    to quietly stop checking that the compose file and the workflow
+    still agree with the code.
+
+    Raises:
+        RuntimeError: PyYAML is not installed.
+        TypeError: the document does not parse to a mapping.
+    """
+    try:
+        import yaml
+    except ImportError as exc:  # pragma: no cover - provisioning failure
+        raise RuntimeError(
+            "PyYAML is required to validate the compose and workflow "
+            "contracts and is not installed. These guards must not skip: "
+            "a skipped guard exits 0 and reports success while checking "
+            "nothing. Install it (`pip install pyyaml`) or fix the CI "
+            "install step for the job running this suite."
+        ) from exc
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise TypeError(f"{path} did not parse to a mapping: {type(data).__name__}")
+    return data
 
 
 def docker_compose_available() -> bool:

@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from ._helpers import load_yaml_document
+
 
 @pytest.fixture(scope="module")
 def repo_root() -> Path:
@@ -21,22 +23,23 @@ def repo_root() -> Path:
 
 @pytest.fixture(scope="module")
 def compose_data(repo_root: Path) -> dict:
-    """Parsed `docker/compose.minecraft.yml`."""
-    yaml = pytest.importorskip("yaml")
-    text = (repo_root / "docker" / "compose.minecraft.yml").read_text(encoding="utf-8")
-    data = yaml.safe_load(text)
-    assert isinstance(data, dict)
-    return data
+    """Parsed `docker/compose.minecraft.yml`.
+
+    Loaded via :func:`~._helpers.load_yaml_document`, which raises rather
+    than skipping when PyYAML is absent. These were `pytest.importorskip`
+    calls, which meant all eleven checks below went silently green in any
+    environment without the parser — and PyYAML is not named in any CI
+    install step, so that was not hypothetical. A validation suite that
+    can quietly validate nothing is the same defect this file exists to
+    catch in the compose file.
+    """
+    return load_yaml_document(repo_root / "docker" / "compose.minecraft.yml")
 
 
 @pytest.fixture(scope="module")
 def gpu_overlay(repo_root: Path) -> dict:
-    """Parsed `docker/compose.minecraft.gpu.yml`."""
-    yaml = pytest.importorskip("yaml")
-    text = (repo_root / "docker" / "compose.minecraft.gpu.yml").read_text(encoding="utf-8")
-    data = yaml.safe_load(text)
-    assert isinstance(data, dict)
-    return data
+    """Parsed `docker/compose.minecraft.gpu.yml`. Fails loudly, as above."""
+    return load_yaml_document(repo_root / "docker" / "compose.minecraft.gpu.yml")
 
 
 # --- Base compose ----------------------------------------------------

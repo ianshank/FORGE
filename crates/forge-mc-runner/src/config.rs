@@ -473,6 +473,71 @@ mod tests {
         ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Every environment-touching test must hold [`ENV_LOCK`].
+    ///
+    /// Confining a variable's mutations to one `#[test]` is not enough,
+    /// and reasoning about it got this wrong twice.
+    /// [`RunnerConfig::with_env_var_overrides`] reads *both*
+    /// [`SCHEMA_ID_ENV_VAR`] and [`EPISODES_ENV_VAR`], so a test that
+    /// only mutates one still races a sibling's read of it — and Rust
+    /// 2024 requires excluding concurrent environment *access*, not
+    /// just concurrent mutation of the same key. The failure mode is
+    /// undefined behaviour, not a red test, so a new env-touching test
+    /// that forgets the lock would look perfectly fine.
+    ///
+    /// Covers `main.rs` too: its `resolve_config` calls the same
+    /// function, so its test target has the identical hazard, and one
+    /// guard beats two near-identical copies.
+    ///
+    /// Needles are assembled at runtime so this test's own source does
+    /// not match the patterns it looks for.
+    #[test]
+    fn environment_touching_tests_hold_the_env_lock() {
+        const SOURCES: [(&str, &str); 2] = [
+            ("config.rs", include_str!("config.rs")),
+            ("main.rs", include_str!("main.rs")),
+        ];
+        let mutators = [
+            format!("env::{}", "set_var"),
+            format!("env::{}", "remove_var"),
+        ];
+        let guard_call = format!("env_{}()", "guard");
+        // rustfmt puts module-level items at four spaces, so this splits
+        // the test module into one chunk per function.
+        let fn_boundary = "\n    fn ";
+
+        let mut checked = 0_usize;
+        for (name, source) in SOURCES {
+            let Some(tests_start) = source
+                .find("mod resolve_config_tests {")
+                .or_else(|| source.find("#[cfg(test)]\nmod tests {"))
+            else {
+                panic!("{name}: no test module found; this guard has drifted");
+            };
+            for chunk in source[tests_start..].split(fn_boundary) {
+                if !mutators
+                    .iter()
+                    .any(|needle| chunk.contains(needle.as_str()))
+                {
+                    continue;
+                }
+                checked += 1;
+                let signature = chunk.lines().next().unwrap_or("<unknown>");
+                assert!(
+                    chunk.contains(&guard_call),
+                    "{name}: `fn {signature}` mutates the environment without \
+                     taking ENV_LOCK, which is undefined behaviour under a \
+                     parallel test runner rather than a failing test"
+                );
+            }
+        }
+        assert!(
+            checked >= 2,
+            "expected at least the two known env-mutating tests, found \
+             {checked}; the split heuristic has drifted from the source"
+        );
+    }
+
     #[test]
     fn default_is_valid() {
         let cfg = RunnerConfig::default();

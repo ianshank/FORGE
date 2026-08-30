@@ -28,6 +28,7 @@ from ._helpers import (
     POLL_TIMEOUT_SECS,
     REQUIRE_E2E_ENV_VAR,
     USE_PREBUILT_ENV_VAR,
+    compose_up_timeout_override,
     compose_up_timeout_secs,
     docker_compose_available,
     docker_logs,
@@ -51,9 +52,9 @@ def test_constants_are_positive() -> None:
     assert DOCKER_LOGS_TIMEOUT_SECS > 0
     assert COMPOSE_UP_TIMEOUT_SECS > 0
     assert COMPOSE_UP_BUILD_TIMEOUT_SECS > 0
-    # The build path compiles the Rust runner from scratch; it must be
-    # allowed strictly more time than the pull-only path, or the
-    # nightly's whole reason for using prebuilt images disappears.
+    # A bring-up that can compile the Rust runner from scratch must be
+    # allowed strictly more time than one that only pulls, or the
+    # explicit pull-only override would be pointless.
     assert COMPOSE_UP_BUILD_TIMEOUT_SECS > COMPOSE_UP_TIMEOUT_SECS
     assert COMPOSE_DOWN_TIMEOUT_SECS > 0
     assert DEFAULT_DOCKER_LOGS_TAIL > 0
@@ -333,17 +334,36 @@ def test_env_flags_default_to_false(monkeypatch: pytest.MonkeyPatch) -> None:
     assert require_e2e_execution() is False
 
 
-def test_compose_up_timeout_picks_path_specific_default(
+def test_compose_up_timeout_budgets_for_a_build_on_both_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Prebuilt gets the pull budget; building gets the compile budget."""
+    """Prebuilt mode must NOT get the shorter pull budget.
+
+    Dropping `--build` does not make a build impossible: a Compose
+    service with `build:` and `image:` and no `pull_policy` falls back
+    to building from source when the image is not found. A prebuilt run
+    with a wrong tag or an unreachable registry therefore enters the
+    same cold `cargo build --release` the long budget exists for, and
+    the pull budget would kill it mid-compile with a timeout that reads
+    like a hung stack.
+
+    Mutation this pins: restoring the `COMPOSE_UP_TIMEOUT_SECS if
+    use_prebuilt_images()` conditional.
+    """
     monkeypatch.delenv(COMPOSE_UP_TIMEOUT_ENV_VAR, raising=False)
 
     monkeypatch.setenv(USE_PREBUILT_ENV_VAR, "1")
-    assert compose_up_timeout_secs() == COMPOSE_UP_TIMEOUT_SECS
+    assert compose_up_timeout_secs() == COMPOSE_UP_BUILD_TIMEOUT_SECS, (
+        "prebuilt mode can still fall back to a build, so it needs the build budget"
+    )
 
     monkeypatch.delenv(USE_PREBUILT_ENV_VAR, raising=False)
     assert compose_up_timeout_secs() == COMPOSE_UP_BUILD_TIMEOUT_SECS
+
+    # The short budget stays reachable, but only when the operator
+    # asserts it explicitly.
+    monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, str(COMPOSE_UP_TIMEOUT_SECS))
+    assert compose_up_timeout_secs() == COMPOSE_UP_TIMEOUT_SECS
 
 
 def test_compose_up_timeout_honours_explicit_override(
@@ -384,6 +404,38 @@ def test_each_flag_reads_its_own_env_var(monkeypatch: pytest.MonkeyPatch) -> Non
     assert require_e2e_execution() is True
 
 
+def test_timeout_override_reports_only_a_deliberate_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`compose_up_timeout_override` must distinguish "the operator
+    chose this" from "we defaulted".
+
+    `conftest` gates its pull-only hint on this. Gating on the resolved
+    value instead — `timeout_secs > COMPOSE_UP_TIMEOUT_SECS`, which is
+    what shipped first — tells an operator who deliberately exported a
+    *longer* budget to export the variable they have already exported.
+
+    A typo or a non-positive value is not a choice: both degrade to the
+    default, so the hint about the default stays worth printing.
+    """
+    monkeypatch.delenv(COMPOSE_UP_TIMEOUT_ENV_VAR, raising=False)
+    assert compose_up_timeout_override() is None, "unset is not a choice"
+
+    monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, "1234")
+    assert compose_up_timeout_override() == 1234
+
+    # The case the nit was about: an override LONGER than the pull-only
+    # budget is still an override, and must silence the hint.
+    monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, str(COMPOSE_UP_BUILD_TIMEOUT_SECS * 2))
+    assert compose_up_timeout_override() == COMPOSE_UP_BUILD_TIMEOUT_SECS * 2
+
+    for rejected in ("not-a-number", "0", "-5", "12.5"):
+        monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, rejected)
+        assert compose_up_timeout_override() is None, (
+            f"{rejected!r} degrades to the default, so it is not a choice"
+        )
+
+
 @pytest.mark.parametrize("bad", ["not-a-number", "0", "-5", "12.5"])
 def test_compose_up_timeout_falls_back_on_bad_override(
     monkeypatch: pytest.MonkeyPatch, bad: str
@@ -392,4 +444,4 @@ def test_compose_up_timeout_falls_back_on_bad_override(
     before the stack has had a chance to start."""
     monkeypatch.setenv(USE_PREBUILT_ENV_VAR, "1")
     monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, bad)
-    assert compose_up_timeout_secs() == COMPOSE_UP_TIMEOUT_SECS
+    assert compose_up_timeout_secs() == COMPOSE_UP_BUILD_TIMEOUT_SECS

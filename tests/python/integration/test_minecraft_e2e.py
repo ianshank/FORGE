@@ -134,36 +134,6 @@ def test_metrics_endpoint_reports_runner_invariants(
         assert name in text, f"metric {name!r} missing from /metrics output:\n{text[:1000]}"
 
 
-def test_compose_down_is_idempotent(
-    compose_up_minecraft_stack: dict[str, Any],
-) -> None:
-    """`scripts/mc_run.sh --down` must succeed even if the stack is
-    already down. Pinned because the orchestration script is the
-    smoke test's only teardown path.
-    """
-    import subprocess
-
-    script: Path = compose_up_minecraft_stack["script"]
-    repo_root: Path = compose_up_minecraft_stack["repo_root"]
-    # Running --down once on the live stack is the canonical
-    # teardown; running it again must still exit 0.
-    for _ in range(2):
-        with lf_normalized_script(script) as posix_script:
-            completed = subprocess.run(
-                ["bash", posix_script, "--down"],
-                cwd=repo_root,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-        if completed.returncode != 0:
-            pytest.fail(
-                f"mc_run.sh --down exited {completed.returncode}; "
-                f"stderr:\n{completed.stderr[-800:]}"
-            )
-
-
 def test_minecraft_reconnect_scenario(
     compose_up_minecraft_stack: dict[str, Any],
     runner_health_check: Callable[[], None],
@@ -215,3 +185,43 @@ def test_minecraft_reconnect_scenario(
         health_check=runner_health_check,
         description="forge_mc_episode_total >= 2 after server restart",
     )
+
+
+def test_compose_down_is_idempotent(
+    compose_up_minecraft_stack: dict[str, Any],
+) -> None:
+    """`scripts/mc_run.sh --down` must succeed even if the stack is
+    already down. Pinned because the orchestration script is the
+    smoke test's only teardown path.
+
+    **Must stay last in this file.** It is the one destructive test
+    here: it tears down the session-scoped stack that every other test
+    depends on. pytest runs a module's tests in source order and the
+    fixture is cached for the session, so any stack-dependent test
+    placed after this one inherits a dead stack — it would poll a
+    metrics endpoint that no longer answers and fail on the poll
+    timeout, with no hint that the cause was ordering. Running last
+    also costs nothing: the session fixture's own teardown is a second
+    ``--down``, which is precisely the idempotence this asserts.
+    """
+    import subprocess
+
+    script: Path = compose_up_minecraft_stack["script"]
+    repo_root: Path = compose_up_minecraft_stack["repo_root"]
+    # Running --down once on the live stack is the canonical
+    # teardown; running it again must still exit 0.
+    for _ in range(2):
+        with lf_normalized_script(script) as posix_script:
+            completed = subprocess.run(
+                ["bash", posix_script, "--down"],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        if completed.returncode != 0:
+            pytest.fail(
+                f"mc_run.sh --down exited {completed.returncode}; "
+                f"stderr:\n{completed.stderr[-800:]}"
+            )
