@@ -64,8 +64,9 @@ USE_PREBUILT_ENV_VAR: str = "FORGE_MC_USE_PREBUILT"
 REQUIRE_E2E_ENV_VAR: str = "FORGE_MC_REQUIRE_E2E"
 
 #: Default subprocess timeout for the `scripts/mc_run.sh` stack
-#: bring-up when images are PREBUILT (the nightly path): a pull of the
-#: published images plus Minecraft world-gen. Five minutes is generous.
+#: bring-up when images are PREBUILT: a pull of the published images
+#: plus Minecraft world-gen. Ten minutes, unchanged from the value this
+#: constant has always carried.
 #:
 #: NOTE: this constant previously claimed the *build* path also landed
 #: "well under 5 minutes". It does not. `--build` triggers a cold
@@ -77,7 +78,10 @@ COMPOSE_UP_TIMEOUT_SECS: int = 600
 
 #: Subprocess timeout for the bring-up when images must be BUILT
 #: locally. Sized for a cold release compile of the Rust runner plus a
-#: ~200 MB ONNX Runtime download.
+#: ~200 MB ONNX Runtime download, and deliberately kept below the
+#: `timeout-minutes: 60` cap on the `python-test-minecraft-e2e` job so
+#: the suite fails with a diagnosable message rather than the runner
+#: killing the job mid-build. Keep the two in step.
 COMPOSE_UP_BUILD_TIMEOUT_SECS: int = 2700
 
 #: Subprocess timeout for `scripts/mc_run.sh --down` stack teardown.
@@ -102,9 +106,12 @@ def _env_flag(name: str) -> bool:
 def use_prebuilt_images() -> bool:
     """True iff the stack should reuse already-published images.
 
-    When true, the bring-up drops ``--build`` so compose pulls the
-    tags configured in ``docker/compose.minecraft.env`` rather than
-    compiling the runner from source.
+    When true, the bring-up drops ``--build``. A Compose service that
+    declares both ``build:`` and ``image:`` and leaves ``pull_policy``
+    unset already "attempts to pull the image first and falls back to
+    building from source if the image is not found" (Compose spec), so
+    omitting ``--build`` is by itself enough to prefer a published image
+    — and still degrades to a build when there is none.
     """
     return _env_flag(USE_PREBUILT_ENV_VAR)
 

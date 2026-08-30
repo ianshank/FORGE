@@ -349,10 +349,39 @@ def test_compose_up_timeout_picks_path_specific_default(
 def test_compose_up_timeout_honours_explicit_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An explicit override wins over both path defaults."""
-    monkeypatch.setenv(USE_PREBUILT_ENV_VAR, "1")
+    """An explicit override wins over both path defaults.
+
+    Checked on BOTH paths: pinning only the prebuilt one would let the
+    override be silently gated on `use_prebuilt_images()`, leaving the
+    build path — the local and PR-CI case, and the one most likely to
+    need a custom budget — unprotected.
+    """
     monkeypatch.setenv(COMPOSE_UP_TIMEOUT_ENV_VAR, "1234")
-    assert compose_up_timeout_secs() == 1234
+
+    monkeypatch.setenv(USE_PREBUILT_ENV_VAR, "1")
+    assert compose_up_timeout_secs() == 1234, "override must win on the prebuilt path"
+
+    monkeypatch.delenv(USE_PREBUILT_ENV_VAR, raising=False)
+    assert compose_up_timeout_secs() == 1234, "override must win on the build path too"
+
+
+def test_each_flag_reads_its_own_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The two flags must not be interchangeable.
+
+    The truthy/falsey tests above set both variables to the same value,
+    so they cannot tell which constant each function reads — pointing
+    `require_e2e_execution` at `FORGE_MC_USE_PREBUILT` would pass them
+    all while silently restoring the green-hole. Assert asymmetrically.
+    """
+    monkeypatch.setenv(USE_PREBUILT_ENV_VAR, "1")
+    monkeypatch.delenv(REQUIRE_E2E_ENV_VAR, raising=False)
+    assert use_prebuilt_images() is True
+    assert require_e2e_execution() is False, "require-E2E must not read the prebuilt flag"
+
+    monkeypatch.delenv(USE_PREBUILT_ENV_VAR, raising=False)
+    monkeypatch.setenv(REQUIRE_E2E_ENV_VAR, "1")
+    assert use_prebuilt_images() is False, "prebuilt must not read the require-E2E flag"
+    assert require_e2e_execution() is True
 
 
 @pytest.mark.parametrize("bad", ["not-a-number", "0", "-5", "12.5"])
