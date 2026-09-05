@@ -57,7 +57,7 @@ RUN maturin build --release -m crates/forge-python/Cargo.toml --out /app/dist
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime — slim image, no compilers, no Rust toolchain
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 WORKDIR /app
 
 # Runtime-only system deps: libssl3 for TLS, curl for HEALTHCHECK

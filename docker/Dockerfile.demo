@@ -1,6 +1,6 @@
 # FORGE Demo — Lightweight container for the demo UI only.
 
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 WORKDIR /app
 
 # Install dependencies from requirements file (not hardcoded)

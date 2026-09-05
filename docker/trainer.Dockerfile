@@ -18,7 +18,7 @@
 # already cache-friendly via `--mount=type=cache`.
 
 ARG TORCH_VARIANT=cpu
-FROM python:3.11-slim AS base
+FROM python:3.14-slim AS base
 
 # ---- runtime tooling ------------------------------------------------
 RUN apt-get update -qq \
