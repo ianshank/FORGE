@@ -155,7 +155,7 @@ pub fn resolve_bundle_path(
     let resolved = joined
         .canonicalize()
         .map_err(|e| RunnerError::io(&joined, e))?;
-    if !resolved.to_string_lossy().starts_with(&*base.to_string_lossy()) {
+    if !resolved.starts_with(&base) {
         return Err(unsafe_path(
             "path canonicalizes outside the bundle directory (symlink escape)",
         ));
@@ -594,26 +594,5 @@ mod tests {
         assert!(msg.contains("dynamics"), "got: {msg}");
         assert!(msg.contains(&"a".repeat(64)), "got: {msg}");
         assert!(msg.contains(&"b".repeat(64)), "got: {msg}");
-    }
-
-    /// TEMPORARY REVIEW PROBE - not part of the PR.
-    #[cfg(unix)]
-    #[test]
-    fn review_probe_sibling_prefix_dir_escape() {
-        let tmp = tempfile::tempdir().unwrap();
-        let bundle = tmp.path().join("models");
-        let sibling = tmp.path().join("models-attacker");
-        std::fs::create_dir_all(&bundle).unwrap();
-        std::fs::create_dir_all(&sibling).unwrap();
-        let mut manifest = bundle_with_correct_digests(&bundle);
-        let evil = sibling.join("evil.onnx");
-        std::fs::write(&evil, b"evil-bytes").unwrap();
-        std::os::unix::fs::symlink(&evil, bundle.join("linked.onnx")).unwrap();
-        manifest.files.representation = ModelFileEntry {
-            path: "linked.onnx".into(),
-            sha256: hex_encode(&Sha256::digest(b"evil-bytes")),
-        };
-        let res = verify_bundle(&manifest, &bundle);
-        assert!(res.is_err(), "ESCAPED THE BUNDLE: {:?}", res.unwrap());
     }
 }
