@@ -19,6 +19,7 @@ seed_everything
 from __future__ import annotations
 
 import logging
+import os
 import random
 import time as _time
 from typing import TYPE_CHECKING, Any
@@ -197,35 +198,84 @@ def benchmark_fps(env: Any, n_steps: int = 10000) -> float:
 # ---------------------------------------------------------------------------
 
 
-def seed_everything(seed: int) -> None:
+# Fallback-path mirrors of the canonical constants in `forge.utils.seed`.
+# They are duplicated (not imported) on purpose: the branch that uses them
+# is precisely the branch where `forge.utils.seed` is NOT importable. Keep
+# the two in lock-step — `tests/python/test_seed.py` asserts they match.
+
+#: Default for :func:`seed_everything`'s ``deterministic`` switch — off, so
+#: existing callers keep their current behaviour and throughput.
+DEFAULT_DETERMINISTIC = False
+#: Only affects child processes; the parent's hash seed is fixed at startup.
+PYTHONHASHSEED_ENV_VAR = "PYTHONHASHSEED"
+#: Required before ``use_deterministic_algorithms(True)`` will allow CUDA matmuls.
+CUBLAS_WORKSPACE_CONFIG_ENV_VAR = "CUBLAS_WORKSPACE_CONFIG"
+DEFAULT_CUBLAS_WORKSPACE_CONFIG = ":4096:8"
+
+
+def seed_everything(seed: int, *, deterministic: bool = DEFAULT_DETERMINISTIC) -> None:
     """Set random seeds across multiple libraries for reproducibility.
 
     Delegates to :func:`forge.utils.seed.set_all_seeds` when available,
-    falling back to an inline implementation otherwise.
+    falling back to an inline implementation otherwise. Both paths seed the
+    same generators.
 
     Seeds the following (when available):
 
     * ``random`` (Python stdlib)
     * ``numpy.random``
-    * ``torch.manual_seed`` and ``torch.cuda.manual_seed_all``
+    * ``torch.manual_seed`` — always, whenever torch is importable. This is
+      the generator a CPU-only host uses, so seeding it is what makes torch
+      reproducible off-GPU.
+    * ``torch.cuda.manual_seed_all`` — additionally, when CUDA is available.
 
     Args:
         seed: The integer seed value.
+        deterministic: Opt into strict determinism — additionally sets
+            ``torch.use_deterministic_algorithms(True)``, the cuDNN
+            determinism/autotune flags, and ``PYTHONHASHSEED``. Defaults to
+            :data:`DEFAULT_DETERMINISTIC` (off): it costs throughput and
+            makes some kernels raise rather than fall back, so it is opt-in.
     """
     try:
         from forge.utils.seed import set_all_seeds
-
-        set_all_seeds(seed)
     except ImportError:
+        # Inline fallback: `forge` is not importable (e.g. a stripped
+        # `forge_env`-only install). Mirror set_all_seeds' behaviour.
         random.seed(seed)
         if HAS_NUMPY:
             np.random.seed(seed)
+        _seed_torch_fallback(seed, deterministic=deterministic)
+        return
 
-    # Optional: seed PyTorch if installed
+    set_all_seeds(seed, deterministic=deterministic)
+
+
+def _seed_torch_fallback(seed: int, *, deterministic: bool) -> None:
+    """Seed torch without depending on the ``forge`` package.
+
+    Used only by :func:`seed_everything`'s ``forge.utils.seed``-unavailable
+    branch; the canonical implementation is
+    :func:`forge.utils.seed.seed_torch`.
+    """
     try:
         import torch
-
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
     except ImportError:
-        pass
+        logger.debug("torch not installed; skipping torch seeding")
+        return
+
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    if not deterministic:
+        return
+
+    os.environ[PYTHONHASHSEED_ENV_VAR] = str(seed)
+    os.environ.setdefault(CUBLAS_WORKSPACE_CONFIG_ENV_VAR, DEFAULT_CUBLAS_WORKSPACE_CONFIG)
+    try:
+        torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    except (AttributeError, RuntimeError) as exc:
+        logger.warning("strict torch determinism unavailable: %s", exc)

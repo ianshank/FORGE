@@ -516,6 +516,56 @@ def test_seed_everything_with_numpy() -> None:
     np.testing.assert_array_equal(a, b)
 
 
+def test_seed_everything_makes_torch_reproducible() -> None:
+    """seed_everything must seed torch's CPU generator, not just CUDA.
+
+    Regression guard for the bug where the implementation called only
+    ``torch.cuda.manual_seed_all`` inside an ``if torch.cuda.is_available()``
+    guard: on a CPU-only host (every CI runner) torch was left completely
+    unseeded while the docstring claimed otherwise.
+    """
+    torch = pytest.importorskip("torch")
+    from forge_env.utils import seed_everything
+
+    seed_everything(20260905)
+    a = torch.rand(8)
+
+    seed_everything(20260905)
+    b = torch.rand(8)
+
+    assert torch.equal(a, b), "seed_everything did not seed torch's CPU generator"
+
+
+def test_seed_everything_fallback_seeds_torch_without_forge_package() -> None:
+    """The ``forge.utils.seed``-unavailable branch seeds torch too."""
+    import sys
+    from unittest.mock import patch
+
+    torch = pytest.importorskip("torch")
+    from forge_env.utils import seed_everything
+
+    with patch.dict(sys.modules, {"forge.utils.seed": None}):
+        seed_everything(31337)
+        a = torch.rand(8)
+        seed_everything(31337)
+        b = torch.rand(8)
+
+    assert torch.equal(a, b), "inline fallback did not seed torch"
+
+
+def test_seed_everything_deterministic_switch_is_opt_in() -> None:
+    """``deterministic`` defaults off so behaviour/perf is unchanged."""
+    import inspect
+
+    from forge_env.utils import DEFAULT_DETERMINISTIC, seed_everything
+
+    assert DEFAULT_DETERMINISTIC is False
+    sig = inspect.signature(seed_everything)
+    assert sig.parameters["deterministic"].default is DEFAULT_DETERMINISTIC
+    # The switch must be keyword-only so positional callers stay valid.
+    assert sig.parameters["deterministic"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
 def test_make_env_raises_without_native() -> None:
     """make_env should raise ImportError when the native module is not available."""
     from unittest import mock

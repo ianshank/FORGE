@@ -34,9 +34,66 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Environment
+# Environment / secret material (CHARTER Invariant 7: secrets are never
+# committed). Patterns are deliberately broad — an accidental commit of a
+# key is unrecoverable once pushed, while an over-ignored file is a
+# one-line `git add -f` away.
+#
+# This used to be just `.env` + `.env.local`, which left `.env.production`,
+# `secrets.pem`, `server.key`, `credentials.json`, `service-account.json`,
+# `gcp-key.json`, `id_rsa` and `foo.p12` all UNIGNORED, while SECURITY.md
+# claimed ".env* files are git-ignored".
+#
+# NOTE: .gitignore only affects UNTRACKED files, so broadening this cannot
+# remove anything already committed (e.g. `.env.template` below).
+
+# Every dotenv variant...
 .env
-.env.local
+.env.*
+*.env
+# ...except the checked-in templates/examples, which carry no real values.
+!.env.template
+!.env.example
+!*.env.template
+!*.env.example
+
+# Private keys, certificates and keystores
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.ppk
+# ...but PUBLIC keys and CSRs are safe to track.
+!*.pub.pem
+!*.crt
+
+# SSH private keys (the `.pub` siblings stay tracked via the rule below)
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+**/id_rsa
+**/id_dsa
+**/id_ecdsa
+**/id_ed25519
+!*.pub
+
+# Cloud / service-account credential files
+credentials.json
+service-account.json
+service_account.json
+*service-account*.json
+*service_account*.json
+gcp-key.json
+*gcp-key*.json
+gha-creds-*.json
+.aws/credentials
+.gcp/
+secrets.json
+secrets.yaml
+secrets.yml
 
 # Proptest regressions
 **/proptest-regressions/

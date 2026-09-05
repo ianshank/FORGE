@@ -22,6 +22,14 @@ on:
         type: string
         default: "1000"
 
+# Least privilege: this workflow only checks out code and uploads artifacts,
+# neither of which needs a write-scoped GITHUB_TOKEN. Without this block the
+# token inherits the repository/organisation default, which is read-write on
+# many repos — and this workflow runs a multi-hour job against a live LLM
+# endpoint and an MLflow service container.
+permissions:
+  contents: read
+
 env:
   # GitHub Actions does NOT evaluate ${{ env.X }} inside service container
   # `options:` strings, so the literal port numbers recur on the

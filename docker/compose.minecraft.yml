@@ -14,6 +14,37 @@
 # The trainer container is intentionally omitted from this compose;
 # trainers run on GPU hosts (or in CI jobs) and write into the same
 # `models/` volume the runner reads from.
+#
+# ---------------------------------------------------------------------------
+# NETWORK EXPOSURE  (${BIND_HOST})
+# ---------------------------------------------------------------------------
+# Every published port below is prefixed with `${BIND_HOST:-127.0.0.1}`.
+# Docker's default (`"3001:3000"`, no host IP) binds 0.0.0.0 and, because
+# Docker writes its own iptables rules, that reaches past most host firewalls.
+# This stack has no authentication in front of the mc-bot WebSocket or the
+# prismarine viewer, and the Minecraft server runs with `ONLINE_MODE: FALSE`
+# (no Mojang auth) — so none of it should face a network by default.
+#
+# Loopback is the default. To expose the stack deliberately, opt in
+# explicitly — e.g. in the env file:
+#
+#   BIND_HOST=0.0.0.0      # all interfaces (understand the above first)
+#   BIND_HOST=192.168.1.20 # one specific interface
+#
+# Note that with the default, remote Minecraft clients cannot join
+# `MC_SERVER_PORT`; that is the point. Set BIND_HOST if you need them to.
+#
+# ---------------------------------------------------------------------------
+# REQUIRED VARIABLE: GRAFANA_ADMIN_PASSWORD
+# ---------------------------------------------------------------------------
+# `GF_SECURITY_ADMIN_PASSWORD` no longer defaults to `admin`. It uses
+# compose's required-variable form (`${VAR:?message}`), so an unset or empty
+# value makes compose refuse to start instead of silently publishing a
+# Grafana with admin/admin. Compose interpolates the whole file regardless of
+# which profiles are active, so this variable must be defined for ANY
+# invocation against this file — set it once in `docker/compose.minecraft.env`
+# (see `compose.minecraft.env.example`). The scripts in `scripts/` already
+# pass `--env-file`, so defining it there is enough.
 
 services:
   minecraft:
@@ -33,7 +64,19 @@ services:
           cpus: ${MC_CPU_RESERVATION:-0.5}
           memory: ${MC_MEM_RESERVATION:-1G}
     ports:
-      - "${MC_SERVER_PORT:-25565}:25565"
+      # Loopback by default — see the NETWORK EXPOSURE note at the top. This
+      # server runs ONLINE_MODE=FALSE (no Mojang auth), so an internet-facing
+      # bind lets anyone join as any username.
+      - "${BIND_HOST:-127.0.0.1}:${MC_SERVER_PORT:-25565}:25565"
+    # `no-new-privileges` is safe here: the itzg entrypoint DROPS privileges
+    # (root -> the `minecraft` user) and never needs to regain them.
+    #
+    # `cap_drop: [ALL]` is deliberately NOT set on this service: the itzg
+    # image chowns /data and switches user at start-up, which needs
+    # CAP_CHOWN / CAP_SETUID / CAP_SETGID / CAP_DAC_OVERRIDE. Dropping them
+    # breaks the container before the server ever boots.
+    security_opt:
+      - "no-new-privileges:true"
     environment:
       # EULA acceptance MUST be set explicitly by the operator. We do
       # not embed `EULA=TRUE` here — that would be agreeing to
@@ -95,8 +138,18 @@ services:
       MC_BOT_USERNAME: ${MC_BOT_USERNAME:-forge_bot}
       MC_BOT_AUTH: ${MC_BOT_AUTH:-offline}
     ports:
-      - "${MC_BOT_WS_PORT:-8765}:${MC_BOT_WS_PORT:-8765}"
-      - "${MC_BOT_VIEWER_PORT:-3007}:${MC_BOT_VIEWER_PORT:-3007}"
+      # The WS bridge has no authentication and the prismarine viewer serves
+      # a live view of the world — loopback by default (see the top note).
+      - "${BIND_HOST:-127.0.0.1}:${MC_BOT_WS_PORT:-8765}:${MC_BOT_WS_PORT:-8765}"
+      - "${BIND_HOST:-127.0.0.1}:${MC_BOT_VIEWER_PORT:-3007}:${MC_BOT_VIEWER_PORT:-3007}"
+    # mc-bot.Dockerfile already runs as `USER node` and listens on
+    # unprivileged ports, so it needs no Linux capabilities at all.
+    # UNVERIFIED: no Docker daemon was available in the environment where
+    # this was added, so the container was not started to confirm.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
     volumes:
       - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
       # mc-bot's `DEFAULT_CONFIG_DIR` resolves to /configs/minecraft
@@ -146,6 +199,14 @@ services:
     depends_on:
       mc-bot:
         condition: service_healthy
+    # mc-runner.Dockerfile already runs as `USER forge`; the binary opens
+    # outbound sockets and writes to its bind mounts, neither of which needs
+    # a capability. UNVERIFIED: no Docker daemon was available where this was
+    # added, so the container was not started to confirm.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
     environment:
       # The env-var ladder in `RunnerConfig::with_env_var_overrides`
       # lets an operator override the static runner.toml without
@@ -203,6 +264,14 @@ services:
     depends_on:
       runner:
         condition: service_started
+    # trainer.Dockerfile now runs as a non-root user (see its APP_UID /
+    # APP_GID build args). Pure compute + file I/O — no capabilities needed.
+    # UNVERIFIED: no Docker daemon was available where this was added, so the
+    # container was not started to confirm.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
     environment:
       TRAINER_DEVICE: ${TRAINER_DEVICE:-cpu}
       TRAINER_ROUND_ITERS: ${TRAINER_ROUND_ITERS:-10}
@@ -265,6 +334,12 @@ services:
     container_name: forge-mc-trainer-bootstrap
     profiles: ["self-play"]
     # No `restart` policy — one-shot.
+    # Same image and same hardening as the `trainer` service above.
+    # UNVERIFIED: no Docker daemon was available where this was added.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
     volumes:
       - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro
       - ${MODELS_DIR:-../models}:/app/models
@@ -298,7 +373,15 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}"
     ports:
-      - "${PROMETHEUS_PORT:-9091}:9090"
+      # Prometheus has no auth and its query API exposes every scraped
+      # series — loopback by default (see the top note).
+      - "${BIND_HOST:-127.0.0.1}:${PROMETHEUS_PORT:-9091}:9090"
+    # prom/prometheus runs as `nobody` and binds 9090 (unprivileged).
+    # UNVERIFIED: no Docker daemon was available where this was added.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
     volumes:
       - ${MONITORING_DIR:-./monitoring}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -321,10 +404,21 @@ services:
         condition: service_started
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # FAIL CLOSED. `${VAR:?msg}` is compose's required-variable form: an
+      # unset or empty value aborts with this message instead of falling back
+      # to a default. The previous `${GRAFANA_ADMIN_PASSWORD:-admin}` meant a
+      # `--profile monitoring up` published Grafana with admin/admin.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in docker/compose.minecraft.env — there is no default (it used to be "admin")}
       GF_USERS_ALLOW_SIGN_UP: "false"
     ports:
-      - "${GRAFANA_PORT:-3001}:3000"
+      # Loopback by default (see the top note).
+      - "${BIND_HOST:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
+    # grafana/grafana runs as uid 472 and binds 3000 (unprivileged).
+    # UNVERIFIED: no Docker daemon was available where this was added.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
     volumes:
       - ${MONITORING_DIR:-./monitoring}/grafana/provisioning:/etc/grafana/provisioning:ro
       - ${MONITORING_DIR:-./monitoring}/grafana/dashboards:/var/lib/grafana/dashboards:ro

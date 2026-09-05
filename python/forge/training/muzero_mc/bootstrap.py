@@ -38,6 +38,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# `checkpoint_loader` is torch-free (it only touches the Hub client lazily),
+# so importing its default-revision constant here does not undo the
+# lazy-import discipline the rest of this module keeps around torch.
+from forge.training.muzero_mc.checkpoint_loader import DEFAULT_HF_REVISION
 from forge.training.muzero_mc.manifest import (
     DEFAULT_BUNDLE_FILENAMES,
     MANIFEST_FILENAME,
@@ -77,6 +81,17 @@ class BootstrapConfig:
         manifest_filename: Manifest filename inside the bundle.
         seed: Optional torch RNG seed for reproducible random
             initialisation. Useful in CI round-trip tests.
+        from_hf: Optional HuggingFace Hub repo ID to warm-start from
+            instead of random initialisation.
+        subfolder: Subfolder inside that Hub repo holding the weights.
+        from_hf_revision: Hub git revision the warm-start downloads
+            from. Defaults to
+            :data:`forge.training.muzero_mc.checkpoint_loader.DEFAULT_HF_REVISION`
+            (``"main"`` — mutable); pin a 40-hex commit SHA for a
+            reproducible bootstrap.
+        from_hf_sha256: Optional ``role -> sha256`` map verified against
+            the downloaded files before the manifest is built. Without
+            it the manifest merely certifies whatever bytes arrived.
     """
 
     obs_dim: int
@@ -93,6 +108,8 @@ class BootstrapConfig:
     seed: int | None = None
     from_hf: str | None = None
     subfolder: str | None = None
+    from_hf_revision: str = DEFAULT_HF_REVISION
+    from_hf_sha256: dict[str, str] | None = None
 
     def __post_init__(self) -> None:
         if self.obs_dim <= 0:
@@ -154,6 +171,8 @@ def bootstrap(cfg: BootstrapConfig) -> BootstrapResult:
             version=cfg.version,
             filename_map=cfg.filenames,
             subfolder=cfg.subfolder,
+            revision=cfg.from_hf_revision,
+            expected_sha256=cfg.from_hf_sha256,
         )
         manifest = load_manifest(manifest_path)
         bundle_subdir_name = format_bundle_version_dir(cfg.version)

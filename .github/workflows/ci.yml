@@ -45,6 +45,18 @@ concurrency:
   group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
+# Least privilege for every job that does not opt out. Without this block the
+# GITHUB_TOKEN inherits the repository/organisation default, which is
+# read-write on many repos — 27 jobs, most of which run untrusted PR code
+# (cargo build scripts, npm postinstall, pytest), would get a token that can
+# push commits and publish packages.
+#
+# Jobs needing more declare their own `permissions:` block, which REPLACES
+# this one for that job (it is not additive). The `docker` job below keeps its
+# `contents: read` + `packages: write` for GHCR publishing.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -134,7 +146,25 @@ jobs:
           node-version: "22"
           package-manager-cache: false
       # Config in .markdownlint.json, exclusions in .markdownlintignore.
-      - run: npx --yes markdownlint-cli2 "**/*.md"
+      #
+      # This used to be `npx --yes markdownlint-cli2 "**/*.md"`. That package
+      # is declared in no package.json in this repo, so npx resolved `latest`
+      # from the registry on every push and ran it with lifecycle scripts
+      # enabled — a floating, unreviewed dependency with install-time code
+      # execution on a runner that has just checked out the repo.
+      #
+      # Now: an exact pinned version, installed with `--ignore-scripts` (no
+      # pre/post-install hooks run at all), into $RUNNER_TEMP rather than the
+      # workspace (so the "**/*.md" glob never walks into node_modules), and
+      # invoked directly instead of re-resolved by npx.
+      - name: Markdown lint (pinned markdownlint-cli2)
+        env:
+          MARKDOWNLINT_CLI2_VERSION: "0.23.2"
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/mdlint" --no-audit --no-fund \
+            --ignore-scripts "markdownlint-cli2@${MARKDOWNLINT_CLI2_VERSION}"
+          "$RUNNER_TEMP/mdlint/node_modules/.bin/markdownlint-cli2" "**/*.md"
 
   bench:
     name: Benchmarks
