@@ -723,6 +723,52 @@ jobs:
           test -f ./_hf_smoke/dataset_info.json \
             || (echo "::error::dataset_info.json missing"; exit 1)
 
+  mlflow-http:
+    name: MLflow HTTP Transport (feature-gated)
+    runs-on: ubuntu-latest
+    # `forge-eval/http-mlflow` gates 1,434 production lines: 987 in
+    # src/exporters/mlflow_http.rs (the reqwest-backed MLflow tracking
+    # transport, counting only the code above its own #[cfg(test)] module)
+    # plus the 447-line forge-eval-longrun bin, which declares
+    # required-features on it. The workspace-wide clippy/test jobs above pass
+    # only
+    # `--features forge-cloud/gcs`, so none of it is compiled, linted, tested,
+    # or counted in coverage on a PR. That is the same hole the `onnx-features`
+    # job below was added to close after a routine `ort` bump broke the ONNX
+    # surface undetected -- reqwest/url/scopeguard are on Dependabot's weekly
+    # schedule too, and this crate's exclusive dependency on them means a
+    # grouped minor/patch PR could land the identical failure.
+    #
+    # A separate job rather than folding these steps into `hf-export`: that
+    # job's name is a check name a branch-protection rule may reference, and
+    # renaming it to cover both surfaces would silently change what protection
+    # matches.
+    #
+    # `tests/mlflow_http_e2e.rs` is `#[ignore]`d (it pulls a ~1.5GB MLflow
+    # image via testcontainers), so this stays a fast compile-and-unit-test
+    # job; `cargo test` here still builds that target, which is what keeps the
+    # testcontainers integration from bit-rotting.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # See the note in hf-export: this action never reads
+          # rust-toolchain.toml, so the pin has to be repeated per job.
+          # Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mlflow-http
+      - name: Clippy (http-mlflow feature)
+        run: cargo clippy -p forge-eval --all-targets --features http-mlflow -- -D warnings
+      - name: Test (http-mlflow feature)
+        run: cargo test -p forge-eval --features http-mlflow
+      - name: CLI smoke (forge-eval-longrun --help)
+        # The bin is `required-features = ["http-mlflow"]`, so a build failure
+        # in its clap surface is invisible to every other job. `--help` exits 0
+        # only if clap's command tree assembles.
+        run: cargo run -p forge-eval --features http-mlflow --bin forge-eval-longrun -- --help
+
   onnx-features:
     name: ONNX Feature Surface (onnx, onnx-reload, mc-live-bundled)
     runs-on: ubuntu-latest

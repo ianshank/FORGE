@@ -1,6 +1,15 @@
-# Dependabot — automated dependency update PRs across all four ecosystems.
-# Minor/patch updates are grouped to reduce PR noise; majors stay individual
-# so breaking bumps get reviewed in isolation.
+# Dependabot — automated dependency update PRs across every ecosystem this
+# repository ships from. Minor/patch updates are grouped to reduce PR noise;
+# majors stay individual so breaking bumps get reviewed in isolation.
+#
+# `open-pull-requests-limit` is deliberately left at 5 per ecosystem even
+# though the queue currently sits at that ceiling. A saturated queue is a
+# review-throughput problem, not a configuration one: raising the cap doubles
+# the backlog without a single extra bump getting merged, and the grouping
+# rules below are what actually keep the routine churn down to one PR per
+# ecosystem per week. Note that this cap governs *version* updates only —
+# Dependabot security alerts are limited separately, so a saturated queue
+# does not suppress a security bump.
 version: 2
 updates:
   # Rust workspace (root Cargo.toml + Cargo.lock).
@@ -68,4 +77,25 @@ updates:
     open-pull-requests-limit: 5
     groups:
       actions-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Container base images. Every Dockerfile in the repo lives under /docker;
+  # nothing here is covered by the cargo/pip/npm ecosystems above, so until
+  # this entry existed a CVE in a base image produced no signal at all.
+  #
+  # Partial by construction, and worth knowing which half: the literal tags
+  # (docker/Dockerfile, Dockerfile.demo, mc-runner.Dockerfile and
+  # trainer.Dockerfile pin python:3.11-slim and debian:bookworm-slim) are
+  # updatable here. The `FROM rust:${RUST_IMAGE_TAG}` /
+  # `FROM node:${NODE_IMAGE_TAG}` stages are not — Dependabot cannot resolve
+  # a build ARG, and those tags are deliberately kept in step with
+  # rust-toolchain.toml by scripts/check_pinned_config_consistency.py, which
+  # is the mechanism that keeps them current.
+  - package-ecosystem: docker
+    directory: "/docker"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker-minor-patch:
         update-types: ["minor", "patch"]
