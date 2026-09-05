@@ -14,15 +14,20 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
+# `scripts/` is on sys.path via the repository-root conftest.py, which exists
+# precisely so a test importing an orchestrator script does not need its own
+# sys.path.insert and the lint suppression that follows from importing after
+# it. REPO_ROOT comes from the same place rather than re-deriving
+# `parents[2]` here, so there is one definition of where the repo root is.
+import check_local_ci_parity as parity
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+from conftest import REPO_ROOT
 
-import check_local_ci_parity as parity
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+if TYPE_CHECKING:  # `Path` appears only in annotations, which are lazy here.
+    from pathlib import Path
 
 # A workflow fragment shaped like ci.yml: two-space-indented job ids under a
 # top-level `jobs:` key, with nested keys indented deeper so they must not be
