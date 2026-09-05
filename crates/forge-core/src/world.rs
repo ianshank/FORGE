@@ -1443,8 +1443,10 @@ mod tests {
         );
         assert!(
             !world.truncated,
-            "golden run must not truncate — GOLDEN_STEP_COUNT exceeds \
-             GOLDEN_MAX_EPISODE_LEN"
+            "golden run must not truncate: the digest is only meaningful for a \
+             full GOLDEN_STEP_COUNT-step run. Most likely GOLDEN_STEP_COUNT now \
+             exceeds GOLDEN_MAX_EPISODE_LEN, but any other truncation cause \
+             invalidates the golden value the same way"
         );
         assert_ne!(
             world.day_phase, 0,

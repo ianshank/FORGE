@@ -16,7 +16,11 @@ services:
       # to nothing. Binding 0.0.0.0 here is safe because the container
       # network namespace is the isolation boundary and the `ports:` entry
       # above already restricts host exposure to 127.0.0.1.
-      - FORGE_SERVER_BIND=0.0.0.0:8080
+      # Interpolated, not a literal: FORGE_SERVER_BIND takes precedence over
+      # FORGE_SERVER_PORT in ServerConfig::from_env, so a hardcoded :8080 here
+      # would silently make FORGE_SERVER_PORT a no-op while the healthcheck
+      # below still probed the requested port -- permanently unhealthy.
+      - FORGE_SERVER_BIND=0.0.0.0:${FORGE_SERVER_PORT:-8080}
       - FORGE_SIMULATION_GRID_SIZE=${FORGE_SIMULATION_GRID_SIZE:-64}
       - FORGE_HARDWARE_NUM_WORKERS=${FORGE_HARDWARE_NUM_WORKERS:-4}
       - RUST_LOG=${RUST_LOG:-info}

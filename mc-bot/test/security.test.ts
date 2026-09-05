@@ -331,6 +331,7 @@ describe('Security and edge cases', () => {
           max_queue_depth: cfg.websocket!.max_queue_depth,
           idle_timeout_ms: cfg.websocket!.idle_timeout_ms,
           ping_interval_ms: cfg.websocket!.ping_interval_ms,
+          ping_timeout_ms: cfg.websocket!.ping_timeout_ms,
           auth_token: cfg.websocket!.auth_token,
           auth_query_param: cfg.websocket!.auth_query_param,
         },
@@ -339,6 +340,48 @@ describe('Security and edge cases', () => {
       // Bind fields stay derived from ws_url.
       assert.equal(cfg.websocket!.host, '127.0.0.1');
       assert.equal(cfg.websocket!.port, 8765);
+      // A loopback ws_url keeps the listener loopback-only.
+      assert.equal(cfg.websocket!.bind_host, '127.0.0.1');
+    });
+
+    it('never lets the ping deadline undercut idle_timeout_ms', () => {
+      // Regression guard for the defaults, not just the plumbing. The
+      // production client (crates/forge-env-mc) is synchronous and cannot
+      // answer a ping while it is writing a trajectory or re-hashing an ONNX
+      // bundle between episodes. If ping_timeout_ms ever drops below
+      // idle_timeout_ms, the control channel grows a second, tighter deadline
+      // that reclaims healthy clients -- which is exactly the bug this pins.
+      assert.ok(
+        DEFAULT_WEBSOCKET_LIMITS.ping_timeout_ms >= DEFAULT_WEBSOCKET_LIMITS.idle_timeout_ms,
+        `ping_timeout_ms (${DEFAULT_WEBSOCKET_LIMITS.ping_timeout_ms}) must be >= ` +
+          `idle_timeout_ms (${DEFAULT_WEBSOCKET_LIMITS.idle_timeout_ms})`,
+      );
+      assert.ok(
+        DEFAULT_WEBSOCKET_LIMITS.ping_timeout_ms > DEFAULT_WEBSOCKET_LIMITS.ping_interval_ms,
+        'a single missed ping must not reclaim the session',
+      );
+    });
+
+    it('derives bind_host from ws_url, and lets an explicit override win', () => {
+      // The docker overlay uses ws://mc-bot:8765. Binding that hostname made
+      // the server listen on the container's own eth0 address, so the
+      // healthcheck's connection to 127.0.0.1 was refused and `runner` never
+      // cleared `service_healthy`. Non-loopback => listen on all interfaces.
+      assert.equal(
+        normalizeEnvConfig({ ws_url: 'ws://mc-bot:8765' }).websocket!.bind_host,
+        undefined,
+      );
+      assert.equal(
+        normalizeEnvConfig({ ws_url: 'ws://localhost:8765' }).websocket!.bind_host,
+        'localhost',
+      );
+      assert.equal(
+        normalizeEnvConfig({
+          ws_url: 'ws://mc-bot:8765',
+          websocket: { bind_host: '10.1.2.3' },
+        }).websocket!.bind_host,
+        '10.1.2.3',
+      );
     });
 
     it('rejects non-integer and out-of-range limits', () => {
@@ -498,16 +541,32 @@ describe('Security and edge cases', () => {
       const handle = createConnectionHandler({
         bot: stubBot(),
         // idle timeout disabled so this exercises the ping path alone.
-        bundle: testBundle(8765, { idle_timeout_ms: 0, ping_interval_ms: 25 }),
+        // ping_timeout_ms is what decides reclaim; ping_interval_ms only sets
+        // the probe cadence.
+        bundle: testBundle(8765, {
+          idle_timeout_ms: 0,
+          ping_interval_ms: 25,
+          ping_timeout_ms: 60,
+        }),
         logger,
       });
       const dead = new FakeSocket();
       handle(dead as any);
       assert.equal(dead.sent[0].type, 'hello');
 
-      // Tick 1 pings; tick 2 finds the ping unanswered and reclaims.
-      await delay(120);
+      // A single missed ping must NOT reclaim: the production client is
+      // synchronous and cannot pong while it is writing a trajectory or
+      // re-hashing an ONNX bundle between episodes.
+      await delay(40);
       assert.ok(dead.pings >= 1, 'no ping was sent');
+      assert.equal(
+        dead.terminated,
+        false,
+        'reclaimed after one missed ping — a busy-but-alive client would be killed',
+      );
+
+      // Past ping_timeout_ms with still no pong, the peer is genuinely dead.
+      await delay(120);
       assert.equal(dead.terminated, true);
       assert.ok(
         logger.entries.some(

@@ -213,7 +213,17 @@ export function createConnectionHandler(options: {
     // not refresh it: a live-but-silent client answers pings forever, and it is
     // exactly that client which must not hold the single bot slot indefinitely.
     let lastActivityMs = Date.now();
-    let awaitingPong = false;
+    // Timestamp of the OLDEST still-unanswered ping, or null when the peer is
+    // up to date. Deliberately not a boolean: the production client is a
+    // *synchronous* Rust client (crates/forge-env-mc/src/client.rs) that reads
+    // the socket only inside recv(), and tungstenite queues a pong only when
+    // the ping frame is actually read -- there is no background pong thread.
+    // Between episodes the runner writes the trajectory, re-hashes the whole
+    // ONNX bundle (integrity::verify_bundle) and rebuilds three ORT sessions
+    // without touching the socket. A boolean here reclaimed after a single
+    // missed ping, i.e. one ping_interval_ms, killing a perfectly healthy
+    // client mid-hot-reload. The deadline is now ping_timeout_ms.
+    let unansweredPingSinceMs: number | null = null;
     let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
     const stopKeepalive = (): void => {
@@ -249,11 +259,20 @@ export function createConnectionHandler(options: {
         return;
       }
       if (limits.ping_interval_ms > 0 && typeof socket.ping === 'function') {
-        if (awaitingPong) {
-          reclaim('ping_timeout', { ping_interval_ms: limits.ping_interval_ms });
+        if (unansweredPingSinceMs !== null) {
+          const unansweredMs = Date.now() - unansweredPingSinceMs;
+          if (limits.ping_timeout_ms > 0 && unansweredMs >= limits.ping_timeout_ms) {
+            reclaim('ping_timeout', {
+              unanswered_ms: unansweredMs,
+              ping_timeout_ms: limits.ping_timeout_ms,
+              ping_interval_ms: limits.ping_interval_ms,
+            });
+          }
+          // Otherwise keep probing: a busy-but-alive client will drain the
+          // queued pings the next time it reads the socket.
           return;
         }
-        awaitingPong = true;
+        unansweredPingSinceMs = Date.now();
         try {
           socket.ping();
         } catch (err: any) {
@@ -269,7 +288,10 @@ export function createConnectionHandler(options: {
       keepaliveTimer.unref?.();
     }
     socket.on('pong', () => {
-      awaitingPong = false;
+      // The peer is reachable again. Note this still does NOT refresh
+      // lastActivityMs -- a live-but-silent client must not hold the slot
+      // forever; that is what idle_timeout_ms is for.
+      unansweredPingSinceMs = null;
     });
 
     const gridShape = gridShapePayload(envConfig.observation);
@@ -449,8 +471,14 @@ export async function startProtocolServer(options: {
 }): Promise<any> {
   const { bot, botManager, bundle, WebSocketServer, logger = createLogger() } = options;
   const limits = normalizeWebsocketConfig(bundle.env.websocket);
+  // NOT `websocket.host` -- that is the client's dial target. Binding to it
+  // made the server listen on the container's own eth0 address under docker
+  // (ws_url = "ws://mc-bot:8765"), so the healthcheck's connection to
+  // 127.0.0.1 was refused and `runner` never cleared `service_healthy`.
+  // See resolveBindHost() for the rule; `undefined` = every interface.
+  const bindHost = bundle.env.websocket?.bind_host;
   const serverOptions: Record<string, any> = {
-    host: bundle.env.websocket?.host,
+    ...(bindHost === undefined ? {} : { host: bindHost }),
     port: bundle.env.websocket?.port,
     // Replaces the `ws` default of 100 MiB per frame. See
     // DEFAULT_WEBSOCKET_LIMITS for the sizing rationale.
@@ -466,7 +494,8 @@ export async function startProtocolServer(options: {
   } else {
     logger.warn?.({
       event: 'websocket_auth_disabled',
-      msg: `mc-bot control channel is UNAUTHENTICATED: any process that can reach ${bundle.env.websocket?.host}:${bundle.env.websocket?.port} can drive the bot. Set [websocket] auth_token in configs/minecraft/env.toml to require a shared secret.`,
+      bind_host: bindHost ?? '0.0.0.0 (all interfaces)',
+      msg: `mc-bot control channel is UNAUTHENTICATED: any process that can reach ${bindHost ?? 'any interface'}:${bundle.env.websocket?.port} can drive the bot. Set [websocket] auth_token in configs/minecraft/env.toml to require a shared secret.`,
     });
   }
   const server = new WebSocketServer(serverOptions);

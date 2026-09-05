@@ -82,6 +82,14 @@ export interface WebsocketLimits {
   idle_timeout_ms: number;
   /** Interval between server-initiated WebSocket pings, in ms (0 disables). */
   ping_interval_ms: number;
+  /**
+   * How long a ping may go unanswered before the peer is declared dead, in ms
+   * (0 disables ping-based reclaim). Must exceed the longest legitimate gap in
+   * which the client does not read its socket — see
+   * {@link DEFAULT_WEBSOCKET_LIMITS} for why that is much longer than
+   * {@link WebsocketLimits.ping_interval_ms}.
+   */
+  ping_timeout_ms: number;
   /** Optional shared secret required at handshake time; `null` = unauthenticated. */
   auth_token: string | null;
   /** Query-string parameter carrying {@link WebsocketLimits.auth_token}. */
@@ -92,10 +100,64 @@ export interface WebsocketLimits {
 export interface WebsocketConfig extends WebsocketLimits {
   /** Echo of `ws_url`. Derived — a `[websocket] url` override is ignored. */
   url: string;
-  /** Bind host, derived from `ws_url`. */
+  /** Hostname parsed out of `ws_url`. This is the *client's* dial target. */
   host: string;
   /** Bind port, derived from `ws_url`. */
   port: number;
+  /**
+   * Address the server actually listens on. See {@link resolveBindHost} —
+   * this is deliberately NOT the same thing as {@link WebsocketConfig.host},
+   * because a client dial target and a server bind address answer different
+   * questions. `undefined` means "every interface".
+   */
+  bind_host: string | undefined;
+}
+
+/**
+ * Hostnames that mean "this machine only".
+ *
+ * `URL` strips the brackets from an IPv6 authority, so `ws://[::1]:8765`
+ * parses to a bare `::1` here.
+ */
+const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1']);
+
+/**
+ * Decide what address the WebSocket server binds to.
+ *
+ * The bind address used to be taken straight from `ws_url`'s hostname, which
+ * conflates two different things: where a *client* dials and where the
+ * *server* listens. Under docker that conflation breaks the stack.
+ * `configs/minecraft/env.docker.toml` sets `ws_url = "ws://mc-bot:8765"`, so
+ * the server bound to the `mc-bot` service name — i.e. the container's own
+ * eth0 address — and then refused the container healthcheck's connection to
+ * `127.0.0.1`. Because `compose.minecraft.yml` gates the `runner` service on
+ * `mc-bot: service_healthy`, that alone kept the whole v0.5 stack down.
+ *
+ * The rule:
+ * - an explicit `[websocket] bind_host` always wins, so an operator can pin
+ *   the address without touching `ws_url`;
+ * - a loopback `ws_url` keeps the server loopback-only, which is what a local
+ *   `cargo run` wants and matches forge-server's loopback-by-default posture;
+ * - anything else listens on every interface. That is the right call *inside a
+ *   container*, where the network namespace is the isolation boundary and the
+ *   compose `ports:` entry (bound to `${BIND_HOST:-127.0.0.1}`) is what limits
+ *   host exposure.
+ *
+ * @param wsUrlHostname Hostname parsed from `ws_url`.
+ * @param override Explicit `[websocket] bind_host`, if the operator set one.
+ * @returns The bind address, or `undefined` to listen on every interface.
+ */
+export function resolveBindHost(
+  wsUrlHostname: string,
+  override?: unknown,
+): string | undefined {
+  if (override !== undefined && override !== null && override !== '') {
+    if (typeof override !== 'string') {
+      throw new Error(`websocket.bind_host must be a string, got ${typeof override}`);
+    }
+    return override;
+  }
+  return LOOPBACK_HOSTNAMES.has(wsUrlHostname) ? wsUrlHostname : undefined;
 }
 
 export interface ResetConfig {
@@ -160,6 +222,19 @@ export const DEFAULT_WEBSOCKET_LIMITS: Readonly<WebsocketLimits> = Object.freeze
   max_queue_depth: 32,
   idle_timeout_ms: 120_000,
   ping_interval_ms: 20_000,
+  // Equal to idle_timeout_ms on purpose, so the control channel has ONE
+  // deadline rather than two, and the tighter one is not an accident.
+  //
+  // The production client is synchronous: crates/forge-env-mc/src/client.rs
+  // reads the socket only inside recv(), which the runner calls from
+  // reset_into/step_into. tungstenite queues a pong only when the ping frame
+  // is read, so a client that is busy rather than dead cannot answer. Between
+  // episodes the runner writes the trajectory, re-hashes the ONNX bundle and
+  // rebuilds three ORT sessions without reading the socket. Reclaiming on a
+  // single missed ping (20 s) would kill that client; reclaiming on
+  // ping_timeout_ms (120 s) does not, while still evicting a genuinely dead
+  // peer well before it matters.
+  ping_timeout_ms: 120_000,
   auth_token: null,
   auth_query_param: 'token',
 });
@@ -315,6 +390,7 @@ export function normalizeWebsocketConfig(raw: any = {}): WebsocketLimits {
     max_queue_depth: requireIntInRange(merged.max_queue_depth, 'max_queue_depth', 1),
     idle_timeout_ms: requireIntInRange(merged.idle_timeout_ms, 'idle_timeout_ms', 0),
     ping_interval_ms: requireIntInRange(merged.ping_interval_ms, 'ping_interval_ms', 0),
+    ping_timeout_ms: requireIntInRange(merged.ping_timeout_ms, 'ping_timeout_ms', 0),
     auth_token: authToken,
     auth_query_param: authQueryParam,
   };
@@ -334,6 +410,7 @@ export function normalizeEnvConfig(raw: any = {}): EnvConfig {
     url: cfg.ws_url,
     host: wsUrl.hostname,
     port: Number(portText),
+    bind_host: resolveBindHost(wsUrl.hostname, cfg.websocket?.bind_host),
   };
   const reconnect = {
     backoff_ms: Array.isArray(cfg.reconnect?.backoff_ms)

@@ -73,7 +73,11 @@ wasm-test: ## Run forge-wasm's tests inside a real wasm runtime (matches CI's `w
 
 deny: ## cargo-deny supply-chain check (advisory; installs cargo-deny if missing)
 	@command -v cargo-deny >/dev/null || cargo install cargo-deny --locked
-	cargo deny check --all-features
+	# `--all-features` is a GLOBAL cargo-deny option and must precede the
+	# `check` subcommand. Written the other way round, cargo-deny 0.20.x exits 2
+	# with "unexpected argument" -- which is how security.yml ran this job for
+	# its entire life without ever scanning anything (the `|| true` hid it).
+	cargo deny --all-features check
 
 gitleaks: ## Scan git history for committed secrets (advisory; needs the gitleaks binary on PATH -- see security.yml)
 	@command -v gitleaks >/dev/null || { \
