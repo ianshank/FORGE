@@ -195,7 +195,15 @@ fn test_trajectory_reconstruction_determinism() {
     assert_eq!(traj_a.len(), traj_b.len());
     assert_eq!(traj_a.len(), 5);
 
-    // Each step must have identical observations and rewards
+    // Each step must have identical observations and rewards.
+    // Guard the collection lengths explicitly before zipping: `zip` truncates
+    // to the shorter iterator, so a reconstruction that dropped steps would
+    // otherwise slip through the comparison below.
+    assert_eq!(
+        traj_a.steps.len(),
+        traj_b.steps.len(),
+        "step count mismatch between reconstructions"
+    );
     for (step_a, step_b) in traj_a.steps.iter().zip(traj_b.steps.iter()) {
         assert_eq!(step_a.tick, step_b.tick);
         assert_eq!(step_a.observations.len(), step_b.observations.len());
@@ -342,7 +350,13 @@ fn test_replay_batch_transport() {
     assert_eq!(deserialized.model_version, Some(3));
     assert!(!deserialized.timestamp.is_empty());
 
-    // Verify each replay preserved its seed
+    // Verify each replay preserved its seed. Length guard first so a dropped
+    // replay cannot be hidden by `zip`'s truncation.
+    assert_eq!(
+        batch.replays.len(),
+        deserialized.replays.len(),
+        "replay count mismatch after JSON roundtrip"
+    );
     for (orig, deser) in batch.replays.iter().zip(deserialized.replays.iter()) {
         assert_eq!(orig.seed, deser.seed);
         assert_eq!(orig.actions.len(), deser.actions.len());

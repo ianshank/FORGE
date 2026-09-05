@@ -33,8 +33,22 @@ branch. There is no long-term-support branch yet.
 
 ## Scope notes
 
-- Secrets are never committed (CHARTER Invariant 7): `.env*` files are
-  git-ignored and CI reads secrets only from GitHub Actions secrets/vars.
+- Secrets are never committed (CHARTER Invariant 7). `.gitignore` covers
+  every dotenv variant (`.env`, `.env.*`, `*.env` — with the tracked
+  `*.env.template` / `*.env.example` files explicitly re-included), private
+  keys and keystores (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`,
+  `*.keystore`, `*.ppk`), SSH private keys (`id_rsa`, `id_dsa`, `id_ecdsa`,
+  `id_ed25519`, at any depth) and cloud credential files
+  (`credentials.json`, `*service-account*.json`, `*gcp-key*.json`,
+  `gha-creds-*.json`, `.aws/credentials`). CI reads secrets only from GitHub
+  Actions secrets/vars.
+
+  Note that `.gitignore` governs *untracked* files only — it is a guardrail,
+  not a control. Anything already committed stays committed until it is
+  removed from history and the credential is rotated.
 - The `security.yml` scanners are currently advisory (report-only). Reports of
   genuinely exploitable dependency advisories are still welcome and help
-  prioritise flipping a scanner to blocking.
+  prioritise flipping a scanner to blocking. `cargo-deny` and `gitleaks` each
+  still have open findings against the default branch (see the baseline note
+  at the top of `.github/workflows/security.yml`), which is why neither is
+  blocking yet.

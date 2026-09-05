@@ -27,9 +27,56 @@ COPY docker/nginx.conf /etc/nginx/conf.d/forge.conf
 # Copy built assets from Stage 1
 COPY --from=builder /build/dist/ /usr/share/nginx/html/
 
-EXPOSE 80
+# ---- non-root runtime -----------------------------------------------
+# nginx:alpine ships an unprivileged `nginx` user (uid/gid 101), but the
+# default entrypoint still runs the MASTER process as root — only the
+# workers drop privileges. Run the whole thing as `nginx`.
+#
+# NGINX_PORT stays 80 by default so every existing consumer keeps working
+# unchanged (`docker/docker-compose.yml` maps `...:80`, and README's
+# `docker run -p 3000:80` still applies). Binding a port below 1024 as a
+# non-root user needs CAP_NET_BIND_SERVICE, granted here as a FILE
+# capability on the nginx binary — the container itself is not privileged
+# and gains nothing else.
+#
+# For a container with no capabilities at all (e.g. under
+# `cap_drop: [ALL]` or `no-new-privileges`, both of which disable file
+# capabilities), rebuild on an unprivileged port and publish to it:
+#
+#   docker build -f docker/Dockerfile.dashboard --build-arg NGINX_PORT=8080 .
+#   docker run -p 3000:8080 ...
+#
+# The port is an ARG rather than a literal so the listen directive, EXPOSE
+# and the healthcheck below cannot drift apart.
+ARG NGINX_USER=nginx
+ARG NGINX_PORT=80
+ENV NGINX_PORT=${NGINX_PORT}
+
+RUN apk --no-cache add libcap \
+    # Point the vhost's `listen` at NGINX_PORT (a no-op at the default 80).
+    && sed -i -E "s/listen[[:space:]]+80;/listen ${NGINX_PORT};/g" \
+        /etc/nginx/conf.d/forge.conf \
+    # The pid file defaults to /var/run (root-owned). Move it somewhere the
+    # runtime user can write; handle the directive being absent as well as
+    # present so this does not depend on the base image's exact conf.
+    && if grep -qE '^[[:space:]]*pid[[:space:]]' /etc/nginx/nginx.conf; then \
+         sed -i -E 's#^[[:space:]]*pid[[:space:]]+.*#pid /tmp/nginx.pid;#' \
+           /etc/nginx/nginx.conf; \
+       else \
+         sed -i '1i pid /tmp/nginx.pid;' /etc/nginx/nginx.conf; \
+       fi \
+    # Temp/cache paths nginx writes to at runtime, plus the served assets.
+    && chown -R "${NGINX_USER}:${NGINX_USER}" \
+        /var/cache/nginx /etc/nginx/conf.d /usr/share/nginx/html \
+    # Allow the non-root master to bind a privileged port when NGINX_PORT<1024.
+    && setcap 'cap_net_bind_service=+ep' /usr/sbin/nginx \
+    && apk del libcap
+
+USER ${NGINX_USER}
+
+EXPOSE ${NGINX_PORT}
 
 HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost/healthz || exit 1
+  CMD wget -qO- "http://localhost:${NGINX_PORT}/healthz" || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

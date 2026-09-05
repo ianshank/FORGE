@@ -6,10 +6,18 @@ SHELL := /bin/bash
 # it just saves re-typing the exact CI invocations. Keep both in sync.
 
 .PHONY: help build fmt fmt-check lint test coverage \
-        onnx-check wasm wasm-check wasm-test deny gitleaks pin-check \
+        onnx-check hf-check mlflow-check alloc-audit mc-runner-smoke machete mutants \
+        wasm wasm-check wasm-test deny gitleaks pin-check text-check \
+        md-lint ci-parity \
         py-lint py-test hooks-test \
-        mc-bot-test dashboard-test web-e2e \
+        mc-bot-test dashboard-test dashboard-e2e demo-ui-test web-e2e \
         verify verify-full clean
+
+# Read the markdownlint pin out of ci.yml rather than restating it, so the
+# workflow stays the single source of truth. A second literal here is exactly
+# the drift `scripts/check_pinned_config_consistency.py` exists to catch, and
+# not creating it is cheaper than teaching that script one more pin.
+MARKDOWNLINT_CLI2_VERSION := $(shell sed -n 's/^[[:space:]]*MARKDOWNLINT_CLI2_VERSION:[[:space:]]*"\(.*\)"/\1/p' .github/workflows/ci.yml | head -1)
 
 help: ## Show this help
 	@echo "FORGE developer targets:"
@@ -48,6 +56,35 @@ onnx-check: ## Build/test the onnx/onnx-reload/mc-live-bundled feature surface (
 	cargo test -p forge-agent --features onnx-bundled
 	cargo test -p forge-mc-runner --features mc-live-bundled
 
+hf-check: ## Build/test the `hf` Parquet-export feature surface (matches CI's hf-export job)
+	cargo clippy -p forge-replay --all-targets --features hf -- -D warnings
+	cargo clippy -p forge-data --all-targets --features hf -- -D warnings
+	cargo test -p forge-replay --features hf
+	cargo test -p forge-data --features hf
+
+mlflow-check: ## Build/test the `http-mlflow` transport feature surface (matches CI's mlflow-http job)
+	cargo clippy -p forge-eval --all-targets --features http-mlflow -- -D warnings
+	cargo test -p forge-eval --features http-mlflow
+	cargo run -p forge-eval --features http-mlflow --bin forge-eval-longrun -- --help >/dev/null
+
+alloc-audit: ## Zero-allocation hot-path contract, 0 bytes / 0 blocks (matches CI's alloc-audit job)
+	cargo build -p forge-bench --bin allocation_audit --features dhat-heap --release
+	./target/release/allocation_audit --warmup 1024 --iters 10000 --out alloc_audit.json
+	python3 benchmarks/runner/check_zero_alloc.py --input alloc_audit.json \
+		--max-bytes 0 --json alloc_audit_summary.json
+
+mc-runner-smoke: ## forge-mc-runner builds and dry-runs without docker/Minecraft (matches CI's forge-mc-runner-bin job)
+	cargo build -p forge-mc-runner --bin forge-mc-runner
+	./target/debug/forge-mc-runner --dry-run --episodes 1
+
+mutants: ## Mutation-test the security-critical modules; any survivor fails (matches CI's mutants job)
+	@command -v cargo-mutants >/dev/null || cargo install cargo-mutants --locked
+	cargo mutants -p forge-mc-runner -p forge-server --timeout 120
+
+machete: ## Report unused Cargo dependencies (advisory in CI too -- never fails the build)
+	@command -v cargo-machete >/dev/null || cargo install cargo-machete --locked
+	cargo machete --with-metadata || true
+
 wasm: ## Build crates/forge-wasm into web/pkg/ for the static browser demo (needs wasm-pack)
 	@command -v wasm-pack >/dev/null || { \
 		echo "wasm not found on PATH -- see scripts/install_wasm_pack.sh (CI) or web/README.md"; \
@@ -73,7 +110,11 @@ wasm-test: ## Run forge-wasm's tests inside a real wasm runtime (matches CI's `w
 
 deny: ## cargo-deny supply-chain check (advisory; installs cargo-deny if missing)
 	@command -v cargo-deny >/dev/null || cargo install cargo-deny --locked
-	cargo deny check --all-features
+	# `--all-features` is a GLOBAL cargo-deny option and must precede the
+	# `check` subcommand. Written the other way round, cargo-deny 0.20.x exits 2
+	# with "unexpected argument" -- which is how security.yml ran this job for
+	# its entire life without ever scanning anything (the `|| true` hid it).
+	cargo deny --all-features check
 
 gitleaks: ## Scan git history for committed secrets (advisory; needs the gitleaks binary on PATH -- see security.yml)
 	@command -v gitleaks >/dev/null || { \
@@ -85,11 +126,22 @@ gitleaks: ## Scan git history for committed secrets (advisory; needs the gitleak
 pin-check: ## Cross-check Rust toolchain / ONNX Runtime / LM Studio endpoint pins duplicated across workflows, Dockerfiles, and Python
 	python3 scripts/check_pinned_config_consistency.py
 
+text-check: ## Reject NUL bytes in text files and line-ending drift (both have bitten this repo -- see the script's docstring)
+	python3 scripts/check_text_encoding.py
+
+ci-parity: ## Assert every CI job has a `make` target here, or a stated reason it cannot
+	python3 scripts/check_local_ci_parity.py
+
+md-lint: ## Markdown lint with the version ci.yml pins (matches CI's markdownlint job)
+	@test -n "$(MARKDOWNLINT_CLI2_VERSION)" || \
+		{ echo "could not read MARKDOWNLINT_CLI2_VERSION from .github/workflows/ci.yml"; exit 1; }
+	npx --yes "markdownlint-cli2@$(MARKDOWNLINT_CLI2_VERSION)" "**/*.md"
+
 # ---- Python ------------------------------------------------------------------
 
 py-lint: ## ruff + mypy (matches CI's python-lint job)
 	ruff check python/ tests/python/ scripts/ demo_ui/ examples/
-	mypy python/ scripts/ --config-file pyproject.toml
+	mypy python/ scripts/ tests/python/type_checking/ --config-file pyproject.toml
 
 py-test: ## pytest tests/python, excluding opt-in markers (build the native ext first: maturin develop)
 	pytest tests/python -m 'not lmstudio and not e2e_long and not minecraft_e2e'
@@ -105,15 +157,29 @@ mc-bot-test: ## mc-bot: typecheck + Biome lint + node:test + coverage
 dashboard-test: ## dashboard: build + Biome lint + Vitest coverage gate (85%)
 	cd dashboard && npm ci && npm run build && npm run lint && npm run test:coverage
 
+dashboard-e2e: ## dashboard: Playwright E2E + accessibility suite (needs a Chromium download)
+	cd dashboard && npm ci && npm run typecheck:e2e && \
+		npx playwright install --with-deps chromium && npm run test:e2e
+
+demo-ui-test: ## demo_ui: pytest suite driving the real backend (needs a Chromium download)
+	pip install -e 'demo_ui[dev]'
+	python -m playwright install --with-deps chromium
+	pytest demo_ui/tests/ -v --tb=short
+
 web-e2e: ## WASM demo: unit + Playwright E2E against the real web/ demo (needs wasm-pack + a Chromium download)
 	cd tests/web-e2e && npm ci && npm run typecheck:e2e && npm run test:unit && npm run test:e2e
 
 # ---- Aggregate -----------------------------------------------------------
 
-verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/wasm-test/deny/gitleaks -- see verify-full)
+verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check text-check ci-parity md-lint mc-runner-smoke mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/hf-check/mlflow-check/alloc-audit/wasm-test/deny/gitleaks/E2E -- see verify-full)
 	@echo "verify: all standard gates passed."
 
-verify-full: verify coverage deny gitleaks ## verify, plus the slower/environment-dependent gates (tarpaulin, cargo-deny, gitleaks). Does NOT include onnx-check (needs ORT_DYLIB_PATH set manually).
+# `ci-parity` is what stops this list silently falling behind ci.yml: it fails
+# if a CI job has no target here, or if a target named in its mapping has been
+# renamed away. `md-lint` and `mc-runner-smoke` joined `verify` because both
+# are seconds-fast and both were CI jobs a contributor could go red on with a
+# fully green local run.
+verify-full: verify coverage hf-check mlflow-check alloc-audit mutants deny gitleaks ## verify, plus the slower/environment-dependent gates (tarpaulin, feature surfaces, allocation audit, mutation testing, cargo-deny, gitleaks). Does NOT include onnx-check (needs ORT_DYLIB_PATH) or the browser E2E targets (dashboard-e2e/demo-ui-test/web-e2e, each needs a Chromium download).
 	@echo "verify-full: all gates passed."
 
 clean: ## cargo clean (frees significant disk space; safe, fully reproducible)

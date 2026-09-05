@@ -1,0 +1,55 @@
+# gitleaks configuration for FORGE.
+#
+# The `gitleaks` job in .github/workflows/security.yml is BLOCKING as of
+# 2026-09-05, so this file is the only place a finding can be excused --
+# and every exception must be narrow enough that a real credential in the
+# same file would still be caught.
+#
+# Run locally with `make gitleaks` (or `gitleaks git --redact -v .`).
+
+[extend]
+# Keep the full upstream ruleset. This file only *adds* exceptions; it never
+# replaces or weakens the bundled detectors.
+useDefault = true
+
+[[allowlists]]
+description = """
+Synthetic fixture used by the guard_staged_secrets hook's own self-tests.
+
+.claude/hooks/test_guard_staged_secrets.py asserts that the pre-commit guard
+blocks a commit containing a secret, which requires a literal secret-shaped
+string in the test source. gitleaks' generic-api-key rule flags it (verified:
+without this entry the repo scan reports exactly this one finding and exits 1).
+
+Deliberately scoped with matchCondition = "AND" so BOTH the path and the
+fixture's own sentinel prefix must match. A genuine leaked credential added to
+this same file would still be reported, because it would not carry the
+TEST-FIXTURE-SECRET- prefix.
+"""
+matchCondition = "AND"
+paths = ['''^\.claude/hooks/test_guard_staged_secrets\.py$''']
+regexes = ['''TEST-FIXTURE-SECRET-[A-Za-z0-9]{20}''']
+
+[[allowlists]]
+description = """
+Committed env templates, which by construction hold no values.
+
+These files ship keys with empty or illustrative right-hand sides so an
+operator can copy them to a real, git-ignored .env. The generic-api-key rule
+misfires on the empty assignments: with GRAFANA_ADMIN_PASSWORD= left blank
+(deliberately -- compose uses ${GRAFANA_ADMIN_PASSWORD:?...}, and :? treats
+empty as unset, so a placeholder like CHANGE_ME would silently restore a known
+default password) the regex runs past the newline and captures the *following*
+line, reporting "GRAFANA_CPU_LIMIT=1.0" as a secret.
+
+Residual risk, stated rather than hidden: a real credential pasted into one of
+these templates would not be reported. The compensating controls are
+.gitignore (every real .env* is untracked -- see the check-ignore matrix in
+SECURITY.md) and the guard_staged_secrets pre-commit hook, which scans staged
+content regardless of this allowlist. Scoped to the two template suffixes
+only; ordinary .env files are still scanned.
+"""
+paths = [
+    '''\.env\.example$''',
+    '''\.env\.template$''',
+]

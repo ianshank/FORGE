@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from forge.models.muzero_config import MuZeroConfig
+from forge.training.muzero_mc.checkpoint_loader import DEFAULT_HF_REVISION
 
 
 def test_bootstrap_default_obs_dim_matches_muzero_shape() -> None:
@@ -191,6 +192,7 @@ def test_bootstrap_from_hf(
         subfolder: str | None = None,
         local_dir: str | Path | None = None,
         local_dir_use_symlinks: bool = False,
+        revision: str | None = None,
     ) -> str:
         download_calls.append(
             {
@@ -198,6 +200,7 @@ def test_bootstrap_from_hf(
                 "filename": filename,
                 "subfolder": subfolder,
                 "local_dir": Path(local_dir) if local_dir else None,
+                "revision": revision,
             }
         )
         # Simulate writing the downloaded file
@@ -230,6 +233,8 @@ def test_bootstrap_from_hf(
         assert call["repo_id"] == "mock-user/mock-repo"
         assert call["subfolder"] == "models/v1"
         assert call["local_dir"] == tmp_path / "v00000001"
+        # BootstrapConfig.from_hf_revision reaches the Hub client.
+        assert call["revision"] == DEFAULT_HF_REVISION
 
     # Verify output structure
     versioned_dir = tmp_path / "v00000001"

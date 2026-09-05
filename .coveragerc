@@ -12,12 +12,23 @@ omit =
     examples/train_ppo_cleanrl.py
     examples/train_sac_cleanrl.py
 
-# Lines to exclude from coverage counting
+# Lines to exclude from coverage counting.
+#
+# IMPORTANT: these entries are REGEXES matched with `re.search`, not literal
+# strings — an unanchored pattern silently excludes any line that merely
+# *contains* it. Two of these used to be bare `pass` and `\.\.\.`, which
+# excluded 37 lines that were not `pass` statements (any line mentioning
+# "passed"/"passes"/"bypasses", e.g. the whole determinism checker in
+# forge/evaluation/evaluator.py, whose local variable is named `passed`) and
+# 72 lines that were not Ellipsis stubs (every `tuple[int, ...]` annotation,
+# every "..." inside a docstring). Anchor anything that is meant to match a
+# whole statement; leave trailing-comment idioms like `pragma: no cover`
+# unanchored, since those legitimately appear at the end of a code line.
 exclude_lines =
     pragma: no cover
-    if TYPE_CHECKING:
-    raise NotImplementedError
-    pass
-    \.\.\.
+    ^\s*if TYPE_CHECKING:\s*$
+    ^\s*raise NotImplementedError
+    ^\s*pass\s*$
+    ^\s*\.\.\.\s*$
 
 fail_under = 85

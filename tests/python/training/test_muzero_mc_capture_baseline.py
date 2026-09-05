@@ -166,6 +166,43 @@ def test_load_episode_records_skips_corrupt_files(
     assert any("failed to parse" in r.getMessage() for r in caplog.records)
 
 
+def test_load_episode_records_caps_gzip_decompression(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gzip bomb is rejected by the shared capped reader, not decompressed.
+
+    ``load_episode_records`` delegates to
+    ``replay.load_trajectory_document``, which caps decompressed bytes at
+    ``MAX_DECOMPRESSED_TRAJECTORY_BYTES``. The cap is lowered here so the
+    test does not have to materialise 512 MiB.
+    """
+    from forge.training.muzero_mc import replay
+
+    monkeypatch.setattr(replay, "MAX_DECOMPRESSED_TRAJECTORY_BYTES", 512)
+
+    _write_trajectory(tmp_path / "ep-000001.json", episode_id="ep-000001")
+    # Highly compressible payload that expands well past the lowered cap.
+    bomb = tmp_path / "ep-000002.json.gz"
+    with gzip.open(bomb, "wt", encoding="utf-8") as fh:
+        json.dump({"episode_id": "ep-000002", "steps": [], "pad": "A" * 4096}, fh)
+    assert bomb.stat().st_size < 512, "the bomb must be small on disk to be meaningful"
+
+    caplog.set_level(logging.WARNING, logger="forge.training.muzero_mc.capture_baseline")
+    records = load_episode_records(tmp_path)
+
+    assert [r.episode_id for r in records] == ["ep-000001"]
+    messages = "\n".join(r.getMessage() for r in caplog.records)
+    assert "failed to parse" in messages
+    assert "exceeds" in messages
+
+
+def test_load_episode_records_still_reads_normal_gzip(tmp_path: Path) -> None:
+    """The cap must not break ordinary compressed trajectories."""
+    _write_trajectory(tmp_path / "ep-000001.json.gz", episode_id="ep-000001", gz=True)
+    records = load_episode_records(tmp_path)
+    assert [r.episode_id for r in records] == ["ep-000001"]
+
+
 def test_collect_per_episode_payload_serialises_dataclasses() -> None:
     records = [
         BaselineRecord(

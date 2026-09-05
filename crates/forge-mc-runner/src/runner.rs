@@ -161,6 +161,11 @@ where
     episode_seq: u64,
     last_model_version: Option<u64>,
     reloads_applied: u64,
+    /// Lifetime count of hot reloads that were *rejected* (integrity
+    /// failure, unreadable bundle, ORT error). Kept separate from
+    /// `reloads_applied` because a rejected reload is not a failed run:
+    /// the runner keeps serving the last verified model.
+    reloads_rejected: u64,
     /// Per-runner deterministic RNG used by the random-actions baseline
     /// branch. Seeded lazily on first use from `config.base_seed`
     /// (falls back to a wall-clock-derived seed); per-episode mixing
@@ -202,6 +207,7 @@ where
             episode_seq: 0,
             last_model_version: None,
             reloads_applied: 0,
+            reloads_rejected: 0,
             random_rng: None,
         }
     }
@@ -238,6 +244,15 @@ where
     /// Number of reloads applied so far across the runner's lifetime.
     pub fn reloads_applied(&self) -> u64 {
         self.reloads_applied
+    }
+
+    /// Lifetime count of hot reloads rejected before they were applied.
+    ///
+    /// Non-zero means a manifest bump pointed at a bundle that failed
+    /// verification; the runner continued on the previous model.
+    #[must_use]
+    pub fn reloads_rejected(&self) -> u64 {
+        self.reloads_rejected
     }
 
     /// Number of episodes started since construction.
@@ -304,10 +319,13 @@ where
         );
         if let Some(reloader) = self.reload_fn.as_mut() {
             let model = self.search.model_mut();
-            reloader(model, &manifest).map_err(|e| match e {
-                RunnerError::Reload(_) => e,
-                other => RunnerError::Reload(other.to_string()),
-            })?;
+            // Propagate the error unchanged. Collapsing it into
+            // `RunnerError::Reload(e.to_string())` destroyed exactly the
+            // structure `integrity` exists to provide: an operator matching on
+            // `ModelDigestMismatch` to tell bundle tampering apart from a
+            // transient ORT failure would never see that variant, despite
+            // `onnx_reload`'s doc promising it surfaces "uncollapsed".
+            reloader(model, &manifest)?;
         } else {
             debug!("no reload_fn installed; version recorded only");
         }
@@ -510,7 +528,23 @@ where
         for ep_idx in 0..limit {
             // Reload check at the top of the outer loop — strictly
             // between episodes per plan §3.4.
-            self.maybe_reload()?;
+            //
+            // A failed reload must NOT end the run. The trainer and runner
+            // share `models/` as a host bind-mount, so a bad or tampered
+            // bundle is exactly the case integrity checking exists to catch —
+            // and propagating here would have turned "reject the bad bundle"
+            // into "kill the training run", repeatable by anyone able to write
+            // that directory. Keep serving the previously verified model and
+            // retry on the next poll; `last_model_version` is left unchanged
+            // by `maybe_reload`'s early return, so the bump is not consumed.
+            if let Err(e) = self.maybe_reload() {
+                warn!(
+                    episode_index = ep_idx,
+                    error = %e,
+                    "hot reload rejected; continuing on the previously verified model"
+                );
+                self.reloads_rejected += 1;
+            }
 
             let ep = match self.run_episode() {
                 Ok(ep) => ep,

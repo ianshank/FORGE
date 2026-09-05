@@ -149,36 +149,32 @@ def load_episode_records(
     trajectories — both formats are emitted by the runner's
     ``TrajectoryWriter`` depending on ``trajectory_compression``.
 
+    Reading is delegated to
+    :func:`forge.training.muzero_mc.replay.load_trajectory_document`, the
+    hardened reader shared with the trainer: it caps gzip decompression at
+    :data:`~forge.training.muzero_mc.replay.MAX_DECOMPRESSED_TRAJECTORY_BYTES`
+    (mirroring the Rust ``forge_replay::v2`` constant) so a gzip bomb in the
+    trajectory directory is rejected instead of OOM-ing the capture.
+
     Sorted by ``episode_id`` so the JSON output is reproducible
     regardless of filesystem ordering.
     """
+    from forge.training.muzero_mc.replay import TrajectoryError, load_trajectory_document
+
     paths = sorted(trajectory_dir.glob(glob_pattern))
     records: list[BaselineRecord] = []
     for path in paths:
         try:
-            blob = _read_trajectory_json(path)
-        except (OSError, json.JSONDecodeError) as exc:
+            blob = load_trajectory_document(path)
+        except (OSError, TrajectoryError) as exc:
+            # Warn-and-continue: one corrupt (or oversized) file must not
+            # poison a capture that may represent hours of episodes.
             logger.warning("failed to parse trajectory %s: %s", path, exc)
             continue
         record = _trajectory_to_record(blob)
         if record is not None:
             records.append(record)
     return records
-
-
-def _read_trajectory_json(path: Path) -> dict[str, Any]:
-    if path.suffix == ".gz":
-        import gzip
-
-        with gzip.open(path, "rt", encoding="utf-8") as fh:
-            data = json.load(fh)
-    else:
-        with path.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    if not isinstance(data, dict):
-        msg = f"{path} did not deserialise to a JSON object"
-        raise json.JSONDecodeError(msg, doc=str(path), pos=0)
-    return data
 
 
 def _trajectory_to_record(blob: dict[str, Any]) -> BaselineRecord | None:

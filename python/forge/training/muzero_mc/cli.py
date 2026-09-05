@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from forge.training.muzero_mc.bootstrap import BootstrapConfig, bootstrap
+from forge.training.muzero_mc.checkpoint_loader import DEFAULT_HF_REVISION
 from forge.training.muzero_mc.manifest import (
     MANIFEST_FILENAME,
     ONNX_OPSET_VERSION,
@@ -139,6 +140,29 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         type=str,
         default=None,
         help="Subfolder within the HuggingFace Hub repository containing the weights.",
+    )
+    p_boot.add_argument(
+        "--hf-revision",
+        type=str,
+        default=DEFAULT_HF_REVISION,
+        help=(
+            "HuggingFace Hub git revision to download from (commit SHA, tag, or "
+            f"branch). Default: %(default)r. {DEFAULT_HF_REVISION!r} is a MUTABLE "
+            "ref — pass a 40-hex commit SHA for a reproducible warm-start."
+        ),
+    )
+    p_boot.add_argument(
+        "--hf-sha256",
+        action="append",
+        default=None,
+        metavar="ROLE=DIGEST",
+        help=(
+            "Expected sha256 for a bundle file, e.g. "
+            "--hf-sha256 representation=<64-hex>. Repeatable (one per role). "
+            "Verified before the manifest is built; a mismatch aborts the "
+            "bootstrap. Without it the manifest self-certifies whatever the "
+            "Hub returned."
+        ),
     )
 
     # compute-schema-id
@@ -509,7 +533,36 @@ def main(argv: list[str] | None = None) -> int:
     return EXIT_USAGE
 
 
+def _parse_role_digests(pairs: list[str] | None) -> dict[str, str] | None:
+    """Parse repeated ``--hf-sha256 ROLE=DIGEST`` values into a mapping.
+
+    Returns ``None`` when nothing was supplied so the loader keeps its
+    "no verification requested" behaviour rather than seeing an empty map.
+
+    Raises:
+        ValueError: A value is not in ``ROLE=DIGEST`` form, or a role is
+            given twice.
+    """
+    if not pairs:
+        return None
+    out: dict[str, str] = {}
+    for raw in pairs:
+        role, sep, digest = raw.partition("=")
+        if not sep or not role.strip() or not digest.strip():
+            raise ValueError(f"--hf-sha256 expects ROLE=DIGEST, got {raw!r}")
+        key = role.strip()
+        if key in out:
+            raise ValueError(f"--hf-sha256 given twice for role {key!r}")
+        out[key] = digest.strip()
+    return out
+
+
 def _run_bootstrap(args: argparse.Namespace) -> int:
+    try:
+        hf_sha256 = _parse_role_digests(args.hf_sha256)
+    except ValueError as e:
+        logger.error("invalid --hf-sha256: %s", e)
+        return EXIT_USAGE
     try:
         result = bootstrap(
             BootstrapConfig(
@@ -525,6 +578,8 @@ def _run_bootstrap(args: argparse.Namespace) -> int:
                 seed=args.seed,
                 from_hf=args.from_hf,
                 subfolder=args.subfolder,
+                from_hf_revision=args.hf_revision,
+                from_hf_sha256=hf_sha256,
             )
         )
     except ValueError as e:

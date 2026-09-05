@@ -1,0 +1,22 @@
+{
+  // Emit-only configuration used by `npm run build` (and by the container
+  // image). The base tsconfig.json also type-checks `test/`, which would make
+  // tsc infer the package root as rootDir and emit `dist/src/index.js`.
+  //
+  // The emitted layout matters at runtime: `src/config.ts` derives
+  // DEFAULT_REPO_ROOT as `<dir of the module>/../..`, so the entry point must
+  // land at `/app/dist/index.js` for DEFAULT_CONFIG_DIR to resolve to
+  // `/configs/minecraft` — the path docker/compose.minecraft.yml mounts the
+  // Minecraft configs at. Pinning rootDir to ./src keeps that invariant.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": true,
+    "removeComments": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test"]
+}

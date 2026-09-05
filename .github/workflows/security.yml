@@ -1,10 +1,44 @@
 name: Security
 
-# Advisory-first supply-chain + SAST scanning. Findings are REPORTED (in job
-# logs / the Security tab) but never fail the build: every scanning step exits 0
-# so these checks stay green while the baseline is brought clean. To make a
-# scanner blocking later, drop its `|| true` (or the `continue-on-error`) and
-# add the job to the `docker` gate's `needs:` list in ci.yml.
+# Mixed posture as of 2026-09-05 -- read the per-job names, not this header.
+#
+# BLOCKING: cargo-deny, gitleaks. Both were verified clean before being flipped
+# (thresholds and the reviewed exception list live in deny.toml and
+# .gitleaks.toml, not in this file).
+#
+# ADVISORY (still `|| true`): pip-audit, npm-audit, trivy-fs. Each reports into
+# the job log without failing the build while its baseline is brought clean.
+#
+# To flip one of the remaining scanners: prove it exits 0 on the current tree
+# first, then drop its `|| true`. Do NOT try to add these jobs to ci.yml's
+# `docker` gate `needs:` list -- an earlier version of this comment said to,
+# but GitHub Actions has no cross-workflow `needs:`. Required-check status is
+# configured in branch protection instead.
+#
+# Baseline history, kept because it records *why* each exception exists —
+# see each job for detail:
+#
+#   cargo-deny  was NOT CLEAN — 3 `advisories` errors:
+#                 RUSTSEC-2025-0141 bincode 1.3.3        (unmaintained)
+#                 RUSTSEC-2026-0204 crossbeam-epoch 0.9.18 (vulnerability)
+#                 RUSTSEC-2026-0097 rand 0.8.5           (unsound)
+#               RESOLVED 2026-09-05. The two with upstream fixes were bumped
+#               in Cargo.lock (crossbeam-epoch 0.9.20, rand 0.8.8) rather than
+#               suppressed. bincode is a documented, dated exception in
+#               deny.toml: unmaintained is a maintenance signal, not a
+#               vulnerability, and clearing it means a bincode 2.x wire-format
+#               migration that needs its own versioned PR. `cargo deny` now
+#               reports "advisories ok, bans ok, licenses ok, sources ok" and
+#               this job is BLOCKING.
+#   gitleaks    RESOLVED 2026-09-05 and BLOCKING. The one finding was a false
+#               positive — the synthetic `TEST-FIXTURE-SECRET-…` string that
+#               `.claude/hooks/test_guard_staged_secrets.py` embeds as the
+#               fixture its own hook tests scan for. A repo-root
+#               `.gitleaks.toml` now allowlists it (path AND pattern, so a
+#               real credential in that same file is still caught), plus the
+#               committed .env templates, whose empty assignments make the
+#               generic-api-key regex capture the following line.
+#               297 commits scanned, no leaks found, exit 0.
 #
 # NOTE: keep the branch list in sync with ci.yml (see the note there).
 
@@ -39,17 +73,25 @@ permissions:
 jobs:
   # ---- Rust supply chain (advisories + licenses + bans + sources) ----
   cargo-deny:
-    name: cargo-deny (advisory)
+    name: cargo-deny (blocking)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny@0.20.2
-      - name: cargo deny check (report-only)
-        # Thresholds live in deny.toml. Report findings without failing the
-        # build during the advisory-first rollout.
-        run: cargo deny check --all-features || true
+      - name: cargo deny check (blocking)
+        # BLOCKING as of 2026-09-05. Thresholds and the reviewed exception
+        # list live in deny.toml, not here, so one edit changes both local
+        # and CI behaviour.
+        #
+        # `--all-features` is a GLOBAL cargo-deny option and must precede the
+        # `check` subcommand. It used to be written as
+        # `cargo deny check --all-features`, which cargo-deny 0.20.x rejects
+        # with "unexpected argument '--all-features' found" and exit code 2 —
+        # and `|| true` swallowed that, so this job reported success without
+        # ever having run a scan. Keep the flag before `check`.
+        run: cargo deny --all-features check
 
   # ---- Python dependency advisories ----
   pip-audit:
@@ -62,8 +104,38 @@ jobs:
           python-version: "3.11"
       - name: Install pip-audit
         run: python -m pip install --upgrade pip pip-audit
+      - name: Materialise the declared dependency set
+        # `pip-audit` with no target audits the *current environment*. This
+        # job installs nothing but pip + pip-audit, so the bare invocation
+        # used to scan exactly those two packages — torch, onnx, numpy and
+        # every other declared dependency were never looked at.
+        #
+        # Give it a real target: derive a requirements file straight from
+        # pyproject.toml's [project.optional-dependencies]. pyproject stays
+        # the single source of truth, so this job cannot drift from what the
+        # package actually declares (no duplicated dependency list here).
+        run: |
+          set -euo pipefail
+          python - <<'PY' > audit-requirements.txt
+          import pathlib
+          import tomllib
+
+          data = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
+          project = data.get("project", {})
+          # Base deps first (currently empty), then every extras group.
+          reqs: dict[str, None] = dict.fromkeys(project.get("dependencies", []))
+          for group in project.get("optional-dependencies", {}).values():
+              reqs.update(dict.fromkeys(group))
+          print("\n".join(reqs))
+          PY
+          echo "--- audit-requirements.txt ---"
+          cat audit-requirements.txt
       - name: Audit declared dependencies (report-only)
-        run: pip-audit --progress-spinner off || true
+        # 2026-09-05: verified locally against this dependency set —
+        # "No known vulnerabilities found", exit 0. This is therefore the
+        # best candidate to flip blocking first (drop the `|| true`); it is
+        # left advisory here only to keep this change a no-op for CI status.
+        run: pip-audit -r audit-requirements.txt --progress-spinner off || true
 
   # ---- Node dependency advisories (both packages) ----
   npm-audit:
@@ -90,11 +162,33 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install Trivy
-        # Install via the official script rather than a pinned marketplace
-        # action tag (those move/disappear). Report-only.
+        # Pinned release tarball + SHA-256 verification.
+        #
+        # This previously piped `contrib/install.sh` from the repo's MUTABLE
+        # `main` branch straight into `sh`: anyone able to land a commit on
+        # that branch got arbitrary code execution on this runner, with no
+        # version pin and no integrity check. Now the tarball comes from an
+        # immutable release tag and its digest is verified before anything is
+        # unpacked or executed.
+        #
+        # `set -euo pipefail` makes a failed download or a digest mismatch
+        # fail the STEP loudly — only the scan itself below is advisory.
+        #
+        # To bump: change TRIVY_VERSION and replace TRIVY_SHA256 with the
+        # matching line from
+        # https://github.com/aquasecurity/trivy/releases/download/v<ver>/trivy_<ver>_checksums.txt
+        env:
+          TRIVY_VERSION: "0.74.0"
+          TRIVY_SHA256: "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a"
         run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b "$RUNNER_TEMP/bin"
+          set -euo pipefail
+          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          url="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${tarball}"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$tarball" "$url"
+          echo "${TRIVY_SHA256}  $RUNNER_TEMP/$tarball" | sha256sum --check --strict -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP/bin" trivy
+          "$RUNNER_TEMP/bin/trivy" --version
       - name: Trivy filesystem scan (report-only)
         # Table output to the job log; exit 0 so findings surface without
         # failing the build. (No SARIF upload: that needs GitHub code scanning.)
@@ -104,7 +198,7 @@ jobs:
 
   # ---- Secret scanning (git history) ----
   gitleaks:
-    name: gitleaks (advisory)
+    name: gitleaks (blocking)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -126,12 +220,22 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bin"
           tar -xzf /tmp/gitleaks.tar.gz -C "$RUNNER_TEMP/bin" gitleaks
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: gitleaks git-history scan (report-only)
-        # Exit code 0 always: report-only during the advisory-first rollout,
-        # matching every other scanner in this workflow. `--redact` keeps
-        # actual secret values out of the job log even in report mode.
+      - name: gitleaks git-history scan (blocking)
+        # BLOCKING as of 2026-09-05. The precondition noted here previously —
+        # "flipping this needs a repo-root .gitleaks.toml allowlisting that
+        # path first" — is now met: `.gitleaks.toml` exists, extends the
+        # default ruleset, and carries two narrow, documented exceptions.
+        #
+        # Verified locally at this commit with the same pinned 8.30.1 binary:
+        # 297 commits scanned, "no leaks found", exit 0 — for both
+        # `gitleaks git` (history, what this step runs) and `gitleaks dir`
+        # (working tree). `--redact` keeps values out of the job log.
+        #
+        # If this goes red, read .gitleaks.toml before adding an exception:
+        # the allowlist is deliberately scoped so a real credential in an
+        # allowlisted file is still reported.
         run: |
-          "$RUNNER_TEMP/bin/gitleaks" git --redact -v . || true
+          "$RUNNER_TEMP/bin/gitleaks" git --redact -v .
       - name: guard_staged_secrets hook self-tests
         # Only job in the matrix with a real gitleaks binary on PATH, so
         # this is where the gitleaks-dependent cases in

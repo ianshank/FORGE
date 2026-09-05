@@ -57,6 +57,66 @@ Reorder either side without coordinating the other and both the JS
 `xlang_block_feature_channels_pinned_to_known_good` test fail
 simultaneously.
 
+## `[websocket]` hardening knobs
+
+The control channel drives an op'd bot, so it is treated as a privileged
+surface. Every limit below lives in the `[websocket]` table of the bot's
+TOML config; the table is optional and every key falls back to the default
+shown, so existing `env.toml` files keep parsing unchanged. Defaults are
+defined once, in `DEFAULT_WEBSOCKET_LIMITS` (`src/config.ts`) — no literals
+at any call site.
+
+| Key | Default | Purpose |
+|---|---|---|
+| `max_payload_bytes` | `16384` | Cap on a single inbound frame (`ws` defaults to 100 MiB). The largest legitimate client message is ~40 bytes, so this is ~400x headroom |
+| `max_queue_depth` | `32` | Maximum client messages in flight. The protocol is request/response, so a well-behaved client sits at 1. Breaching it returns a `BACKPRESSURE` error and closes the socket |
+| `idle_timeout_ms` | `120000` | Reclaim the single-client slot after this long with no *application* message. `0` disables. Pongs deliberately do not reset it — a live-but-silent client must not hold the bot forever |
+| `ping_interval_ms` | `20000` | Server-initiated keepalive. A ping unanswered for a full interval marks a half-open connection dead and reclaims it. `0` disables |
+| `auth_token` | unset | Optional shared secret. Unset = unauthenticated (a prominent startup `warn` is logged) |
+| `auth_query_param` | `"token"` | Name of the query-string parameter carrying `auth_token` |
+
+`url`, `host` and `port` remain derived from `ws_url`; setting them under
+`[websocket]` has no effect.
+
+### Authenticating the control channel
+
+Set a secret:
+
+```toml
+[websocket]
+auth_token = "a-long-random-string"
+```
+
+A client then supplies it in **either** form — both are checked, header
+first, and compared in constant time:
+
+1. `Authorization: Bearer <token>` request header (preferred; keeps the
+   secret out of access logs), or
+2. `?token=<token>` on the WebSocket URL, e.g.
+   `ws://mc-bot:8765/?token=a-long-random-string`
+   (rename the parameter with `auth_query_param`).
+
+A handshake without a matching credential is refused with `401` before any
+protocol message is exchanged. With `auth_token` unset, behaviour is exactly
+as before and the bot logs
+`{"event":"websocket_auth_disabled", ...}` at `warn` on startup.
+
+## Building
+
+`src/` is TypeScript only. `npm start` runs it through `tsx`; the container
+image compiles it instead:
+
+```bash
+npm run build     # tsc -p tsconfig.build.json → dist/
+node dist/index.js
+```
+
+`tsconfig.build.json` pins `rootDir` to `./src` so the entry point lands at
+`dist/index.js` (not `dist/src/index.js`). That matters: `DEFAULT_CONFIG_DIR`
+is derived as `<module dir>/../../configs/minecraft`, which must resolve to
+`/configs/minecraft` inside the image — the path
+`docker/compose.minecraft.yml` mounts the config tree at.
+
 ## Tests
 
 ```bash

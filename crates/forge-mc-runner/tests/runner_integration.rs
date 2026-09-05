@@ -250,8 +250,18 @@ fn end_to_end_two_episodes_with_manifest_bump() {
     }
 }
 
+/// A failing reload must NOT end the run.
+///
+/// This test previously asserted the opposite — that `run()` returns the
+/// reload error. That contract is wrong now that the reload path verifies
+/// bundle integrity: the trainer and runner share `models/` as a host
+/// bind-mount, so a bad or tampered bundle is precisely what verification
+/// exists to reject, and propagating turned "reject the bad bundle" into
+/// "kill the training run", repeatable by anyone able to write that
+/// directory. The runner keeps serving the last verified model, counts the
+/// rejection, and logs it.
 #[test]
-fn run_propagates_reload_callback_errors() {
+fn run_survives_reload_callback_errors_and_counts_them() {
     let dir = tempfile::tempdir().unwrap();
     let manifest_path = dir.path().join("model_manifest.json");
     write_manifest(&manifest_path, 1);
@@ -276,10 +286,23 @@ fn run_propagates_reload_callback_errors() {
         },
     ));
 
-    let err = runner.run(None).unwrap_err();
-    assert!(
-        matches!(err, RunnerError::Reload(ref msg) if msg.contains("simulated reload failure")),
-        "got: {err:?}"
+    let outcome = runner
+        .run(None)
+        .expect("a rejected reload must not fail the run");
+
+    assert_eq!(
+        outcome.episodes_completed, 1,
+        "the episode must still run on the previously verified model"
+    );
+    assert_eq!(
+        runner.reloads_rejected(),
+        1,
+        "the rejection must be counted, not silently swallowed"
+    );
+    assert_eq!(
+        runner.reloads_applied(),
+        0,
+        "a rejected reload must not count as applied"
     );
 }
 

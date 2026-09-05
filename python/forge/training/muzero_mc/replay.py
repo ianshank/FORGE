@@ -45,6 +45,7 @@ __all__ = [
     "TrajectoryReader",
     "format_episode_id",
     "load_trajectory",
+    "load_trajectory_document",
 ]
 
 import json
@@ -156,24 +157,52 @@ class StepBatch:
         }
 
 
-def load_trajectory(path: str | os.PathLike[str]) -> dict[str, Any]:
-    """Load a single ``TrajectoryV2`` JSON file and validate its
-    invariants. Auto-detects gzip compression by the compound
-    ``.json.gz`` extension — matches the Rust
-    ``TrajectoryV2::load_json`` behaviour, which deliberately checks
-    the compound form so a stray ``*.tar.gz`` accidentally placed in
-    the trajectory directory does not get fed to ``GzDecoder``.
+def load_trajectory_document(
+    path: str | os.PathLike[str],
+    *,
+    max_decompressed_bytes: int | None = None,
+) -> dict[str, Any]:
+    """Read one trajectory file into a dict, with a hard decompression cap.
 
-    Raises :class:`TrajectoryError` on schema drift (wrong
-    ``format_version``, missing keys, dim mismatch), on corrupt gzip
-    bytes, or on decompressed payloads exceeding
-    :data:`MAX_DECOMPRESSED_TRAJECTORY_BYTES`. Returns the raw dict —
-    callers iterate ``steps`` themselves.
+    This is the *transport* half of :func:`load_trajectory`: it handles
+    gzip detection, the gzip-bomb cap, and JSON decoding, but performs no
+    ``TrajectoryV2`` schema validation beyond "the root is an object". Use
+    it when a caller needs a JSON payload from the trajectory directory but
+    tolerates documents that are not full v2 trajectories (see
+    ``capture_baseline.load_episode_records``); use :func:`load_trajectory`
+    when the v2 contract must hold.
+
+    Gzip is auto-detected by the compound ``.json.gz`` extension — matching
+    the Rust ``TrajectoryV2::load_json`` behaviour, which deliberately checks
+    the compound form so a stray ``*.tar.gz`` accidentally placed in the
+    trajectory directory does not get fed to ``GzDecoder``.
+
+    Args:
+        path: File to read.
+        max_decompressed_bytes: Cap on decompressed bytes for ``.json.gz``
+            input. ``None`` (the default) resolves
+            :data:`MAX_DECOMPRESSED_TRAJECTORY_BYTES` **at call time**
+            (512 MiB, mirroring the Rust constant), so the module-level cap
+            stays the single source of truth; pass a value to tighten it for
+            one memory-constrained caller.
+
+    Returns:
+        The decoded JSON object.
+
+    Raises:
+        TrajectoryError: Corrupt gzip bytes, undecodable JSON, a
+            decompressed payload above the cap, or a non-object root.
+        OSError: The file could not be opened.
     """
     # gzip is stdlib; the import is local so callers that never load
     # a .gz file don't pay the cost.
     import gzip
 
+    cap = (
+        MAX_DECOMPRESSED_TRAJECTORY_BYTES
+        if max_decompressed_bytes is None
+        else max_decompressed_bytes
+    )
     p = Path(path)
     # Final extension `.gz` AND stem extension `.json` for the
     # compound form. Mirrors Rust's `final_ext_is_gz && stem_ext_is_json`
@@ -184,17 +213,16 @@ def load_trajectory(path: str | os.PathLike[str]) -> dict[str, Any]:
         # past the cap surfaces as TrajectoryError rather than OOM.
         try:
             with gzip.open(p, "rb") as f:  # binary so .read(N) counts bytes
-                raw = f.read(MAX_DECOMPRESSED_TRAJECTORY_BYTES + 1)
+                raw = f.read(cap + 1)
         except OSError as e:
             # Covers both Python-side "not a gzipped file" and the
             # underlying file-open failures. Mirrors the Rust side's
             # `TrajectoryError::Io` mapping.
             raise TrajectoryError(f"{p}: gzip decode: {e}") from e
-        if len(raw) > MAX_DECOMPRESSED_TRAJECTORY_BYTES:
+        if len(raw) > cap:
             raise TrajectoryError(
                 f"{p}: decompressed trajectory exceeds "
-                f"{MAX_DECOMPRESSED_TRAJECTORY_BYTES}-byte cap "
-                f"(got >{MAX_DECOMPRESSED_TRAJECTORY_BYTES} bytes)"
+                f"{cap}-byte cap (got >{cap} bytes)"
             )
         try:
             data = json.loads(raw.decode("utf-8"))
@@ -213,6 +241,22 @@ def load_trajectory(path: str | os.PathLike[str]) -> dict[str, Any]:
             raise TrajectoryError(f"{p}: parse JSON: {e}") from e
     if not isinstance(data, dict):
         raise TrajectoryError(f"{p}: root must be JSON object")
+    return data
+
+
+def load_trajectory(path: str | os.PathLike[str]) -> dict[str, Any]:
+    """Load a single ``TrajectoryV2`` JSON file and validate its
+    invariants. Auto-detects gzip compression by the compound
+    ``.json.gz`` extension.
+
+    Raises :class:`TrajectoryError` on schema drift (wrong
+    ``format_version``, missing keys, dim mismatch), on corrupt gzip
+    bytes, or on decompressed payloads exceeding
+    :data:`MAX_DECOMPRESSED_TRAJECTORY_BYTES`. Returns the raw dict —
+    callers iterate ``steps`` themselves.
+    """
+    p = Path(path)
+    data = load_trajectory_document(p)
     fmt = data.get("format_version")
     if fmt != TRAJECTORY_FORMAT_VERSION:
         raise TrajectoryError(

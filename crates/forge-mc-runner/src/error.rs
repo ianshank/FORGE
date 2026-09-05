@@ -100,6 +100,48 @@ pub enum RunnerError {
     /// per-step error from an already-connected env.
     #[error("env setup failed: {0}")]
     EnvSetup(String),
+
+    /// A model file's bytes on disk do not hash to the sha256 the
+    /// manifest recorded for that role. Raised by
+    /// [`crate::integrity::verify_bundle`] **before** any ONNX session
+    /// is built, so a tampered or truncated bundle never reaches the
+    /// ONNX Runtime parser.
+    #[error(
+        "model digest mismatch for role `{role}` at {path}: \
+         manifest recorded sha256 {expected}, file on disk hashes to {actual}"
+    )]
+    ModelDigestMismatch {
+        /// Bundle role: `representation`, `dynamics`, or `prediction`.
+        role: String,
+        /// Resolved on-disk path that was hashed.
+        path: PathBuf,
+        /// Digest recorded in `model_manifest.json`.
+        expected: String,
+        /// Digest computed from the file's current contents.
+        actual: String,
+    },
+
+    /// A manifest entry named a path the runner refuses to load: an
+    /// absolute path, a path containing a `..` component, or one that
+    /// canonicalizes outside its bundle directory (e.g. via a symlink).
+    ///
+    /// The manifest is written by the trainer, which in the self-play
+    /// stack shares a host bind-mount with the runner — so the path in
+    /// a manifest entry is untrusted input, not a local constant.
+    #[error(
+        "unsafe model path for role `{role}`: {reason} \
+         (manifest entry `{entry}`, bundle_dir {bundle_dir})"
+    )]
+    UnsafeModelPath {
+        /// Bundle role: `representation`, `dynamics`, or `prediction`.
+        role: String,
+        /// The raw `files.<role>.path` string from the manifest.
+        entry: String,
+        /// Directory the entry was required to resolve inside.
+        bundle_dir: PathBuf,
+        /// Why the path was rejected.
+        reason: String,
+    },
 }
 
 impl RunnerError {

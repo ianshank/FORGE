@@ -9,10 +9,12 @@
 //! - `schema_id` — sha256 the runner cross-checks against the env's
 //!   `Hello.schema_id`. Mismatch = action/reward space drift, hard fail.
 //! - `files.<role>.sha256` — content hash recorded by the trainer at
-//!   export time. NOTE: [`ModelManifest::validate`] only checks that
-//!   this field is non-empty; it does **not** re-hash the file on
-//!   disk, so a corrupted bundle is not detected here. Partial-write
-//!   protection comes from the atomic rename below, not from this hash.
+//!   export time. [`ModelManifest::validate`] is a filesystem-free
+//!   invariant check and only confirms this field is non-empty; the
+//!   actual re-hash lives in [`crate::integrity::verify_bundle`],
+//!   which every bundle-load path (initial load and hot-reload alike)
+//!   runs before an ONNX session is built. Partial-write protection
+//!   additionally comes from the atomic rename below.
 //!
 //! ## Atomic write
 //!
@@ -38,10 +40,18 @@ pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 /// Per-role file entry inside a manifest.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelFileEntry {
-    /// Path on disk, typically relative to the manifest's directory.
+    /// Path to the ONNX file, **relative to the bundle directory**.
+    ///
+    /// Untrusted input: the trainer writes it, and in the self-play
+    /// stack the trainer and runner share a host bind-mount.
+    /// [`crate::integrity::resolve_bundle_path`] rejects absolute
+    /// paths, `..` components, and anything that canonicalizes outside
+    /// the bundle directory.
     pub path: String,
-    /// sha256 hex digest of the file contents. The runner can recompute
-    /// this and reject the bundle on mismatch.
+    /// sha256 hex digest of the file contents.
+    /// [`crate::integrity::verify_bundle`] re-computes this from the
+    /// bytes on disk and rejects the bundle on mismatch, before any
+    /// ONNX session is built.
     pub sha256: String,
 }
 
@@ -90,6 +100,12 @@ impl ModelManifest {
     }
 
     /// Cheap invariant check. Doesn't touch the filesystem.
+    ///
+    /// Confirms the schema version, a non-zero `version`, a non-empty
+    /// `schema_id`, and non-empty per-role `path` / `sha256` strings.
+    /// It deliberately does **not** hash anything — content
+    /// verification needs the bundle directory and lives in
+    /// [`crate::integrity::verify_bundle`].
     pub fn validate(&self) -> Result<(), RunnerError> {
         if self.schema_version != MANIFEST_SCHEMA_VERSION {
             return Err(RunnerError::ManifestSchemaMismatch {
@@ -107,10 +123,15 @@ impl ModelManifest {
                 "schema_id must be non-empty".into(),
             ));
         }
+        // Same constants `integrity` verifies against, so the two modules
+        // cannot disagree about a role name.
         for (role, entry) in [
-            ("representation", &self.files.representation),
-            ("dynamics", &self.files.dynamics),
-            ("prediction", &self.files.prediction),
+            (
+                crate::integrity::ROLE_REPRESENTATION,
+                &self.files.representation,
+            ),
+            (crate::integrity::ROLE_DYNAMICS, &self.files.dynamics),
+            (crate::integrity::ROLE_PREDICTION, &self.files.prediction),
         ] {
             if entry.path.is_empty() {
                 return Err(RunnerError::InvalidManifest(format!(

@@ -6,11 +6,13 @@
 //! live simulation state to connected dashboard clients.
 
 pub mod api;
+pub mod auth;
 pub mod config;
 pub mod env;
 pub mod error;
 pub mod history;
 pub mod metrics;
+pub mod routes;
 pub mod state;
 pub mod ws_handler;
 

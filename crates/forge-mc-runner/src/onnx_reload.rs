@@ -15,8 +15,10 @@
 use std::path::PathBuf;
 
 use forge_agent::latent_mcts::onnx_model::{OnnxModelConfig, OnnxMuZeroModel, OnnxReloadError};
+use tracing::instrument;
 
 use crate::error::RunnerError;
+use crate::integrity::verify_bundle;
 use crate::manifest::ModelManifest;
 use crate::runner::ReloadFn;
 
@@ -24,33 +26,47 @@ use crate::runner::ReloadFn;
 /// invariant knobs the model carries across reloads (action space,
 /// latent dim, thread count).
 ///
-/// File paths are resolved relative to `bundle_dir` if the manifest
-/// entry's path is relative; absolute paths in the manifest pass
-/// through verbatim.
+/// **This is the integrity choke point.** Before returning a config it
+/// runs [`verify_bundle`], which
+///
+/// - resolves every manifest entry *inside* `bundle_dir` (absolute
+///   paths, `..` components and symlink escapes are rejected), and
+/// - re-hashes each ONNX file and compares it against the manifest's
+///   recorded sha256.
+///
+/// Both callers — the initial bundle load in `crate::live` and the
+/// between-episode [`into_reload_fn`] callback — go through here, so no
+/// unverified file can reach the ONNX Runtime. The returned paths are
+/// the canonical ones that were hashed.
+///
+/// # Errors
+///
+/// [`RunnerError::UnsafeModelPath`], [`RunnerError::MissingPath`],
+/// [`RunnerError::Io`], or [`RunnerError::ModelDigestMismatch`] — see
+/// [`verify_bundle`].
+#[instrument(skip_all, fields(version = manifest.version, bundle_dir = %bundle_dir.display()))]
 pub fn config_from_manifest(
     manifest: &ModelManifest,
     bundle_dir: &std::path::Path,
     action_space_size: u32,
     latent_dim: usize,
     num_threads: usize,
-) -> OnnxModelConfig {
-    OnnxModelConfig {
-        representation_path: resolve_relative(&manifest.files.representation.path, bundle_dir),
-        dynamics_path: resolve_relative(&manifest.files.dynamics.path, bundle_dir),
-        prediction_path: resolve_relative(&manifest.files.prediction.path, bundle_dir),
+) -> Result<OnnxModelConfig, RunnerError> {
+    let verified = verify_bundle(manifest, bundle_dir)?;
+    Ok(OnnxModelConfig {
+        representation_path: path_to_string(&verified.representation),
+        dynamics_path: path_to_string(&verified.dynamics),
+        prediction_path: path_to_string(&verified.prediction),
         action_space_size,
         latent_dim,
         num_threads,
-    }
+    })
 }
 
-fn resolve_relative(entry_path: &str, bundle_dir: &std::path::Path) -> String {
-    let p = PathBuf::from(entry_path);
-    if p.is_absolute() {
-        entry_path.to_string()
-    } else {
-        bundle_dir.join(&p).to_string_lossy().into_owned()
-    }
+/// `OnnxModelConfig` stores paths as `String`; the verified paths are
+/// already canonical, so this is only an encoding step.
+fn path_to_string(path: &std::path::Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 /// Wrap `OnnxMuZeroModel::reload` into the runner's
@@ -66,6 +82,13 @@ fn resolve_relative(entry_path: &str, bundle_dir: &std::path::Path) -> String {
 /// `OnnxReloadError` is collapsed to its [`Display`] string before
 /// being wrapped in [`RunnerError::Reload`] so the runner doesn't
 /// need to depend on the `ort` types.
+///
+/// Integrity failures surface *un*collapsed: a bundle whose digests
+/// don't match (or whose paths escape `bundle_dir`) fails inside
+/// [`config_from_manifest`] before `reload` is called, so the caller
+/// sees [`RunnerError::ModelDigestMismatch`] /
+/// [`RunnerError::UnsafeModelPath`] rather than a generic reload
+/// error — and the model keeps serving the previous bundle.
 ///
 /// # Example (rust,no_run because it needs real ONNX files)
 ///
@@ -98,7 +121,7 @@ pub fn into_reload_fn(
                 action_space_size,
                 latent_dim,
                 num_threads,
-            );
+            )?;
             model
                 .reload(new_config)
                 .map_err(|e: OnnxReloadError| RunnerError::Reload(e.to_string()))
@@ -109,9 +132,19 @@ pub fn into_reload_fn(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::integrity::{file_sha256_hex, ROLE_REPRESENTATION};
     use crate::manifest::{ModelFileEntry, ModelManifestFiles, MANIFEST_SCHEMA_VERSION};
 
-    fn make_manifest_with_relative_paths() -> ModelManifest {
+    /// Write `contents` to `dir/name` and return the file's sha256.
+    fn write_file(dir: &std::path::Path, name: &str, contents: &[u8]) -> String {
+        let path = dir.join(name);
+        std::fs::write(&path, contents).unwrap();
+        file_sha256_hex(&path).unwrap()
+    }
+
+    /// A bundle dir with three real files and a manifest whose digests
+    /// match them.
+    fn make_bundle(dir: &std::path::Path) -> ModelManifest {
         ModelManifest {
             schema_version: MANIFEST_SCHEMA_VERSION,
             version: 1,
@@ -120,15 +153,15 @@ mod tests {
             files: ModelManifestFiles {
                 representation: ModelFileEntry {
                     path: "representation.onnx".into(),
-                    sha256: "a".repeat(64),
+                    sha256: write_file(dir, "representation.onnx", b"rep"),
                 },
                 dynamics: ModelFileEntry {
                     path: "dynamics.onnx".into(),
-                    sha256: "b".repeat(64),
+                    sha256: write_file(dir, "dynamics.onnx", b"dyn"),
                 },
                 prediction: ModelFileEntry {
                     path: "prediction.onnx".into(),
-                    sha256: "c".repeat(64),
+                    sha256: write_file(dir, "prediction.onnx", b"pred"),
                 },
             },
         }
@@ -136,38 +169,86 @@ mod tests {
 
     #[test]
     fn config_from_manifest_resolves_relative_paths_against_bundle_dir() {
-        let manifest = make_manifest_with_relative_paths();
-        let bundle_dir = PathBuf::from("/some/bundle");
-        let cfg = config_from_manifest(&manifest, &bundle_dir, 12, 256, 1);
-        // Cross-platform path-equality check via PathBuf normalisation.
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = make_bundle(tmp.path());
+        let cfg = config_from_manifest(&manifest, tmp.path(), 12, 256, 1).unwrap();
+        // Paths come back canonical (the tempdir itself may be a
+        // symlink, e.g. /tmp -> /private/tmp on macOS), so compare
+        // against the canonicalized bundle dir.
+        let base = tmp.path().canonicalize().unwrap();
         assert_eq!(
             PathBuf::from(&cfg.representation_path),
-            PathBuf::from("/some/bundle/representation.onnx")
+            base.join("representation.onnx")
         );
         assert_eq!(
             PathBuf::from(&cfg.dynamics_path),
-            PathBuf::from("/some/bundle/dynamics.onnx")
+            base.join("dynamics.onnx")
         );
         assert_eq!(
             PathBuf::from(&cfg.prediction_path),
-            PathBuf::from("/some/bundle/prediction.onnx")
+            base.join("prediction.onnx")
         );
         assert_eq!(cfg.action_space_size, 12);
         assert_eq!(cfg.latent_dim, 256);
         assert_eq!(cfg.num_threads, 1);
     }
 
+    /// Absolute manifest paths used to pass through verbatim, letting
+    /// the manifest writer point the ONNX Runtime at any file on the
+    /// host. They must now be rejected.
     #[test]
-    fn config_from_manifest_preserves_absolute_paths() {
-        let mut manifest = make_manifest_with_relative_paths();
-        let abs_path = if cfg!(windows) {
-            "C:/abs/rep.onnx".to_string()
-        } else {
-            "/abs/rep.onnx".to_string()
-        };
+    fn config_from_manifest_rejects_absolute_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut manifest = make_bundle(tmp.path());
+        let abs_path = tmp
+            .path()
+            .join("representation.onnx")
+            .to_string_lossy()
+            .into_owned();
         manifest.files.representation.path = abs_path.clone();
-        let cfg = config_from_manifest(&manifest, &PathBuf::from("/other/dir"), 1, 1, 1);
-        assert_eq!(cfg.representation_path, abs_path);
+        let err = config_from_manifest(&manifest, tmp.path(), 1, 1, 1).unwrap_err();
+        match err {
+            RunnerError::UnsafeModelPath {
+                role,
+                entry,
+                reason,
+                ..
+            } => {
+                assert_eq!(role, ROLE_REPRESENTATION);
+                assert_eq!(entry, abs_path);
+                assert!(reason.contains("absolute"), "got reason: {reason}");
+            }
+            other => panic!("expected UnsafeModelPath, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_from_manifest_rejects_parent_dir_escape() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("bundle");
+        std::fs::create_dir_all(&bundle).unwrap();
+        let mut manifest = make_bundle(&bundle);
+        std::fs::write(tmp.path().join("evil.onnx"), b"evil").unwrap();
+        manifest.files.dynamics.path = "../evil.onnx".into();
+        match config_from_manifest(&manifest, &bundle, 1, 1, 1).unwrap_err() {
+            RunnerError::UnsafeModelPath { reason, .. } => {
+                assert!(reason.contains(".."), "got reason: {reason}");
+            }
+            other => panic!("expected UnsafeModelPath, got {other:?}"),
+        }
+    }
+
+    /// The whole point of the change: a file swapped after the manifest
+    /// recorded its digest must never reach `ort`.
+    #[test]
+    fn config_from_manifest_rejects_tampered_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = make_bundle(tmp.path());
+        std::fs::write(tmp.path().join("prediction.onnx"), b"tampered").unwrap();
+        match config_from_manifest(&manifest, tmp.path(), 1, 1, 1).unwrap_err() {
+            RunnerError::ModelDigestMismatch { role, .. } => assert_eq!(role, "prediction"),
+            other => panic!("expected ModelDigestMismatch, got {other:?}"),
+        }
     }
 
     #[test]

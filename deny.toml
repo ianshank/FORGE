@@ -27,7 +27,21 @@ all-features = false
 # tighten to `deny` once the baseline is green.
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
-ignore = []
+# Explicit, dated, reviewed exceptions -- NOT a blanket suppression. Anything
+# not listed here fails the build (the `cargo-deny` job in security.yml is
+# blocking as of 2026-09-05). Re-review each entry when touching this file;
+# delete it the moment the dependency moves.
+ignore = [
+    # RUSTSEC-2025-0141 -- bincode 1.3.3 is unmaintained (the team ceased
+    # development). Reviewed 2026-09-05: this is a maintenance signal, not a
+    # vulnerability -- no known CVE, and the crate is used only for
+    # `WorldState::to_bytes`/`from_bytes` on locally-produced snapshots, never
+    # on untrusted input. Clearing it means migrating to bincode 2.x, whose API
+    # is a breaking change and whose encoding is a wire-format change -- that
+    # needs its own versioned PR under CHARTER.md Invariant 2, not a drive-by
+    # bump. Tracked as follow-up work.
+    "RUSTSEC-2025-0141",
+]
 
 [licenses]
 # Allow the permissive licenses already present across the dependency tree.

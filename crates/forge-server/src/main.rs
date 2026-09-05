@@ -9,22 +9,16 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use axum::routing::{get, post};
-use axum::Router;
 use forge_observability::{init_tracing, TracingOptions};
 use tokio::sync::broadcast;
-use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
 
-use forge_server::api::{
-    build_snapshot_from_world, config_handler, decision_traces_handler, health_handler,
-    metrics_handler, remix_handler, runs_handler, traces_history_handler, training_history_handler,
-    training_metrics_handler,
-};
+use forge_server::api::build_snapshot_from_world;
 use forge_server::config::ServerConfig;
 use forge_server::metrics::MetricsCollector;
+use forge_server::routes::build_router;
 use forge_server::state::SharedState;
-use forge_server::ws_handler::{ws_upgrade_handler, AppState, SubscriptionManager, WsMessage};
+use forge_server::ws_handler::{AppState, SubscriptionManager, WsMessage};
 
 #[tokio::main]
 async fn main() {
@@ -35,7 +29,15 @@ async fn main() {
 
     let config = ServerConfig::from_env();
 
+    // `ServerConfig`'s Debug impl redacts `auth_token`.
     info!(?config, "FORGE server starting");
+
+    // Surface the network-exposure posture before anything binds, so
+    // the warning is the first thing in the log rather than buried
+    // after the simulation-loop chatter.
+    for advisory in config.security_advisories() {
+        warn!(advisory = ?advisory, "{}", advisory.message());
+    }
 
     // Create shared state
     let shared_state = SharedState::new();
@@ -114,41 +116,17 @@ async fn main() {
         .await;
     });
 
-    // CORS layer — restrict to configured origins
-    let origins: Vec<_> = config
-        .allowed_origins
-        .iter()
-        .filter_map(|o| o.parse::<axum::http::HeaderValue>().ok())
-        .collect();
-    let cors = CorsLayer::new()
-        .allow_origin(origins)
-        .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
-        .allow_headers([axum::http::header::CONTENT_TYPE]);
-
-    // Build router
-    let app = Router::new()
-        .route("/health", get(health_handler))
-        .route("/api/config", get(config_handler))
-        .route("/api/metrics", get(metrics_handler))
-        .route("/api/scenario/remix", post(remix_handler))
-        .route("/api/training-metrics", post(training_metrics_handler))
-        .route(
-            "/api/training-metrics/history",
-            get(training_history_handler),
-        )
-        .route("/api/decision-traces", post(decision_traces_handler))
-        .route("/api/decision-traces/history", get(traces_history_handler))
-        .route("/api/runs", get(runs_handler))
-        .route("/api/env/reset", post(forge_server::env::reset_handler))
-        .route("/api/env/step", post(forge_server::env::step_handler))
-        .route("/api/env/render", get(forge_server::env::render_handler))
-        .route("/ws", get(ws_upgrade_handler))
-        .layer(cors)
-        .with_state(app_state);
+    // Router + middleware stack (CORS, timeout, body limit, optional
+    // bearer auth on the mutating routes) live in `forge_server::routes`
+    // so they are exercised by tests rather than only by the binary.
+    let app = build_router(app_state, &config);
 
     info!(
         bind = %config.bind_addr,
         tick_ms = config.tick_interval_ms,
+        request_timeout_ms = config.request_timeout_ms,
+        max_body_bytes = config.max_body_bytes,
+        auth = config.auth_enabled(),
         "Server ready"
     );
 
@@ -163,7 +141,52 @@ async fn main() {
             std::process::exit(1);
         });
 
-    axum::serve(listener, app).await.expect("Server error");
+    if let Err(e) = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+    {
+        tracing::error!(error = %e, "Server error");
+        std::process::exit(1);
+    }
+    info!("Server shut down cleanly");
+}
+
+/// Resolves on SIGINT (Ctrl-C) or, on Unix, SIGTERM.
+///
+/// Handed to `axum::serve(..).with_graceful_shutdown(..)` so in-flight
+/// requests finish and the listener closes instead of the process being
+/// torn down mid-response. Mirrors the pattern
+/// `forge_mc_runner::metrics::serve_metrics` already uses.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            warn!(error = %e, "Failed to install Ctrl-C handler; SIGINT will not shut down cleanly");
+            // Never resolve: leave SIGTERM as the shutdown path rather
+            // than shutting down immediately on a handler-install error.
+            std::future::pending::<()>().await;
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to install SIGTERM handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => info!("SIGINT received, shutting down"),
+        _ = terminate => info!("SIGTERM received, shutting down"),
+    }
 }
 
 /// Background loop that steps the simulation and broadcasts state.

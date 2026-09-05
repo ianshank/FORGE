@@ -24,6 +24,7 @@ default rather than duplicating literals.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import sys
 import types
@@ -31,7 +32,11 @@ from pathlib import Path
 
 import pytest
 
-from forge.training.muzero_mc.checkpoint_loader import load_from_hf
+from forge.training.muzero_mc.checkpoint_loader import (
+    DEFAULT_HF_REVISION,
+    ChecksumMismatchError,
+    load_from_hf,
+)
 from forge.training.muzero_mc.manifest import (
     DEFAULT_BUNDLE_FILENAMES,
     MANIFEST_FILENAME,
@@ -41,6 +46,21 @@ from forge.training.muzero_mc.trainer import format_bundle_version_dir
 
 # A syntactically valid canonical schema_id (64 lowercase hex chars).
 SCHEMA_ID = "a" * 64
+
+# A 40-hex git object id — the only Hub revision form that cannot move.
+PINNED_COMMIT = "b" * 40
+
+
+def _expected_digests(repo_id: str) -> dict[str, str]:
+    """SHA-256 of the bytes ``_FakeHub`` writes for each default role.
+
+    Derived from the fake's own payload formula rather than hard-coded
+    digests, so the fixture and the expectation cannot drift apart.
+    """
+    return {
+        role: hashlib.sha256(f"weights::{repo_id}::{fname}".encode()).hexdigest()
+        for role, fname in DEFAULT_BUNDLE_FILENAMES.items()
+    }
 
 
 class _FakeHub:
@@ -70,13 +90,18 @@ class _FakeHub:
         filename: str,
         subfolder: str | None,
         local_dir: Path,
+        revision: str,
     ) -> str:
+        # `revision` is declared REQUIRED here on purpose: dropping the
+        # `revision=` argument in the loader (i.e. regressing to the
+        # mutable-`main` download) fails these tests with a TypeError.
         self.calls.append(
             {
                 "repo_id": repo_id,
                 "filename": filename,
                 "subfolder": subfolder,
                 "local_dir": str(local_dir),
+                "revision": revision,
             }
         )
         if self._fail_on is not None and filename == self._fail_on:
@@ -233,6 +258,107 @@ def test_output_dir_accepts_str(fake_hub: _FakeHub, tmp_path: Path) -> None:
         "user/repo", schema_id=SCHEMA_ID, output_dir=str(tmp_path)
     )
     assert manifest_path.is_file()
+
+
+# --- Supply-chain pinning: revision + expected digests -------------
+
+
+def test_revision_defaults_to_documented_constant(
+    fake_hub: _FakeHub, tmp_path: Path
+) -> None:
+    """Default is backwards compatible with the previous (unpinned) behaviour."""
+    load_from_hf("user/repo", schema_id=SCHEMA_ID, output_dir=tmp_path)
+    assert fake_hub.calls
+    assert all(c["revision"] == DEFAULT_HF_REVISION for c in fake_hub.calls)
+
+
+def test_revision_is_forwarded_to_the_hub_client(
+    fake_hub: _FakeHub, tmp_path: Path
+) -> None:
+    """A pinned commit SHA reaches ``hf_hub_download`` verbatim."""
+    load_from_hf(
+        "user/repo",
+        schema_id=SCHEMA_ID,
+        output_dir=tmp_path,
+        revision=PINNED_COMMIT,
+    )
+    assert all(c["revision"] == PINNED_COMMIT for c in fake_hub.calls)
+
+
+def test_mutable_revision_warns(
+    fake_hub: _FakeHub, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(
+        logging.WARNING, logger="forge.training.muzero_mc.checkpoint_loader"
+    ):
+        load_from_hf("user/repo", schema_id=SCHEMA_ID, output_dir=tmp_path)
+    messages = "\n".join(r.getMessage() for r in caplog.records)
+    assert "mutable ref" in messages
+    assert "no expected_sha256 supplied" in messages
+
+
+def test_pinned_sha_revision_does_not_warn_about_mutability(
+    fake_hub: _FakeHub, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(
+        logging.WARNING, logger="forge.training.muzero_mc.checkpoint_loader"
+    ):
+        load_from_hf(
+            "user/repo",
+            schema_id=SCHEMA_ID,
+            output_dir=tmp_path,
+            revision=PINNED_COMMIT,
+            expected_sha256=_expected_digests("user/repo"),
+        )
+    messages = "\n".join(r.getMessage() for r in caplog.records)
+    assert "mutable ref" not in messages
+    assert "no expected_sha256 supplied" not in messages
+
+
+def test_matching_expected_digests_are_accepted(
+    fake_hub: _FakeHub, tmp_path: Path
+) -> None:
+    manifest_path = load_from_hf(
+        "user/repo",
+        schema_id=SCHEMA_ID,
+        output_dir=tmp_path,
+        expected_sha256=_expected_digests("user/repo"),
+    )
+    assert manifest_path.is_file()
+
+
+def test_mismatched_digest_aborts_and_writes_no_manifest(
+    fake_hub: _FakeHub, tmp_path: Path
+) -> None:
+    """A substituted artefact must not produce a valid-looking manifest."""
+    digests = _expected_digests("user/repo")
+    digests["dynamics"] = "0" * 64
+    with pytest.raises(ChecksumMismatchError, match="dynamics"):
+        load_from_hf(
+            "user/repo",
+            schema_id=SCHEMA_ID,
+            output_dir=tmp_path,
+            expected_sha256=digests,
+        )
+    assert not (tmp_path / MANIFEST_FILENAME).exists()
+
+
+def test_checksum_mismatch_is_a_value_error() -> None:
+    """CLI paths that catch ValueError keep working unchanged."""
+    assert issubclass(ChecksumMismatchError, ValueError)
+
+
+def test_unknown_digest_role_rejected_before_download(
+    fake_hub: _FakeHub, tmp_path: Path
+) -> None:
+    with pytest.raises(ValueError, match="roles not in the bundle"):
+        load_from_hf(
+            "user/repo",
+            schema_id=SCHEMA_ID,
+            output_dir=tmp_path,
+            expected_sha256={"nonexistent": "0" * 64},
+        )
+    assert not fake_hub.calls, "validation must precede any download"
 
 
 def test_logs_warm_start_and_success(

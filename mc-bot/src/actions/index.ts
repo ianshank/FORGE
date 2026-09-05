@@ -43,8 +43,11 @@ export async function executeAction(
     bot.pvp.stop();
   }
 
-  const handler = actionRegistry[action.kind];
-  if (!handler) {
+  // Own-property lookup only. A plain index would resolve `kind` values such as
+  // `constructor`, `toString`, or `__proto__` through `Object.prototype` and
+  // hand back a non-handler that would then be invoked with the live bot.
+  const handler = Object.hasOwn(actionRegistry, action.kind) ? actionRegistry[action.kind] : undefined;
+  if (typeof handler !== 'function') {
     throw new Error(`unknown action kind: ${action.kind}`);
   }
 

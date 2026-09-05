@@ -20,10 +20,13 @@ tracing = { workspace = true }
 # so this crate no longer depends on tracing-subscriber directly.
 # Feature set sized to actual usage: #[tokio::main] (rt-multi-thread, macros),
 # tokio::sync::{broadcast,mpsc} (sync), tokio::net::TcpListener (net),
-# tokio::time::interval (time) -- not "full".
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "net", "time"] }
+# tokio::time::interval (time), SIGINT/SIGTERM graceful shutdown (signal)
+# -- not "full".
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "net", "time", "signal"] }
 axum = { workspace = true, features = ["ws"] }
-tower-http = { workspace = true, features = ["cors"] }
+# `timeout` supplies TimeoutLayer for the per-request deadline in
+# `routes::build_router`; `cors` was already in use.
+tower-http = { workspace = true, features = ["cors", "timeout"] }
 futures = { workspace = true }
 rand = { workspace = true }
 

@@ -70,6 +70,45 @@ RUN pip install --upgrade pip \
 # a rebuild (compose `develop` watch can be wired up by operators).
 RUN pip install --no-cache-dir -e .
 
+# ---- non-root runtime user ------------------------------------------
+# This image previously had no USER directive, so the trainer ran as root
+# while holding READ-WRITE bind mounts of the host's `models/` and
+# `trajectories/` directories (its `_trim_replay_buffer` unlinks files
+# there). A container escape — or simply a path bug — got root on host
+# paths. Run as an ordinary user instead.
+#
+# The uid/gid are build args rather than literals because the trainer WRITES
+# to host bind mounts: a container uid that doesn't match the owner of the
+# host `models/` + `trajectories/` directories cannot write to them. Match
+# your host with:
+#
+#   docker build -f docker/trainer.Dockerfile \
+#     --build-arg APP_UID="$(id -u)" --build-arg APP_GID="$(id -g)" .
+#
+# 1000:1000 is the default because it is the first non-system uid/gid on
+# Debian/Ubuntu hosts, i.e. the usual single-user developer account.
+ARG APP_UID=1000
+ARG APP_GID=1000
+ARG APP_USER=forge
+# `getent` guards make this idempotent and rebuild-safe when the requested
+# uid/gid already exists in the base image, without `|| true` swallowing a
+# genuine failure (`set -e` is on via the default shell's `-c` + the &&
+# chain, so anything unexpected still fails the build).
+RUN if ! getent group "${APP_GID}" >/dev/null; then \
+        groupadd --gid "${APP_GID}" "${APP_USER}"; \
+    fi \
+    && if ! getent passwd "${APP_UID}" >/dev/null; then \
+        useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home \
+            --shell /usr/sbin/nologin "${APP_USER}"; \
+    fi \
+    # `pip install -e .` leaves editable-install metadata under /app that the
+    # runtime user has to read. Bind mounts (/app/models, /app/trajectories)
+    # are attached at RUN time and keep their host ownership — see the note
+    # above about matching APP_UID to the host.
+    && chown -R "${APP_UID}:${APP_GID}" /app
+
+USER ${APP_UID}:${APP_GID}
+
 # ---- entrypoint -----------------------------------------------------
 # Default command runs the continuous trainer. `mc_self_play.sh`
 # invokes the bootstrap one-shot via `docker compose run --rm

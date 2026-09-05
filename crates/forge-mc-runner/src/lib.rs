@@ -15,6 +15,7 @@
 //!
 //! - [`config`] — [`RunnerConfig`] (episode loop knobs, paths, ports)
 //! - [`manifest`] — [`ModelManifest`] (the swap signal: version + sha256s)
+//! - [`integrity`] — bundle path containment + sha256 verification
 //! - [`hot_reload`] — [`HotReloadWatcher`] (between-episode polling)
 //! - [`trajectory`] — [`TrajectoryWriter`] (TrajectoryV2 file I/O)
 //! - [`error`] — [`RunnerError`] (single thiserror enum)
@@ -31,6 +32,7 @@
 pub mod config;
 pub mod error;
 pub mod hot_reload;
+pub mod integrity;
 #[cfg(feature = "mc-live")]
 pub mod live;
 pub mod manifest;
@@ -44,6 +46,9 @@ pub mod trajectory;
 pub use config::{RunnerConfig, EPISODES_ENV_VAR, SCHEMA_ID_ENV_VAR};
 pub use error::RunnerError;
 pub use hot_reload::{HotReloadWatcher, ReloadEvent};
+pub use integrity::{
+    file_sha256_hex, resolve_bundle_path, verify_bundle, VerifiedBundle, DIGEST_CHUNK_BYTES,
+};
 #[cfg(feature = "mc-live")]
 pub use live::run_live;
 pub use manifest::{ModelFileEntry, ModelManifest, ModelManifestFiles, MANIFEST_SCHEMA_VERSION};

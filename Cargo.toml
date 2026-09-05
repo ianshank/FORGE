@@ -206,6 +206,13 @@ all = { level = "deny", priority = -1 }
 lto = true
 codegen-units = 1
 opt-level = 3
+# Determinism over raw throughput. Without this, integer overflow panics under
+# `cargo test` (dev profile) but silently wraps in the shipped `--release`
+# binary, so the tested build and the deployed build have different arithmetic
+# semantics -- unacceptable in a workspace whose core invariant (CHARTER.md
+# Invariant 6) is bit-identical reproducibility from a seed. Wrapping behaviour
+# that is genuinely intended must say so with `wrapping_*` / `Wrapping<T>`.
+overflow-checks = true
 
 [profile.bench]
 lto = true

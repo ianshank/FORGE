@@ -1,0 +1,90 @@
+# Pre-commit hooks: the contributor-agnostic half of this repo's guards.
+#
+# `.claude/hooks/` already runs three PreToolUse guards (tracked-file deletion,
+# staged secrets, line-ending drift), but only inside a Claude Code session.
+# Anyone running plain `git commit` gets none of them, and the two incidents
+# those guards exist for -- 0303612's stray NUL byte and d51ba6d's flattened
+# CRLF -- were both authored, not generated. CI catches them, but only after a
+# push, a review round, and a red check.
+#
+# Install once:  pip install pre-commit && pre-commit install
+# Run manually:  pre-commit run --all-files
+#
+# ── Why every hook is `repo: local` + `language: system` ──────────────────
+#
+# The obvious form of this file pins upstream hook repos (ruff-pre-commit,
+# gitleaks, ...) at their own revisions. That would create a *third* place
+# tool versions are pinned, alongside ci.yml and pyproject.toml, and a
+# pre-commit ruff at a different version from CI's ruff is a gate that
+# disagrees with the gate that actually blocks the merge -- the exact drift
+# `scripts/check_pinned_config_consistency.py` exists to prevent elsewhere.
+#
+# So every hook here shells out to the same command CI runs, using whatever
+# the contributor has installed. That is the same assumption `make verify`
+# already makes, and it means this file can never disagree with CI about a
+# version, because it states none.
+#
+# ── What is deliberately NOT here ─────────────────────────────────────────
+#
+# `cargo clippy`, `cargo test`, the Node suites and coverage. All are too slow
+# for a commit hook and all are in `make verify`. Pre-commit's job is the
+# sub-second class of mistake that is annoying to discover on a CI runner.
+minimum_pre_commit_version: "3.5.0"
+
+repos:
+  - repo: local
+    hooks:
+      - id: check-text-encoding
+        name: reject NUL bytes and line-ending drift
+        description: >-
+          The d51ba6d / 0303612 incidents. git renders an affected file as
+          `Bin`, so neither showed a reviewable diff.
+        entry: python3 scripts/check_text_encoding.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: check-pinned-config-consistency
+        name: Rust toolchain / ONNX / wasm-pack / LM Studio pins agree
+        entry: python3 scripts/check_pinned_config_consistency.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: check-local-ci-parity
+        name: every CI job has a make target or a stated reason
+        description: >-
+          Fails if ci.yml grows a job with no local counterpart, so `make
+          verify` cannot pass while CI goes red on something never runnable
+          on a laptop.
+        entry: python3 scripts/check_local_ci_parity.py
+        language: system
+        pass_filenames: false
+        files: ^(\.github/workflows/ci\.yml|Makefile|scripts/check_local_ci_parity\.py)$
+
+      - id: cargo-fmt
+        name: cargo fmt --all --check
+        entry: cargo fmt --all --check
+        language: system
+        pass_filenames: false
+        types_or: [rust]
+
+      - id: ruff
+        name: ruff check
+        description: >-
+          Same invocation as ci.yml's `Ruff lint` step; version comes from
+          whatever is installed, deliberately unpinned here (see header).
+        entry: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
+        language: system
+        pass_filenames: false
+        types_or: [python]
+
+      - id: claude-hook-self-tests
+        name: .claude/hooks self-tests
+        description: >-
+          The guards are themselves code; ci.yml runs these and so should a
+          commit that edits one. Stdlib-only, no project dependencies.
+        entry: python3 -m unittest discover -s .claude/hooks -p 'test_*.py'
+        language: system
+        pass_filenames: false
+        files: ^\.claude/hooks/.*\.py$

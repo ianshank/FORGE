@@ -318,7 +318,10 @@ defaults):
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `FORGE_LOG_FORMAT` | `text` | Log output format (`text` or `json`); shared by Rust, Python, and the Node mc-bot |
-| `FORGE_SERVER_BIND` / `FORGE_SERVER_PORT` | `0.0.0.0:8080` | HTTP/WebSocket bind address |
+| `FORGE_SERVER_BIND` / `FORGE_SERVER_PORT` | `127.0.0.1:8080` | HTTP/WebSocket bind address. Loopback by default — the API can reset/step the simulation and write history, so it is not exposed off-host unless you ask. Set `0.0.0.0:8080` to serve externally (the bundled compose files already do this inside the container, where the published port is what limits exposure). |
+| `FORGE_SERVER_AUTH_TOKEN` | unset | When set, mutating routes require `Authorization: Bearer <token>`. Unset leaves them unauthenticated and logs a startup warning. |
+| `FORGE_SERVER_REQUEST_TIMEOUT_MS` | `30000` | Per-request deadline (not applied to the `/ws` upgrade). |
+| `FORGE_SERVER_MAX_BODY_BYTES` | `1048576` | Request body cap; oversize requests get 413. |
 | `FORGE_SERVER_TICK_MS` | `100` | Simulation broadcast tick interval |
 | `FORGE_SERVER_BROADCAST_CAPACITY` | `64` | WebSocket fan-out channel capacity |
 | `FORGE_SERVER_ALLOWED_ORIGINS` | `http://localhost:5173` | CORS allow-list (comma-separated) |
