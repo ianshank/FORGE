@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — audit findings turned into enforced gates
+
+A standards audit found that the controls were configured but could not
+fail, and that the test guarding Invariant 6 checked five fields out of
+roughly twenty-five. This lands the code half of the remediation.
+
+- **Determinism is verified against full state.** `step_determinism`
+  compared `tick` plus four per-agent fields through an unguarded `.zip()`
+  (differing agent counts truncated and passed) against a hard-coded
+  two-action sequence. It now generates the action sequence across all 22
+  `Action` variants, asserts collection lengths before any zip, and
+  compares serialized state including the RNG stream plus the 15 fields
+  `SerializableWorldState` omits. The obvious fix was itself vacuous:
+  `to_bytes()` ends in `unwrap_or_default()`, so two failed
+  serializations compare equal as empty vectors — hence the new fallible
+  `try_to_bytes()`. Added golden state hashes over three seeds and four
+  reward-value tests; nothing in the repo previously asserted a reward
+  *value* out of `step`.
+- **`overflow-checks = true` in `[profile.release]`.** Integer overflow
+  panicked under `cargo test` and wrapped silently in the shipped binary,
+  so the tested and deployed builds had different arithmetic semantics.
+- **Model bundle digests are verified.** `ModelManifest::validate`
+  checked only that `sha256` was non-empty, and `sha2` was not a
+  dependency of the crate, so the runner could not verify despite a doc
+  comment saying it could. Path resolution also accepted absolute paths
+  and `..`. New `integrity` module enforces containment and re-hashes at
+  a single choke point both the initial load and the hot-reload pass
+  through.
+- **Unauthenticated control planes closed.** `forge-server` defaulted to
+  `0.0.0.0:8080` with `CorsLayer` as its only middleware — browser-only,
+  irrelevant to `curl`. mc-bot's WebSocket had no auth, no frame cap, an
+  unbounded queue, and a single-client guard released only on `close`.
+  Both now bind loopback by default with optional tokens, config-driven
+  limits, and idle reclaim.
+- **The mc-bot container could not start.** Its entrypoint pointed at
+  `src/index.js`; the TypeScript migration deleted every `.js` file and
+  the Dockerfile was never updated, blocking the whole v0.5 stack through
+  `service_healthy`. Now builds and runs compiled output.
+- **`cargo deny` had never actually run.** The CI invocation was
+  malformed (`--all-features` is a global option) and `|| true` hid the
+  exit-2 argument error. Corrected, it found `crossbeam-epoch` and `rand`
+  advisories (bumped, not suppressed) and `bincode` unmaintained (a
+  dated, reviewed exception). `cargo-deny` and `gitleaks` are now
+  blocking, with a new `.gitleaks.toml` whose exceptions are scoped so a
+  real credential in an allowlisted file is still caught.
+- **`seed_everything` never seeded torch** despite documenting that it
+  did — it called only `cuda.manual_seed_all` inside a CUDA guard, so on
+  CPU-only hosts, which is every CI runner, torch was entirely unseeded.
+- **Coverage exclusions were unanchored regexes.** `pass` matched 31
+  lines that are not `pass` statements; the determinism checker was
+  excluded outright because a local variable is named `passed`. Anchoring
+  them *raised* coverage to 93.58% — the exclusions were hiding
+  well-tested code.
+- Compose publishes every port through `BIND_HOST` (default
+  `127.0.0.1`), Grafana fails closed instead of defaulting to
+  `admin`/`admin`, and `.gitignore` now covers the key and credential
+  patterns `SECURITY.md` already claimed were ignored.
+
 ### Added — WASM demo verified end to end
 
 Nothing on a PR had ever compiled `crates/forge-wasm` for
