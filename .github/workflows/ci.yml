@@ -751,6 +751,62 @@ jobs:
           test -f ./_hf_smoke/dataset_info.json \
             || (echo "::error::dataset_info.json missing"; exit 1)
 
+  mutants:
+    name: Mutation Testing (security-critical modules)
+    runs-on: ubuntu-latest
+    # Coverage answers "was this line executed". This answers "would a test
+    # have noticed if it did something else" — and on this branch the answer
+    # was repeatedly no, at 85%+ coverage with a green suite:
+    #
+    #   * `cors_layer_skips_unparseable_origins` bound its layer to `_layer`
+    #     and asserted nothing; `cors_layer` could be rewritten to allow no
+    #     origin at all and stay green.
+    #   * the bundle path-containment guard's only test escaped to a *parent*
+    #     directory, so swapping `Path::starts_with` for a string compare —
+    #     which lets `/models-attacker/evil.onnx` through — was invisible.
+    #   * mc-bot's cap tests sat 4-100x from their own boundaries, so an 8x
+    #     payload-cap drift and `>=` -> `>` on the queue cap both survived.
+    #   * `AuthFailure::as_str` could return "" for all three reasons,
+    #     erasing an operator's only signal that someone is guessing tokens
+    #     (the 401 body is deliberately uniform), with nothing failing.
+    #
+    # Every one was found by mutating the code by hand. This makes it routine.
+    #
+    # Scope and the reasoning behind it live in .cargo/mutants.toml: the two
+    # crates that decide whether an untrusted model bundle is loaded and
+    # whether an unauthenticated request reaches a mutating endpoint. Not the
+    # workspace — that is 6,298 mutants, hours of runner time, and not a PR
+    # gate. This scope is 42 mutants in ~4 minutes.
+    #
+    # Blocking, with an empty exclusion list. Three equivalent mutants turned
+    # up while building it and all three were removed by changing the code
+    # rather than excusing it, so a survivor here means a real test gap.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # See the note in hf-export: this action never reads
+          # rust-toolchain.toml, so the pin has to be repeated per job.
+          # Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mutants
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants@27.1.0
+      - name: Mutation-test forge-mc-runner + forge-server
+        # `--timeout 120` is not optional: a mutant that hangs is a *detected*
+        # mutant, but without a cap it stalls the job instead of reporting one.
+        # It is a CLI flag rather than a mutants.toml key (v27 rejects the key).
+        run: cargo mutants -p forge-mc-runner -p forge-server --timeout 120
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: mutants-report
+          path: mutants.out/
+
   mlflow-http:
     name: MLflow HTTP Transport (feature-gated)
     runs-on: ubuntu-latest

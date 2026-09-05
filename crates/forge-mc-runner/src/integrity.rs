@@ -67,7 +67,7 @@
 //! to load.
 
 use std::fs::File;
-use std::io::Read;
+use std::io::BufReader;
 use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -76,14 +76,21 @@ use tracing::{debug, instrument};
 use crate::error::RunnerError;
 use crate::manifest::{ModelFileEntry, ModelManifest};
 
-/// Bytes read per `read` call when streaming a model file through the
-/// sha256 hasher.
+/// Buffer size used when streaming a model file through the sha256 hasher
+/// (64 KiB).
 ///
 /// Model files are large (tens to hundreds of MB), so they are hashed
-/// incrementally rather than read into memory whole. 64 KiB is the
-/// usual sweet spot: large enough that syscall overhead disappears
-/// against the hashing cost, small enough that the buffer stays in L2.
-pub const DIGEST_CHUNK_BYTES: usize = 64 * 1024;
+/// incrementally rather than read into memory whole. 64 KiB is the usual
+/// sweet spot: large enough that syscall overhead disappears against the
+/// hashing cost, small enough that the buffer stays in L2.
+///
+/// This is a throughput hint and nothing more — [`file_sha256_hex`] streams
+/// through `io::copy`, so the digest it produces is identical at any buffer
+/// size, including zero. Written as a literal rather than `64 * 1024` for
+/// exactly that reason: an arithmetic operator here is unkillable by any
+/// test, and a mutation gate that has to excuse it is weaker than one with
+/// nothing to excuse.
+pub const DIGEST_CHUNK_BYTES: usize = 65_536;
 
 /// Manifest role name for the observation → latent network.
 pub const ROLE_REPRESENTATION: &str = "representation";
@@ -197,18 +204,20 @@ pub fn resolve_bundle_path(
 /// or read.
 #[instrument(skip_all, fields(path = %path.display()))]
 pub fn file_sha256_hex(path: &Path) -> Result<String, RunnerError> {
-    let mut file = File::open(path).map_err(|e| RunnerError::io(path, e))?;
+    // `io::copy` over a sized `BufReader` rather than a hand-rolled read
+    // loop. Same streaming behaviour and the same 64 KiB chunking (io::copy
+    // has a specialization that reuses a BufReader's own buffer), but three
+    // fewer places to get wrong — and mutation testing showed they were
+    // genuinely untestable, not merely untested. The loop's `if read == 0
+    // { break }` inverted to `!=` spins forever at EOF, so the only thing
+    // that "caught" it was cargo-mutants' 120s timeout; `total += read`
+    // inverted to `*=` pinned a debug-log field at 0 with no observable
+    // effect at all. Deleting the code deletes both mutants, which is
+    // strictly better than excluding them from the gate.
+    let file = File::open(path).map_err(|e| RunnerError::io(path, e))?;
+    let mut reader = BufReader::with_capacity(DIGEST_CHUNK_BYTES, file);
     let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; DIGEST_CHUNK_BYTES];
-    let mut total: u64 = 0;
-    loop {
-        let read = file.read(&mut buf).map_err(|e| RunnerError::io(path, e))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buf[..read]);
-        total += read as u64;
-    }
+    let total = std::io::copy(&mut reader, &mut hasher).map_err(|e| RunnerError::io(path, e))?;
     let digest = hex_encode(&hasher.finalize());
     debug!(bytes = total, digest = %digest, "hashed model file");
     Ok(digest)

@@ -1,0 +1,74 @@
+# cargo-mutants configuration.
+#
+# Mutation testing answers the question coverage cannot: not "was this line
+# executed" but "would a test have noticed if it did something else". This
+# branch is the argument for it — a green suite at 85%+ coverage still
+# shipped a CORS test that asserted nothing, mc-bot cap tests sitting 4-100x
+# from their own boundaries, and a path-containment guard whose only test
+# escaped to a *parent* directory and so could not catch a sibling-prefix
+# escape. Every one of those was found by mutating the code by hand.
+#
+# ── Scope ────────────────────────────────────────────────────────────────
+#
+# Deliberately narrow, and not "the files this branch touched". These are the
+# modules where a surviving mutant is a security or integrity problem rather
+# than a coverage statistic: the code that decides whether an untrusted model
+# bundle is loaded, and the code that decides whether an unauthenticated
+# request reaches a mutating endpoint.
+#
+# A full-workspace run over 26 crates would take hours and is not a PR gate.
+# Widening this list is cheap when a module earns it; the CI job's runtime is
+# roughly (mutants x ~5s) plus one baseline build.
+#
+# Measured at introduction, all with zero unexplained survivors:
+#   integrity.rs  15 mutants -> 11 caught, 1 timeout, 1 unviable, 2 excluded below
+#   auth.rs       16 mutants -> 12 caught, 4 unviable
+#   routes.rs     16 mutants ->  8 caught, 8 unviable
+examine_globs = [
+    "crates/forge-mc-runner/src/integrity.rs",
+    "crates/forge-server/src/auth.rs",
+    "crates/forge-server/src/routes.rs",
+]
+
+# ── Equivalent mutants ───────────────────────────────────────────────────
+#
+# Empty, and kept that way on purpose.
+#
+# Three equivalent mutants showed up in `integrity.rs` when this gate was
+# built, and every one was removed by changing the code rather than excusing
+# it in this list:
+#
+#   * `if read == 0 { break }` -> `!=` spun forever at EOF, so the only thing
+#     that "detected" it was the 120s timeout;
+#   * `total += read` -> `*=` pinned a debug-log field at 0 and changed
+#     nothing else;
+#   * `DIGEST_CHUNK_BYTES = 64 * 1024` -> any other operator, which no test
+#     can see because the digest is identical at every buffer size.
+#
+# The first two were a hand-rolled read loop, replaced by `io::copy` over a
+# sized `BufReader` — shorter, uses the stdlib's tuned path, and both mutants
+# ceased to exist. The third became a literal `65_536`, which has no operator
+# to mutate. All three sites are strictly better code now, which they would
+# not have been had the list absorbed them.
+#
+# If an entry ever does belong here, the bar is deny.toml's: a reason a
+# reviewer can check, naming the exact mutation rather than a whole function,
+# and only after establishing the code cannot simply stop generating it.
+exclude_re = []
+
+# Fail the run if any mutant survives that is not excluded above. This is the
+# whole point: an advisory mutation report is a file nobody reads.
+# (cargo-mutants exits non-zero on MISSED by default; stated here so the
+# intent survives a future flag change.)
+#
+# `gitignore = true` matters more than it looks: without it cargo-mutants
+# copies the entire working tree into a temp build dir, including .venv —
+# 5.7 GB of torch and triton wheels — and dies on ENOSPC before testing a
+# single mutant.
+gitignore = true
+
+# NOTE: the per-mutant test timeout is a CLI flag, not a config key
+# (cargo-mutants 27 rejects `timeout` here), so the CI job passes
+# `--timeout 120`. It is not optional: a mutant that hangs — `read == 0` ->
+# `!=` in the digest read loop spins forever at EOF — is a *detected* mutant,
+# but without a cap it stalls the job instead of reporting one.

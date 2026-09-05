@@ -6,7 +6,7 @@ SHELL := /bin/bash
 # it just saves re-typing the exact CI invocations. Keep both in sync.
 
 .PHONY: help build fmt fmt-check lint test coverage \
-        onnx-check hf-check mlflow-check alloc-audit mc-runner-smoke machete \
+        onnx-check hf-check mlflow-check alloc-audit mc-runner-smoke machete mutants \
         wasm wasm-check wasm-test deny gitleaks pin-check text-check \
         md-lint ci-parity \
         py-lint py-test hooks-test \
@@ -76,6 +76,10 @@ alloc-audit: ## Zero-allocation hot-path contract, 0 bytes / 0 blocks (matches C
 mc-runner-smoke: ## forge-mc-runner builds and dry-runs without docker/Minecraft (matches CI's forge-mc-runner-bin job)
 	cargo build -p forge-mc-runner --bin forge-mc-runner
 	./target/debug/forge-mc-runner --dry-run --episodes 1
+
+mutants: ## Mutation-test the security-critical modules; any survivor fails (matches CI's mutants job)
+	@command -v cargo-mutants >/dev/null || cargo install cargo-mutants --locked
+	cargo mutants -p forge-mc-runner -p forge-server --timeout 120
 
 machete: ## Report unused Cargo dependencies (advisory in CI too -- never fails the build)
 	@command -v cargo-machete >/dev/null || cargo install cargo-machete --locked
@@ -175,7 +179,7 @@ verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check text
 # renamed away. `md-lint` and `mc-runner-smoke` joined `verify` because both
 # are seconds-fast and both were CI jobs a contributor could go red on with a
 # fully green local run.
-verify-full: verify coverage hf-check mlflow-check alloc-audit deny gitleaks ## verify, plus the slower/environment-dependent gates (tarpaulin, feature surfaces, allocation audit, cargo-deny, gitleaks). Does NOT include onnx-check (needs ORT_DYLIB_PATH) or the browser E2E targets (dashboard-e2e/demo-ui-test/web-e2e, each needs a Chromium download).
+verify-full: verify coverage hf-check mlflow-check alloc-audit mutants deny gitleaks ## verify, plus the slower/environment-dependent gates (tarpaulin, feature surfaces, allocation audit, mutation testing, cargo-deny, gitleaks). Does NOT include onnx-check (needs ORT_DYLIB_PATH) or the browser E2E targets (dashboard-e2e/demo-ui-test/web-e2e, each needs a Chromium download).
 	@echo "verify-full: all gates passed."
 
 clean: ## cargo clean (frees significant disk space; safe, fully reproducible)

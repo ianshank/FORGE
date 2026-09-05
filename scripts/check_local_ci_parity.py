@@ -72,6 +72,7 @@ JOB_TO_MAKE_TARGET: dict[str, str] = {
     "forge-mc-runner-bin": "mc-runner-smoke",
     "machete": "machete",
     "markdownlint": "md-lint",
+    "mutants": "mutants",
 }
 
 #: CI job id -> why no ``make`` target exists for it.

@@ -193,6 +193,58 @@ mod tests {
         builder.body(Body::empty()).unwrap()
     }
 
+    /// The three failure reasons must stay distinct, non-empty, and stable.
+    ///
+    /// This looks like a test of a logging helper, and it is — but the log is
+    /// the *only* place the distinction survives. `unauthorized()` returns a
+    /// deliberately uniform body so a caller cannot probe which half of the
+    /// credential was wrong, which means `reason = failure.as_str()` at the
+    /// `warn!` site is an operator's sole means of telling a misconfigured
+    /// client (`missing_authorization_header`) from someone guessing tokens
+    /// (`token_mismatch`). Collapse those to one string and credential-probing
+    /// stops being visible in the logs, with every other test still green.
+    ///
+    /// Found by mutation testing: `cargo mutants -p forge-server --file
+    /// auth.rs` reported `as_str -> ""` and `as_str -> "xyzzy"` as the only
+    /// two survivors out of sixteen. The strings are pinned exactly because
+    /// they are a log contract an alert rule may key on, so silently renaming
+    /// one should fail here rather than in someone's dashboard.
+    #[test]
+    fn auth_failure_reasons_are_distinct_and_stable() {
+        let cases = [
+            (AuthFailure::MissingHeader, "missing_authorization_header"),
+            (
+                AuthFailure::MalformedHeader,
+                "malformed_authorization_header",
+            ),
+            (AuthFailure::TokenMismatch, "token_mismatch"),
+        ];
+
+        for (failure, expected) in cases {
+            assert_eq!(
+                failure.as_str(),
+                expected,
+                "{failure:?} is logged as a reason operators and alert rules key on"
+            );
+        }
+
+        let reasons: Vec<&str> = cases.iter().map(|(f, _)| f.as_str()).collect();
+        assert!(
+            reasons.iter().all(|r| !r.is_empty()),
+            "an empty reason makes a rejection unattributable in the logs"
+        );
+
+        let mut unique = reasons.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(
+            unique.len(),
+            reasons.len(),
+            "two failure modes sharing a reason string are indistinguishable to an \
+             operator, which is the whole point of not putting them in the response"
+        );
+    }
+
     #[test]
     fn matches_accepts_exact_token() {
         let state = AuthState::new("correct-horse");
