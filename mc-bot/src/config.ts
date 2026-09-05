@@ -114,12 +114,39 @@ export interface WebsocketConfig extends WebsocketLimits {
 }
 
 /**
- * Hostnames that mean "this machine only".
+ * Hostnames that mean "this machine only", mapped to the address to
+ * actually bind for each.
  *
- * `URL` strips the brackets from an IPv6 authority, so `ws://[::1]:8765`
- * parses to a bare `::1` here.
+ * WHATWG `URL` *keeps* the brackets on an IPv6 authority — `ws://[::1]:8765`
+ * gives `hostname === '[::1]'`, not `'::1'`. An earlier version of this
+ * table asserted the opposite and keyed only the bare form, so an
+ * explicitly IPv6-loopback `ws_url` matched nothing and fell through to
+ * "every interface": the one input asking to be least exposed got the most.
+ * Both spellings are keyed here — the bracketed one is what `URL` actually
+ * produces, the bare one is accepted because this function is exported and
+ * takes a plain string. Node's `listen()` wants the address unbracketed, so
+ * that is what both map to.
+ *
+ * `localhost` maps to `127.0.0.1` rather than passing through verbatim.
+ * Node resolves a hostname passed to `listen()` through DNS, and on a
+ * dual-stack host `localhost` commonly resolves to `::1` first — so the
+ * server would bind IPv6 loopback only, while the container healthcheck in
+ * `docker/mc-bot.Dockerfile` connects to the literal `127.0.0.1`. That is
+ * a connection refused, an unhealthy container, and — because
+ * `compose.minecraft.yml` gates `runner` on `mc-bot: service_healthy` —
+ * the whole stack down. Exactly the failure this function was added to
+ * fix, reached by a different route.
+ *
+ * The two literal IPs pass through unchanged: someone who wrote
+ * `ws://[::1]:8765` asked for IPv6 loopback and gets it, and an explicit
+ * `[websocket] bind_host` bypasses this table entirely.
  */
-const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1']);
+const LOOPBACK_BIND_ADDRESSES: ReadonlyMap<string, string> = new Map([
+  ['localhost', '127.0.0.1'],
+  ['127.0.0.1', '127.0.0.1'],
+  ['[::1]', '::1'],
+  ['::1', '::1'],
+]);
 
 /**
  * Decide what address the WebSocket server binds to.
@@ -137,7 +164,8 @@ const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1
  * - an explicit `[websocket] bind_host` always wins, so an operator can pin
  *   the address without touching `ws_url`;
  * - a loopback `ws_url` keeps the server loopback-only, which is what a local
- *   `cargo run` wants and matches forge-server's loopback-by-default posture;
+ *   `cargo run` wants and matches forge-server's loopback-by-default posture.
+ *   It binds a literal IP, never a name — see {@link LOOPBACK_BIND_ADDRESSES};
  * - anything else listens on every interface. That is the right call *inside a
  *   container*, where the network namespace is the isolation boundary and the
  *   compose `ports:` entry (bound to `${BIND_HOST:-127.0.0.1}`) is what limits
@@ -157,7 +185,9 @@ export function resolveBindHost(
     }
     return override;
   }
-  return LOOPBACK_HOSTNAMES.has(wsUrlHostname) ? wsUrlHostname : undefined;
+  // `Map.get` already returns undefined for a non-loopback hostname, which is
+  // the "every interface" contract this function documents.
+  return LOOPBACK_BIND_ADDRESSES.get(wsUrlHostname);
 }
 
 export interface ResetConfig {

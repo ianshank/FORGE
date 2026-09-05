@@ -352,7 +352,10 @@ async fn history_limit_is_clamped_to_the_configured_cap() {
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
-    // Asking for far more than the cap yields exactly the cap, newest first.
+    // Asking for far more than the cap yields exactly the cap: the most
+    // recent `history_query_limit` records, still in chronological order
+    // within that tail. `history::filter_tail` clamps the *count*, it does
+    // not reverse — hence episode 3 before episode 4 below, not after it.
     let resp = send(
         &app,
         "GET",

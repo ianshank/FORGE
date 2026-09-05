@@ -113,8 +113,20 @@ fn mutating_routes() -> Router<AppState> {
         .route("/api/env/step", post(crate::env::step_handler))
 }
 
-/// Apply the per-request HTTP middleware — body-size cap then request
-/// timeout — to `router`.
+/// Apply the per-request HTTP middleware to `router`: the request
+/// timeout on the outside, the body-size cap within it.
+///
+/// The call order below reads the other way round, because axum nests the
+/// *last* `.layer()` outermost — measured, not assumed: a marker
+/// middleware added after a firing `TimeoutLayer` sees its `408`, and
+/// added before it never runs at all. The module-level diagram is the
+/// authority on the assembled stack; this comment exists so nobody
+/// "corrects" the calls to match a description of them.
+///
+/// The nesting is not load-bearing here in any case: `DefaultBodyLimit`
+/// does not read or reject a body, it records the cap in a request
+/// extension that the `Bytes`/`Json` extractor consults inside the
+/// handler. Both layers simply have to be present.
 ///
 /// Factored out of [`build_router`] so tests can drive the *same* stack
 /// over a deliberately slow or oversize route. Not applied to `/ws`.

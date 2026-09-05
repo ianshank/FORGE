@@ -441,9 +441,29 @@ describe('Security and edge cases', () => {
         normalizeEnvConfig({ ws_url: 'ws://mc-bot:8765' }).websocket!.bind_host,
         undefined,
       );
+      // A loopback ws_url binds a literal IP, never the name. Passing
+      // "localhost" to Node's listen() goes through DNS, and on a dual-stack
+      // host that commonly resolves to ::1 first -- so the server would be
+      // IPv6-loopback-only while the Dockerfile healthcheck dials the literal
+      // 127.0.0.1. Same unhealthy-container/stack-down failure this function
+      // exists to prevent, reached by a different route. (Copilot review.)
       assert.equal(
         normalizeEnvConfig({ ws_url: 'ws://localhost:8765' }).websocket!.bind_host,
-        'localhost',
+        '127.0.0.1',
+        'localhost must resolve to the IPv4 literal the healthcheck probes',
+      );
+      assert.equal(
+        normalizeEnvConfig({ ws_url: 'ws://127.0.0.1:8765' }).websocket!.bind_host,
+        '127.0.0.1',
+      );
+      // An explicitly IPv6 ws_url is a deliberate choice and stays IPv6.
+      // WHATWG `URL` keeps the brackets (hostname === '[::1]'), which the
+      // original loopback table did not account for -- so this input matched
+      // nothing and bound every interface. Node's listen() wants it bare.
+      assert.equal(
+        normalizeEnvConfig({ ws_url: 'ws://[::1]:8765' }).websocket!.bind_host,
+        '::1',
+        'an IPv6-loopback ws_url must bind IPv6 loopback, not every interface',
       );
       assert.equal(
         normalizeEnvConfig({
@@ -451,6 +471,14 @@ describe('Security and edge cases', () => {
           websocket: { bind_host: '10.1.2.3' },
         }).websocket!.bind_host,
         '10.1.2.3',
+      );
+      // An explicit override is never rewritten, including to a name.
+      assert.equal(
+        normalizeEnvConfig({
+          ws_url: 'ws://mc-bot:8765',
+          websocket: { bind_host: 'localhost' },
+        }).websocket!.bind_host,
+        'localhost',
       );
     });
 
