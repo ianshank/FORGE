@@ -21,7 +21,7 @@ use forge_worldgen::WorldGenerator;
 use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
 use serde::Serialize;
-use tracing::{info, instrument, trace};
+use tracing::{error, info, instrument, trace};
 
 use crate::physics::PhysicsScratch;
 use crate::rng::ForgeRng;
@@ -571,9 +571,28 @@ impl WorldState {
         result
     }
 
-    /// Serializes the world state to bytes for MCTS state snapshots.
+    /// Serializes the world state to bytes for MCTS state snapshots,
+    /// surfacing any serialization failure to the caller.
+    ///
+    /// This is the fallible twin of [`Self::to_bytes`]. Prefer it wherever an
+    /// empty snapshot would be indistinguishable from a successful one — in
+    /// particular when comparing two worlds byte-for-byte to verify the
+    /// determinism invariant, where `to_bytes()`'s empty-on-error fallback
+    /// would make the comparison pass vacuously.
+    ///
+    /// The serialized payload is the `SerializableWorldState` subset — tick,
+    /// grid, agents, objects, resources, day phase, RNG state, terminated and
+    /// truncated. It deliberately excludes `tasks`, `recipe_book`, `config`,
+    /// `last_task_rewards`, `topology`, `crop_states`, `soil_nodes` and the
+    /// per-tick scratch buffers, so callers that need whole-`WorldState`
+    /// coverage must compare those fields separately.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`forge_types::ForgeError::Serialization`] if bincode fails to
+    /// encode the state.
     #[instrument(skip_all)]
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn try_to_bytes(&self) -> forge_types::ForgeResult<Vec<u8>> {
         // Serialize the essential state (excluding config which is shared)
         let serializable = SerializableWorldState {
             tick: self.tick,
@@ -586,11 +605,42 @@ impl WorldState {
             terminated: self.terminated,
             truncated: self.truncated,
         };
-        bincode::serialize(&serializable).unwrap_or_default()
+        bincode::serialize(&serializable)
+            .map_err(|e| forge_types::ForgeError::Serialization(format!("bincode: {e}")))
+    }
+
+    /// Serializes the world state to bytes for MCTS state snapshots.
+    ///
+    /// Infallible wrapper around [`Self::try_to_bytes`]. On a serialization
+    /// failure it logs at `error` level and returns an empty `Vec`, which is
+    /// indistinguishable from a successful encoding of an empty payload — use
+    /// [`Self::try_to_bytes`] when that ambiguity matters.
+    #[instrument(skip_all)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self.try_to_bytes() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error!(
+                    error = %e,
+                    tick = self.tick,
+                    agents = self.agents.len(),
+                    "world state serialization failed; returning an empty snapshot"
+                );
+                Vec::new()
+            }
+        }
     }
 }
 
-/// Serializable subset of WorldState (excludes Arc<Config>).
+/// Serializable subset of `WorldState` (excludes `Arc<ForgeConfig>`).
+///
+/// **Not** a full state snapshot. The following `WorldState` fields are
+/// deliberately omitted and must be compared separately by anything that
+/// needs whole-state coverage (see the `assert_untracked_fields_eq` helper in
+/// this module's determinism tests): `tasks`, `recipe_book`, `config`,
+/// `last_task_rewards`, `physics_scratch`, `topology`, `crop_states`,
+/// `soil_nodes`, `agri_scratch`, `step_actions`, `validated_actions`,
+/// `near_station`, `crafting_object_map`, `comm_messages`, `push_scratch`.
 #[derive(Serialize)]
 struct SerializableWorldState<'a> {
     tick: u64,
@@ -837,6 +887,24 @@ mod tests {
             let r2 = world2.step(actions);
 
             assert_eq!(world1.tick, world2.tick);
+            // Length guard first: `zip` silently truncates to the shorter
+            // iterator, so a divergence that changed the agent count would
+            // otherwise slip through the per-agent comparison below.
+            assert_eq!(
+                world1.agents.len(),
+                world2.agents.len(),
+                "agent count diverged"
+            );
+            assert_eq!(
+                world1.objects.len(),
+                world2.objects.len(),
+                "object count diverged"
+            );
+            assert_eq!(
+                world1.resources.len(),
+                world2.resources.len(),
+                "resource count diverged"
+            );
             for (a1, a2) in world1.agents.iter().zip(world2.agents.iter()) {
                 assert_eq!(a1.position, a2.position);
                 assert_eq!(a1.health, a2.health);
@@ -1228,42 +1296,694 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // ---- Fallible serialization twin ----
+
+    #[test]
+    fn test_try_to_bytes_succeeds_and_is_non_empty() {
+        let mut world = make_test_world();
+        world.step(&[Action::Move(Direction::Right)]);
+
+        let bytes = world
+            .try_to_bytes()
+            .expect("bincode must encode a well-formed world");
+        assert!(
+            !bytes.is_empty(),
+            "a successful encoding must never be empty — an empty Vec is the \
+             failure sentinel returned by the infallible `to_bytes` wrapper"
+        );
+    }
+
+    #[test]
+    fn test_try_to_bytes_agrees_with_to_bytes() {
+        let mut world = make_test_world();
+        world.step(&[Action::Noop]);
+
+        let fallible = world.try_to_bytes().expect("encoding must succeed");
+        assert_eq!(
+            fallible,
+            world.to_bytes(),
+            "`to_bytes` must delegate to `try_to_bytes` byte-for-byte"
+        );
+    }
+
+    // ---- Golden state-hash regression ----
+    //
+    // A same-process A/B comparison (see `test_determinism` / the
+    // `step_determinism` property) proves two worlds in *this* binary agree.
+    // It cannot detect drift between binaries: a change to world generation,
+    // system ordering, RNG behaviour, `ForgeConfig::default()`, or the bincode
+    // layout silently changes the state a given seed produces while every A/B
+    // test stays green. The digests below pin that mapping.
+
+    /// FNV-1a 64-bit offset basis, from the FNV reference specification.
+    ///
+    /// FNV is used rather than `std::hash::DefaultHasher` because the latter's
+    /// output is explicitly *not* guaranteed stable across Rust releases,
+    /// which would make a committed golden value meaningless. Hard-coding the
+    /// two FNV constants keeps `forge-core` free of a hashing dependency.
+    const FNV1A64_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+
+    /// FNV-1a 64-bit prime, from the FNV reference specification.
+    const FNV1A64_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    /// Seeds pinned by [`test_golden_state_hash`]. Three distinct seeds so a
+    /// drift affecting only some world layouts is still caught.
+    const GOLDEN_SEEDS: [u64; 3] = [1, 42, 7_777];
+
+    /// Number of simulation steps taken before the digest is computed.
+    ///
+    /// Chosen to cross the first day/night phase boundary: with the default
+    /// 1000-tick cycle each phase lasts 250 ticks, so the run must exceed 250
+    /// steps for the visibility system's phase-dependent branch to be part of
+    /// what the digest pins. Still well under
+    /// [`GOLDEN_MAX_EPISODE_LEN`], and cheap enough to stay a sub-millisecond
+    /// test across all three seeds.
+    const GOLDEN_STEP_COUNT: usize = 260;
+
+    /// Grid edge length of the golden worlds.
+    const GOLDEN_WORLD_SIZE: u16 = 16;
+
+    /// Agent count of the golden worlds.
+    const GOLDEN_AGENT_COUNT: u32 = 2;
+
+    /// Episode-length cap for the golden worlds. Comfortably above
+    /// [`GOLDEN_STEP_COUNT`] so truncation never cuts a run short.
+    const GOLDEN_MAX_EPISODE_LEN: u64 = 1000;
+
+    /// Expected FNV-1a-64 digests of `try_to_bytes()` after
+    /// [`GOLDEN_STEP_COUNT`] steps, one per entry of [`GOLDEN_SEEDS`].
+    ///
+    /// **Regenerating:** these encode real simulation behaviour, so a change
+    /// here means the state produced by a fixed seed changed. If that change
+    /// was intentional, run `cargo test -p forge-core golden_state_hash` and
+    /// copy the actual digests out of the assertion failure message. If it
+    /// was not, a determinism regression has been caught — investigate before
+    /// updating the constants.
+    const GOLDEN_DIGESTS: [u64; 3] = [
+        0x2622_5f16_87e9_0062,
+        0xf78d_bfe8_14b5_5f58,
+        0xe75a_cfb5_49aa_8dec,
+    ];
+
+    /// Version-stable 64-bit digest of a byte slice (FNV-1a).
+    ///
+    /// `wrapping_mul` is deliberate: FNV specifies modular arithmetic, and the
+    /// workspace builds `--release` with `overflow-checks = true`, so a plain
+    /// `*` here would panic.
+    fn fnv1a64(bytes: &[u8]) -> u64 {
+        let mut hash = FNV1A64_OFFSET_BASIS;
+        for byte in bytes {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(FNV1A64_PRIME);
+        }
+        hash
+    }
+
+    /// The fixed per-step action script the golden digests are computed
+    /// against, cycled until [`GOLDEN_STEP_COUNT`] steps have been taken.
+    /// One action per agent, so its inner length matches
+    /// [`GOLDEN_AGENT_COUNT`].
+    fn golden_action_script() -> Vec<Vec<Action>> {
+        vec![
+            vec![
+                Action::Move(Direction::Right),
+                Action::Move(Direction::Down),
+            ],
+            vec![Action::Noop, Action::Move(Direction::Left)],
+            vec![Action::PickUp, Action::Interact],
+            vec![Action::Move(Direction::Up), Action::Push(Direction::Right)],
+        ]
+    }
+
+    /// Builds the world the golden digests are computed against.
+    fn make_golden_world(seed: u64) -> WorldState {
+        let mut config = ForgeConfig::default();
+        config.world.width = GOLDEN_WORLD_SIZE;
+        config.world.height = GOLDEN_WORLD_SIZE;
+        config.world.seed = seed;
+        config.agents.num_agents = GOLDEN_AGENT_COUNT;
+        config.task.max_episode_length = GOLDEN_MAX_EPISODE_LEN;
+        WorldState::new(config).expect("golden config must be valid")
+    }
+
+    /// Runs the golden script for one seed and returns the state digest.
+    fn golden_digest_for_seed(seed: u64) -> u64 {
+        let script = golden_action_script();
+        let mut world = make_golden_world(seed);
+        for step in 0..GOLDEN_STEP_COUNT {
+            world.step(&script[step % script.len()]);
+        }
+
+        let bytes = world
+            .try_to_bytes()
+            .expect("golden world must serialize successfully");
+        assert!(
+            !bytes.is_empty(),
+            "golden world serialized to an empty payload for seed {seed}"
+        );
+        assert!(
+            !world.truncated,
+            "golden run must not truncate — GOLDEN_STEP_COUNT exceeds \
+             GOLDEN_MAX_EPISODE_LEN"
+        );
+        assert_ne!(
+            world.day_phase, 0,
+            "golden run must cross a day/night phase boundary — see \
+             GOLDEN_STEP_COUNT"
+        );
+        fnv1a64(&bytes)
+    }
+
+    #[test]
+    fn test_golden_state_hash() {
+        let actual: Vec<u64> = GOLDEN_SEEDS
+            .iter()
+            .copied()
+            .map(golden_digest_for_seed)
+            .collect();
+
+        // Compared as a whole array so a failure prints every digest at once,
+        // which is what the regeneration instructions on `GOLDEN_DIGESTS`
+        // rely on.
+        assert_eq!(
+            actual,
+            GOLDEN_DIGESTS.to_vec(),
+            "golden state digests drifted for seeds {GOLDEN_SEEDS:?}; actual \
+             values are {actual:#018x?} — update GOLDEN_DIGESTS only if the \
+             change to simulation behaviour was intentional"
+        );
+    }
+
+    #[test]
+    fn test_golden_state_hash_is_sensitive_to_state() {
+        // Guards the guard: if `fnv1a64` collapsed to a constant (or
+        // `try_to_bytes` returned a fixed payload) the golden test above would
+        // pass vacuously. Distinct seeds must yield distinct digests.
+        let mut digests: Vec<u64> = GOLDEN_SEEDS
+            .iter()
+            .copied()
+            .map(golden_digest_for_seed)
+            .collect();
+
+        digests.sort_unstable();
+        let before = digests.len();
+        digests.dedup();
+        assert_eq!(
+            digests.len(),
+            before,
+            "distinct seeds produced identical state digests — the digest is \
+             not discriminating between world states"
+        );
+    }
+
+    // ---- Reward value assertions ----
+
+    /// Tolerance for reward comparisons. The expected values below are small
+    /// sums of near-exactly-representable `f32`s, so this only absorbs the
+    /// rounding in `1.0 - distance / 100.0`. Anything looser would let a
+    /// scaling bug through.
+    const REWARD_EPSILON: f32 = 1e-6;
+
+    /// Reward scale used by the reward-value tests. Deliberately *not* 1.0 so
+    /// that a dropped or doubled `reward_scale` multiplication is visible.
+    const REWARD_TEST_SCALE: f32 = 2.0;
+
+    /// Completion reward assigned to the test task, before scaling.
+    const REWARD_TEST_TASK_REWARD: f32 = 5.0;
+
+    /// Manhattan distance between the agent and an unreachable-this-tick task
+    /// target, used to derive the partial-progress reward. Small enough to
+    /// stay inside a 16x16 grid from any spawn tile.
+    const REWARD_TEST_TARGET_DISTANCE: u16 = 4;
+
+    /// Denominator `eval_agent_at` uses to turn Manhattan distance into
+    /// progress (`progress = 1 - min(distance / MAX_DIST, 1)`).
+    const REWARD_TEST_PROGRESS_MAX_DISTANCE: f32 = 100.0;
+
+    /// Grid edge length of the reward-test worlds. Must exceed
+    /// `2 * REWARD_TEST_TARGET_DISTANCE` so a target that distance from the
+    /// spawn tile is in bounds whichever side of the grid the agent spawns
+    /// on.
+    const REWARD_TEST_WORLD_SIZE: u16 = 16;
+
+    /// Seed of the reward-test worlds. Any fixed value works; the derivations
+    /// below are independent of where the agent happens to spawn.
+    const REWARD_TEST_SEED: u64 = 42;
+
+    /// Episode-length cap for the reward-test worlds. Far above the handful
+    /// of steps these tests take, so truncation never interferes.
+    const REWARD_TEST_MAX_EPISODE_LEN: u64 = 1000;
+
+    /// Builds a world with `num_agents` agents whose task rewards are scaled
+    /// by [`REWARD_TEST_SCALE`].
+    fn make_reward_world(num_agents: u32) -> WorldState {
+        let mut config = ForgeConfig::default();
+        config.world.width = REWARD_TEST_WORLD_SIZE;
+        config.world.height = REWARD_TEST_WORLD_SIZE;
+        config.world.seed = REWARD_TEST_SEED;
+        config.agents.num_agents = num_agents;
+        config.task.max_episode_length = REWARD_TEST_MAX_EPISODE_LEN;
+        config.task.reward_scale = REWARD_TEST_SCALE;
+        WorldState::new(config).expect("reward-test config must be valid")
+    }
+
+    /// Wraps an `AgentAt` goal in an `ActiveTask` with dense shaping enabled.
+    fn make_agent_at_task(agent_id: u32, target: Position) -> ActiveTask {
+        ActiveTask {
+            definition: forge_types::task::TaskDefinition {
+                id: 1,
+                description: "reach target".to_string(),
+                goal: forge_types::task::TaskComposition::Atom(
+                    forge_types::task::Predicate::AgentAt(agent_id, target),
+                ),
+                tier: forge_types::task::TaskTier::new(1),
+                estimated_steps: 1,
+                reward: REWARD_TEST_TASK_REWARD,
+                // Non-empty enables dense shaping; the evaluator gates on
+                // emptiness only and never reads the weight values.
+                dense_reward_weights: vec![1.0],
+            },
+            progress: vec![0.0],
+            sequence_index: 0,
+            completed: false,
+            failed: false,
+        }
+    }
+
+    #[test]
+    fn test_step_rewards_are_exactly_zero_without_tasks() {
+        // With no active tasks nothing writes `last_task_rewards`, so
+        // `fill_step_result` must zero-fill. Pinning the exact value (rather
+        // than only the length) catches a stray reward leaking in from
+        // another system or a stale buffer surviving between steps.
+        let mut world = make_reward_world(3);
+        assert!(world.tasks.is_empty(), "precondition: no tasks configured");
+
+        for _ in 0..3 {
+            let result = world.step(&[Action::Noop, Action::Noop, Action::Noop]);
+            assert_eq!(result.rewards.len(), 3);
+            for (i, reward) in result.rewards.iter().enumerate() {
+                assert_eq!(
+                    *reward, 0.0,
+                    "agent {i} received a non-zero reward with no active tasks"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_step_reward_value_for_completed_task() {
+        // Derivation (forge_task::evaluator::evaluate_tasks):
+        //   The goal is `AgentAt(0, <spawn position>)` and the agent takes a
+        //   Noop, so the predicate is satisfied on the first evaluation:
+        //     progress: 0.0 -> 1.0
+        //   dense reward      = (new_progress - old_progress) * reward_scale
+        //                     = (1.0 - 0.0) * 2.0 = 2.0
+        //   completion reward = task.reward * reward_scale
+        //                     = 5.0 * 2.0 = 10.0
+        //   total             = 12.0
+        let mut world = make_reward_world(1);
+        let spawn = world.agents[0].position;
+        world.tasks.push(make_agent_at_task(0, spawn));
+
+        let result = world.step(&[Action::Noop]);
+
+        assert_eq!(
+            world.agents[0].position, spawn,
+            "precondition: a Noop must not move the agent"
+        );
+        assert_eq!(result.rewards.len(), 1);
+
+        let expected = REWARD_TEST_SCALE + REWARD_TEST_TASK_REWARD * REWARD_TEST_SCALE;
+        assert!(
+            (result.rewards[0] - expected).abs() < REWARD_EPSILON,
+            "expected reward {expected}, got {}",
+            result.rewards[0]
+        );
+        assert!(world.tasks[0].completed, "task should be marked completed");
+        assert!(
+            result.terminated,
+            "the episode terminates once every task is done"
+        );
+    }
+
+    #[test]
+    fn test_step_reward_value_for_partial_progress() {
+        // Derivation: the goal is `AgentAt(0, target)` with `target` exactly
+        // REWARD_TEST_TARGET_DISTANCE tiles away in Manhattan distance, and
+        // the agent takes a Noop, so it never arrives.
+        //   progress          = 1 - (4 / 100) = 0.96
+        //   dense reward      = (0.96 - 0.0) * 2.0 = 1.92
+        //   completion reward = 0 (predicate unsatisfied)
+        let mut world = make_reward_world(1);
+        let spawn = world.agents[0].position;
+        // Offset along x, away from the nearer edge so the target stays in
+        // bounds from any spawn column (see REWARD_TEST_WORLD_SIZE).
+        let target_x = if spawn.x >= REWARD_TEST_TARGET_DISTANCE {
+            spawn.x - REWARD_TEST_TARGET_DISTANCE
+        } else {
+            spawn.x + REWARD_TEST_TARGET_DISTANCE
+        };
+        let target = Position::new(target_x, spawn.y);
+        assert_eq!(
+            spawn.manhattan_distance(&target),
+            u32::from(REWARD_TEST_TARGET_DISTANCE),
+            "precondition: target must sit at the derived distance"
+        );
+        world.tasks.push(make_agent_at_task(0, target));
+
+        let result = world.step(&[Action::Noop]);
+
+        let progress =
+            1.0 - f32::from(REWARD_TEST_TARGET_DISTANCE) / REWARD_TEST_PROGRESS_MAX_DISTANCE;
+        let expected = progress * REWARD_TEST_SCALE;
+        assert!(
+            (result.rewards[0] - expected).abs() < REWARD_EPSILON,
+            "expected dense-only reward {expected}, got {}",
+            result.rewards[0]
+        );
+        assert!(
+            !world.tasks[0].completed,
+            "task must not complete from an unreached target"
+        );
+    }
+
+    #[test]
+    fn test_step_reward_is_not_credited_to_dead_agents() {
+        // The evaluator credits alive agents only. Pinning both values at
+        // once catches a reward that is broadcast indiscriminately as well as
+        // a sign inversion on the surviving agent's share.
+        let mut world = make_reward_world(2);
+        let spawn = world.agents[0].position;
+        world.tasks.push(make_agent_at_task(0, spawn));
+        world.agents[1].alive = false;
+
+        let result = world.step(&[Action::Noop, Action::Noop]);
+
+        let expected = REWARD_TEST_SCALE + REWARD_TEST_TASK_REWARD * REWARD_TEST_SCALE;
+        assert_eq!(result.rewards.len(), 2);
+        assert!(
+            (result.rewards[0] - expected).abs() < REWARD_EPSILON,
+            "alive agent: expected {expected}, got {}",
+            result.rewards[0]
+        );
+        assert_eq!(
+            result.rewards[1], 0.0,
+            "dead agent must receive no task reward"
+        );
+    }
+
     // ---- Proptest: world invariants ----
 
     mod proptests {
         use super::*;
+        use forge_types::grid::HexDirection;
         use proptest::prelude::*;
+        use proptest::test_runner::TestCaseError;
+
+        /// Edge length of the square worlds built for the determinism
+        /// properties. 16x16 is large enough for agents to move freely for
+        /// the whole generated action sequence without every case pinning
+        /// them against a wall, and small enough that world generation stays
+        /// cheap across proptest's default 256 cases.
+        const DETERMINISM_WORLD_SIZE: u16 = 16;
+
+        /// Number of agents in each determinism world. Two agents exercise
+        /// the multi-agent ordering paths (collisions, pushes, communication)
+        /// that a single-agent world cannot reach.
+        const DETERMINISM_AGENT_COUNT: u32 = 2;
+
+        /// Episode length cap for determinism worlds. Must exceed
+        /// `MAX_ACTION_SEQUENCE_LEN / DETERMINISM_AGENT_COUNT` so a generated
+        /// sequence is never cut short by truncation, which would mask a
+        /// divergence occurring in the final steps.
+        const DETERMINISM_MAX_EPISODE_LEN: u64 = 100;
+
+        /// Upper bound on the length of a generated action sequence. The
+        /// sequence is consumed `DETERMINISM_AGENT_COUNT` actions per step,
+        /// so this caps each case at 12 simulation steps for two worlds —
+        /// enough for divergence to compound, cheap enough for 256 cases.
+        const MAX_ACTION_SEQUENCE_LEN: usize = 24;
+
+        /// Highest inventory slot index used by generated slot-indexed
+        /// actions (`Drop`, `Use`, `DropPayload`, `Spray`). Two past the
+        /// default 10-slot inventory so the out-of-range rejection path in
+        /// `validate_actions_into` is exercised as well.
+        const MAX_GENERATED_SLOT: u8 = 11;
+
+        /// Highest recipe index used by generated `Craft` actions. Matches
+        /// the 0-8 recipe range in the flat action encoding documented on
+        /// `Action::from_index`.
+        const MAX_GENERATED_RECIPE: u16 = 8;
+
+        /// Highest communication token used by generated `Communicate`
+        /// actions. One past the default 16-token vocabulary so the
+        /// out-of-vocabulary rejection path is exercised too.
+        const MAX_GENERATED_COMM_TOKEN: u16 = 16;
 
         fn make_world_with_seed(seed: u64) -> WorldState {
             let mut config = ForgeConfig::default();
-            config.world.width = 16;
-            config.world.height = 16;
+            config.world.width = DETERMINISM_WORLD_SIZE;
+            config.world.height = DETERMINISM_WORLD_SIZE;
             config.world.seed = seed;
-            config.agents.num_agents = 2;
-            config.task.max_episode_length = 100;
+            config.agents.num_agents = DETERMINISM_AGENT_COUNT;
+            config.task.max_episode_length = DETERMINISM_MAX_EPISODE_LEN;
             WorldState::new(config).unwrap()
         }
 
+        /// Strategy over the four cardinal directions.
+        fn direction_strategy() -> impl Strategy<Value = Direction> {
+            proptest::sample::select(Direction::all().to_vec())
+        }
+
+        /// Strategy over the six hex directions.
+        fn hex_direction_strategy() -> impl Strategy<Value = HexDirection> {
+            proptest::sample::select(HexDirection::ALL.to_vec())
+        }
+
+        /// Strategy covering every variant of [`Action`], with payloads that
+        /// span both the accepted and the rejected ranges.
+        ///
+        /// Built with an explicit `Union` rather than `prop_oneof!` because
+        /// the branch strategies have heterogeneous types and there are more
+        /// of them than the macro's fixed-arity forms support.
+        fn action_strategy() -> impl Strategy<Value = Action> {
+            proptest::strategy::Union::new(vec![
+                Just(Action::Noop).boxed(),
+                direction_strategy().prop_map(Action::Move).boxed(),
+                Just(Action::PickUp).boxed(),
+                (0u8..=MAX_GENERATED_SLOT).prop_map(Action::Drop).boxed(),
+                (0u8..=MAX_GENERATED_SLOT).prop_map(Action::Use).boxed(),
+                (0u16..=MAX_GENERATED_RECIPE)
+                    .prop_map(Action::Craft)
+                    .boxed(),
+                direction_strategy().prop_map(Action::Push).boxed(),
+                (0u16..=MAX_GENERATED_COMM_TOKEN)
+                    .prop_map(Action::Communicate)
+                    .boxed(),
+                Just(Action::Interact).boxed(),
+                Just(Action::Ascend).boxed(),
+                Just(Action::Descend).boxed(),
+                Just(Action::Hover).boxed(),
+                Just(Action::TakeOff).boxed(),
+                Just(Action::Land).boxed(),
+                direction_strategy().prop_map(Action::Scan).boxed(),
+                (0u8..=MAX_GENERATED_SLOT)
+                    .prop_map(Action::DropPayload)
+                    .boxed(),
+                (0u8..=MAX_GENERATED_SLOT).prop_map(Action::Spray).boxed(),
+                Just(Action::ScanMultispectral).boxed(),
+                Just(Action::ScanThermal).boxed(),
+                Just(Action::RelaySoilData).boxed(),
+                Just(Action::GenerateReport).boxed(),
+                hex_direction_strategy().prop_map(Action::MoveHex).boxed(),
+            ])
+        }
+
+        /// Strategy producing a variable-length action sequence. The sequence
+        /// is consumed `DETERMINISM_AGENT_COUNT` actions at a time, so its
+        /// length also varies the number of simulation steps and — when the
+        /// length is not a multiple of the agent count — exercises the
+        /// short-slice padding path in `step_into`.
+        fn action_sequence_strategy() -> impl Strategy<Value = Vec<Action>> {
+            proptest::collection::vec(action_strategy(), 1..=MAX_ACTION_SEQUENCE_LEN)
+        }
+
+        /// Compares the `WorldState` fields that `SerializableWorldState`
+        /// (and therefore [`WorldState::try_to_bytes`]) does **not** carry,
+        /// so that a byte comparison plus this helper covers every field of
+        /// the struct.
+        ///
+        /// Several of the underlying types (`ActiveTask`, `RecipeBook`,
+        /// `GridTopologyKind`, `CropState`, `SoilSensorNode`, `AgriScratch`,
+        /// `PhysicsScratch`, `AgentPushData`) do not implement `PartialEq`,
+        /// so those are compared through their `Debug` rendering. That is
+        /// structural, and unlike `PartialEq` on floats it treats `NaN` as
+        /// equal to `NaN` — which is the behaviour a bit-reproducibility
+        /// check wants. `config` is compared through its JSON encoding for
+        /// the same reason (`ForgeConfig` has no `PartialEq` either).
+        fn assert_untracked_fields_eq(a: &WorldState, b: &WorldState) -> Result<(), TestCaseError> {
+            prop_assert_eq!(a.tasks.len(), b.tasks.len(), "tasks length diverged");
+            prop_assert_eq!(
+                format!("{:?}", a.tasks),
+                format!("{:?}", b.tasks),
+                "tasks diverged"
+            );
+            prop_assert_eq!(
+                format!("{:?}", a.recipe_book),
+                format!("{:?}", b.recipe_book),
+                "recipe_book diverged"
+            );
+            prop_assert_eq!(
+                serde_json::to_string(a.config.as_ref()).expect("config must serialize"),
+                serde_json::to_string(b.config.as_ref()).expect("config must serialize"),
+                "config diverged"
+            );
+            prop_assert_eq!(
+                format!("{:?}", a.last_task_rewards),
+                format!("{:?}", b.last_task_rewards),
+                "last_task_rewards diverged"
+            );
+            prop_assert_eq!(
+                format!("{:?}", a.physics_scratch),
+                format!("{:?}", b.physics_scratch),
+                "physics_scratch diverged"
+            );
+            prop_assert_eq!(
+                format!("{:?}", a.topology),
+                format!("{:?}", b.topology),
+                "topology diverged"
+            );
+            prop_assert_eq!(
+                a.crop_states.len(),
+                b.crop_states.len(),
+                "crop_states length diverged"
+            );
+            prop_assert_eq!(
+                format!("{:?}", a.crop_states),
+                format!("{:?}", b.crop_states),
+                "crop_states diverged"
+            );
+            prop_assert_eq!(
+                a.soil_nodes.len(),
+                b.soil_nodes.len(),
+                "soil_nodes length diverged"
+            );
+            prop_assert_eq!(
+                format!("{:?}", a.soil_nodes),
+                format!("{:?}", b.soil_nodes),
+                "soil_nodes diverged"
+            );
+            prop_assert_eq!(
+                format!("{:?}", a.agri_scratch),
+                format!("{:?}", b.agri_scratch),
+                "agri_scratch diverged"
+            );
+            prop_assert_eq!(
+                &a.step_actions,
+                &b.step_actions,
+                "step_actions buffer diverged"
+            );
+            prop_assert_eq!(
+                &a.validated_actions,
+                &b.validated_actions,
+                "validated_actions buffer diverged"
+            );
+            prop_assert_eq!(&a.near_station, &b.near_station, "near_station diverged");
+            // `HashMap` implements order-independent `PartialEq`, so compare
+            // directly rather than through `Debug` (whose iteration order is
+            // not stable between two maps in the same process).
+            prop_assert_eq!(
+                &a.crafting_object_map,
+                &b.crafting_object_map,
+                "crafting_object_map diverged"
+            );
+            prop_assert_eq!(&a.comm_messages, &b.comm_messages, "comm_messages diverged");
+            prop_assert_eq!(
+                format!("{:?}", a.push_scratch),
+                format!("{:?}", b.push_scratch),
+                "push_scratch diverged"
+            );
+            Ok(())
+        }
+
         proptest! {
-            /// Same seed + same actions = identical world state.
+            /// Same seed + same actions = identical world state
+            /// (CHARTER.md Invariant 6).
+            ///
+            /// Both the seed *and* the action sequence are generated, so the
+            /// property holds over a spread of the `Action` enum rather than
+            /// a single hard-coded script. Coverage is whole-state: the
+            /// bincode payload plus every field that payload omits.
             #[test]
-            fn step_determinism(seed in 0u64..10_000) {
+            fn step_determinism(
+                seed in 0u64..10_000,
+                actions in action_sequence_strategy(),
+            ) {
                 let mut w1 = make_world_with_seed(seed);
                 let mut w2 = make_world_with_seed(seed);
 
-                let actions = vec![Action::Noop, Action::Move(Direction::Right)];
-
-                for _ in 0..5 {
-                    w1.step(&actions);
-                    w2.step(&actions);
+                for chunk in actions.chunks(DETERMINISM_AGENT_COUNT as usize) {
+                    w1.step(chunk);
+                    w2.step(chunk);
                 }
 
-                prop_assert_eq!(w1.tick, w2.tick);
-                for (a, b) in w1.agents.iter().zip(w2.agents.iter()) {
-                    prop_assert_eq!(a.position, b.position);
-                    prop_assert_eq!(a.health, b.health);
-                    prop_assert_eq!(a.stamina, b.stamina);
-                    prop_assert_eq!(a.alive, b.alive);
+                prop_assert_eq!(w1.tick, w2.tick, "tick diverged");
+
+                // Length guards BEFORE any `zip`: `zip` truncates to the
+                // shorter iterator, so a nondeterminism bug that changed an
+                // entity count would otherwise be silently skipped.
+                prop_assert_eq!(w1.agents.len(), w2.agents.len(), "agent count diverged");
+                prop_assert_eq!(w1.objects.len(), w2.objects.len(), "object count diverged");
+                prop_assert_eq!(
+                    w1.resources.len(),
+                    w2.resources.len(),
+                    "resource count diverged"
+                );
+                prop_assert_eq!(
+                    w1.grid.tiles.len(),
+                    w2.grid.tiles.len(),
+                    "grid tile count diverged"
+                );
+
+                // Whole-payload byte comparison. `try_to_bytes` is used
+                // instead of `to_bytes` because the latter returns an empty
+                // `Vec` on a serialization failure, which would make this
+                // comparison pass vacuously; the non-empty assertions below
+                // close that hole for good measure.
+                let b1 = w1.try_to_bytes().expect("w1 must serialize");
+                let b2 = w2.try_to_bytes().expect("w2 must serialize");
+                prop_assert!(!b1.is_empty(), "serialized state of w1 must be non-empty");
+                prop_assert!(!b2.is_empty(), "serialized state of w2 must be non-empty");
+                prop_assert_eq!(b1.len(), b2.len(), "serialized state length diverged");
+                // Reported as the first differing offset rather than via
+                // `prop_assert_eq!(&b1, &b2)`, which would dump both
+                // multi-kilobyte payloads into the failure message.
+                let first_diff = b1.iter().zip(b2.iter()).position(|(x, y)| x != y);
+                prop_assert!(
+                    first_diff.is_none(),
+                    "serialized world state diverged at byte {:?} of {}: w1={:?}, w2={:?}",
+                    first_diff,
+                    b1.len(),
+                    first_diff.map(|i| b1[i]),
+                    first_diff.map(|i| b2[i])
+                );
+
+                // The bincode payload omits roughly two thirds of
+                // `WorldState`; compare those fields explicitly so coverage
+                // is complete without changing the wire format.
+                assert_untracked_fields_eq(&w1, &w2)?;
+
+                // Per-agent comparison last: it adds nothing the byte
+                // comparison misses, but it names the diverging agent and
+                // field when a failure does occur.
+                for (i, (a, b)) in w1.agents.iter().zip(w2.agents.iter()).enumerate() {
+                    prop_assert_eq!(a.position, b.position, "agent {} position diverged", i);
+                    prop_assert_eq!(a.health, b.health, "agent {} health diverged", i);
+                    prop_assert_eq!(a.stamina, b.stamina, "agent {} stamina diverged", i);
+                    prop_assert_eq!(a.alive, b.alive, "agent {} alive diverged", i);
+                    prop_assert_eq!(a.altitude, b.altitude, "agent {} altitude diverged", i);
+                    prop_assert_eq!(a.battery, b.battery, "agent {} battery diverged", i);
                 }
             }
 

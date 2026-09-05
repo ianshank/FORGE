@@ -133,6 +133,24 @@ fn test_deterministic_replay() {
 
     // --- compare ---
     assert_eq!(state1.tick, state2.tick, "tick mismatch");
+    // Length guards before every `zip` below: `zip` stops at the shorter
+    // iterator, so a nondeterminism bug that changed a collection's length
+    // would be silently truncated away instead of failing the test.
+    assert_eq!(
+        state1.agents.len(),
+        state2.agents.len(),
+        "agent count mismatch"
+    );
+    assert_eq!(
+        state1.objects.len(),
+        state2.objects.len(),
+        "object count mismatch"
+    );
+    assert_eq!(
+        state1.resources.len(),
+        state2.resources.len(),
+        "resource count mismatch"
+    );
     for (i, (a1, a2)) in state1.agents.iter().zip(state2.agents.iter()).enumerate() {
         assert_eq!(
             a1.position, a2.position,
@@ -144,6 +162,11 @@ fn test_deterministic_replay() {
         assert_eq!(a1.alive, a2.alive, "alive mismatch for agent {}", i);
     }
 
+    assert_eq!(
+        results1.len(),
+        results2.len(),
+        "step-result count mismatch between the two runs"
+    );
     for (step_idx, (r1, r2)) in results1.iter().zip(results2.iter()).enumerate() {
         assert_eq!(
             r1.terminated, r2.terminated,
@@ -1078,6 +1101,22 @@ fn test_hex_deterministic_replay() {
     }
 
     assert_eq!(state1.tick, state2.tick, "tick mismatch");
+    // Length guards before the `zip` below, and before indexing agent 0.
+    assert_eq!(
+        state1.agents.len(),
+        state2.agents.len(),
+        "agent count mismatch"
+    );
+    assert_eq!(
+        state1.objects.len(),
+        state2.objects.len(),
+        "object count mismatch"
+    );
+    assert_eq!(
+        state1.resources.len(),
+        state2.resources.len(),
+        "resource count mismatch"
+    );
     assert_eq!(
         state1.agents[0].position, state2.agents[0].position,
         "position mismatch"
@@ -1085,6 +1124,11 @@ fn test_hex_deterministic_replay() {
     assert_eq!(
         state1.agents[0].health, state2.agents[0].health,
         "health mismatch"
+    );
+    assert_eq!(
+        results1.len(),
+        results2.len(),
+        "step-result count mismatch between the two runs"
     );
     for (i, (r1, r2)) in results1.iter().zip(results2.iter()).enumerate() {
         assert_eq!(
