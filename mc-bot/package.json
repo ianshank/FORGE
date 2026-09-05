@@ -13,7 +13,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "test": "tsx --test test/*.test.ts",
     "test:no-deps": "tsx --test test/protocol.test.ts test/action_map.test.ts test/reward.test.ts test/schema_id.test.ts test/config.test.ts test/actions.test.ts test/observation.test.ts test/observation_grid.test.ts test/index.test.ts test/bot_manager.test.ts",
-    "test:coverage": "c8 --reporter=text --reporter=json-summary --reporter=html npm test",
+    "test:coverage": "c8 --check-coverage --lines 85 --branches 75 --functions 90 --reporter=text --reporter=json-summary --reporter=html npm test",
     "start": "tsx src/index.ts",
     "lint": "biome check src test",
     "lint:fix": "biome check --write src test",

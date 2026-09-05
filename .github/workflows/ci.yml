@@ -312,7 +312,16 @@ jobs:
       - name: Ruff lint
         run: ruff check python/ tests/python/ scripts/ demo_ui/ examples/
       - name: Mypy type check
-        run: mypy python/ scripts/ --config-file pyproject.toml
+        # `tests/` is otherwise excluded from type checking, but
+        # tests/python/type_checking/ holds sentinels whose whole job is to fail this
+        # step: they assert that a third-party package's types are still being
+        # checked rather than silently erased to `Any`. See
+        # tests/python/type_checking/test_numpy_types_are_live.py for the mechanism
+        # (deliberate errors under `# type: ignore`, caught by the
+        # `warn_unused_ignores = true` this repo already sets). Named
+        # explicitly rather than widening to all of tests/, which would drag
+        # ~200 unannotated test modules into a `disallow_untyped_defs` config.
+        run: mypy python/ scripts/ tests/python/type_checking/ --config-file pyproject.toml
       - name: Claude Code hook self-tests
         # Stdlib-only (unittest + tempfile + git, no project deps), so it
         # runs here rather than needing its own job. See .claude/hooks/.
@@ -338,6 +347,15 @@ jobs:
         # guards only fire inside Claude Code sessions; this step is the
         # contributor-agnostic backstop.
         run: python3 scripts/check_text_encoding.py
+      - name: Local/CI parity check
+        # Fails if a job in this workflow has no `make` target and no stated
+        # reason it cannot have one. Before this existed, ten of the jobs here
+        # -- markdownlint, machete, alloc-audit, hf-export, mlflow-http,
+        # forge-mc-runner-bin among them, all of which run fine on a laptop --
+        # had no local path at all, so `make verify` could pass and CI still go
+        # red. Also catches the reverse drift: a mapping naming a `make` target
+        # that has since been renamed away.
+        run: python3 scripts/check_local_ci_parity.py
 
   python-test:
     name: Python Tests (maturin)
@@ -644,13 +662,23 @@ jobs:
       - name: Run node:test suite
         working-directory: mc-bot
         run: npm test
-      - name: Run node:test suite with coverage (report-only)
-        # c8-based coverage, report-only for now: establishes a real
-        # baseline before a fail-under threshold is picked. mc-bot owns
-        # first-class wire-contract logic (schema_id canonicalization,
-        # action/reward registries) that the Rust and Python sides
-        # cross-check against, so this surface is worth measuring even
-        # before a gate is decided.
+      - name: Run node:test suite with coverage (gated)
+        # The baseline this step was collecting has been collected: mc-bot
+        # measures 90.68% lines / 81.57% branches / 95.06% functions, so it
+        # was already clearing the 85% gate every other surface in this repo
+        # enforces (tarpaulin --fail-under 85, .coveragerc fail_under 85,
+        # pytest --cov-fail-under=85, dashboard 85%) while being the only one
+        # exempt from it. `c8 --check-coverage` now enforces 85/75/90 --
+        # thresholds set below the measured numbers with real headroom rather
+        # than pinned to them, so an honest refactor does not go red while a
+        # genuine regression does.
+        #
+        # This surface earns a gate more than most: mc-bot owns the
+        # wire-contract logic the Rust and Python sides cross-check against
+        # (schema_id canonicalization, action/reward registries) *and*, as of
+        # this branch, the network-facing WebSocket auth, frame cap and queue
+        # cap. Both failure directions were verified by raising each threshold
+        # above the measured value and watching c8 exit 1.
         working-directory: mc-bot
         run: npm run test:coverage
       - name: Upload mc-bot coverage report
