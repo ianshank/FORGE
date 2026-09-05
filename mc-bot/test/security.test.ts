@@ -75,6 +75,26 @@ function stubBot(gate?: Promise<void>) {
 /** `[websocket]` overrides that switch the keepalive timers off entirely. */
 const NO_TIMERS = Object.freeze({ idle_timeout_ms: 0, ping_interval_ms: 0 });
 
+/** Poll granularity for {@link waitUntil}. */
+const POLL_INTERVAL_MS = 10;
+
+/**
+ * Frame-size cap the exact-boundary tests configure. Small enough that a
+ * cap that drifted by any factor lands outside the accept/reject pair.
+ */
+const PAYLOAD_CAP_BYTES = 256;
+
+/** In-flight message cap the exact-boundary backpressure tests configure. */
+const QUEUE_CAP = 2;
+
+/**
+ * How long gated `step` messages get to reach the server before the test
+ * judges the resulting in-flight depth. Only ever weakens the at-the-cap
+ * assertion if it is too short — the positive check that follows (every
+ * message drains into an observation) is what actually decides the test.
+ */
+const ENQUEUE_SETTLE_MS = 250;
+
 /** Bundle wired to `port`, with the `[websocket]` hardening table under test. */
 function testBundle(port: number, websocket: Record<string, unknown> = {}) {
   const actionMap = buildActionMap({
@@ -151,6 +171,39 @@ async function connectAndHello(url: string, options?: any): Promise<WebSocket> {
   const hello = await nextMessage(socket);
   assert.equal(hello.type, 'hello');
   return socket;
+}
+
+/**
+ * Poll `predicate` until it holds, or fail with `message` after
+ * `timeoutMs`. Preferred over a fixed sleep wherever the test can name
+ * the condition it is actually waiting for.
+ */
+async function waitUntil(predicate: () => boolean, message: string, timeoutMs = 4000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${message}`);
+    await delay(POLL_INTERVAL_MS);
+  }
+}
+
+/**
+ * A valid `step` message padded to exactly `bytes` bytes on the wire.
+ *
+ * The pad is ASCII `A`, which JSON never escapes, so one character costs
+ * exactly one byte and the arithmetic is exact. Both the floor and the
+ * resulting length are asserted rather than assumed: a later edit to the
+ * envelope would otherwise produce an off-length frame and silently
+ * weaken every cap test built on this helper.
+ */
+function stepFrameOfExactly(bytes: number): string {
+  const envelopeBytes = JSON.stringify({ type: 'step', action_id: 0, pad: '' }).length;
+  assert.ok(
+    bytes >= envelopeBytes,
+    `cannot build a ${bytes}-byte frame; the envelope alone is ${envelopeBytes} bytes`,
+  );
+  const frame = JSON.stringify({ type: 'step', action_id: 0, pad: 'A'.repeat(bytes - envelopeBytes) });
+  assert.equal(Buffer.byteLength(frame), bytes, 'frame builder must produce an exact byte length');
+  return frame;
 }
 
 /** Recording logger with the `createLogger` shape. */
@@ -623,6 +676,29 @@ describe('Security and edge cases', () => {
       });
     });
 
+    // The pair above tests the cap at 8x over and at ~30 bytes under, so a
+    // cap that drifted by any factor -- `max_payload_bytes * 8`, or the
+    // default substituted for the configured value -- satisfies both and
+    // survives. These two pin the exact byte at which behaviour changes.
+    it('accepts a frame of exactly max_payload_bytes', async () => {
+      await withServer({ ...NO_TIMERS, max_payload_bytes: PAYLOAD_CAP_BYTES }, async ({ url }) => {
+        const socket = await connectAndHello(url);
+        socket.send(stepFrameOfExactly(PAYLOAD_CAP_BYTES));
+        const reply = await nextMessage(socket);
+        assert.equal(reply.type, 'observation', 'a frame exactly at the cap is within it');
+        socket.close();
+      });
+    });
+
+    it('closes with 1009 on a frame one byte over max_payload_bytes', async () => {
+      await withServer({ ...NO_TIMERS, max_payload_bytes: PAYLOAD_CAP_BYTES }, async ({ url }) => {
+        const socket = await connectAndHello(url);
+        const closed = nextClose(socket);
+        socket.send(stepFrameOfExactly(PAYLOAD_CAP_BYTES + 1));
+        assert.equal(await closed, 1009, 'one byte over the cap is over the cap');
+      });
+    });
+
     // -- defect 2 -----------------------------------------------------------
     it('answers a flood that outruns the drain with BACKPRESSURE and closes', async () => {
       let release: () => void = () => {};
@@ -671,6 +747,88 @@ describe('Security and edge cases', () => {
         }
         socket.close();
       });
+    });
+
+    // The flood above sends 8 against a cap of 2, and the sequential test
+    // never lets depth exceed 1, so `queueDepth > max` in place of
+    // `queueDepth >= max` passes both: it just rejects on the 4th message
+    // instead of the 3rd. These two bracket the transition exactly.
+    it('admits exactly max_queue_depth messages in flight', async () => {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((done) => {
+        release = done;
+      });
+      try {
+        await withServer(
+          { ...NO_TIMERS, max_queue_depth: QUEUE_CAP },
+          async ({ url }) => {
+            const socket = await connectAndHello(url);
+            const seen: any[] = [];
+            socket.on('message', (raw) => seen.push(JSON.parse(raw.toString())));
+
+            // Each `step` blocks on the gated tick wait, so these pile up
+            // rather than draining: in-flight depth climbs to exactly the cap.
+            for (let i = 0; i < QUEUE_CAP; i += 1) {
+              socket.send(JSON.stringify({ type: 'step', action_id: 0 }));
+            }
+            await delay(ENQUEUE_SETTLE_MS);
+            release();
+
+            // Positive evidence that every one of them was admitted: each
+            // drains into an observation. A cap enforced one slot early
+            // would have answered the last with BACKPRESSURE and closed.
+            await waitUntil(() => seen.length >= QUEUE_CAP, `${QUEUE_CAP} replies`);
+            assert.equal(
+              seen.filter((m) => m.type === 'observation').length,
+              QUEUE_CAP,
+              'every message up to the cap must be served',
+            );
+            assert.deepEqual(
+              seen.filter((m) => m.type === 'error'),
+              [],
+              'nothing at or under the cap may be rejected',
+            );
+            socket.close();
+          },
+          { gate },
+        );
+      } finally {
+        release();
+      }
+    });
+
+    it('rejects the first message past max_queue_depth', async () => {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((done) => {
+        release = done;
+      });
+      try {
+        await withServer(
+          { ...NO_TIMERS, max_queue_depth: QUEUE_CAP },
+          async ({ url }) => {
+            const socket = await connectAndHello(url);
+            const errors: any[] = [];
+            socket.on('message', (raw) => {
+              const msg = JSON.parse(raw.toString());
+              if (msg.type === 'error') errors.push(msg);
+            });
+            const closed = nextClose(socket);
+
+            // Exactly one more than the cap, and no more: an off-by-one in
+            // the guard has nowhere to hide behind a flood.
+            for (let i = 0; i < QUEUE_CAP + 1; i += 1) {
+              socket.send(JSON.stringify({ type: 'step', action_id: 0 }));
+            }
+            await waitUntil(() => errors.length > 0, 'a BACKPRESSURE error');
+            assert.equal(errors[0].code, 'BACKPRESSURE');
+            assert.match(errors[0].message, new RegExp(`queue depth exceeded \\(max ${QUEUE_CAP}\\)`));
+            await closed;
+          },
+          { gate },
+        );
+      } finally {
+        release();
+      }
     });
 
     // -- defect 3 -----------------------------------------------------------

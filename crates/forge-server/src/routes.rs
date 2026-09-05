@@ -157,15 +157,148 @@ mod tests {
     //! router can be driven with `tower::ServiceExt::oneshot`. These
     //! unit tests cover only what is reachable without an `AppState`.
     use super::*;
+    use axum::body::Body;
+    use axum::http::{header, Method, Request, StatusCode};
+    use tower::ServiceExt as _;
 
-    /// A malformed entry in `allowed_origins` must be skipped, not
-    /// panic the server at startup.
-    #[test]
-    fn cors_layer_skips_unparseable_origins() {
-        let config = ServerConfig {
-            allowed_origins: vec!["http://ok.example".into(), "\u{7f}bad".into()],
+    /// A well-formed origin the tests configure and expect to be echoed.
+    const GOOD_ORIGIN: &str = "http://ok.example";
+    /// A well-formed origin the tests deliberately never configure.
+    const UNCONFIGURED_ORIGIN: &str = "http://evil.example";
+    /// `\u{7f}` is DEL, which `HeaderValue::from_str` rejects — this is
+    /// the entry [`cors_layer`] must skip rather than panic on.
+    const UNPARSEABLE_ORIGIN: &str = "\u{7f}bad";
+    /// Path of the throwaway route the CORS probes are sent to.
+    const PROBE_PATH: &str = "/probe";
+
+    fn config_with_origins(origins: &[&str]) -> ServerConfig {
+        ServerConfig {
+            allowed_origins: origins.iter().map(|o| (*o).to_string()).collect(),
             ..ServerConfig::default()
+        }
+    }
+
+    /// A stateless router carrying nothing but [`cors_layer`], so the
+    /// layer's real behaviour can be driven without an `AppState`.
+    fn cors_only_router(config: &ServerConfig) -> Router {
+        Router::new()
+            .route(PROBE_PATH, get(|| async { "ok" }))
+            .layer(cors_layer(config))
+    }
+
+    /// Send a simple (non-preflight) `GET` carrying `origin` and return
+    /// the `Access-Control-Allow-Origin` the layer answered with, if any.
+    async fn allow_origin_for(config: &ServerConfig, origin: &str) -> Option<String> {
+        let response = cors_only_router(config)
+            .oneshot(
+                Request::builder()
+                    .uri(PROBE_PATH)
+                    .header(header::ORIGIN, origin)
+                    .body(Body::empty())
+                    .expect("probe request builds"),
+            )
+            .await
+            .expect("probe request is served");
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "the probe route itself must succeed; CORS is advisory to the browser"
+        );
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .map(|v| {
+                v.to_str()
+                    .expect("an echoed origin is always valid ASCII")
+                    .to_string()
+            })
+    }
+
+    /// A malformed entry in `allowed_origins` must be skipped, not panic
+    /// the server at startup — and skipping it must not take its
+    /// well-formed neighbours down with it.
+    ///
+    /// The assertion is the point: an earlier version of this test bound
+    /// the layer to `_layer` and asserted nothing, so it proved only
+    /// "does not panic". Rewriting `cors_layer` to return a bare
+    /// `CorsLayer::new()` — allowing no origin at all — kept it green.
+    #[tokio::test]
+    async fn cors_layer_skips_unparseable_origins_but_keeps_the_valid_ones() {
+        let config = config_with_origins(&[GOOD_ORIGIN, UNPARSEABLE_ORIGIN]);
+        assert_eq!(
+            allow_origin_for(&config, GOOD_ORIGIN).await.as_deref(),
+            Some(GOOD_ORIGIN),
+            "a well-formed origin must survive an unparseable entry beside it"
+        );
+    }
+
+    /// The allowlist has to actually be an allowlist: an origin nobody
+    /// configured gets no `Access-Control-Allow-Origin` back. Without
+    /// this, widening the layer to `AllowOrigin::any()` is invisible.
+    #[tokio::test]
+    async fn cors_layer_does_not_allow_an_unconfigured_origin() {
+        let config = config_with_origins(&[GOOD_ORIGIN]);
+        assert_eq!(
+            allow_origin_for(&config, UNCONFIGURED_ORIGIN).await,
+            None,
+            "an unconfigured origin must not be echoed back as allowed"
+        );
+    }
+
+    /// The preflight answer must carry the methods and headers the
+    /// dashboard actually sends. `Authorization` matters specifically:
+    /// dropping it from `allow_headers` silently breaks every browser
+    /// call to a mutating endpoint once `auth_token` is set, and the
+    /// failure surfaces as a CORS error in the client, not here.
+    #[tokio::test]
+    async fn cors_preflight_allows_the_methods_and_headers_the_dashboard_needs() {
+        let config = config_with_origins(&[GOOD_ORIGIN]);
+        let response = cors_only_router(&config)
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri(PROBE_PATH)
+                    .header(header::ORIGIN, GOOD_ORIGIN)
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                    .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "authorization")
+                    .body(Body::empty())
+                    .expect("preflight request builds"),
+            )
+            .await
+            .expect("preflight is served");
+
+        // The probe route is GET-only, so a 200 here also proves the CORS
+        // layer intercepted the preflight rather than falling through to a 405.
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "the CORS layer must answer the preflight itself"
+        );
+
+        let header_value = |name: header::HeaderName| -> String {
+            response
+                .headers()
+                .get(&name)
+                .unwrap_or_else(|| panic!("preflight answer is missing {name}"))
+                .to_str()
+                .expect("CORS response headers are ASCII")
+                .to_ascii_lowercase()
         };
-        let _layer = cors_layer(&config);
+
+        let methods = header_value(header::ACCESS_CONTROL_ALLOW_METHODS);
+        assert!(
+            methods.contains("get") && methods.contains("post"),
+            "the dashboard reads over GET and writes over POST; got {methods:?}"
+        );
+
+        let headers = header_value(header::ACCESS_CONTROL_ALLOW_HEADERS);
+        assert!(
+            headers.contains("authorization"),
+            "bearer auth is unusable from a browser without Authorization; got {headers:?}"
+        );
+        assert!(
+            headers.contains("content-type"),
+            "every POST body here is JSON; got {headers:?}"
+        );
     }
 }
