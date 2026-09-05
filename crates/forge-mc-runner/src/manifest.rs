@@ -123,10 +123,15 @@ impl ModelManifest {
                 "schema_id must be non-empty".into(),
             ));
         }
+        // Same constants `integrity` verifies against, so the two modules
+        // cannot disagree about a role name.
         for (role, entry) in [
-            ("representation", &self.files.representation),
-            ("dynamics", &self.files.dynamics),
-            ("prediction", &self.files.prediction),
+            (
+                crate::integrity::ROLE_REPRESENTATION,
+                &self.files.representation,
+            ),
+            (crate::integrity::ROLE_DYNAMICS, &self.files.dynamics),
+            (crate::integrity::ROLE_PREDICTION, &self.files.prediction),
         ] {
             if entry.path.is_empty() {
                 return Err(RunnerError::InvalidManifest(format!(
