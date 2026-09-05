@@ -63,12 +63,39 @@ export interface EnvConfig {
     max_attempts: number;
     stale_timeout_ms: number;
   };
-  websocket?: {
-    url: string;
-    host: string;
-    port: number;
-  };
+  websocket?: WebsocketConfig;
   [key: string]: any;
+}
+
+/**
+ * Hardening limits for the control WebSocket. Every field is optional in
+ * `env.toml` (`[websocket]` table) and falls back to
+ * {@link DEFAULT_WEBSOCKET_LIMITS}, so pre-existing configs keep parsing
+ * unchanged.
+ */
+export interface WebsocketLimits {
+  /** Maximum accepted size of a single inbound WebSocket frame, in bytes. */
+  max_payload_bytes: number;
+  /** Maximum number of client messages that may be in flight concurrently. */
+  max_queue_depth: number;
+  /** Reclaim the single client slot after this many ms without a client message (0 disables). */
+  idle_timeout_ms: number;
+  /** Interval between server-initiated WebSocket pings, in ms (0 disables). */
+  ping_interval_ms: number;
+  /** Optional shared secret required at handshake time; `null` = unauthenticated. */
+  auth_token: string | null;
+  /** Query-string parameter carrying {@link WebsocketLimits.auth_token}. */
+  auth_query_param: string;
+}
+
+/** Derived bind information plus the {@link WebsocketLimits} knobs. */
+export interface WebsocketConfig extends WebsocketLimits {
+  /** Echo of `ws_url`. Derived — a `[websocket] url` override is ignored. */
+  url: string;
+  /** Bind host, derived from `ws_url`. */
+  host: string;
+  /** Bind port, derived from `ws_url`. */
+  port: number;
 }
 
 export interface ResetConfig {
@@ -99,6 +126,43 @@ export interface ConfigBundle {
     resetPath: string;
   };
 }
+
+/**
+ * Defaults for the `[websocket]` hardening table.
+ *
+ * Rationale for each number (all overridable in `configs/minecraft/env.toml`):
+ *
+ * - `max_payload_bytes` (16 KiB): every client→server frame this server
+ *   accepts is a tiny JSON control message — the largest is
+ *   `{"type":"reset","seed":9007199254740991}` at ~40 bytes, and
+ *   `{"type":"step","action_id":N}` / `{"type":"close"}` are smaller still.
+ *   16 KiB leaves ~400x headroom for future protocol fields while replacing
+ *   the `ws` library default of 100 MiB per frame, which lets one unauthorised
+ *   peer pin 100 MiB of heap per frame.
+ * - `max_queue_depth` (32): the wire protocol is strictly request/response —
+ *   a well-behaved client has at most one message in flight. 32 tolerates
+ *   pipelining and reordering bursts while bounding the promise chain.
+ * - `idle_timeout_ms` (120_000): the single-client slot is held until the
+ *   socket closes, so a peer that connects and goes silent otherwise owns the
+ *   bot forever. Two minutes is comfortably longer than the longest legitimate
+ *   client-side gap (an inter-episode ONNX bundle hot-reload) and short enough
+ *   to reclaim a wedged session without operator action.
+ * - `ping_interval_ms` (20_000): server-initiated keepalive. A ping left
+ *   unanswered for a full interval marks a half-open TCP connection dead and
+ *   reclaims it well before `idle_timeout_ms` elapses.
+ * - `auth_token` (`null`): opt-in shared secret. Unset preserves the historical
+ *   unauthenticated behaviour (a startup warning is logged instead).
+ * - `auth_query_param` (`'token'`): name of the query-string parameter the
+ *   client may use instead of an `Authorization: Bearer <token>` header.
+ */
+export const DEFAULT_WEBSOCKET_LIMITS: Readonly<WebsocketLimits> = Object.freeze({
+  max_payload_bytes: 16 * 1024,
+  max_queue_depth: 32,
+  idle_timeout_ms: 120_000,
+  ping_interval_ms: 20_000,
+  auth_token: null,
+  auth_query_param: 'token',
+});
 
 export const DEFAULT_ENV_CONFIG = Object.freeze({
   action_map_path: 'configs/minecraft/action_map.toml',
@@ -143,6 +207,7 @@ export const DEFAULT_ENV_CONFIG = Object.freeze({
     view_distance: 6,
   }),
   reconnect: Object.freeze({ ...DEFAULT_RECONNECT_CONFIG }),
+  websocket: Object.freeze({ ...DEFAULT_WEBSOCKET_LIMITS }),
 });
 
 export const DEFAULT_RESET_CONFIG = Object.freeze({
@@ -158,21 +223,101 @@ export const DEFAULT_RESET_CONFIG = Object.freeze({
   }),
 });
 
-function isPlainObject(value: any): boolean {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+/**
+ * Property names that must never be copied by {@link deepMerge}.
+ *
+ * `JSON.parse('{"__proto__": {...}}')` and TOML tables named `constructor` /
+ * `prototype` produce *own* properties with these names. Assigning them onto a
+ * merge target either walks the `Object.prototype.__proto__` setter (polluting
+ * the prototype chain of every object in the process) or shadows the
+ * constructor, so they are dropped from both sides of the merge.
+ */
+const POLLUTING_KEYS: readonly string[] = Object.freeze(['__proto__', 'constructor', 'prototype']);
+
+/** True when `key` is one of the prototype-pollution vectors in {@link POLLUTING_KEYS}. */
+export function isPollutingKey(key: string): boolean {
+  return POLLUTING_KEYS.includes(key);
 }
 
+/**
+ * True only for objects whose prototype is `Object.prototype` or `null`.
+ *
+ * The looser "any non-array object" test used previously treated
+ * `Object.prototype` itself — reachable through a `constructor.prototype`
+ * override — as a mergeable plain object.
+ */
+function isPlainObject(value: any): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Recursively merge `override` onto `base`, returning a new object.
+ *
+ * Keys in {@link POLLUTING_KEYS} are skipped on both sides, so neither a
+ * malicious config file nor a polluted `base` can reach `Object.prototype`.
+ */
 export function deepMerge(base: any, override: any): any {
-  const output = { ...base };
+  const output: Record<string, any> = {};
+  for (const key of Object.keys(Object(base))) {
+    if (isPollutingKey(key)) continue;
+    output[key] = (base as any)[key];
+  }
   if (!isPlainObject(override)) return output;
-  for (const [key, value] of Object.entries(override)) {
-    if (isPlainObject(value) && isPlainObject(base[key])) {
-      output[key] = deepMerge(base[key], value);
+  for (const key of Object.keys(override)) {
+    if (isPollutingKey(key)) continue;
+    const value = override[key];
+    if (isPlainObject(value) && isPlainObject(output[key])) {
+      output[key] = deepMerge(output[key], value);
     } else if (value !== undefined) {
       output[key] = value;
     }
   }
   return output;
+}
+
+function requireIntInRange(value: any, name: string, min: number): number {
+  if (!Number.isInteger(value) || value < min) {
+    throw new Error(`websocket.${name} must be an integer >= ${min}, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+/**
+ * Validate and fill in the `[websocket]` hardening table.
+ *
+ * Unknown keys are dropped; every known key falls back to
+ * {@link DEFAULT_WEBSOCKET_LIMITS} when absent, which is what keeps existing
+ * `env.toml` files (none of which carry a `[websocket]` table) parsing
+ * unchanged.
+ */
+export function normalizeWebsocketConfig(raw: any = {}): WebsocketLimits {
+  const merged = deepMerge(DEFAULT_WEBSOCKET_LIMITS, raw);
+  const authTokenRaw = merged.auth_token;
+  let authToken: string | null = null;
+  if (authTokenRaw !== null && authTokenRaw !== undefined && authTokenRaw !== '') {
+    if (typeof authTokenRaw !== 'string') {
+      throw new Error(`websocket.auth_token must be a string or null, got ${typeof authTokenRaw}`);
+    }
+    authToken = authTokenRaw;
+  }
+  const authQueryParam = merged.auth_query_param;
+  if (typeof authQueryParam !== 'string' || authQueryParam.length === 0) {
+    throw new Error(
+      `websocket.auth_query_param must be a non-empty string, got ${JSON.stringify(authQueryParam)}`,
+    );
+  }
+  return {
+    max_payload_bytes: requireIntInRange(merged.max_payload_bytes, 'max_payload_bytes', 1),
+    max_queue_depth: requireIntInRange(merged.max_queue_depth, 'max_queue_depth', 1),
+    idle_timeout_ms: requireIntInRange(merged.idle_timeout_ms, 'idle_timeout_ms', 0),
+    ping_interval_ms: requireIntInRange(merged.ping_interval_ms, 'ping_interval_ms', 0),
+    auth_token: authToken,
+    auth_query_param: authQueryParam,
+  };
 }
 
 export function normalizeEnvConfig(raw: any = {}): EnvConfig {
@@ -182,7 +327,10 @@ export function normalizeEnvConfig(raw: any = {}): EnvConfig {
     throw new Error(`ws_url must use ws:// or wss://, got ${cfg.ws_url}`);
   }
   const portText = wsUrl.port || (wsUrl.protocol === 'wss:' ? '443' : '80');
-  const websocket = {
+  // `url`/`host`/`port` stay derived from `ws_url` (single source of truth for
+  // the bind address); the `[websocket]` table only supplies hardening limits.
+  const websocket: WebsocketConfig = {
+    ...normalizeWebsocketConfig(cfg.websocket),
     url: cfg.ws_url,
     host: wsUrl.hostname,
     port: Number(portText),

@@ -1,9 +1,16 @@
-import { fileURLToPath } from 'node:url';
+import { timingSafeEqual } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 import { executeAction } from './actions/index.js';
 import { BotManager } from './bot_manager.js';
-import { loadConfigBundle, type ConfigBundle, type EnvConfig } from './config.js';
+import {
+  loadConfigBundle,
+  normalizeWebsocketConfig,
+  type ConfigBundle,
+  type EnvConfig,
+  type WebsocketLimits,
+} from './config.js';
 import { createLogger } from './logger.js';
 import { snapshotObservation, computeObsDim, type Snapshot } from './observation.js';
 import { gridShapePayload } from './observation_grid.js';
@@ -12,6 +19,32 @@ import { applyReset } from './reset.js';
 import { startViewer } from './viewer.js';
 
 const WS_OPEN = 1;
+
+/**
+ * Client-facing text for any server-side failure.
+ *
+ * Raw `Error.message` strings routinely embed absolute filesystem paths,
+ * hostnames, and dependency internals. The detail is logged server-side; the
+ * peer — which may be unauthenticated — only learns that something failed.
+ */
+export const GENERIC_INTERNAL_MESSAGE = 'internal server error; see mc-bot logs';
+
+/** Process exit code used by the fatal-error guards. */
+export const FATAL_EXIT_CODE = 1;
+
+/**
+ * Base used to parse the relative request-target of an HTTP upgrade
+ * (`GET /?token=... HTTP/1.1`) with the WHATWG `URL` parser. Never dialled.
+ */
+const AUTH_URL_BASE = 'ws://mc-bot.invalid';
+
+/** Reduce an unknown thrown value to a loggable `{ error, stack }` pair. */
+function describeError(value: any): { error: string; stack?: string } {
+  if (value instanceof Error) {
+    return { error: value.message, stack: value.stack };
+  }
+  return { error: String(value) };
+}
 
 function sendJson(socket: any, message: any): void {
   socket.send(JSON.stringify(message));
@@ -42,6 +75,86 @@ export function validateObservationConfig(envConfig: EnvConfig, obsDim: number):
   }
 }
 
+// ---------------------------------------------------------------------------
+// Handshake authentication
+// ---------------------------------------------------------------------------
+
+/**
+ * Pull the presented credential off an HTTP upgrade request.
+ *
+ * Two equivalent transports are accepted, in this order:
+ *  1. `Authorization: Bearer <token>` — preferred; keeps the secret out of
+ *     access logs and process listings.
+ *  2. `?<auth_query_param>=<token>` on the request target — for clients (such
+ *     as the Rust `forge-env-mc` client) that only configure a URL.
+ *
+ * @returns the presented token, or `null` when the request carries none.
+ */
+export function extractAuthToken(req: any, queryParam: string): string | null {
+  const header = req?.headers?.authorization;
+  if (typeof header === 'string') {
+    const match = /^bearer\s+(\S+)$/i.exec(header.trim());
+    if (match) return match[1];
+  }
+  const rawUrl = typeof req?.url === 'string' ? req.url : '';
+  if (rawUrl.length > 0) {
+    try {
+      const value = new URL(rawUrl, AUTH_URL_BASE).searchParams.get(queryParam);
+      if (typeof value === 'string' && value.length > 0) return value;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Constant-time string comparison; short-circuits only on length mismatch. */
+export function timingSafeEquals(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'utf8');
+  const right = Buffer.from(b, 'utf8');
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
+/**
+ * Decide whether an upgrade request may open the control channel.
+ *
+ * Returns `true` unconditionally when no `auth_token` is configured, which is
+ * what preserves the historical (unauthenticated) behaviour.
+ */
+export function authorizeRequest(req: any, limits: Pick<WebsocketLimits, 'auth_token' | 'auth_query_param'>): boolean {
+  if (!limits.auth_token) return true;
+  const presented = extractAuthToken(req, limits.auth_query_param);
+  if (presented === null) return false;
+  return timingSafeEquals(presented, limits.auth_token);
+}
+
+/**
+ * Build a `ws` `verifyClient` callback enforcing {@link authorizeRequest}.
+ * A rejected handshake is answered by `ws` with `401 Unauthorized`.
+ */
+export function createVerifyClient(options: {
+  limits: Pick<WebsocketLimits, 'auth_token' | 'auth_query_param'>;
+  logger?: any;
+}): (info: any) => boolean {
+  const { limits, logger = createLogger() } = options;
+  return function verifyClient(info: any): boolean {
+    const allowed = authorizeRequest(info?.req, limits);
+    if (!allowed) {
+      logger.warn?.({
+        event: 'websocket_auth_rejected',
+        remote: info?.req?.socket?.remoteAddress ?? 'unknown',
+        msg: 'rejected WebSocket handshake: missing or invalid auth token',
+      });
+    }
+    return allowed;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Connection handling
+// ---------------------------------------------------------------------------
+
 export function createConnectionHandler(options: {
   bot?: any;
   botManager?: BotManager;
@@ -53,6 +166,7 @@ export function createConnectionHandler(options: {
   // When botManager is provided, always dereference via getBot() for live reference.
   const resolveBot = botManager ? () => botManager.getBot() : () => bot;
   const envConfig = bundle.env;
+  const limits = normalizeWebsocketConfig(envConfig.websocket);
   const obsDim = computeObsDim(envConfig.observation);
   validateObservationConfig(envConfig, obsDim);
   let activeSocket: any = null;
@@ -70,12 +184,94 @@ export function createConnectionHandler(options: {
   }
 
   return function handleConnection(socket: any) {
+    // Register the error listener BEFORE the first send. `ws` reports a send on
+    // a non-OPEN socket by emitting 'error', and an 'error' emit with no
+    // listener throws out of the EventEmitter — which previously took down the
+    // process on the two sends below (BUSY reply and hello handshake).
+    socket.on('error', (error: any) => {
+      logger.warn?.({ event: 'websocket_error', ...describeError(error) });
+    });
+
+    /** Send, swallowing (and logging) transport failures. */
+    const safeSend = (message: any, event: string): void => {
+      try {
+        sendJson(socket, message);
+      } catch (sendErr: any) {
+        logger.warn?.({ event, ...describeError(sendErr) });
+      }
+    };
+
     if (activeSocket && activeSocket.readyState === WS_OPEN) {
-      sendJson(socket, errorMsg('BUSY', 'another client is already connected'));
+      safeSend(errorMsg('BUSY', 'another client is already connected'), 'send_busy_error');
       socket.close();
       return;
     }
     activeSocket = socket;
+
+    // --- keepalive / idle reclaim -----------------------------------------
+    // `lastActivityMs` tracks *application* traffic only. Pongs deliberately do
+    // not refresh it: a live-but-silent client answers pings forever, and it is
+    // exactly that client which must not hold the single bot slot indefinitely.
+    let lastActivityMs = Date.now();
+    let awaitingPong = false;
+    let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+
+    const stopKeepalive = (): void => {
+      if (keepaliveTimer !== null) {
+        clearInterval(keepaliveTimer);
+        keepaliveTimer = null;
+      }
+    };
+    const releaseSlot = (): void => {
+      stopKeepalive();
+      if (activeSocket === socket) activeSocket = null;
+    };
+    const reclaim = (reason: string, detail: Record<string, unknown>): void => {
+      logger.warn?.({
+        event: 'websocket_session_reclaimed',
+        reason,
+        ...detail,
+        msg: 'reclaiming the control channel from an unresponsive client',
+      });
+      releaseSlot();
+      try {
+        if (typeof socket.terminate === 'function') socket.terminate();
+        else socket.close();
+      } catch (err: any) {
+        logger.warn?.({ event: 'session_reclaim_error', ...describeError(err) });
+      }
+    };
+
+    const keepaliveTick = (): void => {
+      const idleMs = Date.now() - lastActivityMs;
+      if (limits.idle_timeout_ms > 0 && idleMs >= limits.idle_timeout_ms) {
+        reclaim('idle_timeout', { idle_ms: idleMs, idle_timeout_ms: limits.idle_timeout_ms });
+        return;
+      }
+      if (limits.ping_interval_ms > 0 && typeof socket.ping === 'function') {
+        if (awaitingPong) {
+          reclaim('ping_timeout', { ping_interval_ms: limits.ping_interval_ms });
+          return;
+        }
+        awaitingPong = true;
+        try {
+          socket.ping();
+        } catch (err: any) {
+          logger.warn?.({ event: 'websocket_ping_error', ...describeError(err) });
+        }
+      }
+    };
+
+    const tickMs = limits.ping_interval_ms > 0 ? limits.ping_interval_ms : limits.idle_timeout_ms;
+    if (tickMs > 0) {
+      keepaliveTimer = setInterval(keepaliveTick, tickMs);
+      // Never keep the process alive purely for a keepalive probe.
+      keepaliveTimer.unref?.();
+    }
+    socket.on('pong', () => {
+      awaitingPong = false;
+    });
+
     const gridShape = gridShapePayload(envConfig.observation);
     if (gridShape !== null) {
       logger.info?.(
@@ -84,27 +280,62 @@ export function createConnectionHandler(options: {
     } else {
       logger.info?.(`[mc-bot] flat observation: obs_dim=${obsDim}`);
     }
-    sendJson(socket, helloMsg({
-      actionCount: bundle.actionMap.actionCount,
-      obsDim,
-      schemaId: bundle.schemaId,
-      gridShape,
-    }));
+    safeSend(
+      helloMsg({
+        actionCount: bundle.actionMap.actionCount,
+        obsDim,
+        schemaId: bundle.schemaId,
+        gridShape,
+      }),
+      'send_hello_error',
+    );
 
-    let queue = Promise.resolve();
+    // --- bounded inbound queue --------------------------------------------
+    // `step` awaits real game ticks, so a client can enqueue far faster than
+    // the chain drains. Depth is capped; breaching it is answered with a
+    // protocol error and a close rather than unbounded buffering.
+    let queue: Promise<void> = Promise.resolve();
+    let queueDepth = 0;
+    let overflowed = false;
+
     const enqueue = (data: any) => {
-      queue = queue.then(() => handleClientMessage(socket, asText(data))).catch((error) => {
-        logger.warn?.(`mc-bot protocol handler error: ${error.message}`);
-        sendJson(socket, errorMsg('INTERNAL', error.message));
-      });
+      lastActivityMs = Date.now();
+      if (overflowed) return;
+      if (queueDepth >= limits.max_queue_depth) {
+        overflowed = true;
+        logger.warn?.({
+          event: 'client_queue_overflow',
+          queue_depth: queueDepth,
+          max_queue_depth: limits.max_queue_depth,
+          msg: 'client exceeded the in-flight message cap; closing the control channel',
+        });
+        safeSend(
+          errorMsg('BACKPRESSURE', `message queue depth exceeded (max ${limits.max_queue_depth})`),
+          'send_backpressure_error',
+        );
+        releaseSlot();
+        socket.close();
+        return;
+      }
+      queueDepth += 1;
+      queue = queue
+        .then(() => (overflowed ? undefined : handleClientMessage(socket, asText(data))))
+        .catch((error: any) => {
+          logger.warn?.({ event: 'protocol_handler_error', ...describeError(error) });
+          safeSend(errorMsg('INTERNAL', GENERIC_INTERNAL_MESSAGE), 'send_internal_error');
+        })
+        .finally(() => {
+          queueDepth -= 1;
+        });
     };
 
     async function handleClientMessage(clientSocket: any, text: string): Promise<void> {
-      let message;
+      let message: ReturnType<typeof parseClientMsg>;
       try {
         message = parseClientMsg(text);
       } catch (error: any) {
-        sendJson(clientSocket, errorMsg('BAD_MESSAGE', error.message));
+        // Parse failures echo only the client's own malformed input.
+        safeSend(errorMsg('BAD_MESSAGE', error.message), 'send_bad_message_error');
         return;
       }
 
@@ -115,13 +346,13 @@ export function createConnectionHandler(options: {
 
       // Guard: if the botManager is mid-reconnect, return RECONNECTING
       if (botManager?.isReconnecting()) {
-        sendJson(clientSocket, errorMsg('RECONNECTING', 'mineflayer reconnecting, please retry'));
+        safeSend(errorMsg('RECONNECTING', 'mineflayer reconnecting, please retry'), 'send_reconnecting_error');
         return;
       }
 
       const currentBot = resolveBot();
       if (!currentBot) {
-        sendJson(clientSocket, errorMsg('RECONNECTING', 'bot unavailable, reconnecting'));
+        safeSend(errorMsg('RECONNECTING', 'bot unavailable, reconnecting'), 'send_reconnecting_error');
         return;
       }
 
@@ -141,30 +372,27 @@ export function createConnectionHandler(options: {
             info: { event: 'reset', seed: message.seed ?? null },
           });
         } catch (err: any) {
-          logger.warn?.({ event: 'reset_error', error: err.message });
+          logger.warn?.({ event: 'reset_error', ...describeError(err) });
           if (botManager) {
-            botManager.reconnect().catch(() => {});
+            botManager.reconnect().catch((reconnectErr: any) => {
+              logger.error?.({ event: 'reconnect_failed', origin: 'reset', ...describeError(reconnectErr) });
+            });
             resultMsg = errorMsg('RECONNECTING', 'mineflayer reconnecting after reset error');
           } else {
-            resultMsg = errorMsg('INTERNAL', err.message);
+            resultMsg = errorMsg('INTERNAL', GENERIC_INTERNAL_MESSAGE);
           }
         }
-        try {
-          sendJson(clientSocket, resultMsg);
-        } catch (sendErr: any) {
-          logger.warn?.({ event: 'send_reset_reply_error', error: sendErr.message });
-        }
+        safeSend(resultMsg, 'send_reset_reply_error');
         return;
       }
 
       if (message.type === 'step') {
         const action = bundle.actionMap.get(message.action_id);
         if (!action) {
-          try {
-            sendJson(clientSocket, errorMsg('INVALID_ACTION', `unknown action_id ${message.action_id}`));
-          } catch (sendErr: any) {
-            logger.warn?.({ event: 'send_invalid_action_reply_error', error: sendErr.message });
-          }
+          safeSend(
+            errorMsg('INVALID_ACTION', `unknown action_id ${message.action_id}`),
+            'send_invalid_action_reply_error',
+          );
           return;
         }
         let resultMsg: any;
@@ -193,29 +421,22 @@ export function createConnectionHandler(options: {
             },
           });
         } catch (err: any) {
-          logger.warn?.({ event: 'step_error', error: err.message });
+          logger.warn?.({ event: 'step_error', ...describeError(err) });
           if (botManager) {
-            botManager.reconnect().catch(() => {});
+            botManager.reconnect().catch((reconnectErr: any) => {
+              logger.error?.({ event: 'reconnect_failed', origin: 'step', ...describeError(reconnectErr) });
+            });
             resultMsg = errorMsg('RECONNECTING', 'mineflayer reconnecting after step error');
           } else {
-            resultMsg = errorMsg('INTERNAL', err.message);
+            resultMsg = errorMsg('INTERNAL', GENERIC_INTERNAL_MESSAGE);
           }
         }
-        try {
-          sendJson(clientSocket, resultMsg);
-        } catch (sendErr: any) {
-          logger.warn?.({ event: 'send_step_reply_error', error: sendErr.message });
-        }
+        safeSend(resultMsg, 'send_step_reply_error');
       }
     }
 
     socket.on('message', enqueue);
-    socket.on('close', () => {
-      if (activeSocket === socket) activeSocket = null;
-    });
-    socket.on('error', (error: any) => {
-      logger.warn?.(`mc-bot websocket error: ${error.message}`);
-    });
+    socket.on('close', releaseSlot);
   };
 }
 
@@ -227,10 +448,28 @@ export async function startProtocolServer(options: {
   logger?: any;
 }): Promise<any> {
   const { bot, botManager, bundle, WebSocketServer, logger = createLogger() } = options;
-  const server = new WebSocketServer({
+  const limits = normalizeWebsocketConfig(bundle.env.websocket);
+  const serverOptions: Record<string, any> = {
     host: bundle.env.websocket?.host,
     port: bundle.env.websocket?.port,
-  });
+    // Replaces the `ws` default of 100 MiB per frame. See
+    // DEFAULT_WEBSOCKET_LIMITS for the sizing rationale.
+    maxPayload: limits.max_payload_bytes,
+  };
+  if (limits.auth_token) {
+    serverOptions.verifyClient = createVerifyClient({ limits, logger });
+    logger.info?.({
+      event: 'websocket_auth_enabled',
+      auth_query_param: limits.auth_query_param,
+      msg: `control channel requires a shared secret via 'Authorization: Bearer <token>' or ?${limits.auth_query_param}=<token>`,
+    });
+  } else {
+    logger.warn?.({
+      event: 'websocket_auth_disabled',
+      msg: `mc-bot control channel is UNAUTHENTICATED: any process that can reach ${bundle.env.websocket?.host}:${bundle.env.websocket?.port} can drive the bot. Set [websocket] auth_token in configs/minecraft/env.toml to require a shared secret.`,
+    });
+  }
+  const server = new WebSocketServer(serverOptions);
   server.on('connection', createConnectionHandler({ bot, botManager, bundle, logger }));
   await new Promise((resolveListen, rejectListen) => {
     server.once('listening', resolveListen);
@@ -243,6 +482,47 @@ async function waitForSpawn(bot: any): Promise<void> {
   if (bot.entity) return;
   await new Promise<void>((resolveSpawn) => {
     bot.once('spawn', resolveSpawn);
+  });
+}
+
+/**
+ * Install process-level guards for errors that escape every `try`/`catch`.
+ *
+ * Both handlers log the full context (message + stack) through the injected
+ * logger and then exit non-zero. Nothing is swallowed: a bot left running after
+ * an unhandled rejection holds the single client slot while being unable to
+ * serve it, and Node's default `unhandledRejection` behaviour (terminate) gives
+ * no structured record of the cause.
+ *
+ * Not installed on import — call it explicitly at the entry point (per the
+ * project's no-side-effects-on-import rule).
+ */
+export function installProcessGuards(options: {
+  logger?: any;
+  processRef?: any;
+  exit?: (code: number) => void;
+} = {}): void {
+  const logger = options.logger ?? createLogger();
+  const proc = options.processRef ?? process;
+  const exit = options.exit ?? ((code: number) => proc.exit(code));
+
+  proc.on('unhandledRejection', (reason: any) => {
+    logger.error?.({
+      event: 'unhandled_rejection',
+      ...describeError(reason),
+      msg: 'unhandled promise rejection; exiting',
+    });
+    exit(FATAL_EXIT_CODE);
+  });
+
+  proc.on('uncaughtException', (error: any, origin?: any) => {
+    logger.error?.({
+      event: 'uncaught_exception',
+      origin: origin ?? 'uncaughtException',
+      ...describeError(error),
+      msg: 'uncaught exception; exiting',
+    });
+    exit(FATAL_EXIT_CODE);
   });
 }
 
@@ -298,8 +578,10 @@ export async function main(options: any = {}): Promise<any> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
+  const bootLogger = createLogger();
+  installProcessGuards({ logger: bootLogger });
+  main({ logger: bootLogger }).catch((error) => {
+    bootLogger.error?.({ event: 'startup_failed', ...describeError(error) });
+    process.exitCode = FATAL_EXIT_CODE;
   });
 }

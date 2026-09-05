@@ -1,0 +1,9 @@
+# Build context for docker/mc-bot.Dockerfile is `mc-bot/`. Keep it to the
+# manifests + TypeScript sources the builder stage actually compiles: the
+# image installs its own dependency tree and emits its own dist/.
+node_modules
+dist
+coverage
+.nyc_output
+test
+*.log
