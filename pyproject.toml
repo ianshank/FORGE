@@ -142,8 +142,6 @@ module = [
     "tomli",
     "jax",
     "jax.*",
-    "numpy",
-    "numpy.*",
     "gymnasium",
     "gymnasium.*",
     "pettingzoo",
@@ -204,6 +202,30 @@ ignore_missing_imports = true
 # only supported in Python 3.10 and greater` despite us not actually using
 # those modules' typed surface.
 follow_imports = "skip"
+
+# numpy gets its own block, deliberately WITHOUT `follow_imports = "skip"`.
+#
+# It used to sit in the block above, and that one setting erased every numpy
+# type in the repository to `Any`: `follow_imports = "skip"` tells mypy not to
+# read the module at all, so `np.zeros("not-a-shape")` and
+# `ndarray.no_such_method()` both type-check clean and every `np.ndarray`
+# annotation in `python/` was decorative. The workspace mypy gate exited 0
+# while checking none of it.
+#
+# The skip is legitimate for the modules above (the comment there explains
+# it), but numpy was collateral: it ships inline types (`py.typed` since 1.20)
+# and `python-lint` installs it, so mypy has real stubs available and was
+# being told to ignore them. `ignore_missing_imports` alone is what that entry
+# was actually for -- a no-op when the package is present, and a graceful
+# degradation when it is not (e.g. a contributor without numpy installed).
+#
+# `tests/python/type_checking/test_numpy_types_are_live.py` is what caught
+# this and is what keeps it caught: deliberate numpy type errors under
+# `# type: ignore`, which `warn_unused_ignores = true` turns into a CI failure
+# the moment numpy stops being type-checked again.
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # numpy operations (np.array, np.concatenate, np.mean) are typed `Any` in the
