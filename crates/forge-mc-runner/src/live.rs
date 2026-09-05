@@ -22,6 +22,8 @@
 //!   │       ├── MinecraftEnv::connect(env_cfg, action_map)
 //!   │       ├── ModelManifest::load_json(cfg.manifest_path)
 //!   │       ├── OnnxModelConfig := config_from_manifest(...)
+//!   │       │     └── integrity::verify_bundle — path containment
+//!   │       │           + per-role sha256 (same call on hot-reload)
 //!   │       ├── OnnxMuZeroModel::load(onnx_cfg)
 //!   │       ├── LatentMctsSearch::new(model, mcts_cfg)
 //!   │       ├── TrajectoryWriter::new(...).with_compression(...)
@@ -185,13 +187,17 @@ fn run_live_trained(
     // runner config means "auto-derive from action_map" — handled here
     // BEFORE the `OnnxRuntimeConfig` lookup loses the bot-side count.
     let onnx_invariants = resolve_onnx_invariants(&cfg.onnx, action_count);
+    // `config_from_manifest` verifies bundle integrity (path
+    // containment + per-role sha256) before returning; a tampered or
+    // escaping bundle fails startup here rather than being handed to
+    // the ONNX Runtime.
     let onnx_cfg = config_from_manifest(
         &manifest,
         &bundle_dir,
         onnx_invariants.action_space_size,
         onnx_invariants.latent_dim,
         onnx_invariants.num_threads,
-    );
+    )?;
 
     // 6. Load the model.
     let model = OnnxMuZeroModel::load(onnx_cfg)
@@ -366,13 +372,16 @@ fn build_reload_fn_with_metrics(
 ) -> ReloadFn<OnnxMuZeroModel> {
     Box::new(
         move |model: &mut OnnxMuZeroModel, manifest: &ModelManifest| {
+            // Integrity verification happens inside
+            // `config_from_manifest`; a failing hot-reload leaves the
+            // model serving the previously-verified bundle.
             let new_config = config_from_manifest(
                 manifest,
                 &bundle_dir,
                 action_space_size,
                 latent_dim,
                 num_threads,
-            );
+            )?;
             model
                 .reload(new_config)
                 .map_err(|e: OnnxReloadError| RunnerError::Reload(e.to_string()))?;

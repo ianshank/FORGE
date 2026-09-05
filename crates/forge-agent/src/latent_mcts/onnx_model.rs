@@ -47,6 +47,17 @@ pub enum OnnxReloadError {
 /// downstream tests + the runner's onnx-reload wrapper can short-
 /// circuit on missing files **before** calling into `ort`, which
 /// would produce a less informative error.
+///
+/// # Scope
+///
+/// Existence only. This is *not* an integrity or provenance check: it
+/// says nothing about who wrote the file, whether its bytes match a
+/// recorded digest, or whether the path came from a trusted source.
+/// Callers that load a bundle described by an on-disk manifest must
+/// verify it themselves first — `forge_mc_runner::integrity::
+/// verify_bundle` does that (path containment + per-role sha256), and
+/// the runner routes both its initial load and its hot-reload through
+/// it before any `OnnxModelConfig` reaches this function.
 pub fn validate_reload_paths(config: &OnnxModelConfig) -> Result<(), OnnxReloadError> {
     for path in [
         &config.representation_path,
@@ -78,6 +89,12 @@ pub const DEFAULT_NUM_THREADS: usize = 1;
 pub const DEFAULT_ACTION_SPACE_SIZE: u32 = 75;
 
 /// Configuration for the ONNX MuZero model.
+///
+/// The three paths are handed straight to the ONNX Runtime, which
+/// parses whatever bytes it finds there. Nothing in this crate
+/// validates their provenance, so a caller that derives them from an
+/// on-disk manifest is responsible for verifying that manifest first
+/// (see [`validate_reload_paths`] for the full note).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnnxModelConfig {
     /// Path to the representation network ONNX file.

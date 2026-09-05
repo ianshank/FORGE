@@ -1439,6 +1439,7 @@ dependencies = [
  "rand_pcg",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
@@ -4346,8 +4347,10 @@ dependencies = [
  "bitflags 2.11.0",
  "bytes",
  "http",
+ "http-body",
  "percent-encoding",
  "pin-project-lite",
+ "tokio",
  "tower-layer",
  "tower-service",
 ]

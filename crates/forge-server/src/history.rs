@@ -16,6 +16,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use forge_types::time::now_ms;
@@ -175,14 +176,24 @@ where
 /// Append-only, JSONL file-backed [`HistoryStore`].
 ///
 /// Two files live under a base directory: `training.jsonl` and `traces.jsonl`.
-/// Each append writes one JSON line and then trims the file to the newest
+/// An append writes its JSON lines and then trims the file to the newest
 /// `retention` lines. Writes are serialized by an internal mutex; reads parse
 /// the whole (bounded) file.
+///
+/// ## Write amplification
+///
+/// Trimming rewrites the whole file, so it happens **once per append
+/// call**, not once per record: a `POST /api/decision-traces` carrying
+/// `n` traces performs one rewrite, not `n`. Doing it per record meant a
+/// 500-trace batch re-read and rewrote a 10 000-line file 500 times
+/// while holding the global write mutex. [`Self::retention_passes`]
+/// exposes the counter that pins this.
 pub struct JsonlHistoryStore {
     training_path: PathBuf,
     traces_path: PathBuf,
     retention: usize,
     write_lock: Mutex<()>,
+    retention_passes: AtomicU64,
 }
 
 impl JsonlHistoryStore {
@@ -202,29 +213,65 @@ impl JsonlHistoryStore {
             traces_path: dir.join(Self::TRACES_FILE),
             retention: retention.max(1),
             write_lock: Mutex::new(()),
+            retention_passes: AtomicU64::new(0),
         })
+    }
+
+    /// How many retention rewrites this store has performed since it was
+    /// opened.
+    ///
+    /// A diagnostic counter: it should track the number of *append
+    /// calls* that overflowed retention, never the number of records
+    /// written. A ratio well above 1 rewrite per append call means the
+    /// per-record amplification has crept back in.
+    pub fn retention_passes(&self) -> u64 {
+        self.retention_passes.load(Ordering::Relaxed)
     }
 
     /// Append one serialized record line to `path`, then enforce retention.
     fn append_line<T: Serialize>(&self, path: &Path, record: &T) -> Result<(), HistoryError> {
+        self.append_lines(path, std::slice::from_ref(record))
+    }
+
+    /// Append every record in `records` to `path`, then enforce retention
+    /// **once** for the whole batch.
+    ///
+    /// Takes the write lock for the entire batch so a concurrent writer
+    /// cannot interleave lines between the append and the trim.
+    fn append_lines<T: Serialize>(&self, path: &Path, records: &[T]) -> Result<(), HistoryError> {
+        if records.is_empty() {
+            return Ok(());
+        }
         let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
-        let line = serde_json::to_string(record).map_err(|e| HistoryError::Serde(e.to_string()))?;
+        // Serialize before opening the file so a malformed record fails
+        // without leaving a partial batch on disk.
+        let mut lines = Vec::with_capacity(records.len());
+        for record in records {
+            lines.push(
+                serde_json::to_string(record).map_err(|e| HistoryError::Serde(e.to_string()))?,
+            );
+        }
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
             .map_err(|e| HistoryError::Io(e.to_string()))?;
-        writeln!(file, "{line}").map_err(|e| HistoryError::Io(e.to_string()))?;
+        for line in &lines {
+            writeln!(file, "{line}").map_err(|e| HistoryError::Io(e.to_string()))?;
+        }
         drop(file);
         self.enforce_retention(path)
     }
 
     /// Trim `path` to its newest `retention` lines (rewrite via temp + rename).
+    ///
+    /// Callers must already hold `write_lock`.
     fn enforce_retention(&self, path: &Path) -> Result<(), HistoryError> {
         let lines = read_lines(path)?;
         if lines.len() <= self.retention {
             return Ok(());
         }
+        self.retention_passes.fetch_add(1, Ordering::Relaxed);
         let keep = &lines[lines.len() - self.retention..];
         let tmp = path.with_extension("jsonl.tmp");
         {
@@ -284,15 +331,19 @@ impl HistoryStore for JsonlHistoryStore {
         run_id: &str,
         traces: &[DecisionTraceEntry],
     ) -> Result<(), HistoryError> {
-        for trace in traces {
-            let record = TraceRecord {
+        // One `append_lines` call for the whole batch: retention runs
+        // once, not once per trace (see the write-amplification note on
+        // [`JsonlHistoryStore`]).
+        let recorded_at_ms = now_ms();
+        let records: Vec<TraceRecord> = traces
+            .iter()
+            .map(|trace| TraceRecord {
                 run_id: run_id.to_string(),
-                recorded_at_ms: now_ms(),
+                recorded_at_ms,
                 trace: trace.clone(),
-            };
-            self.append_line(&self.traces_path, &record)?;
-        }
-        Ok(())
+            })
+            .collect();
+        self.append_lines(&self.traces_path, &records)
     }
 
     fn training_history(
@@ -366,11 +417,16 @@ impl HistoryStore for InMemoryHistoryStore {
         run_id: &str,
         traces: &[DecisionTraceEntry],
     ) -> Result<(), HistoryError> {
+        // One timestamp for the batch, matching `JsonlHistoryStore`:
+        // the two implementations must be interchangeable, and a POST
+        // is a single capture event regardless of how many traces it
+        // carries.
+        let recorded_at_ms = now_ms();
         let mut buf = self.traces.lock().unwrap_or_else(|e| e.into_inner());
         for trace in traces {
             buf.push(TraceRecord {
                 run_id: run_id.to_string(),
-                recorded_at_ms: now_ms(),
+                recorded_at_ms,
                 trace: trace.clone(),
             });
         }
@@ -561,6 +617,79 @@ mod tests {
         assert!(json.contains("\"startedAtMs\":1"));
         assert!(json.contains("\"lastSeenMs\":2"));
         assert!(json.contains("\"latestMeanReward\":0.5"));
+    }
+
+    /// A batched trace append must trim once, not once per trace.
+    /// Before the fix a 5-trace POST rewrote the file 5 times (and, at
+    /// production batch sizes, hundreds of times) under a global mutex.
+    #[test]
+    fn batched_trace_append_trims_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = JsonlHistoryStore::open(dir.path(), 3).unwrap();
+        // Pre-fill to retention so the batch below definitely overflows.
+        store
+            .append_traces("run-a", &[trace(0), trace(1), trace(2)])
+            .unwrap();
+        let before = store.retention_passes();
+        store
+            .append_traces("run-a", &[trace(3), trace(4), trace(5), trace(6), trace(7)])
+            .unwrap();
+        assert_eq!(
+            store.retention_passes() - before,
+            1,
+            "a 5-trace batch must trigger exactly one retention rewrite"
+        );
+    }
+
+    /// Trimming a batch must still leave exactly the newest `retention`
+    /// records — cheaper must not mean lossier.
+    #[test]
+    fn batched_trace_append_keeps_newest_n() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = JsonlHistoryStore::open(dir.path(), 3).unwrap();
+        let batch: Vec<DecisionTraceEntry> = (0..10).map(trace).collect();
+        store.append_traces("run-a", &batch).unwrap();
+        let recs = store.traces_history(None, 100).unwrap();
+        assert_eq!(recs.len(), 3);
+        assert_eq!(recs[0].trace.tick, 7);
+        assert_eq!(recs[2].trace.tick, 9);
+    }
+
+    /// An append that stays under retention must not rewrite at all.
+    #[test]
+    fn append_under_retention_does_not_trim() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = JsonlHistoryStore::open(dir.path(), 100).unwrap();
+        store
+            .append_traces("run-a", &[trace(1), trace(2), trace(3)])
+            .unwrap();
+        store.append_training("run-a", &metrics(1, 0.0)).unwrap();
+        assert_eq!(store.retention_passes(), 0);
+    }
+
+    /// Per-record appends still trim per call — the hoist must not have
+    /// changed single-record semantics.
+    #[test]
+    fn training_appends_trim_once_per_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = JsonlHistoryStore::open(dir.path(), 2).unwrap();
+        for i in 0..5 {
+            store.append_training("run-a", &metrics(i, 0.0)).unwrap();
+        }
+        // Calls 1 and 2 fit under retention; calls 3, 4, 5 each trim.
+        assert_eq!(store.retention_passes(), 3);
+        assert_eq!(store.training_history(None, 100).unwrap().len(), 2);
+    }
+
+    /// An empty batch is a no-op: no file created, no trim.
+    #[test]
+    fn empty_trace_batch_is_a_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = JsonlHistoryStore::open(dir.path(), 3).unwrap();
+        store.append_traces("run-a", &[]).unwrap();
+        assert_eq!(store.retention_passes(), 0);
+        assert!(store.traces_history(None, 100).unwrap().is_empty());
+        assert!(!dir.path().join("traces.jsonl").exists());
     }
 
     #[test]

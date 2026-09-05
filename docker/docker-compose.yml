@@ -9,6 +9,14 @@ services:
       - ../forge.toml:/app/forge.toml:ro
       - ../configs:/app/configs:ro
     environment:
+      # forge-server now defaults to 127.0.0.1 so a bare `cargo run` is not
+      # reachable off-host. In a container that default is wrong: Docker's
+      # port forwarding arrives on the container's own interface, which a
+      # loopback-bound process refuses, so the published port would connect
+      # to nothing. Binding 0.0.0.0 here is safe because the container
+      # network namespace is the isolation boundary and the `ports:` entry
+      # above already restricts host exposure to 127.0.0.1.
+      - FORGE_SERVER_BIND=0.0.0.0:8080
       - FORGE_SIMULATION_GRID_SIZE=${FORGE_SIMULATION_GRID_SIZE:-64}
       - FORGE_HARDWARE_NUM_WORKERS=${FORGE_HARDWARE_NUM_WORKERS:-4}
       - RUST_LOG=${RUST_LOG:-info}

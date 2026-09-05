@@ -20,6 +20,10 @@ services:
       - model-registry:/app/models
       - checkpoint-storage:/app/checkpoints
     environment:
+      # See docker-compose.yml: forge-server's default bind is now loopback,
+      # which a published container port cannot reach. The `ports:` entry
+      # above keeps host exposure limited to 127.0.0.1.
+      - FORGE_SERVER_BIND=0.0.0.0:8080
       - FORGE_CLOUD_ENABLED=true
       - FORGE_CLOUD_NUM_WORKERS=${FORGE_CLOUD_NUM_WORKERS:-4}
       - FORGE_CLOUD_REPLAY_BATCH_SIZE=${FORGE_CLOUD_REPLAY_BATCH_SIZE:-64}
@@ -64,6 +68,13 @@ services:
       - replay-storage:/app/replays
       - model-registry:/app/models:ro
     environment:
+      # Deliberately NOT setting FORGE_SERVER_BIND here, unlike the
+      # coordinator above. The worker publishes no host port, and its
+      # healthcheck runs inside the container against localhost, so the new
+      # loopback default works and is the tighter setting. Workers dial the
+      # coordinator (FORGE_CLOUD_COORDINATOR_PORT); nothing dials them.
+      # Only add a 0.0.0.0 bind here if a service starts connecting *to* a
+      # worker's HTTP port across forge-net.
       - FORGE_CLOUD_ENABLED=true
       - FORGE_CLOUD_COORDINATOR_PORT=${FORGE_CLOUD_COORDINATOR_PORT:-9090}
       - FORGE_CLOUD_REPLAY_BATCH_SIZE=${FORGE_CLOUD_REPLAY_BATCH_SIZE:-64}

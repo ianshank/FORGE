@@ -40,9 +40,19 @@ fn resolve_run_id(state: &AppState, headers: &HeaderMap, query: &HistoryQuery) -
     state.run_id.to_string()
 }
 
-/// Clamp a request's `limit` to the configured default when absent.
-fn effective_limit(state: &AppState, query: &HistoryQuery) -> usize {
-    query.limit.unwrap_or(state.history_query_limit)
+/// Resolve a request's `limit` against the server's `configured` cap.
+///
+/// Absent → the configured limit. Present → the smaller of the two, so
+/// `?limit=1000000` cannot make the server read and serialize an
+/// unbounded slice of history on an unauthenticated GET. (This
+/// previously only supplied a default, despite the name.)
+///
+/// Takes the cap rather than the whole `AppState` so it is directly
+/// unit-testable.
+fn effective_limit(configured: usize, query: &HistoryQuery) -> usize {
+    query
+        .limit
+        .map_or(configured, |requested| requested.min(configured))
 }
 
 /// Response payload for the `/api/config` endpoint.
@@ -240,7 +250,7 @@ pub async fn training_history_handler(
     State(state): State<AppState>,
     Query(query): Query<HistoryQuery>,
 ) -> Json<Vec<TrainingRecord>> {
-    let limit = effective_limit(&state, &query);
+    let limit = effective_limit(state.history_query_limit, &query);
     match state
         .history
         .training_history(query.run_id.as_deref(), limit)
@@ -283,7 +293,7 @@ pub async fn traces_history_handler(
     State(state): State<AppState>,
     Query(query): Query<HistoryQuery>,
 ) -> Json<Vec<TraceRecord>> {
-    let limit = effective_limit(&state, &query);
+    let limit = effective_limit(state.history_query_limit, &query);
     match state.history.traces_history(query.run_id.as_deref(), limit) {
         Ok(records) => Json(records),
         Err(e) => {
@@ -355,6 +365,51 @@ mod tests {
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("schemaVersion"));
+    }
+
+    /// Absent `limit` falls back to the server's configured cap.
+    #[test]
+    fn effective_limit_defaults_to_configured_cap() {
+        let query = HistoryQuery::default();
+        assert_eq!(effective_limit(500, &query), 500);
+    }
+
+    /// A request below the cap is honoured verbatim.
+    #[test]
+    fn effective_limit_honours_smaller_request() {
+        let query = HistoryQuery {
+            limit: Some(10),
+            ..HistoryQuery::default()
+        };
+        assert_eq!(effective_limit(500, &query), 10);
+    }
+
+    /// The bug this fixes: an oversized `?limit=` used to pass straight
+    /// through, so an unauthenticated GET could ask for every record.
+    #[test]
+    fn effective_limit_clamps_oversized_request() {
+        let query = HistoryQuery {
+            limit: Some(1_000_000),
+            ..HistoryQuery::default()
+        };
+        assert_eq!(effective_limit(500, &query), 500);
+        // Exactly at the cap is not clamped down.
+        let at_cap = HistoryQuery {
+            limit: Some(500),
+            ..HistoryQuery::default()
+        };
+        assert_eq!(effective_limit(500, &at_cap), 500);
+    }
+
+    /// `usize::MAX` is the shape a caller would use to try to defeat the
+    /// cap; it must clamp like any other oversized value.
+    #[test]
+    fn effective_limit_clamps_usize_max() {
+        let query = HistoryQuery {
+            limit: Some(usize::MAX),
+            ..HistoryQuery::default()
+        };
+        assert_eq!(effective_limit(7, &query), 7);
     }
 
     #[test]
