@@ -328,6 +328,16 @@ jobs:
         # see the script's own docstring for exactly which pins it
         # cross-checks and why.
         run: python3 scripts/check_pinned_config_consistency.py
+      - name: Text-encoding drift check
+        # Rejects NUL bytes in text-tracked files and line-ending drift.
+        # Both have already happened here: 0303612 removed a stray NUL that
+        # made a .ts file binary (and it recurred in mc-bot/test/
+        # security.test.ts), and d51ba6d restored CHANGELOG.md's CRLF after a
+        # text-mode edit flattened ~2000 lines. git renders such files as
+        # `Bin`, so neither showed a reviewable diff. The .claude/hooks
+        # guards only fire inside Claude Code sessions; this step is the
+        # contributor-agnostic backstop.
+        run: python3 scripts/check_text_encoding.py
 
   python-test:
     name: Python Tests (maturin)
@@ -379,6 +389,7 @@ jobs:
           pytest tests/python/ -v \
             --cov=forge --cov=forge_env --cov=scripts.v05_manual_baseline \
             --cov=check_pinned_config_consistency \
+            --cov=check_text_encoding \
             --cov-report=term-missing \
             --cov-fail-under=85 \
             --cov-config=.coveragerc

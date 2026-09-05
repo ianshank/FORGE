@@ -85,6 +85,9 @@ gitleaks: ## Scan git history for committed secrets (advisory; needs the gitleak
 pin-check: ## Cross-check Rust toolchain / ONNX Runtime / LM Studio endpoint pins duplicated across workflows, Dockerfiles, and Python
 	python3 scripts/check_pinned_config_consistency.py
 
+text-check: ## Reject NUL bytes in text files and line-ending drift (both have bitten this repo -- see the script's docstring)
+	python3 scripts/check_text_encoding.py
+
 # ---- Python ------------------------------------------------------------------
 
 py-lint: ## ruff + mypy (matches CI's python-lint job)
@@ -110,7 +113,7 @@ web-e2e: ## WASM demo: unit + Playwright E2E against the real web/ demo (needs w
 
 # ---- Aggregate -----------------------------------------------------------
 
-verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/wasm-test/deny/gitleaks -- see verify-full)
+verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check text-check mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/wasm-test/deny/gitleaks -- see verify-full)
 	@echo "verify: all standard gates passed."
 
 verify-full: verify coverage deny gitleaks ## verify, plus the slower/environment-dependent gates (tarpaulin, cargo-deny, gitleaks). Does NOT include onnx-check (needs ORT_DYLIB_PATH set manually).
