@@ -106,24 +106,88 @@ def _find_piped_to_rm(tokens: list[str]) -> bool:
     return False
 
 
-def _command_tokens(command: str) -> list[str] | None:
-    """Tokenize the whole command, or None if it doesn't parse.
+def _lex(text: str) -> list[str] | None:
+    """shlex `text` into tokens, or None if it doesn't parse.
 
     `punctuation_chars=True` makes `;`, `&`, `&&`, `|`, `||`, and `(`/`)`
     their own tokens even with no surrounding whitespace (`rm -f
     .cover*;git status` -> [..., ".cover*", ";", "git", "status"], not
     [..., ".cover*;git", "status"]) -- plain shlex.split() only splits on
     whitespace, so a glob glued to a following command without a space
-    would be missed entirely. shlex's default whitespace set already
-    includes newlines, so a script with `rm ...` on its own line is
-    tokenized the same as if it were `;`-separated.
+    would be missed entirely.
     """
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
         return list(lexer)
     except ValueError:
         return None
+
+
+def _continues_next_line(raw_line: str, tokens: list[str]) -> bool:
+    """Does `raw_line` continue into the next one rather than ending a command?
+
+    Two cases, and getting either wrong is a false *negative* -- the
+    dangerous direction -- because a spurious separator would end `rm`'s
+    argument list early and let the real targets through unexamined:
+
+    * a trailing backslash is an explicit line continuation;
+    * a line whose last token is `&&`, `||`, `|` or `;` is mid-list, and
+      already carries its own separator, so adding another is pointless.
+    """
+    return raw_line.rstrip().endswith("\\") or (
+        bool(tokens) and tokens[-1] in _SEPARATOR_TOKENS
+    )
+
+
+def _command_tokens(command: str) -> list[str] | None:
+    """Tokenize the whole command, or None if it doesn't parse.
+
+    Newlines are turned into explicit `;` separator tokens, because shlex
+    does the opposite of what is wanted here: a newline is ordinary
+    whitespace to it, so it is *consumed* rather than emitted. This
+    function's docstring used to claim a newline was "tokenized the same as
+    if it were `;`-separated"; it was not, and the consequence was a
+    false positive that fired in practice.
+
+        rm -rf build_output/
+        grep -n pattern .gitignore
+
+    lexes to [rm, -rf, build_output/, grep, -n, pattern, .gitignore], with
+    nothing to tell `_rm_targets` that `rm`'s arguments ended at the line
+    break -- so with `-r` seen, `.gitignore` is collected as a recursive
+    delete target and a tracked file is reported. Any multi-line command
+    that mentions a tracked path after an `rm -r` on an earlier line hits
+    this, which is common enough to train people to work around the guard.
+
+    Lines are lexed individually and rejoined with `;`, except where the
+    previous line continues (see `_continues_next_line`). A line that fails
+    to lex on its own -- a quoted string spanning lines is the realistic
+    case -- makes this fall back to lexing the whole command at once, which
+    is exactly the previous behaviour, so nothing that used to be caught
+    stops being caught.
+    """
+    lines = command.splitlines()
+    if len(lines) <= 1:
+        return _lex(command)
+
+    tokens: list[str] = []
+    previous_raw = ""
+    for raw_line in lines:
+        line_tokens = _lex(raw_line)
+        if line_tokens is None:
+            # A line that doesn't parse alone (e.g. an open quote continuing
+            # onto the next line). Fall back to whole-command lexing rather
+            # than guessing; over-collecting targets is the safe direction.
+            return _lex(command)
+        # Whether to separate is decided by the line just *ended*, not the
+        # one about to start -- the trailing backslash and the dangling
+        # `&&` both live at the end of the previous line.
+        if tokens and line_tokens and not _continues_next_line(previous_raw, tokens):
+            tokens.append(";")
+        tokens.extend(line_tokens)
+        previous_raw = raw_line
+    return tokens
 
 
 def _tracked_files(cwd: str) -> list[str] | None:

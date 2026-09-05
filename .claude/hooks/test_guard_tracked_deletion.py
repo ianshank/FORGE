@@ -223,6 +223,59 @@ class EvaluateTests(unittest.TestCase):
         with TrackedRepo() as repo:
             self._block(repo, "printf x\nrm -rf .coveragerc\n")
 
+    # -- Regression tests: a newline did not end `rm`'s argument list.
+    #
+    # `_command_tokens` used to lex the whole command at once, and shlex
+    # treats a newline as ordinary whitespace -- so it is *consumed*, not
+    # emitted as a separator. `_rm_targets` therefore kept collecting after
+    # the line break, and with `-r` already seen every later bare token
+    # became a recursive delete target. The docstring claimed the opposite
+    # ("tokenized the same as if it were `;`-separated"), which is why it
+    # went unnoticed. Newlines are now explicit `;` tokens.
+    #
+    # The false-positive direction is what bites in practice; the
+    # continuation cases below are the dangerous direction, because a
+    # spurious separator would end the argument list early and let real
+    # targets through unexamined.
+
+    def test_allows_a_later_line_merely_mentioning_a_tracked_path(self) -> None:
+        """The reported false positive: an `rm` and an unrelated `grep`.
+
+        Nothing here deletes `.coveragerc` -- it is an argument to grep on a
+        separate line -- but the guard reported it as a recursive delete
+        target and blocked the command.
+        """
+        with TrackedRepo() as repo:
+            self._allow(repo, 'rm -rf build_out\ngrep -n pattern .coveragerc || true')
+
+    def test_allows_a_tracked_path_read_by_a_later_command(self) -> None:
+        """Same shape without a glob or a pipe, to pin the mechanism itself."""
+        with TrackedRepo() as repo:
+            self._allow(repo, "rm -rf build_out\ncat .coveragerc")
+
+    def test_still_blocks_across_a_backslash_line_continuation(self) -> None:
+        """A trailing `\\` continues the argument list, so no separator.
+
+        Getting this wrong is a false negative -- the guard would stop
+        looking exactly where the real target is.
+        """
+        with TrackedRepo() as repo:
+            self._block(repo, "rm -rf \\\n  .coveragerc")
+
+    def test_still_blocks_across_a_dangling_operator(self) -> None:
+        """A line ending in `&&` is mid-list and already carries a separator."""
+        with TrackedRepo() as repo:
+            self._block(repo, "rm -rf build_out &&\n  rm -rf .coveragerc")
+
+    def test_falls_back_to_whole_command_lexing_for_a_multiline_quote(self) -> None:
+        """A quoted string spanning lines does not parse line-by-line.
+
+        The fallback is the pre-fix behaviour, so a delete inside such a
+        command is still examined rather than skipped.
+        """
+        with TrackedRepo() as repo:
+            self._block(repo, 'printf "a\nb"\nrm -rf .coveragerc')
+
     # -- Regression tests for a peer-review finding: `find ... -delete`
     # only checked a bare `-name` selector, so `-iname`, `-path`/`-ipath`,
     # an unevaluated `-regex`, or no filter at all (deleting every match
