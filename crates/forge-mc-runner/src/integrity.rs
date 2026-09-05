@@ -32,6 +32,29 @@
 //! `verify_bundle` before handing any path to the ONNX Runtime — so
 //! neither path can skip verification.
 //!
+//! ## What the digest check is, and is not, worth
+//!
+//! Be precise about this, because the two halves of `verify_bundle` have
+//! very different strengths against the threat model above.
+//!
+//! **Path containment is the load-bearing control.** It holds even against a
+//! writer who fully controls `model_manifest.json`: no manifest string can
+//! name a file outside `bundle_dir`.
+//!
+//! **The sha256 check is not.** The digest it compares against is read out of
+//! the same manifest as the path, so an actor who can rewrite `dynamics.onnx`
+//! can rewrite `files.dynamics.sha256` in the same directory and the check
+//! passes. It detects **corruption, truncation, and staleness** — a partial
+//! write, a half-copied file, a bundle the trainer never finished rewriting —
+//! which are the realistic failure modes here. It does **not** establish
+//! authenticity, and reading it as "the bundle is the one we expect" would be
+//! false confidence.
+//!
+//! Making it authentic needs an expected digest from outside the bundle: a
+//! pin in `runner.toml` / a `FORGE_MC_*` env var, or a signature over the
+//! manifest. `checkpoint_loader.py`'s `expected_sha256=` parameter is that
+//! shape on the Python side; the runner does not have an equivalent yet.
+//!
 //! ## What this does not defend against
 //!
 //! Verification is time-of-check; `ort` re-opens the files when it
@@ -517,6 +540,53 @@ mod tests {
                 );
             }
             other => panic!("expected UnsafeModelPath, got {other:?}"),
+        }
+    }
+
+    /// Escape into a *sibling directory whose name shares a prefix* with the
+    /// bundle -- `models/` vs `models-attacker/`.
+    ///
+    /// This pins the choice of `Path::starts_with` over a string comparison.
+    /// `Path::starts_with` matches whole components, so `models-attacker` is
+    /// not "inside" `models`; `str::starts_with` would accept it, because
+    /// "/…/models-attacker/evil.onnx" does literally begin with "/…/models".
+    ///
+    /// Not hypothetical: an adversarial review rewrote the check as
+    /// `resolved.to_string_lossy().starts_with(&*base.to_string_lossy())`,
+    /// and the entire suite still passed -- the escape was demonstrated
+    /// end-to-end before the mutation was reverted. The existing
+    /// parent-directory symlink test above cannot catch it, because a parent
+    /// path shares no string prefix with its child. This test is the one that
+    /// makes the containment check's implementation load-bearing.
+    #[cfg(unix)]
+    #[test]
+    fn verify_bundle_rejects_symlink_into_prefix_sharing_sibling_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("models");
+        let sibling = tmp.path().join("models-attacker");
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        let mut manifest = bundle_with_correct_digests(&bundle);
+        let evil = sibling.join("evil.onnx");
+        std::fs::write(&evil, b"evil-bytes").unwrap();
+        std::os::unix::fs::symlink(&evil, bundle.join("linked.onnx")).unwrap();
+        manifest.files.representation = ModelFileEntry {
+            path: "linked.onnx".into(),
+            // Digest deliberately correct for the attacker's file: containment
+            // must reject this on the path alone, before the hash can vouch
+            // for bytes that were never meant to be loadable.
+            sha256: hex_encode(&Sha256::digest(b"evil-bytes")),
+        };
+        match verify_bundle(&manifest, &bundle) {
+            Err(RunnerError::UnsafeModelPath { role, reason, .. }) => {
+                assert_eq!(role, ROLE_REPRESENTATION);
+                assert!(
+                    reason.contains("outside the bundle"),
+                    "got reason: {reason}"
+                );
+            }
+            Err(other) => panic!("expected UnsafeModelPath, got {other:?}"),
+            Ok(verified) => panic!("escaped the bundle directory: {verified:?}"),
         }
     }
 

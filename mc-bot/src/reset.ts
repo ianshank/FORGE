@@ -71,7 +71,18 @@ export async function applyReset(
   }
 
   const t = cfg.teleport ?? {};
-  const spawn = t.spawn ?? DEFAULT_SPAWN;
+  const rawSpawn = t.spawn ?? DEFAULT_SPAWN;
+  // Coordinates reach the same chat sink as `selector`, and Minecraft's chat
+  // transport treats a newline as a command boundary. `yaw`/`pitch` were
+  // already guarded with Number.isFinite; `spawn.x/y/z` were not, so a
+  // reset.toml with `x = "0\n/op attacker"` smuggled a privileged command
+  // through the exact mechanism validateSelector() closes. configs/minecraft
+  // is a bind-mount in the compose stack, so that file is not trusted input.
+  const spawn = {
+    x: Number.isFinite(rawSpawn?.x) ? rawSpawn.x : DEFAULT_SPAWN.x,
+    y: Number.isFinite(rawSpawn?.y) ? rawSpawn.y : DEFAULT_SPAWN.y,
+    z: Number.isFinite(rawSpawn?.z) ? rawSpawn.z : DEFAULT_SPAWN.z,
+  };
   const yaw = Number.isFinite(t.yaw) ? t.yaw : 0;
   const pitch = Number.isFinite(t.pitch) ? t.pitch : 0;
   // An absent / non-string / empty selector falls back to the default; anything

@@ -216,6 +216,23 @@ describe('Security and edge cases', () => {
       assert.deepEqual(bot.chatLogs, []);
     });
 
+    it('does not relay a command smuggled through spawn coordinates', async () => {
+      // Same sink and same newline-as-command-boundary problem as the
+      // selector, one field over. yaw/pitch were already Number.isFinite
+      // guarded; x/y/z were not.
+      const bot = { chatLogs: [] as string[], chat(msg: string) { this.chatLogs.push(msg); } };
+      await applyReset(bot, {
+        strategy: 'teleport',
+        teleport: { spawn: { x: '0\n/op attacker', y: 64, z: 0 } },
+      } as any);
+      const relayed = bot.chatLogs.join('\n');
+      assert.ok(!relayed.includes('/op attacker'), `smuggled command relayed: ${relayed}`);
+      assert.ok(!relayed.includes('\n/op'), 'newline-prefixed command survived');
+      // The non-finite coordinate falls back to the default rather than
+      // aborting the reset, matching how yaw/pitch already behave.
+      assert.ok(bot.chatLogs[0].startsWith('/tp '), `got: ${bot.chatLogs[0]}`);
+    });
+
     it('rejects every shell/command metacharacter payload', () => {
       const payloads = [
         '@s\n/op attacker',
