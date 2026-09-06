@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Procedural world generation for the FORGE platform"
 
+[package.metadata.cargo-machete]
+ignored = ["serde"]
+
 [dependencies]
 forge-types = { workspace = true }
 serde = { workspace = true }

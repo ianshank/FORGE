@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Grid topology abstraction (square + hex) and pathfinding for FORGE"
 
+[package.metadata.cargo-machete]
+ignored = ["thiserror", "tracing"]
+
 [dependencies]
 forge-types = { workspace = true }
 serde = { workspace = true }

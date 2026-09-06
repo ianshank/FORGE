@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Performance benchmarks for the FORGE simulation platform"
 
+[package.metadata.cargo-machete]
+ignored = ["rand", "rand_pcg"]
+
 # `cargo bench -p forge-bench -- --save-baseline current` (criterion flag)
 # would otherwise be forwarded to the default libtest harness on src/lib.rs,
 # which rejects `--save-baseline` and aborts the whole bench run. Disabling

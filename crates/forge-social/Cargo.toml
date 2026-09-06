@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Social interaction primitives for the FORGE platform"
 
+[package.metadata.cargo-machete]
+ignored = ["serde_json", "thiserror"]
+
 [dependencies]
 forge-types = { workspace = true }
 serde = { workspace = true }

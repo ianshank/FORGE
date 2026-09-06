@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Backwards-compat shim implementing forge-env::Env over FORGE's WorldState"
 
+[package.metadata.cargo-machete]
+ignored = ["proptest"]
+
 [dependencies]
 forge-env = { workspace = true }
 forge-types = { workspace = true }

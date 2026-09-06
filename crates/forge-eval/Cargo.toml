@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Agent-agnostic evaluation harness and benchmark suite for FORGE"
 
+[package.metadata.cargo-machete]
+ignored = ["rand", "rand_pcg"]
+
 [features]
 default = []
 # MLflow HTTP tracking-server transport (Slice 2). Off by default to keep the

@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Core simulation engine for the FORGE platform"
 
+[package.metadata.cargo-machete]
+ignored = ["fixed", "smallvec", "thiserror", "tracing-subscriber"]
+
 [dependencies]
 forge-types = { workspace = true }
 forge-civ = { workspace = true }

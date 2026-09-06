@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Shared tracing/log initialization for FORGE binaries — env-driven text/JSON formatting"
 
+[package.metadata.cargo-machete]
+ignored = ["tracing"]
+
 [dependencies]
 tracing = { workspace = true }
 # Inherits the workspace features ("env-filter", "json") so JSON output needs no

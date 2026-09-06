@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Agent framework, MCTS planning, and baselines for FORGE"
 
+[package.metadata.cargo-machete]
+ignored = ["ndarray"]
+
 [features]
 default = []
 # ONNX Runtime support (Windows MSVC only due to ort-sys binary availability)

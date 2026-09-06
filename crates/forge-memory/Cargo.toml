@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "Persistent agent memory system for the FORGE platform"
 
+[package.metadata.cargo-machete]
+ignored = ["serde_json"]
+
 [dependencies]
 forge-types = { workspace = true }
 serde = { workspace = true }

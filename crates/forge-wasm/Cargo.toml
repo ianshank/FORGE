@@ -10,6 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 description = "WebAssembly visualization module for FORGE"
 
+[package.metadata.cargo-machete]
+ignored = ["getrandom"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
