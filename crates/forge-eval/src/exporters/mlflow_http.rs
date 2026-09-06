@@ -205,10 +205,8 @@ impl Default for HttpClientConfig {
 /// dispatcher wiring can land first.
 pub struct MlflowHttpClient {
     base: Url,
-    // Consumed by Slice 2b — every REST method (`create_run`, `log_batch`,
-    // ...) will borrow this client. Kept private so the field never leaks
-    // into a public signature.
-    #[allow(dead_code)]
+    // Consumed by every REST method (`create_run`, `log_batch`, etc.).
+    // Kept private so the field never leaks into a public signature.
     http: Client,
     retry: RetryPolicy,
     batch_size: usize,

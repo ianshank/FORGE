@@ -385,7 +385,7 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
         alpha = float(args.ent_coef)
         log_alpha = None  # type: ignore[assignment]
         alpha_optim = None  # type: ignore[assignment]
-        target_entropy = 0.0  # unused
+        _target_entropy = 0.0  # Not used when auto_ent=False; alpha_loss block skipped
 
     # --- Optional experiment logger ---
     forge_logger = None

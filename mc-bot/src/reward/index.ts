@@ -56,7 +56,7 @@ export function buildReward(cfg: any): RewardFn {
   };
 }
 
-/** Names of all registered built-ins (for diagnostics + schema_id). */
-export function listBuiltins(): string[] {
-  return _builtins.map((b) => b.name);
-}
+// Note: A `listBuiltins()` function was removed here during a dead-code audit.
+// If diagnostics or CLI help for available reward kinds is needed in the future,
+// add it back and wire into the actual diagnostic/help output rather than
+// leaving it as an unused export.
