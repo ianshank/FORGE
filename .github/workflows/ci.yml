@@ -935,8 +935,8 @@ jobs:
       - name: Install Playwright browser
         run: python -m playwright install --with-deps chromium
       - name: Run demo UI tests
-        # demo_ui/pytest.ini adds report-only coverage (demo_ui/backend);
-        # deliberately no fail-under yet -- see docs/next_steps.md.
+        # demo_ui/pytest.ini enforces --cov-fail-under=70 coverage (demo_ui/backend);
+        # the E2E test is skipped when Playwright browsers are not installed.
         run: pytest demo_ui/tests/ -v --tb=short
       - name: Upload demo UI coverage report
         uses: actions/upload-artifact@v6
