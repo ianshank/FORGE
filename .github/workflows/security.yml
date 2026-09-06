@@ -1,13 +1,13 @@
 name: Security
 
-# Mixed posture as of 2026-09-05 -- read the per-job names, not this header.
+# Mixed posture as of 2026-09-06 -- read the per-job names, not this header.
 #
-# BLOCKING: cargo-deny, gitleaks. Both were verified clean before being flipped
-# (thresholds and the reviewed exception list live in deny.toml and
-# .gitleaks.toml, not in this file).
+# BLOCKING: cargo-deny, gitleaks, pip-audit. All verified clean before being
+# flipped (thresholds and the reviewed exception list live in deny.toml,
+# .gitleaks.toml, and pyproject.toml respectively).
 #
-# ADVISORY (still `|| true`): pip-audit, npm-audit, trivy-fs. Each reports into
-# the job log without failing the build while its baseline is brought clean.
+# ADVISORY (still `|| true`): npm-audit, trivy-fs. Each reports into the job
+# log without failing the build while its baseline is brought clean.
 #
 # To flip one of the remaining scanners: prove it exits 0 on the current tree
 # first, then drop its `|| true`. Do NOT try to add these jobs to ci.yml's
@@ -95,7 +95,7 @@ jobs:
 
   # ---- Python dependency advisories ----
   pip-audit:
-    name: pip-audit (advisory)
+    name: pip-audit (blocking)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -130,12 +130,11 @@ jobs:
           PY
           echo "--- audit-requirements.txt ---"
           cat audit-requirements.txt
-      - name: Audit declared dependencies (report-only)
+      - name: Audit declared dependencies (blocking)
         # 2026-09-05: verified locally against this dependency set —
-        # "No known vulnerabilities found", exit 0. This is therefore the
-        # best candidate to flip blocking first (drop the `|| true`); it is
-        # left advisory here only to keep this change a no-op for CI status.
-        run: pip-audit -r audit-requirements.txt --progress-spinner off || true
+        # "No known vulnerabilities found", exit 0. Promoted to blocking
+        # 2026-09-06 as part of tech-debt reduction initiative.
+        run: pip-audit -r audit-requirements.txt --progress-spinner off
 
   # ---- Node dependency advisories (both packages) ----
   npm-audit:
