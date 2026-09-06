@@ -57,7 +57,11 @@ RUN maturin build --release -m crates/forge-python/Cargo.toml --out /app/dist
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime — slim image, no compilers, no Rust toolchain
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim-bookworm AS runtime
+# IMPORTANT: The Python version here MUST match the Python version in the
+# wheel-builder stage (rust:${RUST_IMAGE_TAG} ships Python 3.11). A mismatch
+# causes `pip install` to fail with "not a supported wheel on this platform"
+# because maturin embeds the Python ABI tag (e.g. cp311) into the wheel filename.
+FROM python:3.11-slim-bookworm AS runtime
 WORKDIR /app
 
 # Runtime-only system deps: libssl3 for TLS, curl for HEALTHCHECK
@@ -73,7 +77,8 @@ COPY --from=wheel-builder /app/dist/*.whl /tmp/
 RUN pip install --no-cache-dir /tmp/*.whl && rm -rf /tmp/
 
 # Install remaining Python runtime dependencies
-COPY forge.toml /app/
+# Note: forge-server uses ForgeConfig::default() and doesn't load from TOML files.
+# The configs/ directory is copied for potential future use by API consumers.
 COPY configs/ /app/configs/
 RUN pip install --no-cache-dir numpy tomli
 
@@ -82,7 +87,6 @@ RUN useradd --create-home forge
 USER forge
 
 ENV PYTHONPATH=/app/python:$PYTHONPATH
-ENV FORGE_CONFIG_PATH=/app/forge.toml
 
 EXPOSE 8080
 
