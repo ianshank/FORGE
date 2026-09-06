@@ -616,3 +616,17 @@ def test_capture_baseline_uses_injected_fixtures(tmp_path: Path) -> None:
     assert seen_calls["metrics"] >= 1
     assert seen_calls["trajectories"] == 1
     assert snapshot["per_episode"][0]["episode_id"] == "ep-injected"
+
+
+def test_forge_mc_metrics_url_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Verifies FORGE_MC_METRICS_URL env var override.
+    monkeypatch.setenv("FORGE_MC_METRICS_URL", "http://env-override:9090/metrics")
+    import importlib
+
+    import forge.training.muzero_mc.capture_baseline as cb
+    importlib.reload(cb)
+    try:
+        assert cb.DEFAULT_METRICS_URL == "http://env-override:9090/metrics"
+    finally:
+        monkeypatch.delenv("FORGE_MC_METRICS_URL", raising=False)
+        importlib.reload(cb)

@@ -35,6 +35,7 @@ __all__ = [
 
 import json
 import logging
+import os
 import time
 from collections.abc import Iterable  # noqa: TC003 — runtime use in collect_per_episode_payload
 from dataclasses import asdict, dataclass, field
@@ -50,7 +51,9 @@ VARIANT_RANDOM: Final[str] = "random"
 VARIANT_TRAINED: Final[str] = "trained"
 ALL_VARIANTS: Final[tuple[str, ...]] = (VARIANT_RANDOM, VARIANT_TRAINED)
 
-DEFAULT_METRICS_URL: Final[str] = "http://127.0.0.1:9090/metrics"
+DEFAULT_METRICS_URL: Final[str] = os.environ.get(
+    "FORGE_MC_METRICS_URL", "http://127.0.0.1:9090/metrics"
+)
 DEFAULT_RUNNER_CONTAINER: Final[str] = "forge-mc-runner"
 DEFAULT_TIMEOUT_SECS: Final[int] = 3600
 DEFAULT_TRAJECTORY_GLOB_PATTERN: Final[str] = "ep-*.json*"

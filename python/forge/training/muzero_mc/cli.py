@@ -20,6 +20,7 @@ __all__ = ["build_parser", "main"]
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -452,11 +453,12 @@ def _add_capture_baseline_subcommand(sub: argparse._SubParsersAction[Any]) -> No
         default=100,
         help="Number of episodes to wait for (default: 100).",
     )
+    metrics_url_default = os.environ.get("FORGE_MC_METRICS_URL", DEFAULT_METRICS_URL)
     p_cap.add_argument(
         "--metrics-url",
         type=str,
-        default=DEFAULT_METRICS_URL,
-        help=f"Runner Prometheus endpoint (default: {DEFAULT_METRICS_URL}).",
+        default=metrics_url_default,
+        help=f"Runner Prometheus endpoint (default: {DEFAULT_METRICS_URL}, overridable via FORGE_MC_METRICS_URL).",
     )
     p_cap.add_argument(
         "--out",
