@@ -23,8 +23,19 @@ use crate::constants;
 use crate::error::{ConfigError, ForgeError};
 
 /// Top-level configuration for a FORGE simulation instance.
+///
+/// # Schema Difference from Python
+///
+/// This Rust struct uses field names like `world`, `physics`, `agents`, etc.
+/// The **Python** `ForgeConfig` (in `python/forge/config.py`) uses different
+/// section names: `hardware`, `simulation`, `training`. The root `forge.toml`
+/// file uses the **Python** schema. Use [`ForgeConfig::default()`] in Rust
+/// code, or create a separate TOML file with the Rust schema if needed.
+///
+/// The Python config provides [`to_rust_config()`](python/forge/config.py)
+/// to bridge between the two schemas.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ForgeConfig {
     /// World generation and layout parameters.
     pub world: WorldConfig,
@@ -65,7 +76,7 @@ pub enum GridType {
 
 /// World generation configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct WorldConfig {
     /// Grid topology type (square or hex).
     pub grid_type: GridType,
@@ -117,7 +128,7 @@ impl Default for WorldConfig {
 
 /// Physics system configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PhysicsConfig {
     /// Whether collision detection is enabled.
     pub collision_enabled: bool,
@@ -148,7 +159,7 @@ impl Default for PhysicsConfig {
 
 /// Crafting system configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CraftingConfig {
     /// Whether the crafting system is enabled.
     pub enabled: bool,
@@ -173,7 +184,7 @@ impl Default for CraftingConfig {
 
 /// Agent configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct AgentConfig {
     /// Number of agents in the simulation.
     pub num_agents: u32,
@@ -219,7 +230,7 @@ impl Default for AgentConfig {
 
 /// Task system configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct TaskConfig {
     /// Whether the task system is enabled.
     pub enabled: bool,
@@ -250,7 +261,7 @@ impl Default for TaskConfig {
 
 /// Curriculum controller configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CurriculumConfig {
     /// Whether the curriculum controller is enabled.
     pub enabled: bool,
@@ -278,7 +289,7 @@ impl Default for CurriculumConfig {
 
 /// Rendering and visualization configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct RenderConfig {
     /// Whether to generate pixel observations (slower).
     pub pixel_observations: bool,
@@ -306,7 +317,7 @@ impl Default for RenderConfig {
 /// When `enabled` is false (default), all drone systems are skipped
 /// and the simulation behaves identically to pre-drone versions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct DroneConfig {
     /// Whether drone mechanics are enabled.
     pub enabled: bool,
@@ -374,7 +385,7 @@ impl Default for DroneConfig {
 /// When `enabled` is false (default), all agricultural systems are skipped
 /// and the simulation behaves identically to pre-agriculture versions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct AgriConfig {
     /// Whether agricultural systems are enabled.
     pub enabled: bool,
@@ -453,7 +464,7 @@ impl Default for AgriConfig {
 /// When `enabled` is false (default), all cloud training features are inactive
 /// and the simulation behaves identically to pre-cloud versions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CloudConfig {
     /// Whether cloud training pipeline is enabled.
     pub enabled: bool,
@@ -530,7 +541,7 @@ impl Default for CloudConfig {
 /// When `enabled` is false (default), all edge-specific features are inactive
 /// and agents use standard MCTS without latency budgeting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct EdgeConfig {
     /// Whether edge runtime features are enabled.
     pub enabled: bool,
