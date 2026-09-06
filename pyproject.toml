@@ -104,6 +104,7 @@ ignore = [
 known-first-party = ["forge", "forge_env"]
 
 [tool.ruff.lint.per-file-ignores]
+"python/forge/mangomas/collector/**" = ["PLR0915"]
 "python/forge/mangomas/collector.py" = ["PLR0915"]
 # `scripts/calibrate_agri.py` calls `to_fixed(<float literal>)` in dataclass
 # defaults. `to_fixed` is a pure function returning `int`, so the default is
