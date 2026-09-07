@@ -104,6 +104,16 @@ def test_build_report_missing_tree_raises(helper_module: ModuleType, tmp_path: P
         )
 
 
+def test_collect_rows_skips_missing_group(helper_module: ModuleType, tmp_path: Path) -> None:
+    """A missing hex (or square) group is not fatal if the other group has rows."""
+    _write_estimates(
+        tmp_path, "multi_agent_scaling_square", 1, _estimates(mean_ns=10_000.0, median_ns=9_500.0)
+    )
+    rows = helper_module.collect_rows(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["group"] == "square"
+
+
 def test_build_report_empty_tree_names_remedy(helper_module: ModuleType, tmp_path: Path) -> None:
     (tmp_path / "other_bench").mkdir()
     with pytest.raises(ValueError, match="Remedy:"):
@@ -161,6 +171,8 @@ def test_main_writes_sorted_json(helper_module: ModuleType, tmp_path: Path) -> N
     assert "cpu" in report["hardware"]
     # sort_keys makes the file byte-stable for a given payload
     assert out.read_text(encoding="utf-8") == json.dumps(report, indent=2, sort_keys=True) + "\n"
+    assert set(report) == helper_module.REPORT_FIELDS
+    assert set(report["variants"][0]) == helper_module.VARIANT_FIELDS
 
 
 def test_main_exits_2_on_empty_tree(helper_module: ModuleType, tmp_path: Path) -> None:
@@ -176,3 +188,14 @@ def test_main_exits_2_on_empty_tree(helper_module: ModuleType, tmp_path: Path) -
     )
     assert rc == helper_module.EXIT_INPUT_ERROR
     assert not (tmp_path / "out.json").exists()
+
+
+def test_committed_cloud_agent_report_matches_field_set(helper_module: ModuleType) -> None:
+    path = Path(__file__).resolve().parents[2] / "benchmarks" / "baselines" / "cloud_agent" / "multi_agent_scaling.json"
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert set(report) == helper_module.REPORT_FIELDS
+    assert report["profile"] == "cloud_agent"
+    assert report["world_side"] == 128
+    assert report["variants"], "committed scaling report has no variants"
+    for row in report["variants"]:
+        assert set(row) == helper_module.VARIANT_FIELDS

@@ -33,6 +33,10 @@ Shows FORGE and its external actors.
 └─────────────┘ └──────────────┘ └─────────────┘ └─────────────────────┘
 ```
 
+Python throughput floor: 130K+ steps/sec from Python, evidenced by
+[`benchmarks/baselines/cloud_agent/pyo3_step.json`](../benchmarks/baselines/cloud_agent/pyo3_step.json)
+(`cloud_agent` profile; 189k measured).
+
 ### External Actors
 
 | Actor | Interface | Description |

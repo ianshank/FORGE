@@ -65,6 +65,35 @@ NEW_DIR_NAME: str = "new"
 #: Estimates filename Criterion writes inside each run directory.
 ESTIMATES_FILENAME: str = "estimates.json"
 
+#: Top-level keys of a committed scaling report. Tests lock this set so a
+#: new field cannot appear (or an old one vanish) without updating the gate.
+REPORT_FIELDS: frozenset[str] = frozenset(
+    {
+        "producer",
+        "profile",
+        "git_sha",
+        "world_side",
+        "seed",
+        "agent_counts",
+        "hardware",
+        "variants",
+    }
+)
+
+#: Per-variant keys. ``env_steps_per_sec`` is the Python-headline analogue;
+#: ``agent_steps_per_sec`` is Criterion's ``Elements(num_agents)`` figure.
+VARIANT_FIELDS: frozenset[str] = frozenset(
+    {
+        "group",
+        "group_id",
+        "num_agents",
+        "mean_ns",
+        "median_ns",
+        "env_steps_per_sec",
+        "agent_steps_per_sec",
+    }
+)
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
