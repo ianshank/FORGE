@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from forge.mangomas.adapters import ObservationAdapter
-from forge.mangomas.collector.action_decoder import decode_action_name
+from forge.mangomas.collector.action_decoder import (
+    decode_action_name,
+    skill_category_for_action_id,
+    skill_category_for_action_name,
+)
 from forge.mangomas.collector.async_rollout import _acollect_training_data_from_scenarios
 from forge.mangomas.collector.scenario import (
     DEFAULT_EVAL_REGISTRY_DIR,
@@ -32,6 +36,7 @@ from forge.mangomas.collector.types import (
 )
 from forge.mangomas.collector.writer import write_collection_report
 from forge.mangomas.pipeline import CollectedTrainingData
+from forge.policy_names import DEFAULT_COLLECTION_POLICY, POLICY_LLM
 from forge.utils.seed import derive_seed
 
 if TYPE_CHECKING:
@@ -55,6 +60,8 @@ __all__ = [
     "collect_training_data_from_scenarios",
     "decode_action_name",
     "resolve_forge_scenarios",
+    "skill_category_for_action_id",
+    "skill_category_for_action_name",
     "write_collection_report",
 ]
 
@@ -66,7 +73,7 @@ def collect_training_data_from_scenarios(
     scenario_refs: Sequence[str | Path],
     total_episodes: int,
     base_seed: int,
-    policy_name: str = "random",
+    policy_name: str = DEFAULT_COLLECTION_POLICY,
     search_dirs: Sequence[str | Path] | None = None,
     env_factory: Callable[[dict[str, Any]], Any] | None = None,
     teacher_config: Any = None,
@@ -74,17 +81,17 @@ def collect_training_data_from_scenarios(
 ) -> ScenarioCollectionResult:
     """Collect MangoMAS training data from resolved FORGE scenario rollouts.
 
-    When ``policy_name == "llm"`` a ``teacher_config`` must be supplied
+    When ``policy_name == POLICY_LLM`` a ``teacher_config`` must be supplied
     (typically ``mangomas_config.teacher``). For ``teacher_config.concurrency
     > 1`` the call dispatches into an asyncio path that runs episodes
     concurrently while still writing teacher trace shards in
     ``episode_index`` order — see :func:`_acollect_scenario_rollouts_concurrent`.
     """
-    if policy_name == "llm" and teacher_config is None:
+    if policy_name == POLICY_LLM and teacher_config is None:
         teacher_config = mangomas_config.teacher
 
     if (
-        policy_name == "llm"
+        policy_name == POLICY_LLM
         and teacher_config is not None
         and int(getattr(teacher_config, "concurrency", 1)) > 1
     ):

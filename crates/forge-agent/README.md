@@ -20,6 +20,7 @@ Dependency boundaries are strictly enforced via `deny.toml` `[bans]`. Introducin
 
 ## Key Types & Public API
 
+- `HierarchicalSkillAgent`: Options/HRL executor over `configs/agents/skills_default.toml`.
 - `LatentMctsSearch`: Monte Carlo Tree Search operating on latent world representations.
 - `LatentForwardModel`: Interface for latent transition, policy, and value predictions.
 - `RandomAgent`: Heuristic baseline agent choosing random valid actions.
@@ -39,9 +40,16 @@ Dependency boundaries are strictly enforced via `deny.toml` `[bans]`. Introducin
 
 ```rust
 use forge_agent::baselines::RandomAgent;
+use rand::SeedableRng;
+use rand_pcg::Pcg64Mcg;
 
-let agent = RandomAgent::new(42);
+let rng = Pcg64Mcg::seed_from_u64(42);
+let agent = RandomAgent::new(rng, 0);
 ```
+
+Hierarchical skill options (config-driven reusable primitives) live in
+`forge_agent::skills::HierarchicalSkillAgent` and are catalogued in
+`configs/agents/skills_default.toml`.
 
 ---
 

@@ -8,10 +8,14 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from forge.mangomas.collector.action_decoder import decode_action_name
+from forge.mangomas.collector.action_decoder import (
+    decode_action_name,
+    skill_category_for_action_name,
+)
 from forge.mangomas.collector.scenario import _copy_mapping, _deep_merge
 from forge.mangomas.collector.types import ResolvedForgeScenario, _EpisodeRollout
 from forge.mangomas.collector.writer import _open_trace_writer_if_enabled
+from forge.policy_names import POLICY_LLM, POLICY_MCTS, POLICY_RANDOM, POLICY_SKILL
 from forge.utils.observation import flatten_obs
 from forge.utils.seed import derive_seed
 
@@ -110,10 +114,13 @@ def _create_policy_agent(
     *,
     teacher_config: Any = None,
     provider_factory: Callable[[Any], Any] | None = None,
+    comm_vocab_size: int = 0,
+    drone_enabled: bool = False,
+    agri_enabled: bool = False,
 ) -> Any:
     from forge.agents.base_agent import AgentConfig
 
-    if policy_name == "random":
+    if policy_name == POLICY_RANDOM:
         from forge.agents.random_agent import RandomAgent
 
         return RandomAgent(
@@ -122,7 +129,7 @@ def _create_policy_agent(
             seed=seed,
         )
 
-    if policy_name == "mcts":
+    if policy_name == POLICY_MCTS:
         from forge.agents.mcts_agent import MCTSAgent, MCTSConfig
 
         return MCTSAgent(
@@ -131,9 +138,22 @@ def _create_policy_agent(
             seed=seed,
         )
 
-    if policy_name == "llm":
+    if policy_name == POLICY_SKILL:
+        from forge.agents.skills import HierarchicalSkillPolicy, SkillCatalog
+
+        return HierarchicalSkillPolicy(
+            config=AgentConfig(name="mangomas-skill"),
+            catalog=SkillCatalog.from_default_path(),
+            action_space_size=action_space_size,
+            comm_vocab_size=comm_vocab_size,
+            drone_enabled=drone_enabled,
+            agri_enabled=agri_enabled,
+            seed=seed,
+        )
+
+    if policy_name == POLICY_LLM:
         if teacher_config is None:
-            msg = "policy='llm' requires a TeacherConfig"
+            msg = f"policy={POLICY_LLM!r} requires a TeacherConfig"
             raise ValueError(msg)
         return _build_llm_agent(
             teacher_config,
@@ -301,14 +321,25 @@ def _collect_episode_rollout(
         next_enriched_obs = _augment_observation(next_obs, env_config, platform)
 
         episode_action_ids.append(discrete_action)
-        episode_action_names.append(
-            decode_action_name(
-                discrete_action,
-                comm_vocab_size,
-                drone_enabled,
-                agri_enabled=agri_enabled,
-                hex_enabled=hex_enabled,
-            )
+        action_label = decode_action_name(
+            discrete_action,
+            comm_vocab_size,
+            drone_enabled,
+            agri_enabled=agri_enabled,
+            hex_enabled=hex_enabled,
+        )
+        episode_action_names.append(action_label)
+        skill_label = (
+            str(trace_info.get("skill_id"))
+            if isinstance(trace_info, dict) and trace_info.get("skill_id")
+            else skill_category_for_action_name(action_label)
+        )
+        logger.debug(
+            "rollout step action=%s skill=%s scenario=%s episode=%s",
+            action_label,
+            skill_label,
+            scenario_id,
+            episode_index,
         )
         episode_rewards.append(float(reward))
         done = bool(terminated or truncated)
@@ -399,17 +430,20 @@ def _collect_scenario_rollouts(
     provider_factory: Callable[[Any], Any] | None = None,
 ) -> tuple[list[_EpisodeRollout], list[float], list[bool]]:
     action_space_size = int(env.action_space.n)
+    comm_vocab_size = int(env_config.get("agents", {}).get("comm_vocab_size", 0))
+    drone_enabled = bool(env_config.get("drone", {}).get("enabled", False))
+    agri_enabled = bool(env_config.get("agri", {}).get("enabled", False)) and drone_enabled
+    hex_enabled = str(env_config.get("world", {}).get("grid_type", "")).lower() == "hex"
     policy_agent = _create_policy_agent(
         policy_name,
         action_space_size,
         derive_seed(base_seed, f"policy:{scenario.scenario_id}"),
         teacher_config=teacher_config,
         provider_factory=provider_factory,
+        comm_vocab_size=comm_vocab_size,
+        drone_enabled=drone_enabled,
+        agri_enabled=agri_enabled,
     )
-    comm_vocab_size = int(env_config.get("agents", {}).get("comm_vocab_size", 0))
-    drone_enabled = bool(env_config.get("drone", {}).get("enabled", False))
-    agri_enabled = bool(env_config.get("agri", {}).get("enabled", False)) and drone_enabled
-    hex_enabled = str(env_config.get("world", {}).get("grid_type", "")).lower() == "hex"
     max_steps = _resolve_max_steps(env_config, mangomas_config)
 
     scenario_rollouts: list[_EpisodeRollout] = []

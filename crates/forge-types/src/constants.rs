@@ -162,6 +162,19 @@ pub const ACTION_DROP_PAYLOAD_SLOTS: usize = 10;
 /// = [`AGRI_ACTION_COUNT`].
 pub const ACTION_SPRAY_SLOTS: usize = 10;
 
+/// Size of the base discrete action block before communication / drone / agri / hex.
+///
+/// Layout: `Noop` + cardinal `Move` + `PickUp` + drop slots + use slots +
+/// craft slots + cardinal `Push` + `Interact`.
+pub const ACTION_BASE_COUNT: u32 = (1
+    + NUM_DIRECTIONS
+    + 1
+    + ACTION_DROP_SLOTS
+    + ACTION_USE_SLOTS
+    + ACTION_CRAFT_SLOTS
+    + NUM_DIRECTIONS
+    + 1) as u32;
+
 /// Number of fractional bits in fixed-point representation (16 bits).
 pub const FIXED_POINT_SHIFT: u32 = 16;
 /// 1.0 in fixed-point representation.
@@ -450,6 +463,37 @@ pub const DEFAULT_EDGE_GCS_MODEL_BUCKET: &str = "";
 /// Default GCS prefix for edge model artifacts.
 pub const DEFAULT_EDGE_GCS_MODEL_PREFIX: &str = "forge/models/";
 
+/// Default identifier for the hierarchical skill catalog fallback skill.
+pub const DEFAULT_SKILL_ID: &str = "explore";
+/// Default skill option horizon (ticks) when a spec omits a tighter bound.
+pub const DEFAULT_SKILL_HORIZON: u32 = 32;
+/// Default horizon for the idle skill option.
+pub const DEFAULT_SKILL_IDLE_HORIZON: u32 = 1;
+/// Default horizon for navigation skill options.
+pub const DEFAULT_SKILL_NAVIGATE_HORIZON: u32 = 64;
+/// Default horizon for gather skill options.
+pub const DEFAULT_SKILL_GATHER_HORIZON: u32 = 32;
+/// Default horizon for explore skill options.
+pub const DEFAULT_SKILL_EXPLORE_HORIZON: u32 = 16;
+/// Default horizon for craft skill options.
+pub const DEFAULT_SKILL_CRAFT_HORIZON: u32 = 8;
+/// Default horizon for combat skill options.
+pub const DEFAULT_SKILL_COMBAT_HORIZON: u32 = 8;
+/// Default horizon for aerial skill options.
+pub const DEFAULT_SKILL_AERIAL_HORIZON: u32 = 16;
+/// Default horizon for agriculture skill options.
+pub const DEFAULT_SKILL_AGRI_HORIZON: u32 = 12;
+/// Default horizon for communicate skill options.
+pub const DEFAULT_SKILL_COMMUNICATE_HORIZON: u32 = 4;
+/// Minimum legal skill horizon (options framework termination bound).
+pub const MIN_SKILL_HORIZON: u32 = 1;
+/// Maximum legal skill horizon, matching a typical episode budget slice.
+pub const MAX_SKILL_HORIZON: u32 = 10_000;
+/// Default recipe index used by the craft skill (overridable per spec).
+pub const DEFAULT_SKILL_CRAFT_RECIPE: u16 = 0;
+/// Default communication token used by the communicate skill.
+pub const DEFAULT_SKILL_COMM_TOKEN: u16 = 0;
+
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
 mod tests {
@@ -515,8 +559,25 @@ mod tests {
 
     #[test]
     fn test_drone_action_count() {
-        // 5 basic (Ascend, Descend, Hover, TakeOff, Land) + 4 Scan + 10 DropPayload
-        assert_eq!(DRONE_ACTION_COUNT, 19);
+        assert_eq!(
+            DRONE_ACTION_COUNT,
+            5 + NUM_DIRECTIONS as u32 + ACTION_DROP_PAYLOAD_SLOTS as u32
+        );
+    }
+
+    #[test]
+    fn test_action_base_count_matches_layout() {
+        assert_eq!(
+            ACTION_BASE_COUNT,
+            (1 + NUM_DIRECTIONS
+                + 1
+                + ACTION_DROP_SLOTS
+                + ACTION_USE_SLOTS
+                + ACTION_CRAFT_SLOTS
+                + NUM_DIRECTIONS
+                + 1) as u32
+        );
+        assert_eq!(AGRI_ACTION_COUNT, ACTION_SPRAY_SLOTS as u32 + 4);
     }
 
     #[test]
@@ -748,5 +809,13 @@ mod tests {
     fn test_edge_latency_ema_alpha_in_range() {
         assert!(DEFAULT_EDGE_LATENCY_EMA_ALPHA > 0.0);
         assert!(DEFAULT_EDGE_LATENCY_EMA_ALPHA <= 1.0);
+    }
+
+    #[test]
+    fn test_skill_horizons_are_in_range() {
+        assert!(DEFAULT_SKILL_IDLE_HORIZON >= MIN_SKILL_HORIZON);
+        assert!(DEFAULT_SKILL_HORIZON <= MAX_SKILL_HORIZON);
+        assert!(DEFAULT_SKILL_NAVIGATE_HORIZON <= MAX_SKILL_HORIZON);
+        assert!(!DEFAULT_SKILL_ID.is_empty());
     }
 }

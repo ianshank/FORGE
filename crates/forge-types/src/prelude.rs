@@ -12,4 +12,5 @@ pub use crate::error::{ForgeError, ForgeResult};
 pub use crate::grid::{Direction, Grid, Position, TerrainType, Tile};
 pub use crate::observation::{Observation, StepResult};
 pub use crate::resource::{CraftingRecipe, ItemType, RecipeBook, ResourceNode};
+pub use crate::skill::{SkillCategory, SkillSpec, SkillsConfig};
 pub use crate::task::{ActiveTask, Predicate, TaskComposition, TaskDefinition, TaskTier};

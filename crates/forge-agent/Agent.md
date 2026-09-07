@@ -96,6 +96,7 @@ Four concrete agents form a difficulty ladder:
 - **MCTS tuning**: Adjust c_puct, simulation count, depth, temperature, and discount
 - **Forward model extension**: Add custom simulation wrappers (e.g., abstracted state, partial observability)
 - **Baseline evaluation**: Run episodes and compare agent performance across configurations
+- **Hierarchical skills**: Compose primitive `Action`s into catalogued options (`idle`, `navigate`, `gather`, `explore`, `craft`, `combat`, `aerial`, `agriculture`, `communicate`) via `SkillsConfig`
 - **Multi-agent planning**: Extend MCTS for joint action spaces or communication-aware planning
 
 ## Sub-Agents
@@ -107,6 +108,7 @@ Four concrete agents form a difficulty ladder:
 | **Forward Simulator** | Clones state and steps simulation for non-mutating lookahead |
 | **Baseline Runner** | Executes baseline agents through episodes for performance benchmarking |
 | **Action Selector** | Converts tree visit statistics into final action selection (greedy or temperature-weighted) |
+| **Skill Catalog Executor** | Hierarchical options layer (`HierarchicalSkillAgent`) mapping reusable skill ids onto primitive `Action` families from `configs/agents/skills_default.toml` |
 
 ## Tools
 

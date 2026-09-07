@@ -10,6 +10,7 @@
 //! - **Forward model** (`forward_model`): Simulation interface for planning
 //! - **MCTS** (`mcts`): Monte Carlo Tree Search with PUCT selection
 //! - **Baselines** (`baselines`): Random, heuristic, and greedy baseline agents
+//! - **Hierarchical skills** (`skills`): Options/HRL catalog executor over primitive actions
 //! - **Latent MCTS** (`latent_mcts`): MuZero-style tree search in learned latent space
 
 pub mod adapter;
@@ -18,6 +19,7 @@ pub mod forward_model;
 pub mod latent_mcts;
 pub mod mcts;
 pub mod prelude;
+pub mod skills;
 
 // Crate-root convenience re-exports of the most-used types so
 // downstream consumers can write `forge_agent::OnnxReloadError`

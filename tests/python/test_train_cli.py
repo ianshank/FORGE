@@ -72,6 +72,14 @@ class TestParseArgs:
         assert args.pipeline_output_root == "artifacts/custom"
         assert args.collection_report_path == "artifacts/custom/collection.json"
 
+    def test_collection_policy_skill_is_accepted(self) -> None:
+        args = parse_args(["--collection-policy", "skill"])
+        assert args.collection_policy == "skill"
+
+    def test_invalid_collection_policy_raises(self) -> None:
+        with pytest.raises(SystemExit):
+            parse_args(["--collection-policy", "not-a-policy"])
+
     def test_mangomas_collect_args(self) -> None:
         """Collection-only MangoMAS arguments are parsed correctly."""
         args = parse_args(

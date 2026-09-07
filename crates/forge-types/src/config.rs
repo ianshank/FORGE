@@ -21,6 +21,7 @@ use tracing::{debug, warn};
 
 use crate::constants;
 use crate::error::{ConfigError, ForgeError};
+use crate::skill::SkillsConfig;
 
 /// Top-level configuration for a FORGE simulation instance.
 ///
@@ -59,6 +60,8 @@ pub struct ForgeConfig {
     pub cloud: CloudConfig,
     /// Edge deployment runtime parameters.
     pub edge: EdgeConfig,
+    /// Hierarchical skill catalog over primitive actions (opt-in).
+    pub skills: SkillsConfig,
 }
 
 /// Grid topology type for the simulation world.
@@ -778,6 +781,17 @@ impl ForgeConfig {
         env_override!(edge.latency_ema_alpha, f32);
         env_override!(edge.upload_retry_count, u32);
         env_override!(edge.upload_retry_base_ms, u64);
+
+        // Hierarchical skill catalog overrides
+        env_override!(skills.enabled, bool);
+        env_override!(skills.default_horizon, u32);
+        if let Ok(val) = std::env::var("FORGE_SKILLS_DEFAULT_SKILL") {
+            let trimmed = val.trim();
+            if !trimmed.is_empty() {
+                debug!(key = "FORGE_SKILLS_DEFAULT_SKILL", value = %trimmed, "applying env override");
+                self.skills.default_skill = trimmed.to_string();
+            }
+        }
 
         // Edge GCS string overrides
         if let Ok(val) = std::env::var("FORGE_EDGE_GCS_MODEL_BUCKET") {

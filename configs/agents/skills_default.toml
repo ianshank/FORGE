@@ -1,0 +1,95 @@
+# FORGE hierarchical skill catalog (options / HRL primitives).
+#
+# High-level policies select a skill `id`; low-level executors emit the
+# matching primitive Action family until `max_horizon` ticks elapse.
+# Values here are the single source of truth for Python loaders; Rust
+# `SkillsConfig::default()` mirrors the same constants from
+# `crates/forge-types/src/constants.rs`.
+#
+# schema_version is documentation-only for operators; the Rust loader
+# uses `deny_unknown_fields` and does not accept extra keys.
+
+enabled = false
+default_skill = "explore"
+default_horizon = 32
+
+[[skills]]
+id = "idle"
+category = "idle"
+enabled = true
+max_horizon = 1
+requires_drone = false
+recipe_index = 0
+comm_token = 0
+
+[[skills]]
+id = "navigate"
+category = "navigate"
+enabled = true
+max_horizon = 64
+requires_drone = false
+recipe_index = 0
+comm_token = 0
+
+[[skills]]
+id = "gather"
+category = "gather"
+enabled = true
+max_horizon = 32
+requires_drone = false
+recipe_index = 0
+comm_token = 0
+
+[[skills]]
+id = "explore"
+category = "explore"
+enabled = true
+max_horizon = 16
+requires_drone = false
+recipe_index = 0
+comm_token = 0
+
+[[skills]]
+id = "craft"
+category = "craft"
+enabled = true
+max_horizon = 8
+requires_drone = false
+recipe_index = 0
+comm_token = 0
+
+[[skills]]
+id = "combat"
+category = "combat"
+enabled = true
+max_horizon = 8
+requires_drone = false
+recipe_index = 0
+comm_token = 0
+
+[[skills]]
+id = "aerial"
+category = "aerial"
+enabled = true
+max_horizon = 16
+requires_drone = true
+recipe_index = 0
+comm_token = 0
+
+[[skills]]
+id = "agriculture"
+category = "agriculture"
+enabled = true
+max_horizon = 12
+requires_drone = true
+recipe_index = 0
+comm_token = 0
+
+[[skills]]
+id = "communicate"
+category = "communicate"
+enabled = true
+max_horizon = 4
+requires_drone = false
+recipe_index = 0
+comm_token = 0

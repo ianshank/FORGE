@@ -14,3 +14,4 @@ pub use crate::latent_mcts::onnx_model::{
 pub use crate::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch, LatentSearchResult};
 pub use crate::latent_mcts::state::LatentState;
 pub use crate::mcts::search::MctsSearch;
+pub use crate::skills::HierarchicalSkillAgent;

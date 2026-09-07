@@ -481,8 +481,11 @@ def test_train_subcommand_success_and_value_error(tmp_path: Path) -> None:
         assert rc == EXIT_USAGE
 
     # 2. Test OSError during training
-    with patch(
-        "forge.training.muzero_mc.trainer.MuzeroMcTrainer", side_effect=OSError("Disk full")
+    with (
+        patch("forge.models.muzero_config.MuZeroConfig"),
+        patch("forge.models.muzero_world_model.MuZeroWorldModel"),
+        patch("forge.training.muzero_mc.replay.TrajectoryReader"),
+        patch("forge.training.muzero_mc.trainer.MuzeroMcTrainer", side_effect=OSError("Disk full")),
     ):
         rc = main(
             [

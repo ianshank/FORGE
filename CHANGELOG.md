@@ -19,6 +19,11 @@ Completed full implementation of the 5-phase optimization and enterprise hardeni
 - **God File Elimination & Modularization**:
   - Extracted 3,900+ lines of in-file unit/proptest suites out of `world.rs`, `physics.rs`, `config.rs`, and `action.rs` into dedicated `tests.rs` submodules, reducing core production files by 50%–65%.
   - Modularized `crates/forge-core::world` into cohesive submodules (`state.rs`, `step.rs`, `reset.rs`, `observation.rs`, `serialize.rs`, `debug.rs`) while strictly maintaining the zero-allocation hot-path contract.
+  - Extracted in-file tests from `crates/forge-core/src/systems.rs` into `systems/tests.rs`.
+  - Extracted in-file tests from `crates/forge-eval/src/harness.rs`, `crates/forge-eval/src/exporters/mlflow_http.rs`, `crates/forge-mc-runner/src/runner.rs`, and `crates/forge-task/src/predicate.rs` via the same `#[path]` pattern (production files no longer host 600–770 line test modules).
+  - Centralized canonical discrete action constants and decoders in root-level `python/forge/actions.py`, decoupling circular import loops between `forge.agents` and `forge.mangomas`.
+  - Added shared configuration-driven skill catalog (`configs/agents/skills_default.toml`) mirrored identically across Rust (`forge-types::skill::SkillsConfig`, `forge-agent::skills::HierarchicalSkillAgent`) and Python (`forge.agents.skills::SkillCatalog`, `forge.agents.skills::HierarchicalSkillPolicy`).
+  - Added centralized Python policy names (`forge.policy_names`) and wired `--collection-policy skill` across the MangoMAS training and collection pipeline.
   - Decomposed `python/forge/mangomas/collector.py` (1,476 LOC monolith) into `python/forge/mangomas/collector/` sub-packages (`types`, `action_decoder`, `scenario`, `writer`, `sync_rollout`, `async_rollout`).
   - Decomposed `mc-bot/src/index.ts` (616 LOC monolith) into focused ESM modules (`auth.ts`, `connection.ts`, `server.ts`, and a minimal `index.ts` bootstrap <100 LOC).
 - **Test Coverage & Quality Gate Ratcheting**:
@@ -36,6 +41,12 @@ Completed full implementation of the 5-phase optimization and enterprise hardeni
   - Added explicit operational maturity badges (`[Production]`, `[Research]`, `[Experimental]`) across research stack crates.
   - Wired `forge-env` and `forge-env-forge` into `forge-bench` allocation audit and throughput benchmark suites to verify zero-allocation contracts across generic `Env` implementations.
   - Formalized Tiered API Stability Policy and the Bincode 2.x Wire-Format Migration Roadmap in `docs/CHARTER.md`.
+- **Hierarchical Skills over Reusable Actions**:
+  - Added `forge_types::skill::{SkillCategory, SkillSpec, SkillsConfig}` (options/HRL catalog, `deny_unknown_fields`, env overrides).
+  - Wired `forge_agent::skills::HierarchicalSkillAgent` and Python `HierarchicalSkillPolicy` to `configs/agents/skills_default.toml`.
+  - Collector policy `"skill"` plus action-decoder skill-family mapping for traces.
+  - Wired `--collection-policy skill` through `python/forge/policy_names.py` so CLI, collector, and tests share identifiers.
+  - Derived `ACTION_BASE_COUNT` from slot-width constants; Python `FORGE_BASE_ACTIONS` is computed the same way.
 
 ---
 

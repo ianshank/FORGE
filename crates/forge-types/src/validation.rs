@@ -180,6 +180,47 @@ pub fn validate_config(config: &ForgeConfig) -> ForgeResult<()> {
         }
     }
 
+    if config.skills.default_skill.trim().is_empty() {
+        return Err(ForgeError::Config(ConfigError::ParseError(
+            "skills.default_skill must be non-empty".to_string(),
+        )));
+    }
+
+    let mut seen_skill_ids = std::collections::HashSet::new();
+    for spec in &config.skills.skills {
+        if spec.id.trim().is_empty() {
+            return Err(ForgeError::Config(ConfigError::ParseError(
+                "skills.*.id must be non-empty".to_string(),
+            )));
+        }
+        if !seen_skill_ids.insert(spec.id.as_str()) {
+            return Err(ForgeError::Config(ConfigError::ParseError(format!(
+                "duplicate skill id '{}'",
+                spec.id
+            ))));
+        }
+        if spec.max_horizon < crate::constants::MIN_SKILL_HORIZON
+            || spec.max_horizon > crate::constants::MAX_SKILL_HORIZON
+        {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: format!("skills.{}.max_horizon", spec.id),
+                value: spec.max_horizon.to_string(),
+                min: crate::constants::MIN_SKILL_HORIZON.to_string(),
+                max: crate::constants::MAX_SKILL_HORIZON.to_string(),
+            }));
+        }
+    }
+    if config.skills.default_horizon < crate::constants::MIN_SKILL_HORIZON
+        || config.skills.default_horizon > crate::constants::MAX_SKILL_HORIZON
+    {
+        return Err(ForgeError::Config(ConfigError::OutOfRange {
+            field: "skills.default_horizon".to_string(),
+            value: config.skills.default_horizon.to_string(),
+            min: crate::constants::MIN_SKILL_HORIZON.to_string(),
+            max: crate::constants::MAX_SKILL_HORIZON.to_string(),
+        }));
+    }
+
     Ok(())
 }
 
@@ -190,6 +231,37 @@ mod tests {
     #[test]
     fn test_default_config_validates() {
         assert!(validate_config(&ForgeConfig::default()).is_ok());
+    }
+
+    #[test]
+    fn test_invalid_skill_horizon_is_rejected() {
+        let mut config = ForgeConfig::default();
+        config.skills.skills[0].max_horizon = 0;
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("max_horizon"));
+    }
+
+    #[test]
+    fn test_duplicate_skill_ids_are_rejected() {
+        let mut config = ForgeConfig::default();
+        let first = config.skills.skills[0].clone();
+        config.skills.skills.push(first);
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("duplicate skill id"));
+    }
+
+    #[test]
+    fn test_empty_default_skill_id_is_rejected() {
+        let mut config = ForgeConfig::default();
+        config.skills.default_skill.clear();
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("default_skill"));
     }
 
     #[test]

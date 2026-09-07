@@ -21,7 +21,7 @@ Dependency boundaries are strictly enforced via `deny.toml` `[bans]`. Introducin
 ## Key Types & Public API
 
 - `ForgeConfig`: Top-level configuration hierarchy with strict deserialization.
-- `Action`: Discrete simulation actions (movement, interaction, crafting, communication).
+- `SkillsConfig` / `SkillSpec`: Opt-in hierarchical skill catalog over primitive `Action`s.
 - `Position`: 2D discrete grid coordinates.
 - `AgentId`: Strongly typed agent identifier.
 - `Tile`: Discrete terrain tile representation.
@@ -43,7 +43,7 @@ use forge_types::Action;
 
 let config = ForgeConfig::default();
 let pos = Position::new(10, 20);
-let action = Action::MoveNorth;
+let action = Action::Move(forge_types::grid::Direction::Up);
 assert_eq!(pos.x, 10);
 ```
 

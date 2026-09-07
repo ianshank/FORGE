@@ -32,6 +32,10 @@ This catalog documents all configuration files across `configs/` and the root wo
 | `FORGE_CLOUD_STORAGE_BACKEND` | `forge-cloud` | `local` | Storage provider: `local` or `gcs` |
 | `FORGE_CLOUD_GCS_BUCKET` | `forge-cloud` | *(none)* | Google Cloud Storage bucket for replays & models |
 | `FORGE_CLOUD_GCS_PREFIX` | `forge-cloud` | `forge/` | GCS key prefix |
+| `FORGE_SKILLS_CONFIG_PATH` | Python `SkillCatalog` | `configs/agents/skills_default.toml` | Path to the hierarchical skill catalog TOML |
+| `FORGE_SKILLS_ENABLED` | Rust `SkillsConfig` | `false` | Opt-in switch for engine-level skill catalog consumption |
+| `FORGE_SKILLS_DEFAULT_SKILL` | Rust `SkillsConfig` | `explore` | Default option id when a hierarchical policy has no active skill |
+| `FORGE_SKILLS_DEFAULT_HORIZON` | Rust `SkillsConfig` | `32` | Fallback option horizon in ticks |
 
 ---
 
@@ -91,6 +95,7 @@ This catalog documents all configuration files across `configs/` and the root wo
 | `configs/agents/hybrid_default.toml` | `forge_agent` | v1 | Combined heuristic and neural policy parameters |
 | `configs/agents/mappo_default.toml` | Python MAPPO trainer | v1 | Multi-Agent PPO policy and value network architecture |
 | `configs/agents/mousedroid.toml` | `forge_agent` | v1 | Autonomous patrol agent behavior tree configuration |
+| `configs/agents/skills_default.toml` | `forge_types::skill::SkillsConfig` / `forge.agents.skills.SkillCatalog` | v1 | Hierarchical skill catalog (options/HRL primitives) shared by Rust `HierarchicalSkillAgent` and Python `HierarchicalSkillPolicy`. Override path via `FORGE_SKILLS_CONFIG_PATH`; `FORGE_SKILLS_ENABLED`, `FORGE_SKILLS_DEFAULT_SKILL`, and `FORGE_SKILLS_DEFAULT_HORIZON` override the in-engine catalog. |
 
 ### 3.6 Cognitive, Memory, Social & Integration
 

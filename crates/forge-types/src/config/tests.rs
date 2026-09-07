@@ -393,6 +393,7 @@ fn test_all_configs_implement_default() {
     let _agri = AgriConfig::default();
     let _cloud = CloudConfig::default();
     let _edge = EdgeConfig::default();
+    let _skills = crate::skill::SkillsConfig::default();
     let _forge = ForgeConfig::default();
     let _team = TeamStructure::default();
 
@@ -634,6 +635,7 @@ fn test_cloud_edge_backward_compatible_deserialization() {
     // Cloud and edge should be disabled by default
     assert!(!config.cloud.enabled);
     assert!(!config.edge.enabled);
+    assert!(!config.skills.enabled);
 }
 
 #[test]

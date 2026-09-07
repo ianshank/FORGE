@@ -128,11 +128,15 @@ impl Action {
             37 => Some(Action::Push(Direction::Left)),
             38 => Some(Action::Push(Direction::Right)),
             39 => Some(Action::Interact),
-            n if n >= 40 && (n - 40) < comm_vocab_size as u32 => {
-                Some(Action::Communicate((n - 40) as CommToken))
+            n if n >= crate::constants::ACTION_BASE_COUNT
+                && (n - crate::constants::ACTION_BASE_COUNT) < comm_vocab_size as u32 =>
+            {
+                Some(Action::Communicate(
+                    (n - crate::constants::ACTION_BASE_COUNT) as CommToken,
+                ))
             }
-            n if n >= 40 + comm_vocab_size as u32 => {
-                let drone_base = 40 + comm_vocab_size as u32;
+            n if n >= crate::constants::ACTION_BASE_COUNT + comm_vocab_size as u32 => {
+                let drone_base = crate::constants::ACTION_BASE_COUNT + comm_vocab_size as u32;
                 let offset = n - drone_base;
 
                 // Drone actions block
@@ -261,7 +265,7 @@ impl Action {
             // collide with the drone block; callers that need a strict bound
             // check should use `try_to_discrete_configured` with the active
             // vocab size.
-            Action::Communicate(token) => Ok(40 + *token as u32),
+            Action::Communicate(token) => Ok(crate::constants::ACTION_BASE_COUNT + *token as u32),
             Action::Ascend
             | Action::Descend
             | Action::Hover
@@ -369,7 +373,7 @@ impl Action {
         agri_actions_enabled: bool,
         hex_actions_enabled: bool,
     ) -> Result<u32, ActionEncodingError> {
-        let drone_base = 40u32 + comm_vocab_size as u32;
+        let drone_base = crate::constants::ACTION_BASE_COUNT + comm_vocab_size as u32;
         let agri_base = drone_base
             + if drone_actions_enabled {
                 crate::constants::DRONE_ACTION_COUNT
@@ -423,7 +427,7 @@ impl Action {
                 "Communicate",
                 *token as u32,
                 comm_vocab_size as u32,
-                40 + *token as u32,
+                crate::constants::ACTION_BASE_COUNT + *token as u32,
             ),
             Action::Ascend => drone_check(self, drone_actions_enabled, || Ok(drone_base)),
             Action::Descend => drone_check(self, drone_actions_enabled, || Ok(drone_base + 1)),
@@ -516,7 +520,7 @@ impl Action {
         agri_actions_enabled: bool,
         hex_actions_enabled: bool,
     ) -> u32 {
-        let base = 40 + comm_vocab_size as u32;
+        let base = crate::constants::ACTION_BASE_COUNT + comm_vocab_size as u32;
         let drone = if drone_actions_enabled {
             crate::constants::DRONE_ACTION_COUNT
         } else {

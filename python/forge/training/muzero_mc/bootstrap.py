@@ -150,14 +150,18 @@ def bootstrap(cfg: BootstrapConfig) -> BootstrapResult:
     # Lazy imports — the ``minecraft`` optional-deps group pulls these
     # in. Keeping them inside the function keeps cold-start cheap and
     # decouples manifest tooling from training tooling.
-    import torch
+    if cfg.from_hf is None:
+        import torch
 
-    from forge.models.muzero_config import MuZeroConfig
-    from forge.models.muzero_export import MuZeroExporter
-    from forge.models.muzero_world_model import MuZeroWorldModel
+        from forge.models.muzero_config import MuZeroConfig
+        from forge.models.muzero_export import MuZeroExporter
+        from forge.models.muzero_world_model import MuZeroWorldModel
+
     from forge.training.muzero_mc.trainer import format_bundle_version_dir
 
-    if cfg.seed is not None:
+    if cfg.seed is not None and cfg.from_hf is None:
+        import torch
+
         torch.manual_seed(cfg.seed)
 
     if cfg.from_hf is not None:

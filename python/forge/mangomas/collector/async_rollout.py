@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from forge.mangomas.adapters import ObservationAdapter
-from forge.mangomas.collector.action_decoder import decode_action_name
+from forge.mangomas.collector.action_decoder import (
+    decode_action_name,
+    skill_category_for_action_name,
+)
 from forge.mangomas.collector.scenario import resolve_forge_scenarios
 from forge.mangomas.collector.sync_rollout import (
     _allocate_episode_counts,
@@ -102,14 +105,23 @@ async def _acollect_episode_rollout(
         next_enriched_obs = _augment_observation(next_obs, env_config, platform)
 
         episode_action_ids.append(discrete_action)
-        episode_action_names.append(
-            decode_action_name(
-                discrete_action,
-                comm_vocab_size,
-                drone_enabled,
-                agri_enabled=agri_enabled,
-                hex_enabled=hex_enabled,
-            )
+        action_label = decode_action_name(
+            discrete_action,
+            comm_vocab_size,
+            drone_enabled,
+            agri_enabled=agri_enabled,
+            hex_enabled=hex_enabled,
+        )
+        episode_action_names.append(action_label)
+        skill_label = (
+            str(trace_info.get("skill_id"))
+            if isinstance(trace_info, dict) and trace_info.get("skill_id")
+            else skill_category_for_action_name(action_label)
+        )
+        logger.debug(
+            "async rollout step action=%s skill=%s",
+            action_label,
+            skill_label,
         )
         episode_rewards.append(float(reward))
         done = bool(terminated or truncated)

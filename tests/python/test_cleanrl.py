@@ -93,6 +93,10 @@ def _make_mock_single_env() -> MagicMock:
 class TestTrainPPOCleanRL:
     """Tests for train_ppo_cleanrl.py."""
 
+    @pytest.fixture(autouse=True)
+    def _require_torch(self) -> None:
+        pytest.importorskip("torch", reason="PyTorch required for CleanRL PPO script")
+
     def test_script_exists(self) -> None:
         assert _PPO_SCRIPT.is_file(), f"Expected script at {_PPO_SCRIPT}"
 
@@ -210,6 +214,10 @@ class TestTrainPPOCleanRL:
 
 class TestTrainSACCleanRL:
     """Tests for train_sac_cleanrl.py."""
+
+    @pytest.fixture(autouse=True)
+    def _require_torch(self) -> None:
+        pytest.importorskip("torch", reason="PyTorch required for CleanRL SAC script")
 
     def test_script_exists(self) -> None:
         assert _SAC_SCRIPT.is_file(), f"Expected script at {_SAC_SCRIPT}"

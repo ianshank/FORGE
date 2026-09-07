@@ -26,6 +26,12 @@ if TYPE_CHECKING:
 # Add python/ to path so forge and forge_env packages are importable.
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
+from forge.policy_names import (
+    COLLECTION_POLICY_CHOICES,
+    DEFAULT_COLLECTION_POLICY,
+    POLICY_LLM,
+)
+
 logger = logging.getLogger("forge.train")
 
 # --- CLI argument defaults (no magic numbers) ---
@@ -39,10 +45,10 @@ _DEFAULT_DASHBOARD_URL = ""
 _DEFAULT_EVAL_INTERVAL = 0
 _DEFAULT_EVAL_EPISODES = 10
 _DEFAULT_EARLY_STOP_PATIENCE = 0
-_DEFAULT_COLLECTION_POLICY = "random"
+_DEFAULT_COLLECTION_POLICY = DEFAULT_COLLECTION_POLICY
 _DEFAULT_OPTIONAL_PATH = ""
 _AGENT_CHOICES = ("random", "mcts", "mappo", "mangomas", "mangomas-collect")
-_COLLECTION_POLICY_CHOICES = ("random", "mcts", "llm")
+_COLLECTION_POLICY_CHOICES = COLLECTION_POLICY_CHOICES
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -306,7 +312,7 @@ def _collect_mangomas_training_data(
     _apply_mangomas_cli_overrides(bridge_config, args)
     scenario_refs = _resolve_mangomas_scenarios(args, bridge_config)
 
-    teacher_config = bridge_config.teacher if args.collection_policy == "llm" else None
+    teacher_config = bridge_config.teacher if args.collection_policy == POLICY_LLM else None
 
     collection_result = collect_training_data_from_scenarios(
         base_forge_config=config.to_rust_config(),

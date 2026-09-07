@@ -6,8 +6,12 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="torch extra required for MuZero neural network tests")
 
-from forge.models.muzero_config import MuZeroConfig
-from forge.models.muzero_networks import DynamicsNetwork, PredictionNetwork, RepresentationNetwork
+from forge.models.muzero_config import MuZeroConfig  # noqa: E402
+from forge.models.muzero_networks import (  # noqa: E402
+    DynamicsNetwork,
+    PredictionNetwork,
+    RepresentationNetwork,
+)
 
 
 def test_representation_network_without_embeddings() -> None:
