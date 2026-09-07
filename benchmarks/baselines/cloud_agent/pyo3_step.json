@@ -1,0 +1,22 @@
+{
+  "action_id": 4,
+  "git_sha": "555b249c500e8870fe06d009eeb8575dafa1b910",
+  "hardware": {
+    "arch": "x86_64",
+    "cpu": "Intel(R) Xeon(R) Processor",
+    "os": "Linux",
+    "os_release": "6.12.94+",
+    "python": "3.12.3"
+  },
+  "iters": 100000,
+  "mean_ns": 5278.73443,
+  "mean_us": 5.27873443,
+  "median_ns": 5277.0,
+  "p99_ns": 6530.0,
+  "producer": "test_step_throughput",
+  "profile": "cloud_agent",
+  "seed": 42,
+  "stdev_ns": 425.7975517104051,
+  "steps_per_sec": 189439.3463548421,
+  "warmup": 1000
+}

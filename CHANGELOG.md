@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Throughput Evidence, demo_ui Packaging, and torch.export (2026-09)
+
+- **Committed Python throughput evidence**: labeled `cloud_agent` PyO3 report
+  (`benchmarks/baselines/cloud_agent/pyo3_step.json`, 189k steps/sec / 5.3 μs)
+  now backs the README / CHARTER "130,000+ steps/second from Python" floor.
+  `tests/python/test_throughput_claim.py` fails if a published floor exceeds
+  that report. Criterion `multi_agent_scaling.json` is recorded separately
+  (`env_steps_per_sec` vs `agent_steps_per_sec`) via
+  `benchmarks/runner/export_criterion_scaling.py` and `make bench-export`.
+  The CI `bench` job uploads a `reference_a` scaling artifact; it does not
+  auto-commit host-local numbers into `reference_a/` or `reference_b/`.
+
 ### Enterprise Codebase Optimization & Architectural Hardening (2026-09)
 
 Completed full implementation of the 5-phase optimization and enterprise hardening master plan:

@@ -26,7 +26,7 @@ def env() -> Generator[ForgeGymnasiumEnv]:
     if gymnasium_env._NativeEnv is None:
         pytest.skip("forge_env running in pure-Python mode (no native backend)")
 
-    wrapper = ForgeGymnasiumEnv(config={"seed": 42})
+    wrapper = ForgeGymnasiumEnv(config={"world": {"seed": 42}})
     yield wrapper
     wrapper.close()
 

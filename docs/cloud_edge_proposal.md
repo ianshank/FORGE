@@ -10,7 +10,8 @@ FORGE (Fast Open-source Runtime for Generalist Environments) is a high-performan
 
 ### The Case
 
-FORGE already achieves 130K+ steps/sec from Python on a single core. The architecture is inherently parallelizable because determinism eliminates simulation state synchronization -- only compact replay packets (seed + config + actions, ~160KB per 10K-tick episode) need to transit the network. This is a 300x compression over full trajectories.
+FORGE already achieves 130K+ steps/sec from Python on a single core
+([`benchmarks/baselines/cloud_agent/pyo3_step.json`](../benchmarks/baselines/cloud_agent/pyo3_step.json)). The architecture is inherently parallelizable because determinism eliminates simulation state synchronization -- only compact replay packets (seed + config + actions, ~160KB per 10K-tick episode) need to transit the network. This is a 300x compression over full trajectories.
 
 ### Architecture: Three Tiers
 

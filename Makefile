@@ -6,7 +6,7 @@ SHELL := /bin/bash
 # it just saves re-typing the exact CI invocations. Keep both in sync.
 
 .PHONY: help build fmt fmt-check lint test coverage \
-        onnx-check hf-check mlflow-check alloc-audit mc-runner-smoke machete mutants \
+        onnx-check hf-check mlflow-check alloc-audit bench-export mc-runner-smoke machete mutants \
         wasm wasm-check wasm-test deny gitleaks pin-check text-check \
         md-lint ci-parity \
         py-lint py-test hooks-test \
@@ -72,6 +72,20 @@ alloc-audit: ## Zero-allocation hot-path contract, 0 bytes / 0 blocks (matches C
 	./target/release/allocation_audit --warmup 1024 --iters 10000 --out alloc_audit.json
 	python3 benchmarks/runner/check_zero_alloc.py --input alloc_audit.json \
 		--max-bytes 0 --json alloc_audit_summary.json
+
+# PROFILE selects the baselines/<profile>/ destination. Default is the labeled
+# cloud-agent host this workspace runs on -- never silently write GitHub
+# Actions `reference_a` or workstation `reference_b` numbers from the wrong
+# machine. Override with `make bench-export PROFILE=reference_a` on GHA.
+PROFILE ?= cloud_agent
+
+bench-export: ## Run multi_agent_scaling Criterion bench and export committed JSON
+	FORGE_BENCH_AGENT_COUNTS=1,8,16,32,64,128 \
+		cargo bench -p forge-bench --bench multi_agent_scaling -- --save-baseline $(PROFILE)
+	python3 benchmarks/runner/export_criterion_scaling.py \
+		--criterion-dir target/criterion \
+		--out benchmarks/baselines/$(PROFILE)/multi_agent_scaling.json \
+		--profile $(PROFILE)
 
 mc-runner-smoke: ## forge-mc-runner builds and dry-runs without docker/Minecraft (matches CI's forge-mc-runner-bin job)
 	cargo build -p forge-mc-runner --bin forge-mc-runner

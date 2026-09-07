@@ -197,6 +197,22 @@ jobs:
         with:
           path: target/criterion/current
           key: bench-baseline-${{ runner.os }}
+      - name: Export multi_agent_scaling JSON (reference_a artifact)
+        # ubuntu-latest is the `reference_a` hardware class. Do not commit
+        # this file from a non-GHA host; the artefact is how a later cycle
+        # lands `benchmarks/baselines/reference_a/multi_agent_scaling.json`.
+        run: |
+          python3 benchmarks/runner/export_criterion_scaling.py \
+            --criterion-dir target/criterion \
+            --out /tmp/multi_agent_scaling.json \
+            --profile reference_a
+      - name: Upload reference_a scaling artifact
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: reference_a-multi_agent_scaling
+          path: /tmp/multi_agent_scaling.json
+          if-no-files-found: warn
 
   alloc-audit:
     name: Allocation Audit (zero-alloc gate)

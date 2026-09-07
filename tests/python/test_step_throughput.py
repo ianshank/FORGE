@@ -162,7 +162,7 @@ def _summarise(samples: list[float], *, iters: int, warmup: int, seed: int) -> d
 
 def _iter_environments(env_cls: Any, seed: int) -> Iterable[Any]:
     """Yield a single configured env, ensuring it is closed after use."""
-    env = env_cls(config={"seed": seed})
+    env = env_cls(config={"world": {"seed": seed}})
     try:
         env.reset()
         yield env
