@@ -46,7 +46,10 @@ use crate::scorecard::Scorecard;
 // stable. The canonical implementation now lives in `mlflow_payload`; the
 // upcoming MlflowFsSink + MlflowHttpSink both consume it directly.
 pub use super::mlflow_payload::{
-    child_run_id, combined_scenario_digest, hex_short, render_tier_bar_chart_html, sanitize,
+    child_run_id, combined_scenario_digest, hex_short, render_tier_bar_chart_html,
+    render_tier_bar_chart_html_with_url, resolve_plotly_js_url, sanitize, validate_run_id,
+    ArtifactRef, ArtifactSource, MetricSample, ParamKv, RunPayload, TagKv, DEFAULT_PLOTLY_JS_URL,
+    FORGE_PLOTLY_JS_URL_ENV, PLOTLY_JS_VERSION,
 };
 
 /// MLflow's default experiment id when no explicit experiment is created.

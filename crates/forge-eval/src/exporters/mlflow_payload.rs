@@ -671,7 +671,27 @@ fn escape_js_string(s: &str) -> String {
 /// renders identically regardless of when it's opened; bump deliberately,
 /// not automatically. `3.7.0` is the newest release on the mature `3.x`
 /// line as of this pin (the `4.0.0` major bump is only days old).
-const PLOTLY_JS_VERSION: &str = "3.7.0";
+pub const PLOTLY_JS_VERSION: &str = "3.7.0";
+
+/// Environment variable used to override the Plotly.js script URL
+/// in air-gapped or offline environments.
+pub const FORGE_PLOTLY_JS_URL_ENV: &str = "FORGE_PLOTLY_JS_URL";
+
+/// Default CDN URL for Plotly.js.
+pub const DEFAULT_PLOTLY_JS_URL: &str = "https://cdn.plot.ly/plotly-3.7.0.min.js";
+
+/// Returns the configured Plotly.js script URL.
+///
+/// Priority:
+/// 1. `FORGE_PLOTLY_JS_URL` environment variable if set and non-empty.
+/// 2. Default CDN URL (`https://cdn.plot.ly/plotly-3.7.0.min.js`).
+pub fn resolve_plotly_js_url() -> String {
+    std::env::var(FORGE_PLOTLY_JS_URL_ENV)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| format!("https://cdn.plot.ly/plotly-{PLOTLY_JS_VERSION}.min.js"))
+}
 
 /// Self-contained Plotly HTML for the per-tier success-rate + mean-reward
 /// chart. Emitted as the `tier_success_rates.html` artefact under each
@@ -684,7 +704,20 @@ const PLOTLY_JS_VERSION: &str = "3.7.0";
 /// so a name containing quotes / `</script>` cannot break the artefact
 /// out of its container or execute arbitrary script when the file is
 /// opened in MLflow's artefact viewer.
+///
+/// The Plotly library script URL is resolved via [`resolve_plotly_js_url`],
+/// allowing air-gapped environments to override it via `FORGE_PLOTLY_JS_URL`.
 pub fn render_tier_bar_chart_html(tier_scores: &[TierScore], run_name: &str) -> String {
+    let plotly_url = resolve_plotly_js_url();
+    render_tier_bar_chart_html_with_url(tier_scores, run_name, &plotly_url)
+}
+
+/// Variant of [`render_tier_bar_chart_html`] accepting an explicit Plotly script URL.
+pub fn render_tier_bar_chart_html_with_url(
+    tier_scores: &[TierScore],
+    run_name: &str,
+    plotly_url: &str,
+) -> String {
     let tiers: Vec<u8> = tier_scores.iter().map(|t| t.tier).collect();
     let success: Vec<f64> = tier_scores.iter().map(|t| t.success_rate).collect();
     let reward: Vec<f64> = tier_scores.iter().map(|t| t.mean_reward).collect();
@@ -696,7 +729,7 @@ pub fn render_tier_bar_chart_html(tier_scores: &[TierScore], run_name: &str) -> 
 <head>
 <meta charset="utf-8">
 <title>FORGE eval tier success rates — {html_safe}</title>
-<script src="https://cdn.plot.ly/plotly-{PLOTLY_JS_VERSION}.min.js"></script>
+<script src="{plotly_url}"></script>
 </head>
 <body>
 <div id="chart" style="width:100%;height:480px;"></div>
@@ -911,6 +944,56 @@ mod tests {
         assert!(html.contains("[1, 2]"));
         assert!(html.contains("0.75"));
         assert!(html.contains("0.5"));
+    }
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn resolve_plotly_js_url_defaults_to_pinned_cdn() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let orig = std::env::var(FORGE_PLOTLY_JS_URL_ENV).ok();
+        std::env::remove_var(FORGE_PLOTLY_JS_URL_ENV);
+
+        assert_eq!(
+            resolve_plotly_js_url(),
+            format!("https://cdn.plot.ly/plotly-{PLOTLY_JS_VERSION}.min.js")
+        );
+
+        if let Some(val) = orig {
+            std::env::set_var(FORGE_PLOTLY_JS_URL_ENV, val);
+        }
+    }
+
+    #[test]
+    fn resolve_plotly_js_url_respects_env_var() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let orig = std::env::var(FORGE_PLOTLY_JS_URL_ENV).ok();
+        let custom_url = "https://internal-mirror.local/plotly-3.7.0.min.js";
+        std::env::set_var(FORGE_PLOTLY_JS_URL_ENV, custom_url);
+
+        assert_eq!(resolve_plotly_js_url(), custom_url);
+
+        let html = render_tier_bar_chart_html(&[], "test-airgap");
+        assert!(html.contains(custom_url));
+
+        std::env::set_var(FORGE_PLOTLY_JS_URL_ENV, "   ");
+        assert_eq!(
+            resolve_plotly_js_url(),
+            format!("https://cdn.plot.ly/plotly-{PLOTLY_JS_VERSION}.min.js")
+        );
+
+        if let Some(val) = orig {
+            std::env::set_var(FORGE_PLOTLY_JS_URL_ENV, val);
+        } else {
+            std::env::remove_var(FORGE_PLOTLY_JS_URL_ENV);
+        }
+    }
+
+    #[test]
+    fn render_tier_bar_chart_html_with_url_uses_supplied_script_url() {
+        let custom_url = "/static/vendor/plotly.js";
+        let html = render_tier_bar_chart_html_with_url(&[], "test-custom", custom_url);
+        assert!(html.contains(&format!("<script src=\"{custom_url}\"></script>")));
     }
 
     #[test]
