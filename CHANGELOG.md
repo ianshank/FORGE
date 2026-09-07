@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `benchmarks/runner/export_criterion_scaling.py` and `make bench-export`.
   The CI `bench` job uploads a `reference_a` scaling artifact; it does not
   auto-commit host-local numbers into `reference_a/` or `reference_b/`.
+- **demo_ui installable + mypy**: setuptools now maps `demo_ui = "."` with
+  explicit packages so `pip install -e demo_ui/` exports `demo_ui.backend`.
+  CI / Makefile mypy includes `demo_ui/backend`; `demo_ui/tests/test_backend.py`
+  uses the `TYPE_CHECKING` / `importorskip` pattern; CONTRIBUTING documents
+  the 70% `demo_ui/backend` coverage gate.
 
 ### Enterprise Codebase Optimization & Architectural Hardening (2026-09)
 

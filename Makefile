@@ -155,7 +155,7 @@ md-lint: ## Markdown lint with the version ci.yml pins (matches CI's markdownlin
 
 py-lint: ## ruff + mypy (matches CI's python-lint job)
 	ruff check python/ tests/python/ scripts/ demo_ui/ examples/
-	mypy python/ scripts/ tests/python/type_checking/ --config-file pyproject.toml
+	mypy python/ scripts/ tests/python/type_checking/ demo_ui/backend --config-file pyproject.toml
 
 py-test: ## pytest tests/python, excluding opt-in markers (build the native ext first: maturin develop)
 	pytest tests/python -m 'not lmstudio and not e2e_long and not minecraft_e2e'

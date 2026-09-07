@@ -333,7 +333,7 @@ jobs:
         # `warn_unused_ignores = true` this repo already sets). Named
         # explicitly rather than widening to all of tests/, which would drag
         # ~200 unannotated test modules into a `disallow_untyped_defs` config.
-        run: mypy python/ scripts/ tests/python/type_checking/ --config-file pyproject.toml
+        run: mypy python/ scripts/ tests/python/type_checking/ demo_ui/backend --config-file pyproject.toml
       - name: Claude Code hook self-tests
         # Stdlib-only (unittest + tempfile + git, no project deps), so it
         # runs here rather than needing its own job. See .claude/hooks/.

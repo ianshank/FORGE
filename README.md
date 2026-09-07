@@ -491,11 +491,14 @@ node tests/web-e2e/serve.mjs
 Launch a dark-mode web UI that streams live FORGE output in a browser:
 
 ```bash
-# Windows (one-click launcher — installs deps, starts server, opens browser)
+# Linux/macOS
+bash demo_ui/run_demo.sh
+
+# Windows
 .\demo_ui\run_demo.ps1
 
 # Or manually:
-python -m pip install -r demo_ui/backend/requirements.txt
+python -m pip install -e 'demo_ui/'
 python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765
 # Then open http://127.0.0.1:8765
 ```
@@ -788,8 +791,8 @@ cargo test -p forge-agent search
 pytest tests/python/test_forge_env.py tests/python/test_feature_extractors.py tests/python/test_vecenv.py -q
 
 # Python lint + type check
-ruff check python/ tests/python/ scripts/ demo_ui/
-mypy python/ scripts/ --config-file pyproject.toml
+ruff check python/ tests/python/ scripts/ demo_ui/ examples/
+mypy python/ scripts/ tests/python/type_checking/ demo_ui/backend --config-file pyproject.toml
 ```
 
 ## Performance
