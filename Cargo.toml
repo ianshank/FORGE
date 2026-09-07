@@ -36,7 +36,7 @@ edition = "2021"
 publish = false
 
 [package.metadata.cargo-machete]
-ignored = ["bincode", "forge-task"]
+ignored = ["bincode", "forge-task", "forge-observability"]
 
 [dependencies]
 forge-types = { path = "crates/forge-types" }
@@ -54,6 +54,9 @@ forge-replay = { path = "crates/forge-replay" }
 forge-agent = { path = "crates/forge-agent" }
 forge-data = { path = "crates/forge-data" }
 forge-mangomas = { path = "crates/forge-mangomas" }
+forge-observability = { path = "crates/forge-observability" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
@@ -83,6 +86,10 @@ path = "tests/rust/integration_cloud_edge.rs"
 [[test]]
 name = "integration_swarm"
 path = "tests/rust/integration_swarm.rs"
+
+[[test]]
+name = "integration_agent_skills_deterministic"
+path = "tests/rust/integration_agent_skills_deterministic.rs"
 
 [workspace.package]
 version = "0.5.0"

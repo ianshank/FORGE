@@ -1392,6 +1392,7 @@ dependencies = [
  "forge-integration-layer",
  "forge-mangomas",
  "forge-memory",
+ "forge-observability",
  "forge-proposal",
  "forge-replay",
  "forge-social",
@@ -1403,6 +1404,8 @@ dependencies = [
  "serde_json",
  "tempfile",
  "toml",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

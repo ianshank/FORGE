@@ -36,7 +36,7 @@ class CuriosityWeights:
 
     def as_array(self) -> np.ndarray:
         """Return weights as an ordered numpy array."""
-        return cast("np.ndarray", np.array(list(self.weights.values()), dtype=np.float32))
+        return np.array(list(self.weights.values()), dtype=np.float32)
 
     def __repr__(self) -> str:
         parts = [f"{k}={v:.3f}" for k, v in self.weights.items()]

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-import torch
+import pytest
+
+torch = pytest.importorskip("torch", reason="torch extra required for MuZero neural network tests")
 
 from forge.models.muzero_config import MuZeroConfig
 from forge.models.muzero_networks import DynamicsNetwork, PredictionNetwork, RepresentationNetwork

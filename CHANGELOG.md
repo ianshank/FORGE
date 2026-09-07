@@ -9,7 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security — audit findings turned into enforced gates
+### Enterprise Codebase Optimization & Architectural Hardening (2026-09)
+
+Completed full implementation of the 5-phase optimization and enterprise hardening master plan:
+
+- **Strict Tier L0–L5 Layering Enforced in CI**:
+  - Formalized all 26 workspace crates into 6 acyclic architectural tiers in `docs/architecture.md` §4.2.
+  - Enforced unidirectional dependency constraints in `deny.toml` via `[bans].deny` with explicit `wrappers = [...]` rules, verified on every push via `cargo deny --all-features check`.
+- **God File Elimination & Modularization**:
+  - Extracted 3,900+ lines of in-file unit/proptest suites out of `world.rs`, `physics.rs`, `config.rs`, and `action.rs` into dedicated `tests.rs` submodules, reducing core production files by 50%–65%.
+  - Modularized `crates/forge-core::world` into cohesive submodules (`state.rs`, `step.rs`, `reset.rs`, `observation.rs`, `serialize.rs`, `debug.rs`) while strictly maintaining the zero-allocation hot-path contract.
+  - Decomposed `python/forge/mangomas/collector.py` (1,476 LOC monolith) into `python/forge/mangomas/collector/` sub-packages (`types`, `action_decoder`, `scenario`, `writer`, `sync_rollout`, `async_rollout`).
+  - Decomposed `mc-bot/src/index.ts` (616 LOC monolith) into focused ESM modules (`auth.ts`, `connection.ts`, `server.ts`, and a minimal `index.ts` bootstrap <100 LOC).
+- **Test Coverage & Quality Gate Ratcheting**:
+  - Established a strict 70% coverage floor for `demo_ui/backend` in `demo_ui/pytest.ini` (`--cov-fail-under=70`) and `demo_ui/.coveragerc` (current baseline: 90.38%).
+  - Pinned derive-only false positives in `[package.metadata.cargo-machete]` across 21 crates and promoted `cargo-machete` from advisory to a blocking CI gate.
+  - Promoted `pip-audit` to a blocking check in `.github/workflows/security.yml`.
+  - Fixed Docker ABI mismatch in `docker/Dockerfile` by aligning runtime stage to Python 3.11.
+- **Config Hardening & Zero-Drift**:
+  - Added `#[serde(default, deny_unknown_fields)]` across `ForgeConfig` and all 11 child structs in `crates/forge-types/src/config.rs` to prevent silent config drift.
+  - Added `FORGE_MC_METRICS_URL` environment variable override for Prometheus endpoint in `capture_baseline.py` and CLI.
+  - Added `FORGE_PLOTLY_JS_URL` environment variable support in `forge-eval::mlflow_payload` for air-gapped evaluation artifact generation.
+  - Authored comprehensive configuration index in `docs/config-catalog.md`.
+- **Research Stack Governance & Benchmarks**:
+  - Added standardized `README.md` files to all 26 crates across `crates/`.
+  - Added explicit operational maturity badges (`[Production]`, `[Research]`, `[Experimental]`) across research stack crates.
+  - Wired `forge-env` and `forge-env-forge` into `forge-bench` allocation audit and throughput benchmark suites to verify zero-allocation contracts across generic `Env` implementations.
+  - Formalized Tiered API Stability Policy and the Bincode 2.x Wire-Format Migration Roadmap in `docs/CHARTER.md`.
+
+---
+
+## [0.5.0] - 2026-09-05
 
 A standards audit found that the controls were configured but could not
 fail, and that the test guarding Invariant 6 checked five fields out of

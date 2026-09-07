@@ -81,9 +81,9 @@ mutants: ## Mutation-test the security-critical modules; any survivor fails (mat
 	@command -v cargo-mutants >/dev/null || cargo install cargo-mutants --locked
 	cargo mutants -p forge-mc-runner -p forge-server --timeout 120
 
-machete: ## Report unused Cargo dependencies (advisory in CI too -- never fails the build)
+machete: ## Report unused Cargo dependencies (blocking check across all workspace crates)
 	@command -v cargo-machete >/dev/null || cargo install cargo-machete --locked
-	cargo machete --with-metadata || true
+	cargo machete --with-metadata
 
 wasm: ## Build crates/forge-wasm into web/pkg/ for the static browser demo (needs wasm-pack)
 	@command -v wasm-pack >/dev/null || { \

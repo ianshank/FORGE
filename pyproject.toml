@@ -90,6 +90,7 @@ select = [
 ignore = [
     "E501",    # line-length handled by formatter
     "PLR0913", # too many arguments (env APIs have many args)
+    "PLR0917", # too many positional arguments
     "PLR2004", # magic value comparison (acceptable in tests)
     # FORGE has many optional ML dependencies (torch, anthropic, openai,
     # stable-baselines3, src.games.*) that are imported lazily inside the
@@ -238,6 +239,18 @@ disable_error_code = ["no-any-return"]
 # Prevent mypy from descending into third-party source files (e.g. torch uses
 # Python 3.10+ pattern matching which is incompatible with our py3.9 target).
 follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+# np.savez kwargs in numpy stubs expect bool in certain numpy versions.
+# Suppress arg-type on np.savez export sites.
+module = [
+    "forge.mangomas.export",
+    "forge.mangomas.bc_trainer",
+    "forge.mangomas.bdi_trainer",
+    "forge.mangomas.constitutional_trainer",
+    "forge.mangomas.rssm_pretrainer",
+]
+disable_error_code = ["arg-type"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]

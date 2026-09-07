@@ -28,8 +28,10 @@ See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope bounda
 - **Cross-platform**: Native Python bindings (PyO3/maturin) and WebAssembly bindings (wasm-bindgen)
 - **Zero allocation hot path**: `WorldState::step_into(&mut StepResult)` performs no heap allocations after warmup — verified in CI by `crates/forge-bench/src/bin/allocation_audit.rs` (a `dhat`-gated harness) and `benchmarks/runner/check_zero_alloc.py`. The audit sweeps `1,8,16,32,64,128` agents per action variant (override via `--agents` or `FORGE_BENCH_AGENT_COUNTS`) so the contract holds under fan-out, not just at `num_agents=1`. The convenience `step()` wrapper allocates a fresh `StepResult`; pass a reused buffer via `step_into` to honour the contract
 - **Structured logging & observability**: `#[instrument]` on public functions throughout with `tracing`. Log init is centralized in the `forge-observability` crate (`init_tracing`), and the output format is env-driven via `FORGE_LOG_FORMAT` (`text` default, `json` for aggregation) — the same switch flips structured logging across Rust, Python (`forge.utils.logging_config`), and the Node mc-bot (`createLogger`). An opt-in Prometheus + Grafana stack (`docker compose --profile monitoring`) scrapes the runner's `forge_mc_*` metrics
+- **Enterprise architecture governance & crate layering**: 26 workspace crates formalized into 6 immutable dependency tiers (Tiers L0–L5) with circular-dependency prevention and layer bans enforced in CI via `deny.toml`. See [`docs/architecture.md` §4.2](docs/architecture.md) and [`docs/config-catalog.md`](docs/config-catalog.md)
+- **Air-gapped evaluation & artifact generation**: Configurable offline telemetry and Plotly JS mirroring via `FORGE_PLOTLY_JS_URL`, Prometheus endpoint override via `FORGE_MC_METRICS_URL`, and strict `#[serde(deny_unknown_fields)]` schema enforcement
 - **Coverage-hardened surfaces**: focused regression tests cover Python fallback imports, vector envs, feature extractors, MangoMAS bridge modules, and Rust edge paths in planning/task evaluation
-- **Coverage-gated Python CI**: `pytest` now enforces `--cov-fail-under=85` for the Python package surface
+- **Coverage-gated Python & UI CI**: `pytest` enforces `--cov-fail-under=85` for the Python package surface and `--cov-fail-under=70` for `demo_ui/backend` (with blocking `cargo-machete` and `pip-audit` security gates)
 
 ## Quick Start
 
@@ -826,22 +828,24 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 
 ## Configuration Files
 
-FORGE uses TOML configuration files under `configs/`:
+FORGE uses TOML configuration files under `configs/` and provides a comprehensive configuration index in [`docs/config-catalog.md`](docs/config-catalog.md):
 
 ```text
 configs/
 ├── agents/          # Agent configs (mappo_default, mcts_default, hybrid_default, mousedroid)
-├── cognitive/       # Cognitive system configs
-├── curriculum/      # Curriculum tiers (beginner, intermediate, advanced)
+├── cognitive/       # Cognitive system configs (qwen14b, gemma_e4b, default)
+├── curriculum/      # Curriculum tiers (beginner, intermediate, advanced, agriculture)
+├── eval/            # Evaluation presets (e2e_long_preset)
 ├── integration/     # Integration layer configs
-├── mangomas/        # MangoMAS bridge configs (curriculum, constitutional, sweep)
+├── mangomas/        # MangoMAS bridge configs (curriculum, constitutional, sweep, muzero, bdi)
 ├── memory/          # Memory system configs
+├── minecraft/       # Minecraft env, rewards, action_map, reset, embeddings, runner configs
 ├── scenarios/       # Scenario configs (patrol, escort, search_and_rescue, adversarial_recon, area_denial)
 ├── social/          # Social system configs
-└── training/        # Training configs
+└── training/        # Training configs (PPO, SAC, distributed)
 ```
 
-All config structs derive `Clone, Debug, Serialize, Deserialize` and implement `Default` for programmatic use without config files.
+All config structs derive `Clone, Debug, Serialize, Deserialize`, implement `Default` for programmatic use without config files, and enforce strict deserialization (`#[serde(deny_unknown_fields)]`) to eliminate silent config drift.
 
 ## Docker
 
