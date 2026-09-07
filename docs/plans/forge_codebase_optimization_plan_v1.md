@@ -199,7 +199,7 @@ To guarantee unidirectional dependency flow and prevent circular coupling, the 2
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Layering Rules:
+#### Layering Rules
 - Crates in Tier $N$ may only depend on crates in Tier $< N$.
 - Tier 0 crates must never depend on any other workspace crate.
 - `forge-core` must never depend on `forge-agent`, `forge-eval`, or `forge-server`.

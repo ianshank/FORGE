@@ -117,6 +117,56 @@ pub struct Observation {
 }
 
 impl Observation {
+    /// Copy `src` into `self`, reusing inner `Vec` allocations.
+    ///
+    /// `#[derive(Clone)]` implements `clone_from` as `*self = src.clone()`,
+    /// which allocates a fresh `Vec` for every field on every call. This
+    /// method uses [`Vec::clone_from`] so a warm [`StepResult`] /
+    /// `Env::step_into` output buffer stays allocation-free after warmup.
+    /// Destructuring `src` makes a new [`Observation`] field a compile error
+    /// until it is copied here.
+    pub fn copy_from(&mut self, src: &Self) {
+        let Self {
+            grid_view,
+            view_width,
+            view_height,
+            inventory,
+            health,
+            stamina,
+            position,
+            messages,
+            day_phase,
+            task_progress,
+            altitude,
+            battery,
+            morphology,
+            heading,
+            crop_scan_results,
+            soil_readings,
+            disease_detections,
+            report_ready,
+        } = src;
+        let InventoryObservation { slots } = inventory;
+        self.grid_view.clone_from(grid_view);
+        self.view_width = *view_width;
+        self.view_height = *view_height;
+        self.inventory.slots.clone_from(slots);
+        self.health = *health;
+        self.stamina = *stamina;
+        self.position = *position;
+        self.messages.clone_from(messages);
+        self.day_phase = *day_phase;
+        self.task_progress.clone_from(task_progress);
+        self.altitude = *altitude;
+        self.battery = *battery;
+        self.morphology = *morphology;
+        self.heading = *heading;
+        self.crop_scan_results.clone_from(crop_scan_results);
+        self.soil_readings.clone_from(soil_readings);
+        self.disease_detections = *disease_detections;
+        self.report_ready = *report_ready;
+    }
+
     /// Returns the total number of elements when flattened to a 1D array.
     /// Useful for defining observation space dimensions.
     pub fn flat_size(
@@ -209,6 +259,28 @@ pub struct StepInfo {
     pub total_resources: u32,
     /// Current day phase.
     pub day_phase: u8,
+}
+
+impl StepInfo {
+    /// Copy `src` into `self`, reusing inner `Vec` allocations.
+    ///
+    /// See [`Observation::copy_from`]: derived `Clone::clone_from` reallocates
+    /// every `Vec` on every call, which breaks the `Env::step_into` zero-alloc
+    /// contract.
+    pub fn copy_from(&mut self, src: &Self) {
+        let Self {
+            tick,
+            agents_alive,
+            tasks_completed,
+            total_resources,
+            day_phase,
+        } = src;
+        self.tick = *tick;
+        self.agents_alive.clone_from(agents_alive);
+        self.tasks_completed.clone_from(tasks_completed);
+        self.total_resources = *total_resources;
+        self.day_phase = *day_phase;
+    }
 }
 
 /// Description of the observation space for API consumers.
@@ -322,6 +394,7 @@ impl ActionSpace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agriculture::{CropScanResult, SoilReading};
 
     #[test]
     fn test_observation_flat_size() {
@@ -402,6 +475,80 @@ mod tests {
         assert!(info.tasks_completed.is_empty());
         assert_eq!(info.total_resources, 0);
         assert_eq!(info.day_phase, 0);
+    }
+
+    #[test]
+    fn test_observation_copy_from_reuses_vec_capacity() {
+        let src = Observation {
+            grid_view: vec![TileObservation::default(); 9],
+            view_width: 3,
+            view_height: 3,
+            inventory: InventoryObservation {
+                slots: vec![(1, 2), (3, 4)],
+            },
+            health: 0.5,
+            stamina: 0.25,
+            position: (1, 2),
+            messages: vec![1],
+            day_phase: 2,
+            task_progress: vec![0.1, 0.2],
+            altitude: 3,
+            battery: 0.75,
+            morphology: 1,
+            heading: 2,
+            crop_scan_results: vec![CropScanResult {
+                position: (0, 1),
+                ndvi: 0.4,
+                thermal: 0.1,
+                disease_flag: false,
+            }],
+            soil_readings: vec![SoilReading {
+                node_id: 7,
+                npk: [0.1, 0.2, 0.3],
+                ph: 6.5,
+                moisture: 0.4,
+            }],
+            disease_detections: 4,
+            report_ready: true,
+        };
+        let mut dst = Observation::default();
+        dst.copy_from(&src);
+        let grid_cap = dst.grid_view.capacity();
+        let slot_cap = dst.inventory.slots.capacity();
+        let msg_cap = dst.messages.capacity();
+        let task_cap = dst.task_progress.capacity();
+        dst.copy_from(&src);
+        assert_eq!(dst.grid_view.capacity(), grid_cap);
+        assert_eq!(dst.inventory.slots.capacity(), slot_cap);
+        assert_eq!(dst.messages.capacity(), msg_cap);
+        assert_eq!(dst.task_progress.capacity(), task_cap);
+        assert_eq!(dst.view_width, 3);
+        assert_eq!(dst.health, 0.5);
+        assert_eq!(dst.position, (1, 2));
+        assert!(dst.report_ready);
+        assert_eq!(dst.crop_scan_results.len(), 1);
+        assert_eq!(dst.soil_readings[0].node_id, 7);
+    }
+
+    #[test]
+    fn test_step_info_copy_from_reuses_vec_capacity() {
+        let src = StepInfo {
+            tick: 9,
+            agents_alive: vec![true, false],
+            tasks_completed: vec![vec![1, 2], vec![]],
+            total_resources: 12,
+            day_phase: 1,
+        };
+        let mut dst = StepInfo::default();
+        dst.copy_from(&src);
+        let alive_cap = dst.agents_alive.capacity();
+        let tasks_cap = dst.tasks_completed.capacity();
+        dst.copy_from(&src);
+        assert_eq!(dst.agents_alive.capacity(), alive_cap);
+        assert_eq!(dst.tasks_completed.capacity(), tasks_cap);
+        assert_eq!(dst.tick, 9);
+        assert_eq!(dst.total_resources, 12);
+        assert_eq!(dst.tasks_completed[0], vec![1, 2]);
     }
 
     #[test]

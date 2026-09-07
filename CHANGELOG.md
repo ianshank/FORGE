@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ExportedProgram artefacts (`torch.export.export` / `torch.export.save`)
   instead of deprecated `torch.jit.trace`. Load/validate uses
   `torch.export.load`. The primary ONNX path and the Rust runner are unchanged.
+- **WorldEnv zero-alloc `step_into`**: `Observation::copy_from` / `StepInfo::copy_from`
+  reuse inner `Vec` capacity. Derived `Clone::clone_from` was `*self = src.clone()`,
+  which allocated ~4 heap blocks per `EnvTrait_WorldEnv_Move_Up` step and failed
+  the CI allocation audit.
 
 ### Enterprise Codebase Optimization & Architectural Hardening (2026-09)
 
@@ -78,7 +82,6 @@ Completed full implementation of the 5-phase optimization and enterprise hardeni
   - Implemented automated gate `tests/python/test_evidence_integrity.py` with 10 comprehensive positive and negative validation tests (laundering detection, nonexistent supersession, episode count mismatches, malformed JSON, non-list records, undeclared non-evidential snapshots, index verification), all reporting actionable remediation instructions.
   - Implemented marker guard `tests/python/test_evidence_integrity_marker_guard.py` ensuring pytest marker expressions cannot bypass the evidence integrity gate.
   - Aligned `docs/CHARTER.md` Invariant 6 with all CI workflows, adding `python-test-minecraft-real-run` to the workflow_dispatch opt-ins list and accurately documenting the blocking vs advisory scanner posture in `security.yml`.
-
 
 ---
 
