@@ -40,46 +40,46 @@
 
 ## 4. Correct the record
 
-- [ ] 4.1 Re-derive all three rows of the results table in
+- [x] 4.1 Re-derive all three rows of the results table in
       `docs/results/v0.5-first-real-run.md` from the artifacts; the links are
       transposed, one row describes a run that was never committed, and one
       cites a snapshot matching neither row
-- [ ] 4.2 Declare both baseline snapshots in place, recording what they are
+- [x] 4.2 Declare both baseline snapshots in place, recording what they are
       and why they carry no evidential episodes
-- [ ] 4.3 Correct `docs/architecture.md`, which describes the thirty-record
+- [x] 4.3 Correct `docs/architecture.md`, which describes the thirty-record
       artifact as four episodes and documents the outlawed behaviour as
       intended
-- [ ] 4.4 Retarget the stale `mc-bot/src/index.js` reference and the
+- [x] 4.4 Retarget the stale `mc-bot/src/index.js` reference and the
       hard-coded dimensions in `.github/workflows/hf-model.yml` that cite the
       rewritten report
 
 ## 5. Gate
 
-- [ ] 5.1 Add `tests/python/test_evidence_integrity.py`: every table row
+- [x] 5.1 Add `tests/python/test_evidence_integrity.py`: every table row
       citing a snapshot under `docs/results/` agrees with it, and every
       snapshot with no evidential records carries a declaration
-- [ ] 5.2 Negative-case tests over a synthetic tree, following the
+- [x] 5.2 Negative-case tests over a synthetic tree, following the
       monkeypatched-root fixture pattern already used by the pinned-config
       guard: laundering by declaring everything, a declaration naming a
       nonexistent supersession, a row disagreeing on episode count, malformed
       and empty snapshots, a non-list record collection
-- [ ] 5.3 Add `docs/results/INDEX.toml` listing each expected snapshot with
+- [x] 5.3 Add `docs/results/INDEX.toml` listing each expected snapshot with
       its digest; the gate fails on a listed path that is missing or whose
       digest disagrees
-- [ ] 5.4 Add a self-assertion, in a separate file, that the suite's marker
+- [x] 5.4 Add a self-assertion, in a separate file, that the suite's marker
       expression excludes no marker this gate carries
-- [ ] 5.5 Confirm the guard fails on the pre-correction tree and passes after,
+- [x] 5.5 Confirm the guard fails on the pre-correction tree and passes after,
       recording both transcripts in the pull-request body
-- [ ] 5.6 Failure messages state the remedy, not only the mismatch
+- [x] 5.6 Failure messages state the remedy, not only the mismatch
 
 ## 6. Rollout and charter
 
-- [ ] 6.1 Land the gate advisory for one cycle with the promotion criterion
+- [x] 6.1 Land the gate advisory for one cycle with the promotion criterion
       written into the step comment, following the doctrine stated in the
       security workflow's header, then remove the marker
-- [ ] 6.2 Add the third `workflow_dispatch`-only job to Invariant 6's list of
+- [x] 6.2 Add the third `workflow_dispatch`-only job to Invariant 6's list of
       deliberately non-blocking gates, which names its two siblings and omits
       it
-- [ ] 6.3 Correct Invariant 6's advisory-scanner claim: it names one scanner
+- [x] 6.3 Correct Invariant 6's advisory-scanner claim: it names one scanner
       as advisory, but three more run non-blocking and the static-analysis job
       does not run at all unless a repository variable enables it

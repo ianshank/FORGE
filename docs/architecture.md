@@ -2183,10 +2183,9 @@ scripts/v05_manual_baseline.py
     │
     ▼ open_ws + Hello + drive N episodes via reset / step / close
     │   - random action sampling per the bot's advertised action_count
-    │   - per-step error tolerance: server-side INTERNAL errors mark
-    │     the episode truncated and continue (the bot's mineflayer
-    │     connection still needs a manual restart between captures —
-    │     Phase-2 auto-reconnect work)
+    │   - per-step error handling: step error frames record an
+    │     explicit environment-failure outcome rather than a truncation;
+    │     consecutive transient failures halt and contract violations abort
     │
     ▼ snapshot JSON schema-compat with `mc_plot_baseline.py` consumer
       (includes summary_counters/gauges, manifest_versions_seen,
@@ -2202,10 +2201,12 @@ would otherwise crash the script via heap exhaustion.
 **First-real-run evidence** lives in:
 
 - `docs/results/v0.5-first-real-run.md` — full writeup
-- `docs/results/v0.5-first-real-run-baseline.json` — long run
-  (4 episodes attempted, 3 completed before bot disconnect)
+- `docs/results/v0.5-first-real-run-baseline.json` — hardened run
+  (30 episodes attempted, 1 with non-empty rollout before bot disconnect;
+  all 30 carry protocol errors and are non-evidential)
 - `docs/results/v0.5-first-real-run-baseline-v2.json` — hardened
-  run (10 episodes with error-tolerance, 1 with real rollout)
+  run v2 (10 episodes attempted, 1 with non-empty rollout; all 10
+  carry protocol errors and are non-evidential)
 
 The v0.5 grid_shape handshake has been verified end-to-end against
 a real `itzg/minecraft-server` — first time anyone has actually
@@ -2610,7 +2611,8 @@ The CI pipeline runs on every push and pull request targeting `main`, `master`, 
 | `markdownlint`, `bench`, `hf-export`, `demo-ui`, `dashboard`, `python-test-fast` | Runs on push/PR; not in CHARTER.md's blocking list but not marked advisory either — check branch protection for current required-check status | push / PR |
 | `python-test-lmstudio`, `python-test-minecraft-e2e`, `python-test-minecraft-real-run` | Opt-in | `workflow_dispatch` only |
 | `docker` | Build + push to GHCR | default branch / version tags only, `needs: [test, clippy, fmt, python-test]` |
-| `cargo-deny`, `pip-audit`, `npm-audit` (×2), `trivy-fs`, `gitleaks` (`security.yml`) | Advisory (report-only, `\|\| true`) | push / PR / weekly cron |
+| `cargo-deny`, `gitleaks`, `pip-audit` (`security.yml`) | **Blocking** | push / PR / weekly cron |
+| `npm-audit` (×2), `trivy-fs` (`security.yml`) | Advisory (report-only, `\|\| true`) | push / PR / weekly cron |
 | `codeql` (`security.yml`) | Opt-in | gated on repo var `ENABLE_CODEQL` |
 
 ### Benchmark Regression Gate

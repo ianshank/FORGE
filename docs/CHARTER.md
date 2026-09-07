@@ -233,12 +233,15 @@ charter names the gates without pinning numbers that would drift.
 
 `ci.yml` also runs jobs this list deliberately omits, because they are not
 blocking gates: advisory checks (`machete`), `workflow_dispatch`-only opt-ins
-(`python-test-lmstudio`, `python-test-minecraft-e2e`), and explicitly
-non-required jobs (`dashboard-e2e`, `wasm-e2e`). Alongside them,
+(`python-test-lmstudio`, `python-test-minecraft-e2e`, and
+`python-test-minecraft-real-run`), and explicitly non-required jobs
+(`dashboard-e2e`, `wasm-e2e`). Alongside them,
 [`.github/workflows/security.yml`](../.github/workflows/security.yml) runs the
 supply-chain and static-analysis layer — `cargo-deny` (policy in `deny.toml`),
-`pip-audit` (promoted to blocking), `npm-audit`, `trivy-fs`, and CodeQL. `cargo-deny` is
-**blocking** as of 2026-09-05.
+`gitleaks`, and `pip-audit` are **blocking** (as of 2026-09-05 / 2026-09-06);
+`npm-audit` and `trivy-fs` run as advisory (non-blocking, reporting into job logs
+with `|| true`); and the static-analysis job (CodeQL) does not run at all unless
+the `ENABLE_CODEQL` repository variable enables it.
 
 ### 7. Credentials excluded from repositories
 

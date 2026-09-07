@@ -38,7 +38,7 @@ jobs:
     timeout-minutes: 60
     env:
       HF_MODEL_REPO_ID: ${{ github.event.inputs.repo_id || 'ianshank/forge-muzero-minecraft' }}
-      # v0.5 contract pins (docs/results/v0.5-first-real-run.md).
+      # v0.5 contract pins (configs/minecraft/action_map.toml, configs/minecraft/env.toml, docs/CHARTER.md Invariant 2).
       OBS_DIM: "920"
       ACTION_DIM: "12"
     steps:

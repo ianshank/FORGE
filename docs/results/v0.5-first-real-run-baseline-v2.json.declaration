@@ -1,0 +1,10 @@
+# Snapshot declaration for v0.5-first-real-run-baseline-v2.json
+# Pinned under refuse-non-evidential-aggregates OpenSpec (Phase 4.2).
+
+[declaration]
+snapshot = "v0.5-first-real-run-baseline-v2.json"
+sha256 = "c6f23e3b90aeed8c5300901243487837ea9073d0ea28cfdc83975716c2781f3d"
+episodes = 10
+evidential_episodes = 0
+excluded_episodes = 10
+rationale = "Retained as historical record of v0.5 Phase 1 error-tolerant capture against itzg/minecraft-server. All 10 records carry protocol_errors=1 and obs_dim=0 (the bot connection went stale after an MC server-side error, causing subsequent step requests to return error frames rather than observations). Zero evidential episodes exist."

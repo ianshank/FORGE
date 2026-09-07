@@ -1,0 +1,12 @@
+# Index of committed benchmark snapshot artifacts under docs/results/.
+# Each entry binds a repository path to its expected SHA-256 digest.
+# This prevents silent edits, additions, or deletions of evidence without
+# an explicit index change reviewed in the same commit.
+
+[[snapshots]]
+path = "docs/results/v0.5-first-real-run-baseline.json"
+sha256 = "3fd1f4b8294573773b73a7ce8ddbd095220f61c1432a81e74fcb2e95a9575050"
+
+[[snapshots]]
+path = "docs/results/v0.5-first-real-run-baseline-v2.json"
+sha256 = "c6f23e3b90aeed8c5300901243487837ea9073d0ea28cfdc83975716c2781f3d"

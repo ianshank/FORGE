@@ -47,6 +47,17 @@ Completed full implementation of the 5-phase optimization and enterprise hardeni
   - Collector policy `"skill"` plus action-decoder skill-family mapping for traces.
   - Wired `--collection-policy skill` through `python/forge/policy_names.py` so CLI, collector, and tests share identifiers.
   - Derived `ACTION_BASE_COUNT` from slot-width constants; Python `FORGE_BASE_ACTIONS` is computed the same way.
+- **Evidence Integrity & Non-Evidential Baseline Refusal (`refuse-non-evidential-aggregates`)**:
+  - Added evidential predicate in `scripts/mc_plot_baseline.py`: a record is evidential only if protocol-error count is 0, obs_dim matches handshake, and realized steps meet the pinned floor (`PINNED_EPISODE_STEP_FLOOR = 5`).
+  - Aggregator pins comparison threshold (`PINNED_SNAPSHOT_EVIDENTIAL_FLOOR = 3`), refusing to render comparisons when evidential records are below the floor and reporting both evidential and excluded record counts.
+  - Hardened producer `scripts/v05_manual_baseline.py` to record environment step failure as explicit failure outcome (not truncation), abort on contract violation error codes, and halt on consecutive transient failures (`MAX_CONSECUTIVE_TRANSIENT_FAILURES = 3`).
+  - Re-derived results table in `docs/results/v0.5-first-real-run.md` from actual artifacts, correcting transposed links and uncommitted runs across 4 distinct logical benchmark runs.
+  - Declared baseline artifacts `v0.5-first-real-run-baseline.json` (30 ep) and `v0.5-first-real-run-baseline-v2.json` (10 ep) with `.declaration` audit notes.
+  - Created `docs/results/INDEX.toml` mapping all committed benchmark snapshots to their SHA-256 digests.
+  - Implemented automated gate `tests/python/test_evidence_integrity.py` with 10 comprehensive positive and negative validation tests (laundering detection, nonexistent supersession, episode count mismatches, malformed JSON, non-list records, undeclared non-evidential snapshots, index verification), all reporting actionable remediation instructions.
+  - Implemented marker guard `tests/python/test_evidence_integrity_marker_guard.py` ensuring pytest marker expressions cannot bypass the evidence integrity gate.
+  - Aligned `docs/CHARTER.md` Invariant 6 with all CI workflows, adding `python-test-minecraft-real-run` to the workflow_dispatch opt-ins list and accurately documenting the blocking vs advisory scanner posture in `security.yml`.
+
 
 ---
 
