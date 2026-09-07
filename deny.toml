@@ -70,7 +70,69 @@ exceptions = []
 multiple-versions = "warn"
 wildcards = "warn"
 allow = []
-deny = []
+deny = [
+    # ─── Workspace Layering Model (Tiers L0 to L5) ───────────────────────────
+    # Enforces strict unidirectional dependencies across architectural tiers:
+    # Tier N crates may only be depended on by higher tiers (Tier > N) or the
+    # root integration test suite (forge-integration-tests). Any inverted
+    # dependency or leakage across tiers immediately fails CI.
+
+    # --- Tier 5: Distributed Orchestration ---
+    { crate = "forge-cloud", wrappers = ["forge-integration-tests"] },
+
+    # --- Tier 4: Applications & Runners ---
+    { crate = "forge-data", wrappers = ["forge-cloud", "forge-integration-tests"] },
+    { crate = "forge-edge", wrappers = ["forge-integration-tests"] },
+    { crate = "forge-mangomas", wrappers = ["forge-integration-tests"] },
+
+    # --- Tier 3: Agents & Interfaces ---
+    { crate = "forge-agent", wrappers = [
+        "forge-data",
+        "forge-edge",
+        "forge-mangomas",
+        "forge-integration-tests",
+    ] },
+    { crate = "forge-integration-layer", wrappers = [
+        "forge-mangomas",
+        "forge-integration-tests",
+    ] },
+    { crate = "forge-replay", wrappers = [
+        "forge-cloud",
+        "forge-data",
+        "forge-edge",
+        "forge-integration-tests",
+    ] },
+
+    # --- Tier 2: Engine & Cognitive ---
+    { crate = "forge-cognitive", wrappers = [
+        "forge-integration-layer",
+        "forge-integration-tests",
+    ] },
+    { crate = "forge-core", wrappers = [
+        "forge-agent",
+        "forge-data",
+        "forge-mangomas",
+        "forge-replay",
+        "forge-integration-tests",
+    ] },
+
+    # --- Tier 1: Domain Primitives ---
+    { crate = "forge-civ", wrappers = ["forge-core"] },
+    { crate = "forge-memory", wrappers = [
+        "forge-cognitive",
+        "forge-integration-layer",
+        "forge-integration-tests",
+    ] },
+    { crate = "forge-proposal", wrappers = ["forge-integration-tests"] },
+    { crate = "forge-social", wrappers = ["forge-integration-layer", "forge-integration-tests"] },
+    { crate = "forge-task", wrappers = [
+        "forge-core",
+        "forge-data",
+        "forge-mangomas",
+        "forge-integration-tests",
+    ] },
+    { crate = "forge-worldgen", wrappers = ["forge-core", "forge-integration-tests"] },
+]
 
 [sources]
 # Only crates.io is trusted by default. Git/registry sources must be allow-listed.

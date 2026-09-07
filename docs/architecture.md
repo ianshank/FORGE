@@ -2313,37 +2313,100 @@ Observation
 └── day_phase: u8                      0-3
 ```
 
-### 4.2 Crate Dependency Graph
+### 4.2 Workspace Layering Model (Tiers L0 to L5)
 
-```
-                    forge-types
-                   (shared types)
-                ╱   │   │    ╲
-               ╱    │   │     ╲
-              ▼     ▼   ▼      ▼
-        forge-  forge- forge- forge-
-        worldgen core   task  agent
-             ╲    │    ╱     ╱
-              ╲   │   ╱     ╱
-               ▼  ▼  ▼    ╱
-             forge-python ╱
-             forge-wasm  ╱
-             forge-server
-             forge-bench ───╱
+To prevent circular dependencies and architectural decay, the 26 workspace crates are formalized into six immutable dependency tiers:
+
+```mermaid
+flowchart TB
+    subgraph L5 ["Tier 5: Distributed Orchestration"]
+        forge-cloud
+    end
+
+    subgraph L4 ["Tier 4: Applications & Runners"]
+        forge-mc-runner
+        forge-mangomas
+        forge-eval
+        forge-data
+        forge-edge
+        forge-bench
+    end
+
+    subgraph L3 ["Tier 3: Agents & Interfaces"]
+        forge-agent
+        forge-replay
+        forge-server
+        forge-python
+        forge-wasm
+        forge-env-forge
+        forge-integration-layer
+    end
+
+    subgraph L2 ["Tier 2: Engine & Cognitive"]
+        forge-core
+        forge-cognitive
+    end
+
+    subgraph L1 ["Tier 1: Domain Primitives"]
+        forge-civ
+        forge-worldgen
+        forge-task
+        forge-memory
+        forge-social
+        forge-proposal
+        forge-env-mc
+    end
+
+    subgraph L0 ["Tier 0: Core Foundation"]
+        forge-types
+        forge-env
+        forge-observability
+    end
+
+    L5 --> L4
+    L4 --> L3
+    L3 --> L2
+    L2 --> L1
+    L1 --> L0
 ```
 
-| Crate | Dependencies |
-|-------|-------------|
-| forge-types | serde, thiserror, smallvec, fixed, rand, rand_pcg, tracing |
-| forge-worldgen | forge-types, rand_pcg, tracing |
-| forge-core | forge-types, forge-worldgen, rand, rand_pcg, fixed, serde, bincode, smallvec, tracing |
-| forge-task | forge-types, rand, tracing |
-| forge-agent | forge-types, forge-core, rand, rand_pcg, serde, tracing |
-| forge-server | forge-types, forge-core, forge-observability, serde, serde_json, thiserror, tracing, axum, tower-http (tracing-subscriber init is now delegated to forge-observability) |
-| forge-observability | tracing, tracing-subscriber (no FORGE deps) |
-| forge-python | forge-types, forge-core, forge-worldgen, forge-task, pyo3, numpy, serde_json, tracing |
-| forge-wasm | forge-types, forge-core, serde, serde_json, wasm-bindgen, tracing |
-| forge-bench | forge-types, forge-core, rand, rand_pcg, criterion |
+#### Strict Architectural Dependency Rules
+
+1. **Tier Invariant**: Any crate in Tier $N$ may only depend on crates in Tier $< N$ (or sibling crates in Tier $N$ if acyclic and explicitly authorized).
+2. **Foundation Isolation**: `forge-types`, `forge-env`, and `forge-observability` (Tier 0) must NEVER depend on any other workspace crate.
+3. **Core Isolation**: `forge-core` (Tier 2) must NEVER depend on `forge-agent`, `forge-eval`, or `forge-server` (Tier 3+).
+4. **Automated Enforcement**: These tier boundaries and allowable consumer wrapper relationships are codified in `deny.toml` under `[bans].deny` with explicit `wrappers = [...]` constraints, checked on every CI commit via `cargo deny --all-features check`.
+
+#### Complete Crate Tier & Dependency Catalog
+
+| Tier | Crate | Description | Workspace Dependencies | Allowed Downstream Consumers (`wrappers`) |
+|:-----|:------|:------------|:-----------------------|:-------------------------------------------|
+| **L5** | `forge-cloud` | Distributed cloud runner, model registry & storage orchestration | `forge-data`, `forge-replay`, `forge-types` | `forge-integration-tests` |
+| **L4** | `forge-mc-runner` | Minecraft headless runner & evaluation orchestrator | `forge-agent`, `forge-env`, `forge-env-mc`, `forge-observability`, `forge-replay` | `forge-integration-tests` |
+| **L4** | `forge-mangomas` | MangoMAS multi-agent benchmark & scenario collection | `forge-agent`, `forge-core`, `forge-integration-layer`, `forge-task`, `forge-types` | `forge-integration-tests` |
+| **L4** | `forge-eval` | Evaluation harnesses, scorecards & MLflow/HF sinks | `forge-core`, `forge-observability`, `forge-replay`, `forge-types` | `forge-integration-tests` |
+| **L4** | `forge-data` | Dataset capture, trajectory recording & serialization | `forge-agent`, `forge-core`, `forge-observability`, `forge-replay`, `forge-task`, `forge-types` | `forge-cloud`, `forge-integration-tests` |
+| **L4** | `forge-edge` | Edge runtime, lightweight ONNX inference & models | `forge-agent`, `forge-replay`, `forge-types` | `forge-integration-tests` |
+| **L4** | `forge-bench` | Criterion performance benchmarks & allocation audit | `forge-agent`, `forge-core`, `forge-types` (planned: `forge-env-forge`) | `forge-integration-tests` |
+| **L3** | `forge-agent` | Baselines, MCTS planner & scripted policy agents | `forge-core`, `forge-types` | `forge-bench`, `forge-data`, `forge-edge`, `forge-mangomas`, `forge-mc-runner`, `forge-integration-tests` |
+| **L3** | `forge-replay` | Action/state replay recorder, player & verify | `forge-core`, `forge-types` | `forge-cloud`, `forge-data`, `forge-edge`, `forge-eval`, `forge-mc-runner`, `forge-integration-tests` |
+| **L3** | `forge-server` | Axum WebSocket/HTTP simulation server | `forge-core`, `forge-observability`, `forge-types` | `forge-integration-tests` |
+| **L3** | `forge-python` | PyO3 Python bindings (`forge_env`) & Gymnasium envs | `forge-core`, `forge-types` | `forge-integration-tests` |
+| **L3** | `forge-wasm` | WebAssembly bindings & browser canvas engine | `forge-core`, `forge-types` | `forge-integration-tests` |
+| **L3** | `forge-env-forge` | `Env` trait wrapper for `WorldState` | `forge-core`, `forge-env`, `forge-types` | `forge-integration-tests` |
+| **L3** | `forge-integration-layer`| Cognitive integration layer across primitives | `forge-cognitive`, `forge-memory`, `forge-social`, `forge-types` | `forge-mangomas`, `forge-integration-tests` |
+| **L2** | `forge-core` | Core simulation engine, grid physics & state pipeline | `forge-civ`, `forge-task`, `forge-types`, `forge-worldgen` | `forge-agent`, `forge-bench`, `forge-data`, `forge-env-forge`, `forge-eval`, `forge-mangomas`, `forge-python`, `forge-replay`, `forge-server`, `forge-wasm`, `forge-integration-tests` |
+| **L2** | `forge-cognitive` | Cognitive architecture, goal deliberation & planning | `forge-memory`, `forge-types` | `forge-integration-layer`, `forge-integration-tests` |
+| **L1** | `forge-civ` | Civilization, buildings, tech trees & diplomacy | `forge-types` | `forge-core`, `forge-integration-tests` |
+| **L1** | `forge-worldgen` | Procedural world generation (Perlin/Simplex noise) | `forge-types` | `forge-core`, `forge-integration-tests` |
+| **L1** | `forge-task` | Hierarchical task network & objectives | `forge-types` | `forge-core`, `forge-data`, `forge-mangomas`, `forge-integration-tests` |
+| **L1** | `forge-memory` | Working memory, episodic memory & vector buffers | `forge-types` | `forge-cognitive`, `forge-integration-layer`, `forge-integration-tests` |
+| **L1** | `forge-social` | Agent communication, dialogue & reputation | `forge-types` | `forge-integration-layer`, `forge-integration-tests` |
+| **L1** | `forge-proposal` | Action proposals, voting & deliberation | `forge-types` | `forge-integration-tests` |
+| **L1** | `forge-env-mc` | Minecraft environment protocol adapter | `forge-env` | `forge-mc-runner`, `forge-integration-tests` |
+| **L0** | `forge-types` | Foundational schemas, actions, coordinates & errors | *(none)* | *(Any workspace crate)* |
+| **L0** | `forge-env` | Core Environment traits & gym observation types | *(none)* | `forge-env-forge`, `forge-env-mc`, `forge-mc-runner` |
+| **L0** | `forge-observability` | Tracing subscriber, metrics & structured log config | *(none)* | `forge-data`, `forge-eval`, `forge-mc-runner`, `forge-server` |
 
 ### 4.3 Determinism Guarantees
 
