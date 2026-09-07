@@ -6,13 +6,14 @@ Fast Open-source Runtime for Generalist Environments
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 
-A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python.
+A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python
+([`cloud_agent` PyO3 measurement](benchmarks/baselines/cloud_agent/pyo3_step.json): 189k steps/sec).
 
 See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope boundaries, and Seven Core Invariants.
 
 ## Key Features
 
-- **Blazing fast**: 130K+ steps/sec from Python, <8 μs/step including PyO3 overhead
+- **Blazing fast**: 130K+ steps/sec from Python, <8 μs/step including PyO3 overhead (189k / 5.3 μs measured on the labeled `cloud_agent` profile)
 - **Deterministic**: Same seed + actions = byte-identical results. Uses fixed-point arithmetic and `rand_pcg` for RNG
 - **Procedural worlds**: Perlin noise terrain with biome classification, resource distribution, and object placement
 - **Topology-aware worlds**: Configurable square and hex grids via `forge-civ`, with shared line-of-sight, distance, and pathfinding primitives
@@ -490,11 +491,14 @@ node tests/web-e2e/serve.mjs
 Launch a dark-mode web UI that streams live FORGE output in a browser:
 
 ```bash
-# Windows (one-click launcher — installs deps, starts server, opens browser)
+# Linux/macOS
+bash demo_ui/run_demo.sh
+
+# Windows
 .\demo_ui\run_demo.ps1
 
 # Or manually:
-python -m pip install -r demo_ui/backend/requirements.txt
+python -m pip install -e 'demo_ui/'
 python -m uvicorn demo_ui.backend.main:app --host 127.0.0.1 --port 8765
 # Then open http://127.0.0.1:8765
 ```
@@ -787,18 +791,21 @@ cargo test -p forge-agent search
 pytest tests/python/test_forge_env.py tests/python/test_feature_extractors.py tests/python/test_vecenv.py -q
 
 # Python lint + type check
-ruff check python/ tests/python/ scripts/ demo_ui/
-mypy python/ scripts/ --config-file pyproject.toml
+ruff check python/ tests/python/ scripts/ demo_ui/ examples/
+mypy python/ scripts/ tests/python/type_checking/ demo_ui/backend --config-file pyproject.toml
 ```
 
 ## Performance
 
-Benchmarked on a single core:
+Benchmarked on a single core. The Python steps/second floor is gated
+against [`benchmarks/baselines/cloud_agent/pyo3_step.json`](benchmarks/baselines/cloud_agent/pyo3_step.json)
+(`tests/python/test_throughput_claim.py`). Rust multi-agent scaling is a
+separate Criterion measurement ([`cloud_agent/multi_agent_scaling.json`](benchmarks/baselines/cloud_agent/multi_agent_scaling.json)) and is not the headline.
 
 | Metric | Value |
 | --- | --- |
 | Steps/second (from Python) | 130,000+ |
-| Microseconds/step | ~7.5 μs |
+| Microseconds/step | ~5.3 μs (measured); <8 μs claimed |
 | World creation (64x64) | ~3.5 ms |
 | Zero-alloc step | Yes (hot path) |
 

@@ -15,13 +15,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-httpx = pytest.importorskip("httpx", reason="httpx is required for backend tests")
-ASGITransport = httpx.ASGITransport
-AsyncClient = httpx.AsyncClient
-
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from pathlib import Path
+
+    from httpx import ASGITransport, AsyncClient
+else:
+    httpx = pytest.importorskip("httpx", reason="httpx is required for backend tests")
+    ASGITransport = httpx.ASGITransport
+    AsyncClient = httpx.AsyncClient
 
 # ---------------------------------------------------------------------------
 # Fixtures

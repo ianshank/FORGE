@@ -16,7 +16,8 @@ high-performance simulation platform for training and evaluating AI agents,
 built in Rust with first-class Python and WebAssembly bindings. It provides
 deterministic, procedurally generated grid worlds with crafting, combat,
 multi-agent cooperation, and a composable task curriculum, running at
-130,000+ steps/second from Python.
+130,000+ steps/second from Python
+([`benchmarks/baselines/cloud_agent/pyo3_step.json`](../benchmarks/baselines/cloud_agent/pyo3_step.json)).
 
 On top of that core, FORGE runs a **self-improving MuZero loop against live
 Minecraft**: a Rust episode runner drives an environment over a WebSocket

@@ -26,5 +26,8 @@ dev = [
     "playwright==1.48.*",
 ]
 
-[tool.setuptools.packages.find]
-include = ["demo_ui*"]
+[tool.setuptools]
+packages = ["demo_ui", "demo_ui.backend"]
+
+[tool.setuptools.package-dir]
+demo_ui = "."

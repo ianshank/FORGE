@@ -29,7 +29,7 @@ WebAssembly — there is no server behind this page.
 A procedurally generated gridworld with resources, crafting, combat, and a
 day/night cycle, rendered as ASCII. The agent takes random actions from the
 environment's action space; the same engine runs 130K+ steps/second from
-Python and byte-identically reproduces any episode from its seed.
+Python (see `benchmarks/baselines/cloud_agent/pyo3_step.json`) and byte-identically reproduces any episode from its seed.
 
 ## Controls
 

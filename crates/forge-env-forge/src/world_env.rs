@@ -150,7 +150,10 @@ impl Env for WorldEnv {
         // CLAUDE.md and `crates/forge-bench/src/bin/allocation_audit.rs`).
         self.state.step_into(&actions, &mut self.step_result);
         if let Some(first_obs) = self.step_result.observations.first() {
-            out.obs.clone_from(first_obs);
+            // `Observation::copy_from` reuses Vec capacity. Derived
+            // `clone_from` is `*self = src.clone()` and was allocating
+            // ~4 heap blocks per step (CI `EnvTrait_WorldEnv_Move_Up@n=1`).
+            out.obs.copy_from(first_obs);
         } else {
             warn!("WorldState step produced no observations; using default");
             out.obs = Observation::default();
@@ -158,7 +161,7 @@ impl Env for WorldEnv {
         out.reward = self.step_result.rewards.first().copied().unwrap_or(0.0);
         out.terminated = self.step_result.terminated;
         out.truncated = self.step_result.truncated;
-        out.info.clone_from(&self.step_result.info);
+        out.info.copy_from(&self.step_result.info);
         Ok(())
     }
 

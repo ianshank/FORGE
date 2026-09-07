@@ -197,6 +197,22 @@ jobs:
         with:
           path: target/criterion/current
           key: bench-baseline-${{ runner.os }}
+      - name: Export multi_agent_scaling JSON (reference_a artifact)
+        # ubuntu-latest is the `reference_a` hardware class. Do not commit
+        # this file from a non-GHA host; the artefact is how a later cycle
+        # lands `benchmarks/baselines/reference_a/multi_agent_scaling.json`.
+        run: |
+          python3 benchmarks/runner/export_criterion_scaling.py \
+            --criterion-dir target/criterion \
+            --out /tmp/multi_agent_scaling.json \
+            --profile reference_a
+      - name: Upload reference_a scaling artifact
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: reference_a-multi_agent_scaling
+          path: /tmp/multi_agent_scaling.json
+          if-no-files-found: warn
 
   alloc-audit:
     name: Allocation Audit (zero-alloc gate)
@@ -317,7 +333,7 @@ jobs:
         # `warn_unused_ignores = true` this repo already sets). Named
         # explicitly rather than widening to all of tests/, which would drag
         # ~200 unannotated test modules into a `disallow_untyped_defs` config.
-        run: mypy python/ scripts/ tests/python/type_checking/ --config-file pyproject.toml
+        run: mypy python/ scripts/ tests/python/type_checking/ demo_ui/backend --config-file pyproject.toml
       - name: Claude Code hook self-tests
         # Stdlib-only (unittest + tempfile + git, no project deps), so it
         # runs here rather than needing its own job. See .claude/hooks/.

@@ -1,0 +1,132 @@
+{
+  "agent_counts": [
+    1,
+    8,
+    16,
+    32,
+    64,
+    128
+  ],
+  "git_sha": "555b249c500e8870fe06d009eeb8575dafa1b910",
+  "hardware": {
+    "arch": "x86_64",
+    "cpu": "Intel(R) Xeon(R) Processor",
+    "os": "Linux",
+    "os_release": "6.12.94+",
+    "python": "3.12.3"
+  },
+  "producer": "multi_agent_scaling",
+  "profile": "cloud_agent",
+  "seed": 42,
+  "variants": [
+    {
+      "agent_steps_per_sec": 72010.96988380917,
+      "env_steps_per_sec": 72010.96988380917,
+      "group": "hex",
+      "group_id": "multi_agent_scaling_hex",
+      "mean_ns": 13886.77310711848,
+      "median_ns": 13916.52577087851,
+      "num_agents": 1
+    },
+    {
+      "agent_steps_per_sec": 167720.7441224825,
+      "env_steps_per_sec": 20965.09301531031,
+      "group": "hex",
+      "group_id": "multi_agent_scaling_hex",
+      "mean_ns": 47698.33357141434,
+      "median_ns": 47891.96953554098,
+      "num_agents": 8
+    },
+    {
+      "agent_steps_per_sec": 181817.65803603237,
+      "env_steps_per_sec": 11363.603627252023,
+      "group": "hex",
+      "group_id": "multi_agent_scaling_hex",
+      "mean_ns": 88000.25351129065,
+      "median_ns": 88685.89169324827,
+      "num_agents": 16
+    },
+    {
+      "agent_steps_per_sec": 195974.4029935682,
+      "env_steps_per_sec": 6124.200093549006,
+      "group": "hex",
+      "group_id": "multi_agent_scaling_hex",
+      "mean_ns": 163286.63086194082,
+      "median_ns": 159719.01488095237,
+      "num_agents": 32
+    },
+    {
+      "agent_steps_per_sec": 192529.80427608002,
+      "env_steps_per_sec": 3008.2781918137503,
+      "group": "hex",
+      "group_id": "multi_agent_scaling_hex",
+      "mean_ns": 332416.0653496877,
+      "median_ns": 307715.3075,
+      "num_agents": 64
+    },
+    {
+      "agent_steps_per_sec": 191587.87338533674,
+      "env_steps_per_sec": 1496.7802608229433,
+      "group": "hex",
+      "group_id": "multi_agent_scaling_hex",
+      "mean_ns": 668100.7400847143,
+      "median_ns": 612509.132272312,
+      "num_agents": 128
+    },
+    {
+      "agent_steps_per_sec": 85592.40180617239,
+      "env_steps_per_sec": 85592.40180617239,
+      "group": "square",
+      "group_id": "multi_agent_scaling_square",
+      "mean_ns": 11683.28004470002,
+      "median_ns": 11705.257106235184,
+      "num_agents": 1
+    },
+    {
+      "agent_steps_per_sec": 431912.1316050666,
+      "env_steps_per_sec": 53989.016450633324,
+      "group": "square",
+      "group_id": "multi_agent_scaling_square",
+      "mean_ns": 18522.28593411002,
+      "median_ns": 18476.967961244096,
+      "num_agents": 8
+    },
+    {
+      "agent_steps_per_sec": 588453.724524589,
+      "env_steps_per_sec": 36778.357782786814,
+      "group": "square",
+      "group_id": "multi_agent_scaling_square",
+      "mean_ns": 27189.90352712336,
+      "median_ns": 26973.96979237302,
+      "num_agents": 16
+    },
+    {
+      "agent_steps_per_sec": 691633.370155059,
+      "env_steps_per_sec": 21613.542817345595,
+      "group": "square",
+      "group_id": "multi_agent_scaling_square",
+      "mean_ns": 46267.28752666437,
+      "median_ns": 46257.85928793429,
+      "num_agents": 32
+    },
+    {
+      "agent_steps_per_sec": 782593.0109805805,
+      "env_steps_per_sec": 12228.01579657157,
+      "group": "square",
+      "group_id": "multi_agent_scaling_square",
+      "mean_ns": 81779.41676198808,
+      "median_ns": 81824.42458389563,
+      "num_agents": 64
+    },
+    {
+      "agent_steps_per_sec": 813769.2323094634,
+      "env_steps_per_sec": 6357.572127417683,
+      "group": "square",
+      "group_id": "multi_agent_scaling_square",
+      "mean_ns": 157292.74948960426,
+      "median_ns": 153067.80124223602,
+      "num_agents": 128
+    }
+  ],
+  "world_side": 128
+}

@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Throughput Evidence, demo_ui Packaging, and torch.export (2026-09)
+
+- **Committed Python throughput evidence**: labeled `cloud_agent` PyO3 report
+  (`benchmarks/baselines/cloud_agent/pyo3_step.json`, 189k steps/sec / 5.3 μs)
+  now backs the README / CHARTER "130,000+ steps/second from Python" floor.
+  `tests/python/test_throughput_claim.py` fails if a published floor exceeds
+  that report. Criterion `multi_agent_scaling.json` is recorded separately
+  (`env_steps_per_sec` vs `agent_steps_per_sec`) via
+  `benchmarks/runner/export_criterion_scaling.py` and `make bench-export`.
+  The CI `bench` job uploads a `reference_a` scaling artifact; it does not
+  auto-commit host-local numbers into `reference_a/` or `reference_b/`.
+- **demo_ui installable + mypy**: setuptools now maps `demo_ui = "."` with
+  explicit packages so `pip install -e demo_ui/` exports `demo_ui.backend`.
+  CI / Makefile mypy includes `demo_ui/backend`; `demo_ui/tests/test_backend.py`
+  uses the `TYPE_CHECKING` / `importorskip` pattern; CONTRIBUTING documents
+  the 70% `demo_ui/backend` coverage gate.
+- **MuZero `torch.export`**: secondary `export_torchscript()` writes `.pt2`
+  ExportedProgram artefacts (`torch.export.export` / `torch.export.save`)
+  instead of deprecated `torch.jit.trace`. Load/validate uses
+  `torch.export.load`. The primary ONNX path and the Rust runner are unchanged.
+- **WorldEnv zero-alloc `step_into`**: `Observation::copy_from` / `StepInfo::copy_from`
+  reuse inner `Vec` capacity. Derived `Clone::clone_from` was `*self = src.clone()`,
+  which allocated ~4 heap blocks per `EnvTrait_WorldEnv_Move_Up` step and failed
+  the CI allocation audit.
+
 ### Enterprise Codebase Optimization & Architectural Hardening (2026-09)
 
 Completed full implementation of the 5-phase optimization and enterprise hardening master plan:
@@ -57,7 +82,6 @@ Completed full implementation of the 5-phase optimization and enterprise hardeni
   - Implemented automated gate `tests/python/test_evidence_integrity.py` with 10 comprehensive positive and negative validation tests (laundering detection, nonexistent supersession, episode count mismatches, malformed JSON, non-list records, undeclared non-evidential snapshots, index verification), all reporting actionable remediation instructions.
   - Implemented marker guard `tests/python/test_evidence_integrity_marker_guard.py` ensuring pytest marker expressions cannot bypass the evidence integrity gate.
   - Aligned `docs/CHARTER.md` Invariant 6 with all CI workflows, adding `python-test-minecraft-real-run` to the workflow_dispatch opt-ins list and accurately documenting the blocking vs advisory scanner posture in `security.yml`.
-
 
 ---
 

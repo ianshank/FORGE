@@ -58,7 +58,7 @@ class MuZeroExporter:
         Returns:
             List of paths to the exported ONNX files.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -125,45 +125,43 @@ class MuZeroExporter:
         return paths
 
     def export_torchscript(self, output_dir: Path) -> list[Path]:
-        """Export all three networks to TorchScript format.
+        """Export all three networks via ``torch.export`` (ExportedProgram).
+
+        Files use the ``.pt2`` suffix so they cannot be loaded with
+        ``torch.jit.load``. This path is secondary: the Rust runner consumes
+        ONNX from :meth:`export_onnx`.
 
         Args:
-            output_dir: Directory to write the TorchScript files.
+            output_dir: Directory to write the ExportedProgram files.
 
         Returns:
-            List of paths to the exported TorchScript files.
+            List of paths to the exported files.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         c = self._config
         paths: list[Path] = []
 
-        # Representation
         rep_module = _build_rep_module(self._model)
-        rep_traced = torch.jit.trace(rep_module, torch.randn(1, c.obs_dim))
-        rep_path = output_dir / "representation.pt"
-        rep_traced.save(str(rep_path))
+        rep_path = output_dir / "representation.pt2"
+        _export_program(rep_module, torch.randn(1, c.obs_dim), rep_path)
         paths.append(rep_path)
-        logger.info("Exported representation TorchScript to %s", rep_path)
+        logger.info("Exported representation ExportedProgram to %s", rep_path)
 
-        # Dynamics
         dyn_module = _build_dyn_module(self._model)
         input_dim = c.latent_dim + c.action_dim
-        dyn_traced = torch.jit.trace(dyn_module, torch.randn(1, input_dim))
-        dyn_path = output_dir / "dynamics.pt"
-        dyn_traced.save(str(dyn_path))
+        dyn_path = output_dir / "dynamics.pt2"
+        _export_program(dyn_module, torch.randn(1, input_dim), dyn_path)
         paths.append(dyn_path)
-        logger.info("Exported dynamics TorchScript to %s", dyn_path)
+        logger.info("Exported dynamics ExportedProgram to %s", dyn_path)
 
-        # Prediction
         pred_module = _build_pred_module(self._model)
-        pred_traced = torch.jit.trace(pred_module, torch.randn(1, c.latent_dim))
-        pred_path = output_dir / "prediction.pt"
-        pred_traced.save(str(pred_path))
+        pred_path = output_dir / "prediction.pt2"
+        _export_program(pred_module, torch.randn(1, c.latent_dim), pred_path)
         paths.append(pred_path)
-        logger.info("Exported prediction TorchScript to %s", pred_path)
+        logger.info("Exported prediction ExportedProgram to %s", pred_path)
 
         return paths
 
@@ -213,7 +211,7 @@ class MuZeroExporter:
     ) -> bool:
         """Validate ONNX export against PyTorch."""
         try:
-            import onnxruntime as ort  # noqa: PLC0415
+            import onnxruntime as ort
         except ImportError:
             logger.warning("onnxruntime not installed — skipping ONNX validation")
             return True
@@ -245,33 +243,58 @@ class MuZeroExporter:
         atol: float,
     ) -> bool:
         """Validate TorchScript export against PyTorch."""
-        import torch  # noqa: PLC0415
+        import torch
 
         obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
 
-        rep_model = torch.jit.load(str(output_dir / "representation.pt"))
+        rep_model = _load_exported_module(output_dir / "representation.pt2")
         ts_latent = rep_model(obs_t).detach().numpy().flatten()
         if not np.allclose(ts_latent, ref_latent, atol=atol):
-            logger.error("Representation TorchScript validation failed")
+            logger.error("Representation ExportedProgram validation failed")
             return False
 
-        pred_model = torch.jit.load(str(output_dir / "prediction.pt"))
+        pred_model = _load_exported_module(output_dir / "prediction.pt2")
         latent_t = torch.tensor(ts_latent, dtype=torch.float32).unsqueeze(0)
         ts_policy, _ts_value = pred_model(latent_t)
         if not np.allclose(ts_policy.detach().numpy().flatten()[: len(ref_policy)], ref_policy, atol=atol):
-            logger.error("Prediction TorchScript validation failed")
+            logger.error("Prediction ExportedProgram validation failed")
             return False
 
-        logger.info("TorchScript validation passed (atol=%s)", atol)
+        logger.info("ExportedProgram validation passed (atol=%s)", atol)
         return True
 
 
-# --- Internal nn.Module builders for ONNX/TorchScript export ---
+# --- Internal nn.Module builders for ONNX / torch.export ---
+
+
+def _export_program(module: torch.nn.Module, example: torch.Tensor, path: Path) -> Path:
+    """Serialize ``module`` as an ExportedProgram at ``path``.
+
+    Tries strict dynamo capture first, then ``strict=False`` so Python
+    control flow in the representation net cannot silently block export.
+    """
+    import torch
+
+    module.eval()
+    try:
+        program = torch.export.export(module, (example,))
+    except Exception as exc:
+        logger.warning("strict torch.export failed (%s); retrying with strict=False", exc)
+        program = torch.export.export(module, (example,), strict=False)
+    torch.export.save(program, path)
+    return path
+
+
+def _load_exported_module(path: Path) -> torch.nn.Module:
+    """Load an ExportedProgram and return a callable ``nn.Module``."""
+    import torch
+
+    return torch.export.load(path).module()
 
 
 def _build_rep_module(model: MuZeroWorldModel) -> torch.nn.Module:
     """Build a traceable nn.Module wrapping the representation network."""
-    from torch import nn  # noqa: PLC0415
+    from torch import nn
 
     class RepModule(nn.Module):
         def __init__(self) -> None:
@@ -293,7 +316,7 @@ def _build_rep_module(model: MuZeroWorldModel) -> torch.nn.Module:
 
 def _build_dyn_module(model: MuZeroWorldModel) -> torch.nn.Module:
     """Build a traceable nn.Module wrapping the dynamics network."""
-    from torch import nn  # noqa: PLC0415
+    from torch import nn
 
     latent_dim = model.config.latent_dim
 
@@ -318,7 +341,7 @@ def _build_dyn_module(model: MuZeroWorldModel) -> torch.nn.Module:
 
 def _build_pred_module(model: MuZeroWorldModel) -> torch.nn.Module:
     """Build a traceable nn.Module wrapping the prediction network."""
-    from torch import nn  # noqa: PLC0415
+    from torch import nn
 
     class PredModule(nn.Module):
         def __init__(self) -> None:

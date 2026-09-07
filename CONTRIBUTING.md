@@ -78,7 +78,7 @@ execute this whole sequence at once (see the root `Makefile`).
 | Python (pytest-cov) | 85% |
 | dashboard (Vitest) | 85% |
 | mc-bot (c8) | report-only (baseline ~88%; no fail-under yet) |
-| demo_ui (pytest-cov) | report-only (baseline ~90% on `demo_ui/backend`; no fail-under yet) |
+| demo_ui (pytest-cov) | 70% (`demo_ui/pytest.ini` `--cov-fail-under=70`; baseline ~90% on `demo_ui/backend`) |
 
 ## Claude Code tooling
 

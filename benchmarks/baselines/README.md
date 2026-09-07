@@ -11,34 +11,42 @@ the CI alloc-audit job uses
 against the `total_bytes == 0` invariant, and the throughput numbers are
 human-readable evidence for the README's performance claims.
 
-> **Coverage gap (current):** only `reference_a/alloc_audit.json` is committed.
-> `multi_agent_scaling.json` — the artefact that would back the README's
-> "130,000+ steps/second" headline — is **not committed for either profile**, so
-> that claim currently rests on the benchmark code
-> (`crates/forge-bench/benches/multi_agent_scaling.rs`) being run locally rather
-> than on a checked-in measurement. Regenerate with the command in the table
-> below and commit the result to close it.
+The README / CHARTER Python steps-per-second headline is gated by
+`tests/python/test_throughput_claim.py` against the committed
+`cloud_agent/pyo3_step.json` report. Rust multi-agent scaling is a
+separate measurement (Criterion `WorldState::step`) and must not be
+cited as the Python headline.
 
 ## Profiles
 
-The two abstract profiles are referenced in
-`crates/forge-bench/src/env.rs` and `multi_agent_scaling.rs`:
-
-- **`reference_a/`** — committed, hardware: GitHub Actions `ubuntu-latest`
-  runner (the same machine the `alloc-audit` CI job runs on, x86_64
-  Linux). Treat this profile as "anyone-can-reproduce-on-CI".
+- **`reference_a/`** — GitHub Actions `ubuntu-latest` runner (the same
+  machine the `alloc-audit` and `bench` CI jobs run on, x86_64 Linux).
+  Treat this profile as "anyone-can-reproduce-on-CI". `alloc_audit.json`
+  is committed here. `multi_agent_scaling.json` is produced by the
+  `bench` job as a CI artifact (`reference_a-multi_agent_scaling`); do
+  not copy a non-GHA host's numbers into this directory.
 - **`reference_b/`** — user-supplied workstation profile. Populated
   locally on a non-CI host (Apple Silicon laptop, dedicated x86 / arm64
-  workstation, or arm64 cloud instance) using the regeneration commands
-  below. The directory ships with only a `.gitkeep`; do not block PRs on
-  the absence of populated baseline files.
+  workstation). The directory ships with only a `.gitkeep`; do not block
+  PRs on the absence of populated baseline files.
+- **`cloud_agent/`** — labeled measurements from the Cursor cloud agent
+  VM that closed the evidence gap. Hardware is recorded inside each JSON
+  (`hardware.cpu`, `hardware.arch`). These numbers are **not**
+  interchangeable with `reference_a` or `reference_b`.
 
 ## Files
 
 | File | Producer | How to regenerate |
 |---|---|---|
 | `<profile>/alloc_audit.json` | `target/release/allocation_audit` | `cargo run -p forge-bench --bin allocation_audit --features dhat-heap --release -- --warmup 1024 --iters 10000 --agents 1,8,16,32,64,128 --out benchmarks/baselines/<profile>/alloc_audit.json` |
-| `<profile>/multi_agent_scaling.json` | Criterion (`multi_agent_scaling` bench) | `FORGE_BENCH_AGENT_COUNTS=1,8,16,32,64,128 cargo bench -p forge-bench --bench multi_agent_scaling -- --save-baseline <profile>` then export the relevant rows |
+| `<profile>/multi_agent_scaling.json` | Criterion (`multi_agent_scaling` bench) + exporter | `make bench-export PROFILE=<profile>` (runs `cargo bench -p forge-bench --bench multi_agent_scaling` then `python3 benchmarks/runner/export_criterion_scaling.py`) |
+| `<profile>/pyo3_step.json` | `tests/python/test_step_throughput.py` | `FORGE_RUN_STEP_THROUGHPUT=1 FORGE_STEP_THROUGHPUT_OUT=benchmarks/baselines/<profile>/pyo3_step.json pytest tests/python/test_step_throughput.py -s --no-cov` (requires `maturin develop` / the native `forge_env` extension) |
+
+Each `multi_agent_scaling.json` row records **both** `env_steps_per_sec`
+(whole-world `step()` calls per second, comparable to the Python
+headline) and `agent_steps_per_sec` (`num_agents * env_steps_per_sec`,
+matching Criterion's `Throughput::Elements(num_agents)`). Do not cite
+the agent-normalised figure as the Python steps/second claim.
 
 The audit's `--agents` flag accepts a comma-separated list of agent
 counts; the same sweep can be set via the `FORGE_BENCH_AGENT_COUNTS`
@@ -52,11 +60,14 @@ agree on the canonical fan-out. Each audit row is labelled
 
 When you commit a regenerated `alloc_audit.json`, make sure it still
 satisfies the zero-allocation gate below. If you also refresh
-throughput baselines such as `<profile>/multi_agent_scaling.json`,
-update the corresponding human-readable performance documentation in
-the same PR so it stays in sync with the machine-readable evidence.
+throughput baselines such as `<profile>/multi_agent_scaling.json` or
+`<profile>/pyo3_step.json`, update the corresponding human-readable
+performance documentation in the same PR so it stays in sync with the
+machine-readable evidence. `tests/python/test_throughput_claim.py` will
+fail if a published Python steps/second floor exceeds the committed
+PyO3 report.
 
-A regenerated baseline must satisfy the same gate the CI uses:
+A regenerated allocation baseline must satisfy the same gate the CI uses:
 
 ```bash
 python3 benchmarks/runner/check_zero_alloc.py \
