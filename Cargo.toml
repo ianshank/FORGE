@@ -135,7 +135,7 @@ forge-observability = { path = "crates/forge-observability" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bincode = "1"
-toml = "0.8"
+toml = "1.1"
 
 # Fixed-point arithmetic for deterministic physics
 fixed = "1"
