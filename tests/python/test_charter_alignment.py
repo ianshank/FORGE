@@ -95,6 +95,8 @@ NON_CRATE_FORGE_IDENTIFIERS: frozenset[str] = frozenset(
         "forge-net",
         # `forge-integration` ships as package `forge-integration-layer`.
         "forge-integration-layer",
+        # Root package for workspace-wide integration tests.
+        "forge-integration-tests",
     }
 )
 
