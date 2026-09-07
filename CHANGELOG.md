@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CI / Makefile mypy includes `demo_ui/backend`; `demo_ui/tests/test_backend.py`
   uses the `TYPE_CHECKING` / `importorskip` pattern; CONTRIBUTING documents
   the 70% `demo_ui/backend` coverage gate.
+- **MuZero `torch.export`**: secondary `export_torchscript()` writes `.pt2`
+  ExportedProgram artefacts (`torch.export.export` / `torch.export.save`)
+  instead of deprecated `torch.jit.trace`. Load/validate uses
+  `torch.export.load`. The primary ONNX path and the Rust runner are unchanged.
 
 ### Enterprise Codebase Optimization & Architectural Hardening (2026-09)
 

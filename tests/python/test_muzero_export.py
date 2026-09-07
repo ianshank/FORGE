@@ -48,6 +48,8 @@ class TestTorchScriptExport:
         exporter = MuZeroExporter(model)
         paths = exporter.export_torchscript(tmp_path / "ts")
         assert len(paths) == 3
+        names = {p.name for p in paths}
+        assert names == {"representation.pt2", "dynamics.pt2", "prediction.pt2"}
         for p in paths:
             assert p.exists()
             assert p.stat().st_size > 0
@@ -57,7 +59,7 @@ class TestTorchScriptExport:
         exporter = MuZeroExporter(model)
         exporter.export_torchscript(tmp_path / "ts")
 
-        loaded = torch.jit.load(str(tmp_path / "ts" / "representation.pt"))
+        loaded = torch.export.load(tmp_path / "ts" / "representation.pt2").module()
         obs = torch.randn(1, OBS_DIM)
         result = loaded(obs)
         assert result.shape == (1, LATENT_DIM)
@@ -67,7 +69,7 @@ class TestTorchScriptExport:
         exporter = MuZeroExporter(model)
         exporter.export_torchscript(tmp_path / "ts")
 
-        loaded = torch.jit.load(str(tmp_path / "ts" / "prediction.pt"))
+        loaded = torch.export.load(tmp_path / "ts" / "prediction.pt2").module()
         latent = torch.randn(1, LATENT_DIM)
         policy, _value = loaded(latent)
         assert policy.shape == (1, ACTION_DIM)
@@ -77,11 +79,18 @@ class TestTorchScriptExport:
         exporter = MuZeroExporter(model)
         exporter.export_torchscript(tmp_path / "ts")
 
-        loaded = torch.jit.load(str(tmp_path / "ts" / "dynamics.pt"))
+        loaded = torch.export.load(tmp_path / "ts" / "dynamics.pt2").module()
         input_dim = LATENT_DIM + ACTION_DIM
         x = torch.randn(1, input_dim)
         next_latent, _reward = loaded(x)
         assert next_latent.shape == (1, LATENT_DIM)
+
+    def test_validate_exported_program_round_trip(self, tmp_path: Any) -> None:
+        model = _make_model()
+        exporter = MuZeroExporter(model)
+        out = tmp_path / "ts"
+        exporter.export_torchscript(out)
+        assert exporter.validate_export(out, fmt="torchscript")
 
 
 # ---------------------------------------------------------------------------
