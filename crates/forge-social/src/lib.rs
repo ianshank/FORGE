@@ -3,6 +3,8 @@
 
 //! # forge-social
 //!
+//! > **Maturity**: `[Research]` — Research Stack Component — multi-agent social and trust dynamics.
+//!
 //! Social interaction primitives for the FORGE platform.
 //!
 //! This crate provides the social layer that enables agents to develop

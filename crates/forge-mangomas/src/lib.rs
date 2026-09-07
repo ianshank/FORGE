@@ -19,6 +19,8 @@
 //!
 //! # Architecture
 //!
+//! > **Maturity**: `[Research]` — Research Stack Component — multi-agent scenario collection and benchmarks.
+//!
 //! All constants flow through config structs with `Default` implementations.
 //! No hard-coded values. The integration layer does not depend on MangoMAS
 //! directly — it defines adapter interfaces that MangoMAS consumers implement.

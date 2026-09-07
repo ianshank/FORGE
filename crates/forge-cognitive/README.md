@@ -1,5 +1,6 @@
 # `forge-cognitive`
 
+> **Maturity**: `[Research]` (Research Stack Component — LLM-driven deliberation and reasoning)  
 > **Architectural Layer**: Tier 2: Engine & Cognitive
 
 LLM-backed cognitive deliberation, prompt orchestration, teacher trace parsing, and reasoning agents for FORGE.

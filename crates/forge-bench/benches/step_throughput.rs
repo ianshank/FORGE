@@ -170,6 +170,33 @@ fn bench_step_hex_multi_agent(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_env_trait_throughput(c: &mut Criterion) {
+    use forge_env::Env;
+    use forge_env_forge::WorldEnv;
+
+    let mut group = c.benchmark_group("env_trait_single_agent");
+
+    for size in [16u16, 32, 64, 128] {
+        let config = make_config(size, size, 1);
+        let mut env = WorldEnv::new(config).unwrap();
+        let action = Action::Move(Direction::Right);
+        let mut out = forge_env::StepOutput::default();
+
+        group.bench_with_input(
+            BenchmarkId::new("grid_size", format!("{}x{}", size, size)),
+            &size,
+            |b, _| {
+                b.iter(|| {
+                    env.step_into(action.clone(), &mut out).unwrap();
+                    black_box(&out);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_step_single_agent,
@@ -178,6 +205,7 @@ criterion_group!(
     bench_world_creation,
     bench_serialization,
     bench_step_hex_single_agent,
-    bench_step_hex_multi_agent
+    bench_step_hex_multi_agent,
+    bench_env_trait_throughput
 );
 criterion_main!(benches);

@@ -3,6 +3,8 @@
 
 //! # forge-cloud
 //!
+//! > **Maturity**: `[Experimental]` — Experimental Component — distributed cloud training orchestration.
+//!
 //! Cloud training pipeline and edge deployment for the FORGE platform.
 //!
 //! This crate defines the foundational types for distributed training

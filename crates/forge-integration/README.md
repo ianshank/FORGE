@@ -1,5 +1,6 @@
 # `forge-integration`
 
+> **Maturity**: `[Research]` (Research Stack Component — cognitive cross-layer orchestration)  
 > **Architectural Layer**: Tier 3: Agents & Interfaces
 
 Cross-primitive orchestration layer harmonizing cognitive, social, task, and memory subsystems into a unified agent workflow.

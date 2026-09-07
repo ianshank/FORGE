@@ -1,5 +1,6 @@
 # `forge-social`
 
+> **Maturity**: `[Research]` (Research Stack Component — multi-agent social and trust dynamics)  
 > **Architectural Layer**: Tier 1: Domain Primitives
 
 Multi-agent social dynamics, trust networks, reputation scoring, alliance formation, and communication protocol modeling.

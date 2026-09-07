@@ -3,6 +3,8 @@
 
 //! # forge-integration-layer
 //!
+//! > **Maturity**: `[Research]` — Research Stack Component — cognitive cross-layer orchestration.
+//!
 //! Cross-layer integration orchestrator for the FORGE platform.
 //!
 //! This crate wires together memory, cognition, and social layers into

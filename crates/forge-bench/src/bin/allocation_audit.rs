@@ -258,6 +258,44 @@ fn measure_variant(
     }
 }
 
+/// Measures allocation on the generic `forge_env::Env::step_into` hot-path
+/// using [`forge_env_forge::WorldEnv`].
+fn measure_env_trait_variant(
+    label: &str,
+    action: Action,
+    warmup: u64,
+    iters: u64,
+    config: ForgeConfig,
+) -> VariantReport {
+    use forge_env::{Env, StepOutput};
+    use forge_env_forge::WorldEnv;
+
+    let mut env = WorldEnv::new(config).expect("WorldEnv::new must succeed for audit config");
+    let mut step_out = StepOutput::default();
+
+    for _ in 0..warmup {
+        env.step_into(action.clone(), &mut step_out)
+            .expect("WorldEnv::step_into must succeed");
+    }
+
+    let profiler = dhat::Profiler::new_heap();
+    for _ in 0..iters {
+        env.step_into(action.clone(), &mut step_out)
+            .expect("WorldEnv::step_into must succeed");
+    }
+    let stats = dhat::HeapStats::get();
+    drop(profiler);
+
+    VariantReport {
+        variant: label.to_string(),
+        num_agents: 1,
+        iters,
+        total_blocks: stats.total_blocks,
+        total_bytes: stats.total_bytes,
+        peak_live_bytes: stats.max_bytes as u64,
+    }
+}
+
 fn main() -> ExitCode {
     // Honour RUST_LOG if set; default to info on the audit module.
     let filter = EnvFilter::try_from_default_env()
@@ -307,6 +345,18 @@ fn main() -> ExitCode {
                 &label,
                 num_agents,
                 &actions,
+                args.warmup,
+                args.iters,
+                cfg.clone(),
+            ));
+        }
+
+        if num_agents == 1 {
+            let env_label = "EnvTrait_WorldEnv_Move_Up@n=1";
+            info!(variant = %env_label, "measuring generic Env trait allocation");
+            variants.push(measure_env_trait_variant(
+                env_label,
+                Action::Move(Direction::Up),
                 args.warmup,
                 args.iters,
                 cfg.clone(),

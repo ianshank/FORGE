@@ -1,5 +1,6 @@
 # `forge-cloud`
 
+> **Maturity**: `[Experimental]` (Experimental Component — distributed cloud training orchestration)  
 > **Architectural Layer**: Tier 5: Distributed Orchestration
 
 Cloud simulation orchestrator, remote checkpoint management, GCS artifact storage, and distributed worker fleet scaling.

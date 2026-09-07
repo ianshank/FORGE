@@ -1,5 +1,6 @@
 # `forge-edge`
 
+> **Maturity**: `[Research]` (Research Stack Component — compute-budget bounded edge MCTS inference)  
 > **Architectural Layer**: Tier 4: Applications & Runners
 
 Edge deployment runtime featuring compute-budget adaptive MCTS search, execution latency estimation, and edge telemetry collection.

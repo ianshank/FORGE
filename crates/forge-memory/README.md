@@ -1,5 +1,6 @@
 # `forge-memory`
 
+> **Maturity**: `[Research]` (Research Stack Component — persistent cognitive memory architecture)  
 > **Architectural Layer**: Tier 1: Domain Primitives
 
 Working, episodic, and semantic memory architectures for agents, including vector buffer retrieval and observation replay buffers.

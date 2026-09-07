@@ -3,6 +3,8 @@
 
 //! # forge-proposal
 //!
+//! > **Maturity**: `[Experimental]` — Experimental Component — SBIR research proposal generation.
+//!
 //! SBIR proposal template system for the FORGE simulation platform.
 //!
 //! This crate provides a configurable, validated proposal generation system

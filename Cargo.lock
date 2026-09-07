@@ -1171,6 +1171,8 @@ dependencies = [
  "dhat",
  "forge-agent",
  "forge-core",
+ "forge-env",
+ "forge-env-forge",
  "forge-types",
  "rand 0.8.8",
  "rand_pcg",

@@ -1,5 +1,6 @@
 # `forge-proposal`
 
+> **Maturity**: `[Experimental]` (Experimental Component — SBIR research proposal generation)  
 > **Architectural Layer**: Tier 1: Domain Primitives
 
 Proposal template engine, agency guidelines, budgeting calculations, and document rendering for research initiatives.

@@ -1,5 +1,6 @@
 # `forge-mangomas`
 
+> **Maturity**: `[Research]` (Research Stack Component — multi-agent scenario collection and benchmarks)  
 > **Architectural Layer**: Tier 4: Applications & Runners
 
 MangoMAS multi-agent benchmark harness, curriculum progression manager, and distributed scenario collection engine.

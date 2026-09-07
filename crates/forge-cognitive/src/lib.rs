@@ -3,6 +3,8 @@
 
 //! # forge-cognitive
 //!
+//! > **Maturity**: `[Research]` — Research Stack Component — LLM-driven deliberation and reasoning.
+//!
 //! LLM-backed cognitive agent for the FORGE platform.
 //!
 //! This crate provides:

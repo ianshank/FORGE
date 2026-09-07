@@ -3,6 +3,8 @@
 
 //! # forge-memory
 //!
+//! > **Maturity**: `[Research]` — Research Stack Component — persistent cognitive memory architecture.
+//!
 //! Persistent agent memory system for the FORGE platform.
 //!
 //! This crate provides three types of memory that enable agents to maintain
