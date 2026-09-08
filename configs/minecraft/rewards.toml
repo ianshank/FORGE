@@ -16,7 +16,12 @@
 # Multiple top-level [[reward]] entries are SUMMED. Use a single
 # `composite` entry for weighted mixes.
 #
-# Changing any field bumps `schema_id` and invalidates prior replays.
+# Changing any field (including nested milestone/crafting file
+# **contents**) bumps `schema_id` and invalidates prior replays. Nested
+# `config_path` / `crafting_config_path` values are resolved relative to
+# this file's directory and hashed by content (a rename without a
+# content change does not bump). Missing nested files fail closed.
+# `block_embeddings.toml` is a separate obs-layout pin, not this hash.
 
 schema_version = 1
 

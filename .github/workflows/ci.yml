@@ -923,6 +923,26 @@ jobs:
           cargo test -p forge-agent --features onnx-bundled
           cargo test -p forge-mc-runner --features mc-live-bundled
 
+  mc-runner-bundled-image:
+    name: mc-live-bundled Runner Image Smoke
+    runs-on: ubuntu-latest
+    # Compose trained identity (`RUNNER_FEATURES=mc-live-bundled`) is a
+    # no-op unless this Dockerfile actually builds. The onnx-features
+    # job cargo-builds the feature surface; this job is the image.
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build forge-mc-runner with FEATURES=mc-live-bundled
+        run: |
+          docker build \
+            -f docker/mc-runner.Dockerfile \
+            --build-arg FEATURES=mc-live-bundled \
+            -t forge-mc-runner:bundled-smoke \
+            .
+      - name: Smoke --help via image ENTRYPOINT
+        run: docker run --rm forge-mc-runner:bundled-smoke --help
+
   demo-ui:
     name: Demo UI Tests
     runs-on: ubuntu-latest

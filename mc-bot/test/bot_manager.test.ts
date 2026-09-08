@@ -165,6 +165,8 @@ describe('BotManager', () => {
       reconnectConfig: FAST_RECONNECT,
     });
     await manager.createInitialBot();
+    const bot = manager.getBot();
+    bot.time.age = 100;
     manager.updateTickAge(100);
 
     assert.ok(manager.isHealthy(), 'should be healthy immediately after updateTickAge');
@@ -179,9 +181,7 @@ describe('BotManager', () => {
       reconnectConfig: { ...FAST_RECONNECT, stale_timeout_ms: 10 },
     });
     await manager.createInitialBot();
-    manager.updateTickAge(1);
-
-    // Wait longer than stale_timeout_ms
+    // Frozen mineflayer age: no increment, so the stale window elapses.
     await delay(30);
     assert.equal(manager.isHealthy(), false, 'should be stale after timeout');
     manager.destroy();
@@ -592,14 +592,53 @@ describe('BotManager', () => {
       await manager.createInitialBot();
       manager.startHeartbeat(15);
 
-      // Keep the bot fresh across several heartbeat intervals.
+      // Keep MC ticks advancing. Do NOT call updateTickAge — trained
+      // MCTS think-time produces exactly this "quiet WS, live ticks"
+      // pattern and must not look like a dead bot.
       for (let i = 0; i < 8; i++) {
-        manager.updateTickAge(0);
+        const bot = manager.getBot();
+        bot.time.age += 1;
         await delay(15);
       }
       manager.destroy();
 
       assert.equal(factory.getCallCount(), 1, 'no reconnect should occur while healthy');
+    });
+
+    it('stays healthy with no WS traffic while mineflayer age advances', async () => {
+      const factory = createBotFactory();
+      const manager = new BotManager({ host: '127.0.0.1' }, factory, {
+        logger,
+        reconnectConfig: { ...FAST_RECONNECT, stale_timeout_ms: 40 },
+      });
+      await manager.createInitialBot();
+      for (let i = 0; i < 4; i++) {
+        await delay(20);
+        manager.getBot().time.age += 1;
+      }
+      assert.ok(manager.isHealthy(), 'advancing MC ticks keep the bot healthy past stale_timeout');
+      manager.destroy();
+    });
+
+    it('reconnects when mineflayer age is frozen even if updateTickAge is called', async () => {
+      const factory = createBotFactory();
+      const manager = new BotManager({ host: '127.0.0.1' }, factory, {
+        logger,
+        reconnectConfig: { ...FAST_RECONNECT, stale_timeout_ms: 30 },
+      });
+      await manager.createInitialBot();
+      let reconnected = false;
+      manager.on('reconnected', () => {
+        reconnected = true;
+      });
+      manager.startHeartbeat(10);
+      for (let i = 0; i < 8; i++) {
+        manager.updateTickAge(0); // frozen age; WS traffic must not mask death
+        await delay(10);
+      }
+      manager.destroy();
+      assert.ok(reconnected, 'frozen MC ticks must trigger reconnect');
+      assert.ok(factory.getCallCount() >= 2, 'a new bot should have been built');
     });
 
     it('destroy() stops the heartbeat (no reconnect afterwards)', async () => {

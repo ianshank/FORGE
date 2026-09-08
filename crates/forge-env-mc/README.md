@@ -23,7 +23,11 @@ Dependency boundaries are strictly enforced via `deny.toml` `[bans]`. Introducin
 - `MinecraftEnv`: Full `Env` trait implementation connecting to `mc-bot`.
 - `ProtocolClient`: WebSocket client communicating with `mc-bot`.
 - `ActionMap`: Bidirectional mapping between discrete action IDs and mineflayer commands.
-- `RewardConfig`: Shaped reward calculation based on inventory and combat milestones.
+- `RewardConfig`: Parses `rewards.toml` and computes the canonical SHA
+  folded into `schema_id`. Nested `config_path` / `crafting_config_path`
+  files are hashed by content (missing nested files fail closed).
+- `BlockEmbeddings`: Observation-layout pin for
+  `block_embeddings.toml` — **not** part of today's two-input `schema_id`.
 
 ---
 

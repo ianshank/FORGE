@@ -50,7 +50,9 @@ use crate::config::RunnerConfig;
 use crate::error::RunnerError;
 use crate::hot_reload::{HotReloadWatcher, ReloadEvent};
 use crate::manifest::ModelManifest;
-use crate::metrics::MetricsRecorder;
+use crate::metrics::{
+    MetricsRecorder, METRIC_REASON_ENV_RESET, METRIC_REASON_ENV_STEP, METRIC_REASON_PLANNER,
+};
 use crate::random_baseline::sample_random_action;
 use crate::trajectory::TrajectoryWriter;
 
@@ -141,6 +143,10 @@ pub struct RunnerOutcome {
     /// **Lifetime** last manifest version the runner observed via the
     /// watcher; `None` until the first reload.
     pub last_model_version: Option<u64>,
+    /// Episodes discarded because of a transient env error
+    /// (`RECONNECTING` / `BUSY`) during *this* `run` call. These do
+    /// not count toward [`Self::episodes_completed`].
+    pub transient_discards: u64,
 }
 
 /// Episode-driving runner. Generic over the env (`E: FlatObsEnv`) and
@@ -355,7 +361,7 @@ where
         // Reset env into reused buffer.
         self.env
             .reset_into(seed, &mut self.obs_buf)
-            .map_err(env_err)?;
+            .map_err(|e| env_err(e, METRIC_REASON_ENV_RESET))?;
 
         let max_steps = self.config.max_steps_per_episode;
         let action_repeat = self.config.action_repeat.max(1);
@@ -406,7 +412,7 @@ where
                 Ok(r) => r,
                 Err(e) => {
                     if let Some(rec) = self.metrics.as_ref() {
-                        rec.record_protocol_error("planner");
+                        rec.record_protocol_error(METRIC_REASON_PLANNER);
                     }
                     return Err(e);
                 }
@@ -421,7 +427,7 @@ where
             for _ in 0..action_repeat {
                 self.env
                     .step_into(action, &mut self.step_out)
-                    .map_err(env_err)?;
+                    .map_err(|e| env_err(e, METRIC_REASON_ENV_STEP))?;
                 step_reward += self.step_out.reward;
                 if self.step_out.terminated || self.step_out.truncated {
                     break;
@@ -524,8 +530,15 @@ where
         };
 
         let mut outcome = RunnerOutcome::default();
+        let mut consecutive_transient: u32 = 0;
+        let max_transient = self.config.max_consecutive_transient_failures;
+        let backoff = std::time::Duration::from_millis(self.config.transient_failure_backoff_ms);
 
-        for ep_idx in 0..limit {
+        loop {
+            if outcome.episodes_completed >= limit {
+                break;
+            }
+
             // Reload check at the top of the outer loop — strictly
             // between episodes per plan §3.4.
             //
@@ -539,28 +552,65 @@ where
             // by `maybe_reload`'s early return, so the bump is not consumed.
             if let Err(e) = self.maybe_reload() {
                 warn!(
-                    episode_index = ep_idx,
                     error = %e,
                     "hot reload rejected; continuing on the previously verified model"
                 );
                 self.reloads_rejected += 1;
             }
 
-            let ep = match self.run_episode() {
-                Ok(ep) => ep,
+            match self.run_episode() {
+                Ok(ep) => {
+                    consecutive_transient = 0;
+                    outcome.episodes_completed += 1;
+                    outcome.total_steps += ep.steps;
+                    if ep.terminated {
+                        outcome.terminated_count += 1;
+                    }
+                    if ep.truncated {
+                        outcome.truncated_count += 1;
+                    }
+                }
+                Err(RunnerError::TransientEnv {
+                    code,
+                    message,
+                    reason,
+                }) => {
+                    // Reconnect tears down mineflayer and starts a new
+                    // world. The WS Error frame completed the pair —
+                    // retrying recv hangs, resending Step stitches two
+                    // MDPs. Discard the partial trajectory and Reset
+                    // into a fresh episode.
+                    self.writer.discard_current();
+                    if let Some(rec) = self.metrics.as_ref() {
+                        rec.record_protocol_error(reason);
+                    }
+                    consecutive_transient = consecutive_transient.saturating_add(1);
+                    outcome.transient_discards = outcome.transient_discards.saturating_add(1);
+                    warn!(
+                        code = %code,
+                        message = %message,
+                        consecutive_transient,
+                        max_transient,
+                        episodes_completed = outcome.episodes_completed,
+                        transient_discards = outcome.transient_discards,
+                        "transient env error; discarding episode and continuing the run"
+                    );
+                    if max_transient == 0 || consecutive_transient >= max_transient {
+                        return Err(RunnerError::TooManyTransientFailures {
+                            count: consecutive_transient,
+                            code,
+                            message,
+                        });
+                    }
+                    if !backoff.is_zero() {
+                        std::thread::sleep(backoff);
+                    }
+                }
                 Err(e) => {
-                    warn!(episode_index = ep_idx, error = %e, "episode failed");
+                    warn!(error = %e, "episode failed");
+                    self.writer.discard_current();
                     return Err(e);
                 }
-            };
-
-            outcome.episodes_completed += 1;
-            outcome.total_steps += ep.steps;
-            if ep.terminated {
-                outcome.terminated_count += 1;
-            }
-            if ep.truncated {
-                outcome.truncated_count += 1;
             }
         }
 
@@ -586,11 +636,20 @@ fn normalize_visits(visits: &[u32]) -> Vec<f32> {
     visits.iter().map(|&v| v as f32 * inv).collect()
 }
 
-fn env_err<E>(e: E) -> RunnerError
+fn env_err<E>(e: E, reason: &'static str) -> RunnerError
 where
     E: std::error::Error + Send + Sync + 'static,
 {
-    RunnerError::Env(e.to_string())
+    let msg = e.to_string();
+    if let Some((code, message)) = crate::error::parse_transient_env_error(&msg) {
+        RunnerError::TransientEnv {
+            code,
+            message,
+            reason,
+        }
+    } else {
+        RunnerError::Env(msg)
+    }
 }
 
 // ---------------------------------------------------------------------

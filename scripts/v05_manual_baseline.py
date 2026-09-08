@@ -13,7 +13,7 @@ enough for the existing `mc_plot_baseline.py` to consume via
 `outcome`/`seed` and omit `action_dim`/`schema_id` -- once the operator
 pivots to the proper runner-driven flow.
 
-Outcome classification (openspec/changes/refuse-non-evidential-aggregates/):
+Outcome classification (openspec/changes/archive/refuse-non-evidential-aggregates/):
 an environment-reported step failure is recorded as a distinct
 ``"environment_error"`` outcome rather than by setting `truncated`,
 so it cannot be mistaken for a real completion. An error code meaning

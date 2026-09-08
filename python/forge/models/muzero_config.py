@@ -10,12 +10,25 @@ Usage::
 
     config = MuZeroConfig(obs_dim=920, action_dim=75, latent_dim=256)
 """
+
 from __future__ import annotations
 
-__all__ = ["MuZeroConfig"]
+__all__ = [
+    "DEFAULT_GRID_DEPTH",
+    "DEFAULT_NUM_BLOCK_EMBEDDINGS",
+    "MuZeroConfig",
+    "load_num_block_embeddings",
+]
 
 import logging
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover — py3.9/3.10 fallback
+    import tomli as tomllib
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +49,7 @@ DEFAULT_LEARNING_RATE: float = 3e-4
 DEFAULT_GRID_HEIGHT: int = 11
 DEFAULT_GRID_WIDTH: int = 11
 DEFAULT_GRID_CHANNELS: int = 7  # OBS_FEATURES_PER_TILE
+DEFAULT_GRID_DEPTH: int = 1
 
 # Vector observation defaults (inventory + scalars + comm + day + task_progress + drone + agri)
 DEFAULT_VECTOR_DIM: int = 73
@@ -44,6 +58,52 @@ DEFAULT_VECTOR_DIM: int = 73
 DEFAULT_CNN_CHANNELS: tuple[int, ...] = (32, 64, 64)
 DEFAULT_CNN_KERNEL_SIZES: tuple[int, ...] = (3, 3, 3)
 DEFAULT_CNN_STRIDES: tuple[int, ...] = (1, 1, 1)
+
+# Block-id embedding vocab. Named fallback matches shipped
+# ``configs/minecraft/block_embeddings.toml`` (``unknown = 35``).
+DEFAULT_NUM_BLOCK_EMBEDDINGS: int = 36
+DEFAULT_BLOCK_EMBEDDING_DIM: int = 8
+
+
+def _default_block_embeddings_path() -> Path:
+    """Repo-relative path to the shipped block-id table.
+
+    ``python/forge/models/muzero_config.py`` → parents[3] is the
+    workspace root in a git checkout. Missing file (installed wheel
+    without configs) falls back to :data:`DEFAULT_NUM_BLOCK_EMBEDDINGS`.
+    """
+    return Path(__file__).resolve().parents[3] / "configs" / "minecraft" / "block_embeddings.toml"
+
+
+def load_num_block_embeddings(path: Path | str | None = None) -> int:
+    """Return ``max(index) + 1`` from ``block_embeddings.toml``.
+
+    Falls back to :data:`DEFAULT_NUM_BLOCK_EMBEDDINGS` when the file is
+    missing or has no ``[blocks]`` table so training still constructs
+    a config outside a git checkout.
+    """
+    target = Path(path) if path is not None else _default_block_embeddings_path()
+    if not target.is_file():
+        logger.warning(
+            "Block embeddings file missing at %s; using default vocab %d",
+            target,
+            DEFAULT_NUM_BLOCK_EMBEDDINGS,
+        )
+        return DEFAULT_NUM_BLOCK_EMBEDDINGS
+    try:
+        with target.open("rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        logger.warning(
+            "Failed to parse block embeddings at %s; using default vocab %d",
+            target,
+            DEFAULT_NUM_BLOCK_EMBEDDINGS,
+        )
+        return DEFAULT_NUM_BLOCK_EMBEDDINGS
+    blocks = data.get("blocks")
+    if not isinstance(blocks, dict) or not blocks:
+        return DEFAULT_NUM_BLOCK_EMBEDDINGS
+    return max(int(v) for v in blocks.values()) + 1
 
 
 @dataclass
@@ -70,11 +130,17 @@ class MuZeroConfig:
         grid_height: Height of the ego-centric grid observation.
         grid_width: Width of the ego-centric grid observation.
         grid_channels: Number of feature channels per grid tile.
+        grid_depth: Number of Y-layers in the ego-centric grid (v0.5 default 1).
         vector_dim: Dimensionality of the non-spatial observation vector.
         cnn_channels: Output channels for each CNN layer.
         cnn_kernel_sizes: Kernel sizes for each CNN layer.
         cnn_strides: Strides for each CNN layer.
         device: Torch device string.
+        use_raw_block_id: Whether the grid's first channel is a raw block id.
+        num_block_embeddings: Vocab size for the block-id embedding table,
+            loaded from ``block_embeddings.toml`` (``max(index)+1``) when
+            omitted.
+        block_embedding_dim: Width of each block-id embedding vector.
     """
 
     obs_dim: int = 0  # Must be set from environment
@@ -92,15 +158,15 @@ class MuZeroConfig:
     grid_height: int = DEFAULT_GRID_HEIGHT
     grid_width: int = DEFAULT_GRID_WIDTH
     grid_channels: int = DEFAULT_GRID_CHANNELS
-    grid_depth: int = 1
+    grid_depth: int = DEFAULT_GRID_DEPTH
     vector_dim: int = DEFAULT_VECTOR_DIM
     cnn_channels: tuple[int, ...] = DEFAULT_CNN_CHANNELS
     cnn_kernel_sizes: tuple[int, ...] = DEFAULT_CNN_KERNEL_SIZES
     cnn_strides: tuple[int, ...] = DEFAULT_CNN_STRIDES
     device: str = "cpu"
     use_raw_block_id: bool = True
-    num_block_embeddings: int = 36
-    block_embedding_dim: int = 8
+    num_block_embeddings: int = field(default_factory=load_num_block_embeddings)
+    block_embedding_dim: int = DEFAULT_BLOCK_EMBEDDING_DIM
 
     def __post_init__(self) -> None:
         """Validate configuration and compute derived fields."""

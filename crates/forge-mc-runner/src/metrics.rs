@@ -54,6 +54,13 @@ pub const METRIC_EPISODE_LENGTH_STEPS: &str = "forge_mc_episode_length_steps";
 /// CounterVec of episode rewards, broken down by reward component.
 pub const METRIC_EPISODE_REWARD_COMPONENTS: &str = "forge_mc_episode_reward_components";
 
+/// `reason` label for a protocol error recorded during `env.step`.
+pub const METRIC_REASON_ENV_STEP: &str = "env_step";
+/// `reason` label for a protocol error recorded during `env.reset`.
+pub const METRIC_REASON_ENV_RESET: &str = "env_reset";
+/// `reason` label for a protocol error recorded during planner search.
+pub const METRIC_REASON_PLANNER: &str = "planner";
+
 /// Errors raised by metrics setup. Distinct from
 /// [`crate::RunnerError`] so the binary's main can surface
 /// metrics-startup failures with a precise exit code.
@@ -200,8 +207,9 @@ impl MetricsRecorder {
     }
 
     /// Record one protocol / env / reload error. `reason` should be a
-    /// short, low-cardinality string (e.g. "env_step", "reload",
-    /// "manifest_parse"); avoid embedding per-error detail.
+    /// short, low-cardinality string (e.g. [`METRIC_REASON_ENV_STEP`],
+    /// [`METRIC_REASON_ENV_RESET`], "reload"); avoid embedding
+    /// per-error detail.
     #[instrument(skip(self))]
     pub fn record_protocol_error(&self, reason: &str) {
         self.protocol_error_total.with_label_values(&[reason]).inc();
@@ -315,7 +323,7 @@ mod tests {
         rec.record_episode_complete(1.5);
         rec.record_planning_latency_seconds(0.02);
         rec.set_model_version(7);
-        rec.record_protocol_error("env_step");
+        rec.record_protocol_error(METRIC_REASON_ENV_STEP);
         let text = rec.encode_text().unwrap();
         for name in [
             METRIC_EPISODE_TOTAL,
@@ -353,11 +361,15 @@ mod tests {
     #[test]
     fn record_protocol_error_increments_per_label() {
         let rec = recorder();
-        rec.record_protocol_error("env_step");
-        rec.record_protocol_error("env_step");
+        rec.record_protocol_error(METRIC_REASON_ENV_STEP);
+        rec.record_protocol_error(METRIC_REASON_ENV_STEP);
+        rec.record_protocol_error(METRIC_REASON_ENV_RESET);
         rec.record_protocol_error("reload");
         let text = rec.encode_text().unwrap();
         assert!(text.contains(r#"forge_mc_protocol_error_total{reason="env_step"} 2"#));
+        assert!(text.contains(&format!(
+            r#"forge_mc_protocol_error_total{{reason="{METRIC_REASON_ENV_RESET}"}} 1"#
+        )));
         assert!(text.contains(r#"forge_mc_protocol_error_total{reason="reload"} 1"#));
     }
 

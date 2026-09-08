@@ -91,7 +91,7 @@ def _to_tensor(
 
     If the array is already 1-D it is unsqueezed to add a batch dimension.
     """
-    import torch  # noqa: PLC0415
+    import torch
 
     t = torch.as_tensor(arr, dtype=torch.float32, device=torch.device(device))
     if t.dim() == 1:
@@ -106,8 +106,8 @@ def _build_mlp(
     device: str,
 ) -> torch.nn.Sequential:
     """Build an MLP with ELU activations."""
-    import torch  # noqa: PLC0415
-    from torch import nn  # noqa: PLC0415
+    import torch
+    from torch import nn
 
     layers: list[nn.Module] = []
     prev = input_dim
@@ -133,7 +133,7 @@ class BDINetwork:
     """
 
     def __init__(self, config: BDIConfig | None = None) -> None:
-        from torch import nn  # noqa: PLC0415
+        from torch import nn
 
         self._config = config or BDIConfig()
         c = self._config
@@ -180,7 +180,7 @@ class BDINetwork:
         Returns:
             Belief state of shape ``(belief_dim,)``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             obs_t = _to_tensor(obs, self._config.device)
@@ -198,7 +198,7 @@ class BDINetwork:
         Returns:
             Desire state of shape ``(desire_dim,)``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             obs_t = _to_tensor(obs, self._config.device)
@@ -220,7 +220,7 @@ class BDINetwork:
         Returns:
             Intention state of shape ``(intention_dim,)``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             belief_t = _to_tensor(belief, self._config.device)
@@ -240,7 +240,7 @@ class BDINetwork:
         Returns:
             Affect state of shape ``(affect_dim,)``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             obs_t = _to_tensor(obs, self._config.device)
@@ -271,7 +271,7 @@ class BDINetwork:
 
     def save(self, path: str) -> None:
         """Save all BDI module weights to disk."""
-        import torch  # noqa: PLC0415
+        import torch
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -291,7 +291,7 @@ class BDINetwork:
 
     def load(self, path: str) -> None:
         """Load BDI module weights from disk."""
-        import torch  # noqa: PLC0415
+        import torch
 
         checkpoint = torch.load(
             path, map_location=torch.device(self._config.device), weights_only=True
@@ -316,7 +316,7 @@ class BDINetwork:
         filename: str,
     ) -> None:
         """Load weights for a single sub-network from an .npz archive."""
-        import torch  # noqa: PLC0415
+        import torch
 
         data = loader.load_npz(filename)
         params = list(net.parameters())

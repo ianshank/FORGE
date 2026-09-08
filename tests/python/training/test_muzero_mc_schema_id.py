@@ -8,8 +8,11 @@ Rust counterparts:
 
 - ``crates/forge-env-mc/src/action_map.rs::xlang_schema_id_pinned_to_known_good``
 - ``crates/forge-env-mc/src/reward_config.rs::xlang_rewards_schema_id_pinned_to_known_good``
+- ``crates/forge-env-mc/src/reward_config.rs::xlang_shipped_rewards_schema_id_folds_nested_files``
+- ``crates/forge-env-mc/src/block_embeddings.rs::xlang_block_embeddings_pinned_to_known_good``
 - ``mc-bot/test/schema_id.test.ts`` (action map JS twin)
 - ``mc-bot/test/reward_config.test.ts`` (rewards JS twin)
+- ``mc-bot/test/block_embeddings.test.ts`` (obs-layout JS twin)
 
 If you change ANY of: ``ACTION_KIND_FIELD_ORDER`` (Python /
 ``CANONICAL_FIELD_ORDER`` in JS), the Rust ``ActionKind`` enum
@@ -21,12 +24,23 @@ declaration order, the TOML→JSON normalisation rules in
 from __future__ import annotations
 
 import hashlib
+import sys
+from pathlib import Path
 
 import pytest
 
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover
+    import tomli as tomllib
+
 from forge.training.muzero_mc.schema_id import (
     ACTION_KIND_FIELD_ORDER,
+    NESTED_REWARD_PATH_KEY_CONFIG,
+    NESTED_REWARD_PATH_KEY_CRAFTING,
     action_map_canonical_sha256,
+    block_embeddings_canonical_sha256,
+    block_embeddings_vocab_size,
     combined_schema_id,
     rewards_canonical_sha256,
 )
@@ -187,8 +201,6 @@ def test_compute_schema_id_from_paths_loads_repo_default_configs(tmp_path) -> No
     value isn't pinned (it's not a fixture) but the path-loading
     plumbing is.
     """
-    from pathlib import Path
-
     from forge.training.muzero_mc.schema_id import compute_schema_id_from_paths
 
     # Locate the repo root via the package layout — same discipline
@@ -204,3 +216,192 @@ def test_compute_schema_id_from_paths_loads_repo_default_configs(tmp_path) -> No
     h = compute_schema_id_from_paths(action_map_path, rewards_path)
     assert len(h) == 64
     assert all(c in "0123456789abcdef" for c in h)
+
+
+def test_shipped_rewards_canonical_sha256_folds_nested_files() -> None:
+    """Pinned against
+    ``xlang_shipped_rewards_schema_id_folds_nested_files`` in
+    ``crates/forge-env-mc/src/reward_config.rs``. Nested milestone /
+    crafting file **contents** must fold into the hash.
+    """
+    repo_root = Path(__file__).resolve().parents[3]
+    rewards_path = repo_root / "configs" / "minecraft" / "rewards.toml"
+    if not rewards_path.is_file():
+        pytest.skip("shipped rewards.toml missing")
+    with rewards_path.open("rb") as handle:
+        rewards = tomllib.load(handle)
+    assert (
+        rewards_canonical_sha256(rewards, source_path=rewards_path)
+        == "78f96c103767f3db7280175e92b8564937bcb5d505e4d75e8aab0c570d237f4b"
+    )
+
+
+def test_nested_path_missing_file_fails_closed(tmp_path: Path) -> None:
+    """A set ``config_path`` whose file is missing must not hash as if
+    the bot's hardcoded milestone defaults applied.
+    """
+    rewards_path = tmp_path / "rewards.toml"
+    rewards_path.write_text(
+        '[[reward]]\nkind = "milestone"\nconfig_path = "missing.toml"\n',
+        encoding="utf-8",
+    )
+    rewards = {"reward": [{"kind": "milestone", "config_path": "missing.toml"}]}
+    with pytest.raises(FileNotFoundError, match="nested reward file not found"):
+        rewards_canonical_sha256(rewards, source_path=rewards_path)
+
+
+def test_nested_rename_without_content_change_does_not_bump_hash(tmp_path: Path) -> None:
+    """Path-string rename with identical nested content must not bump."""
+    nested_body = "[milestones]\nfirst_wood = { reward = 10.0, once = true }\n"
+    (tmp_path / "mil_a.toml").write_text(nested_body, encoding="utf-8")
+    (tmp_path / "mil_b.toml").write_text(nested_body, encoding="utf-8")
+    rewards_a = tmp_path / "a.toml"
+    rewards_b = tmp_path / "b.toml"
+    rewards_a.write_text(
+        '[[reward]]\nkind = "milestone"\nconfig_path = "mil_a.toml"\n',
+        encoding="utf-8",
+    )
+    rewards_b.write_text(
+        '[[reward]]\nkind = "milestone"\nconfig_path = "mil_b.toml"\n',
+        encoding="utf-8",
+    )
+    with rewards_a.open("rb") as handle:
+        data_a = tomllib.load(handle)
+    with rewards_b.open("rb") as handle:
+        data_b = tomllib.load(handle)
+    assert rewards_canonical_sha256(data_a, source_path=rewards_a) == rewards_canonical_sha256(
+        data_b, source_path=rewards_b
+    )
+
+
+def test_block_embeddings_shipped_pin() -> None:
+    """Pinned against ``xlang_block_embeddings_pinned_to_known_good``."""
+    from forge.models.muzero_config import (
+        DEFAULT_NUM_BLOCK_EMBEDDINGS,
+        MuZeroConfig,
+        load_num_block_embeddings,
+    )
+
+    repo_root = Path(__file__).resolve().parents[3]
+    path = repo_root / "configs" / "minecraft" / "block_embeddings.toml"
+    if not path.is_file():
+        pytest.skip("shipped block_embeddings.toml missing")
+    with path.open("rb") as handle:
+        data = tomllib.load(handle)
+    assert block_embeddings_vocab_size(data) == DEFAULT_NUM_BLOCK_EMBEDDINGS
+    assert load_num_block_embeddings(path) == DEFAULT_NUM_BLOCK_EMBEDDINGS
+    assert MuZeroConfig().num_block_embeddings == DEFAULT_NUM_BLOCK_EMBEDDINGS
+    assert (
+        block_embeddings_canonical_sha256(data)
+        == "b5aef9f434474c17ffbdee7fe894ae93ada0f4e6477cb51b0a8cf4fc0d7a7a7e"
+    )
+
+
+def test_empty_nested_path_fails_closed(tmp_path: Path) -> None:
+    rewards_path = tmp_path / "rewards.toml"
+    rewards_path.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CONFIG} = ""\n',
+        encoding="utf-8",
+    )
+    rewards = {"reward": [{"kind": "milestone", NESTED_REWARD_PATH_KEY_CONFIG: ""}]}
+    with pytest.raises(ValueError, match="non-empty string"):
+        rewards_canonical_sha256(rewards, source_path=rewards_path)
+
+
+def test_non_string_nested_path_fails_closed(tmp_path: Path) -> None:
+    rewards_path = tmp_path / "rewards.toml"
+    rewards_path.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CONFIG} = 1\n',
+        encoding="utf-8",
+    )
+    rewards = {"reward": [{"kind": "milestone", NESTED_REWARD_PATH_KEY_CONFIG: 1}]}
+    with pytest.raises(ValueError, match="non-empty string"):
+        rewards_canonical_sha256(rewards, source_path=rewards_path)
+
+
+def test_missing_crafting_config_path_fails_closed(tmp_path: Path) -> None:
+    rewards_path = tmp_path / "rewards.toml"
+    rewards_path.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CRAFTING} = "missing.toml"\n',
+        encoding="utf-8",
+    )
+    rewards = {"reward": [{"kind": "milestone", NESTED_REWARD_PATH_KEY_CRAFTING: "missing.toml"}]}
+    with pytest.raises(FileNotFoundError, match="nested reward file not found"):
+        rewards_canonical_sha256(rewards, source_path=rewards_path)
+
+
+def test_without_source_path_hashes_path_strings() -> None:
+    """Fixture pin: omitted source_path must not try to load nested files."""
+    rewards = {
+        "reward": [
+            {
+                "kind": "milestone",
+                NESTED_REWARD_PATH_KEY_CONFIG: "configs/minecraft/does-not-exist.toml",
+            }
+        ]
+    }
+    digest = rewards_canonical_sha256(rewards)
+    assert len(digest) == 64
+
+
+def test_repo_style_nested_path_prefers_sibling_over_cwd_relative(tmp_path: Path) -> None:
+    unique = "[milestones]\nsibling_only = { reward = 99.0, once = true }\n"
+    (tmp_path / "milestone_rewards.toml").write_text(unique, encoding="utf-8")
+    rewards_path = tmp_path / "rewards.toml"
+    rewards_path.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CONFIG} = '
+        '"configs/minecraft/milestone_rewards.toml"\n',
+        encoding="utf-8",
+    )
+    with rewards_path.open("rb") as handle:
+        data = tomllib.load(handle)
+    from_repo_style = rewards_canonical_sha256(data, source_path=rewards_path)
+
+    dir2 = tmp_path / "basename"
+    dir2.mkdir()
+    (dir2 / "milestone_rewards.toml").write_text(unique, encoding="utf-8")
+    rewards2 = dir2 / "rewards.toml"
+    rewards2.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CONFIG} = '
+        '"milestone_rewards.toml"\n',
+        encoding="utf-8",
+    )
+    with rewards2.open("rb") as handle:
+        data2 = tomllib.load(handle)
+    from_basename = rewards_canonical_sha256(data2, source_path=rewards2)
+    assert from_repo_style == from_basename
+
+
+def test_load_num_block_embeddings_missing_file_warns(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from forge.models.muzero_config import (
+        DEFAULT_NUM_BLOCK_EMBEDDINGS,
+        load_num_block_embeddings,
+    )
+
+    missing = tmp_path / "no_such_embeddings.toml"
+    with caplog.at_level("WARNING", logger="forge.models.muzero_config"):
+        assert load_num_block_embeddings(missing) == DEFAULT_NUM_BLOCK_EMBEDDINGS
+    assert "missing" in caplog.text.lower()
+
+
+def test_load_num_block_embeddings_corrupt_toml_warns(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from forge.models.muzero_config import (
+        DEFAULT_NUM_BLOCK_EMBEDDINGS,
+        load_num_block_embeddings,
+    )
+
+    corrupt = tmp_path / "bad.toml"
+    corrupt.write_text("not = valid toml [", encoding="utf-8")
+    with caplog.at_level("WARNING", logger="forge.models.muzero_config"):
+        assert load_num_block_embeddings(corrupt) == DEFAULT_NUM_BLOCK_EMBEDDINGS
+    assert "Failed to parse" in caplog.text
+
+
+def test_muzero_config_grid_depth_uses_named_default() -> None:
+    from forge.models.muzero_config import DEFAULT_GRID_DEPTH, MuZeroConfig
+
+    assert MuZeroConfig().grid_depth == DEFAULT_GRID_DEPTH

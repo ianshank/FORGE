@@ -192,6 +192,19 @@ pub struct RunnerConfig {
     /// purely to satisfy the type-generic bound on `Runner<E, M>`.
     #[serde(default)]
     pub random_actions: bool,
+
+    /// How many consecutive transient env errors (`RECONNECTING` /
+    /// `BUSY`) may occur before the run fails. `0` means the first
+    /// transient fails the run (legacy fail-closed behaviour).
+    /// Defaults to [`DEFAULT_MAX_CONSECUTIVE_TRANSIENT_FAILURES`].
+    #[serde(default = "default_max_consecutive_transient_failures")]
+    pub max_consecutive_transient_failures: u32,
+
+    /// Sleep between a discarded transient episode and the next
+    /// Reset. `0` is legal and used by tests. Defaults to
+    /// [`DEFAULT_TRANSIENT_FAILURE_BACKOFF_MS`].
+    #[serde(default = "default_transient_failure_backoff_ms")]
+    pub transient_failure_backoff_ms: u64,
 }
 
 /// ONNX Runtime invariants the runner carries across reloads. These
@@ -279,6 +292,21 @@ pub const DEFAULT_METRICS_BIND: &str = "127.0.0.1";
 /// `DEFAULT_METRICS_BIND` above.
 pub const DEFAULT_METRICS_PORT: u16 = 9090;
 
+/// Consecutive `RECONNECTING`/`BUSY` episodes the run will discard
+/// before failing. Matches `scripts/v05_manual_baseline.py`.
+pub const DEFAULT_MAX_CONSECUTIVE_TRANSIENT_FAILURES: u32 = 3;
+
+/// Backoff after a discarded transient episode, in milliseconds.
+pub const DEFAULT_TRANSIENT_FAILURE_BACKOFF_MS: u64 = 500;
+
+fn default_max_consecutive_transient_failures() -> u32 {
+    DEFAULT_MAX_CONSECUTIVE_TRANSIENT_FAILURES
+}
+
+fn default_transient_failure_backoff_ms() -> u64 {
+    DEFAULT_TRANSIENT_FAILURE_BACKOFF_MS
+}
+
 impl Default for RunnerConfig {
     fn default() -> Self {
         Self {
@@ -302,6 +330,8 @@ impl Default for RunnerConfig {
             mc_env_config_path: None,
             onnx: OnnxRuntimeConfig::default(),
             random_actions: false,
+            max_consecutive_transient_failures: DEFAULT_MAX_CONSECUTIVE_TRANSIENT_FAILURES,
+            transient_failure_backoff_ms: DEFAULT_TRANSIENT_FAILURE_BACKOFF_MS,
         }
     }
 }
@@ -322,6 +352,29 @@ pub const SCHEMA_ID_ENV_VAR: &str = "FORGE_MC_SCHEMA_ID";
 /// aborting a long run.
 pub const EPISODES_ENV_VAR: &str = "FORGE_MC_RUNNER_EPISODES";
 
+/// Environment variable that overrides `RunnerConfig.random_actions`.
+/// Empty / unset = no override (the TOML value wins). Parsed as
+/// `true`/`false`/`1`/`0` (case-insensitive). Garbage values warn and
+/// keep the TOML setting so a typo cannot silently flip trained
+/// identity.
+///
+/// Compose self-play exports `false` so the shipped
+/// `random_actions = true` TOML does not lie about the trained loop.
+/// The CLI `--random-actions` flag remains OR-only (can force true,
+/// never false).
+pub const RANDOM_ACTIONS_ENV_VAR: &str = "FORGE_MC_RANDOM_ACTIONS";
+
+/// Parse `true`/`false`/`1`/`0` (case-insensitive, surrounding
+/// whitespace ignored). Anything else is `None` so the caller can
+/// warn and keep the TOML value.
+fn parse_bool_env(raw: &str) -> Option<bool> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
+        _ => None,
+    }
+}
+
 impl RunnerConfig {
     /// Returns `true` iff `episodes == 0` (run forever).
     pub fn runs_forever(&self) -> bool {
@@ -334,9 +387,10 @@ impl RunnerConfig {
     }
 
     /// Apply env-var overrides in-place. Honours
-    /// [`SCHEMA_ID_ENV_VAR`] and [`EPISODES_ENV_VAR`]; future env-var
-    /// overrides land here. Returns `Self` for chainability after
-    /// `Default::default()` or `toml::from_str`.
+    /// [`SCHEMA_ID_ENV_VAR`], [`EPISODES_ENV_VAR`], and
+    /// [`RANDOM_ACTIONS_ENV_VAR`]; future env-var overrides land here.
+    /// Returns `Self` for chainability after `Default::default()` or
+    /// `toml::from_str`.
     ///
     /// Empty env-var values are treated as unset — the TOML value
     /// wins. This avoids surprising operators who export an empty
@@ -357,6 +411,18 @@ impl RunnerConfig {
                         value = %v,
                         error = %err,
                         "ignoring unparseable episode-count override; keeping the configured value"
+                    ),
+                }
+            }
+        }
+        if let Ok(v) = std::env::var(RANDOM_ACTIONS_ENV_VAR) {
+            if !v.is_empty() {
+                match parse_bool_env(&v) {
+                    Some(flag) => self.random_actions = flag,
+                    None => warn!(
+                        env_var = RANDOM_ACTIONS_ENV_VAR,
+                        value = %v,
+                        "ignoring unparseable random_actions override (want true/false/1/0); keeping the configured value"
                     ),
                 }
             }
@@ -455,8 +521,9 @@ mod tests {
     /// environment table.
     ///
     /// Confining each variable's mutations to one `#[test]` is not
-    /// enough. [`RunnerConfig::with_env_var_overrides`] reads *both*
-    /// [`SCHEMA_ID_ENV_VAR`] and [`EPISODES_ENV_VAR`], so the schema
+    /// enough. [`RunnerConfig::with_env_var_overrides`] reads
+    /// [`SCHEMA_ID_ENV_VAR`], [`EPISODES_ENV_VAR`], and
+    /// [`RANDOM_ACTIONS_ENV_VAR`], so the schema
     /// test's `set_var` races the episodes test's read of the same
     /// variable, and vice versa. Rust 2024 made `set_var` `unsafe`
     /// because it requires excluding concurrent environment *access*,
@@ -477,8 +544,9 @@ mod tests {
     ///
     /// Confining a variable's mutations to one `#[test]` is not enough,
     /// and reasoning about it got this wrong twice.
-    /// [`RunnerConfig::with_env_var_overrides`] reads *both*
-    /// [`SCHEMA_ID_ENV_VAR`] and [`EPISODES_ENV_VAR`], so a test that
+    /// [`RunnerConfig::with_env_var_overrides`] reads
+    /// [`SCHEMA_ID_ENV_VAR`], [`EPISODES_ENV_VAR`], and
+    /// [`RANDOM_ACTIONS_ENV_VAR`], so a test that
     /// only mutates one still races a sibling's read of it — and Rust
     /// 2024 requires excluding concurrent environment *access*, not
     /// just concurrent mutation of the same key. The failure mode is
@@ -1010,5 +1078,87 @@ mod tests {
                 std::env::remove_var(EPISODES_ENV_VAR);
             }
         }
+    }
+
+    /// `FORGE_MC_RANDOM_ACTIONS` override scenarios, under [`ENV_LOCK`].
+    #[test]
+    fn random_actions_env_var_override_covers_all_scenarios() {
+        let _env = env_guard();
+        let saved = std::env::var(RANDOM_ACTIONS_ENV_VAR).ok();
+        let toml_cfg = || RunnerConfig {
+            random_actions: true,
+            ..RunnerConfig::default()
+        };
+
+        unsafe {
+            std::env::set_var(RANDOM_ACTIONS_ENV_VAR, "false");
+        }
+        assert!(
+            !toml_cfg().with_env_var_overrides().random_actions,
+            "false must override TOML true (trained self-play identity)"
+        );
+
+        unsafe {
+            std::env::set_var(RANDOM_ACTIONS_ENV_VAR, "0");
+        }
+        assert!(!toml_cfg().with_env_var_overrides().random_actions);
+
+        unsafe {
+            std::env::set_var(RANDOM_ACTIONS_ENV_VAR, "true");
+        }
+        assert!(toml_cfg().with_env_var_overrides().random_actions);
+
+        unsafe {
+            std::env::set_var(RANDOM_ACTIONS_ENV_VAR, "1");
+        }
+        assert!(toml_cfg().with_env_var_overrides().random_actions);
+
+        unsafe {
+            std::env::remove_var(RANDOM_ACTIONS_ENV_VAR);
+        }
+        assert!(toml_cfg().with_env_var_overrides().random_actions);
+
+        unsafe {
+            std::env::set_var(RANDOM_ACTIONS_ENV_VAR, "");
+        }
+        assert!(toml_cfg().with_env_var_overrides().random_actions);
+
+        unsafe {
+            std::env::set_var(RANDOM_ACTIONS_ENV_VAR, "not-a-bool");
+        }
+        assert!(
+            toml_cfg().with_env_var_overrides().random_actions,
+            "garbage must keep the TOML value"
+        );
+
+        unsafe {
+            if let Some(v) = saved {
+                std::env::set_var(RANDOM_ACTIONS_ENV_VAR, v);
+            } else {
+                std::env::remove_var(RANDOM_ACTIONS_ENV_VAR);
+            }
+        }
+    }
+
+    #[test]
+    fn transient_failure_defaults_match_named_consts() {
+        let cfg = RunnerConfig::default();
+        assert_eq!(
+            cfg.max_consecutive_transient_failures,
+            DEFAULT_MAX_CONSECUTIVE_TRANSIENT_FAILURES
+        );
+        assert_eq!(
+            cfg.transient_failure_backoff_ms,
+            DEFAULT_TRANSIENT_FAILURE_BACKOFF_MS
+        );
+    }
+
+    #[test]
+    fn parse_bool_env_accepts_true_false_one_zero() {
+        assert_eq!(parse_bool_env("true"), Some(true));
+        assert_eq!(parse_bool_env("FALSE"), Some(false));
+        assert_eq!(parse_bool_env(" 1 "), Some(true));
+        assert_eq!(parse_bool_env("0"), Some(false));
+        assert_eq!(parse_bool_env("yes"), None);
     }
 }

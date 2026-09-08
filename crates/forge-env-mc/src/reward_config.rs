@@ -5,17 +5,45 @@
 //! file so a typo is caught at runner startup, and (b) compute a
 //! canonical SHA256 that's folded into the global `schema_id`.
 //!
+//! Nested path keys ([`NESTED_REWARD_PATH_KEY_CONFIG`] /
+//! [`NESTED_REWARD_PATH_KEY_CRAFTING`]) are resolved relative to the
+//! rewards.toml parent and **replaced in the hash tree** with the nested
+//! file's own canonical SHA. Rename-without-content-change does not bump
+//! `schema_id`. A set path key whose file is missing fails closed
+//! (the bot's hardcoded milestone fallback must not be hashed as if it
+//! were the file).
+//!
+//! String-parsed fixtures (no load directory) hash path strings as-is
+//! so the fixture xlang pin stays stable.
+//!
 //! The bot's JS-side loader (`mc-bot/src/reward_config.ts`) MUST
 //! produce the same canonical hash from the same file — enforced by
-//! the `xlang_rewards_schema_id_pinned_to_known_good` test below.
+//! the `xlang_rewards_schema_id_pinned_to_known_good` test below and
+//! the shipped nested-fold pin.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use tracing::{debug, warn};
 
 use crate::error::McEnvError;
-use crate::hash_util::hex_encode;
+use crate::hash_util::{canonical_json_sha256, sha256_hex, toml_to_canonical_json};
+
+/// Nested milestone-rewards TOML path key under a `[[reward]]` table.
+/// Twin of JS/Python `NESTED_REWARD_PATH_KEYS`.
+pub const NESTED_REWARD_PATH_KEY_CONFIG: &str = "config_path";
+
+/// Nested crafting-rewards TOML path key under a `[[reward]]` table.
+/// Twin of JS/Python `NESTED_REWARD_PATH_KEYS`.
+pub const NESTED_REWARD_PATH_KEY_CRAFTING: &str = "crafting_config_path";
+
+/// Path-valued keys whose **file contents** (not the path string) fold
+/// into [`RewardConfig::canonical_sha256`] when the config was loaded
+/// from disk.
+pub const NESTED_REWARD_PATH_KEYS: &[&str] = &[
+    NESTED_REWARD_PATH_KEY_CONFIG,
+    NESTED_REWARD_PATH_KEY_CRAFTING,
+];
 
 /// Parsed reward config. `entries` order matters for the canonical
 /// hash — both sides MUST iterate in file order.
@@ -27,23 +55,53 @@ pub struct RewardConfig {
     /// Reward entries. Multiple top-level entries are summed by the bot.
     #[serde(rename = "reward", default)]
     pub entries: Vec<toml::Value>,
+    /// Directory of the rewards.toml this was loaded from, if any.
+    /// Nested path keys are resolved against this directory and folded
+    /// into [`Self::canonical_sha256`]. `None` for string-parsed fixtures
+    /// (path strings hashed as-is so the xlang fixture pin stays stable).
+    #[serde(skip)]
+    load_dir: Option<PathBuf>,
 }
 
 fn default_schema_version() -> u32 {
     1
 }
 
+/// True when `key` is a nested reward-file path that must be folded.
+#[must_use]
+pub fn is_nested_reward_path_key(key: &str) -> bool {
+    NESTED_REWARD_PATH_KEYS.contains(&key)
+}
+
 impl RewardConfig {
     /// Load and validate from a TOML file.
+    ///
+    /// Nested path keys are resolved relative to `parent(path)` and
+    /// hashed immediately so a missing nested file fails closed at
+    /// load rather than at the next handshake.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, McEnvError> {
         let path = path.as_ref();
         let raw = std::fs::read_to_string(path)
             .map_err(|e| McEnvError::Config(format!("read {}: {e}", path.display())))?;
-        Self::parse_toml(&raw)
+        let mut cfg = Self::parse_toml(&raw)?;
+        let load_dir = path.parent().ok_or_else(|| {
+            McEnvError::Config(format!(
+                "rewards path {} has no parent directory",
+                path.display()
+            ))
+        })?;
+        cfg.load_dir = Some(load_dir.to_path_buf());
+        // Fail closed: hashing (and therefore handshake) must not
+        // succeed when a nested path key is set and the file is missing.
+        let _ = cfg.canonical_sha256()?;
+        Ok(cfg)
     }
 
     /// Parse from a TOML string. Validates that at least one `[[reward]]`
     /// entry is present and every entry has a string `kind`.
+    ///
+    /// Does **not** fold nested path keys — those stay as path strings
+    /// in the hash, matching the fixture xlang pin.
     pub fn parse_toml(raw: &str) -> Result<Self, McEnvError> {
         let cfg: Self = toml::from_str(raw)
             .map_err(|e| McEnvError::Config(format!("parse rewards toml: {e}")))?;
@@ -83,55 +141,128 @@ impl RewardConfig {
     ///   TOML floats with no fractional part disagree across languages.
     /// - File-order preservation for top-level entries (the
     ///   `[[reward]]` array order is meaningful).
+    /// - When loaded from disk, nested path keys are replaced with the
+    ///   nested file's own canonical SHA (whole parsed TOML document).
     ///
     /// Regression-tested via `xlang_rewards_schema_id_pinned_to_known_good`
-    /// and its JS twin in `mc-bot/test/reward_config.test.ts`.
-    pub fn canonical_sha256(&self) -> String {
-        let normalised: Vec<serde_json::Value> =
-            self.entries.iter().map(toml_to_canonical_json).collect();
-        // serde_json::Value → string is infallible.
+    /// (fixture, no nested fold) and
+    /// `xlang_shipped_rewards_schema_id_folds_nested_files` (shipped
+    /// configs). Pair tests in `mc-bot/test/reward_config.test.ts`.
+    pub fn canonical_sha256(&self) -> Result<String, McEnvError> {
+        let normalised: Vec<serde_json::Value> = self
+            .entries
+            .iter()
+            .map(|e| fold_toml_to_canonical_json(e, self.load_dir.as_deref()))
+            .collect::<Result<_, _>>()?;
         let canonical =
             serde_json::to_string(&normalised).expect("serde_json::Value always serialises");
-        let mut hasher = Sha256::new();
-        hasher.update(canonical.as_bytes());
-        hex_encode(&hasher.finalize())
+        Ok(sha256_hex(canonical.as_bytes()))
     }
 }
 
-/// Convert a `toml::Value` to a `serde_json::Value`, normalising:
-/// - whole floats → integers (to match JS `JSON.stringify(100.0) == "100"`),
-/// - datetimes → ISO strings (rejected for reward configs but kept for
-///   forward compatibility),
-/// - tables → JSON objects (sorted alphabetically — already true via
-///   `toml::Table`'s `BTreeMap` backing).
-fn toml_to_canonical_json(v: &toml::Value) -> serde_json::Value {
+/// Resolve a nested reward path relative to `base_dir`.
+///
+/// Candidates, first existing file wins:
+/// 1. `value` if it is an absolute path to a file
+/// 2. `base_dir.join(filename)` — sibling lookup (local + docker
+///    mounts of `configs/minecraft/` as a flat dir)
+/// 3. `base_dir.join(value)`
+/// 4. cwd-relative `value`
+fn resolve_nested_reward_path(
+    base_dir: &Path,
+    key: &str,
+    value: &str,
+) -> Result<PathBuf, McEnvError> {
+    if value.is_empty() {
+        warn!(key, "nested reward path key is empty; failing closed");
+        return Err(McEnvError::Config(format!(
+            "nested reward path key `{key}` is empty"
+        )));
+    }
+    let given = Path::new(value);
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if given.is_absolute() {
+        candidates.push(given.to_path_buf());
+    }
+    if let Some(name) = given.file_name() {
+        candidates.push(base_dir.join(name));
+    }
+    candidates.push(base_dir.join(given));
+    if !given.is_absolute() {
+        candidates.push(given.to_path_buf());
+    }
+    for candidate in &candidates {
+        if candidate.is_file() {
+            debug!(
+                key,
+                value,
+                resolved = %candidate.display(),
+                "resolved nested reward file"
+            );
+            return Ok(candidate.clone());
+        }
+    }
+    warn!(
+        key,
+        value,
+        base_dir = %base_dir.display(),
+        "nested reward file not found; failing closed"
+    );
+    Err(McEnvError::Config(format!(
+        "nested reward file not found for `{key}` = `{value}` \
+         (searched sibling, base_dir-relative, and cwd-relative; \
+         hashing fails closed rather than using hardcoded milestone defaults)"
+    )))
+}
+
+fn nested_file_canonical_sha256(path: &Path) -> Result<String, McEnvError> {
+    let raw = std::fs::read_to_string(path).map_err(|e| {
+        McEnvError::Config(format!("read nested reward file {}: {e}", path.display()))
+    })?;
+    let value: toml::Value = toml::from_str(&raw).map_err(|e| {
+        McEnvError::Config(format!("parse nested reward file {}: {e}", path.display()))
+    })?;
+    Ok(canonical_json_sha256(&value))
+}
+
+/// Convert a TOML value to canonical JSON, substituting nested path
+/// keys with the nested file's canonical SHA when `base_dir` is set.
+fn fold_toml_to_canonical_json(
+    v: &toml::Value,
+    base_dir: Option<&Path>,
+) -> Result<serde_json::Value, McEnvError> {
     use serde_json::Value as J;
     match v {
-        toml::Value::String(s) => J::String(s.clone()),
-        toml::Value::Integer(i) => J::Number((*i).into()),
-        toml::Value::Float(f) => {
-            // Normalise whole floats to integers to match JS behaviour.
-            // NaN/Infinity are not representable in TOML so unwrap is safe.
-            if f.is_finite() && f.floor() == *f && f.abs() < (i64::MAX as f64) {
-                J::Number((*f as i64).into())
-            } else {
-                J::Number(
-                    serde_json::Number::from_f64(*f)
-                        .expect("toml floats are finite by construction"),
-                )
-            }
-        }
-        toml::Value::Boolean(b) => J::Bool(*b),
-        toml::Value::Datetime(d) => J::String(d.to_string()),
-        toml::Value::Array(a) => J::Array(a.iter().map(toml_to_canonical_json).collect()),
         toml::Value::Table(t) => {
-            // toml::Table is BTreeMap-backed → already alphabetically sorted.
             let mut map = serde_json::Map::new();
             for (k, val) in t {
-                map.insert(k.clone(), toml_to_canonical_json(val));
+                if is_nested_reward_path_key(k) {
+                    let path_str = val.as_str().ok_or_else(|| {
+                        warn!(key = %k, "nested reward path key is not a string; failing closed");
+                        McEnvError::Config(format!("nested reward path key `{k}` must be a string"))
+                    })?;
+                    let folded = match base_dir {
+                        None => path_str.to_string(),
+                        Some(dir) => {
+                            let nested = resolve_nested_reward_path(dir, k, path_str)?;
+                            nested_file_canonical_sha256(&nested)?
+                        }
+                    };
+                    map.insert(k.clone(), J::String(folded));
+                } else {
+                    map.insert(k.clone(), fold_toml_to_canonical_json(val, base_dir)?);
+                }
             }
-            J::Object(map)
+            Ok(J::Object(map))
         }
+        toml::Value::Array(a) => {
+            let items = a
+                .iter()
+                .map(|item| fold_toml_to_canonical_json(item, base_dir))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(J::Array(items))
+        }
+        other => Ok(toml_to_canonical_json(other)),
     }
 }
 
@@ -141,16 +272,19 @@ fn toml_to_canonical_json(v: &toml::Value) -> serde_json::Value {
 ///
 /// Order is fixed: `sha256(action_map_hash || ":" || rewards_hash)`.
 /// Changing the formula bumps every existing replay's `schema_id`.
+/// Nested reward **file contents** are already inside `rewards_hash`
+/// when the rewards config was loaded from disk. Block embeddings are
+/// a **separate** obs-layout pin — do not fold them into this
+/// two-input formula.
 pub fn combined_schema_id(action_map_hash: &str, rewards_hash: &str) -> String {
     let combined = format!("{action_map_hash}:{rewards_hash}");
-    let mut hasher = Sha256::new();
-    hasher.update(combined.as_bytes());
-    hex_encode(&hasher.finalize())
+    sha256_hex(combined.as_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     fn sample_toml() -> &'static str {
         r#"
@@ -202,8 +336,8 @@ value = 1.0
     #[test]
     fn canonical_sha256_is_stable() {
         let cfg = RewardConfig::parse_toml(sample_toml()).unwrap();
-        let a = cfg.canonical_sha256();
-        let b = cfg.canonical_sha256();
+        let a = cfg.canonical_sha256().unwrap();
+        let b = cfg.canonical_sha256().unwrap();
         assert_eq!(a, b);
         assert_eq!(a.len(), 64);
     }
@@ -212,11 +346,13 @@ value = 1.0
     fn canonical_sha256_changes_with_value_changes() {
         let a = RewardConfig::parse_toml(sample_toml())
             .unwrap()
-            .canonical_sha256();
+            .canonical_sha256()
+            .unwrap();
         let modified = sample_toml().replace("clip = 100.0", "clip = 50.0");
         let b = RewardConfig::parse_toml(&modified)
             .unwrap()
-            .canonical_sha256();
+            .canonical_sha256()
+            .unwrap();
         assert_ne!(a, b, "different reward params must yield different hash");
     }
 
@@ -237,7 +373,7 @@ value = 1.0
     #[test]
     fn xlang_rewards_schema_id_pinned_to_known_good() {
         let cfg = RewardConfig::parse_toml(sample_toml()).unwrap();
-        let h = cfg.canonical_sha256();
+        let h = cfg.canonical_sha256().unwrap();
         assert_eq!(
             h, "451b10f995371924a374633e5c42deab35c137fbbc65bc8f551bf2bd7844b478",
             "rewards-config schema_id drift — JS test in mc-bot/test/reward_config.test.ts will also fail. \
@@ -247,7 +383,6 @@ value = 1.0
 
     #[test]
     fn load_reads_from_disk_and_validates() {
-        use std::io::Write;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("r.toml");
         let mut f = std::fs::File::create(&path).unwrap();
@@ -277,5 +412,251 @@ value = 1.0
         let cfg = RewardConfig::parse_toml(&raw).expect("parse default rewards");
         cfg.validate().unwrap();
         assert!(!cfg.entries.is_empty());
+    }
+
+    fn write_nested_fixture(dir: &Path, nested_name: &str, nested_body: &str) -> PathBuf {
+        let nested = dir.join(nested_name);
+        std::fs::write(&nested, nested_body).unwrap();
+        let rewards = dir.join("rewards.toml");
+        let body = format!(
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = \"{nested_name}\"\n"
+        );
+        std::fs::write(&rewards, body).unwrap();
+        rewards
+    }
+
+    #[test]
+    fn nested_content_change_bumps_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let rewards = write_nested_fixture(
+            dir.path(),
+            "milestones.toml",
+            "[milestones]\nfirst_wood = { reward = 10.0, once = true }\n",
+        );
+        let a = RewardConfig::load(&rewards)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        std::fs::write(
+            dir.path().join("milestones.toml"),
+            "[milestones]\nfirst_wood = { reward = 11.0, once = true }\n",
+        )
+        .unwrap();
+        let b = RewardConfig::load(&rewards)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        assert_ne!(a, b, "nested file content must fold into schema_id");
+    }
+
+    #[test]
+    fn nested_rename_without_content_change_does_not_bump_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = "[milestones]\nfirst_wood = { reward = 10.0, once = true }\n";
+        let rewards_a = write_nested_fixture(dir.path(), "mil_a.toml", body);
+        let hash_a = RewardConfig::load(&rewards_a)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        std::fs::copy(dir.path().join("mil_a.toml"), dir.path().join("mil_b.toml")).unwrap();
+        let rewards_b = dir.path().join("rewards_b.toml");
+        std::fs::write(
+            &rewards_b,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = \"mil_b.toml\"\n",
+        )
+        .unwrap();
+        let hash_b = RewardConfig::load(&rewards_b)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        assert_eq!(
+            hash_a, hash_b,
+            "path-string rename with identical nested content must not bump schema_id"
+        );
+    }
+
+    #[test]
+    fn missing_nested_file_fails_closed_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = \"missing.toml\"\n",
+        )
+        .unwrap();
+        let err = RewardConfig::load(&rewards).unwrap_err();
+        match err {
+            McEnvError::Config(msg) => {
+                assert!(
+                    msg.contains("nested reward file not found"),
+                    "expected fail-closed nested-path error, got: {msg}"
+                );
+            }
+            other => panic!("expected Config error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_toml_without_load_dir_hashes_path_strings() {
+        // Fixtures that mention a path but are not loaded from disk
+        // must keep hashing the path string (xlang fixture pin).
+        let raw = r#"
+schema_version = 1
+[[reward]]
+kind = "milestone"
+config_path = "configs/minecraft/milestone_rewards.toml"
+"#;
+        let cfg = RewardConfig::parse_toml(raw).unwrap();
+        let h = cfg.canonical_sha256().unwrap();
+        assert_eq!(h.len(), 64);
+        // Must succeed even though the nested file is not resolved.
+    }
+
+    #[test]
+    fn empty_nested_path_fails_closed_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = \"\"\n",
+        )
+        .unwrap();
+        let err = RewardConfig::load(&rewards).unwrap_err();
+        match err {
+            McEnvError::Config(msg) => {
+                assert!(
+                    msg.contains("empty"),
+                    "expected empty-path fail-closed error, got: {msg}"
+                );
+            }
+            other => panic!("expected Config error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_string_nested_path_fails_closed_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = 1\n",
+        )
+        .unwrap();
+        let err = RewardConfig::load(&rewards).unwrap_err();
+        match err {
+            McEnvError::Config(msg) => {
+                assert!(
+                    msg.contains("must be a string"),
+                    "expected non-string fail-closed error, got: {msg}"
+                );
+            }
+            other => panic!("expected Config error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_crafting_config_path_fails_closed_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\ncrafting_config_path = \"missing.toml\"\n",
+        )
+        .unwrap();
+        let err = RewardConfig::load(&rewards).unwrap_err();
+        match err {
+            McEnvError::Config(msg) => {
+                assert!(
+                    msg.contains("nested reward file not found"),
+                    "expected fail-closed crafting_config_path error, got: {msg}"
+                );
+            }
+            other => panic!("expected Config error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn crafting_config_path_content_folds_into_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("crafting.toml"),
+            "[recipes]\nplanks = { reward = 1.0 }\n",
+        )
+        .unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\ncrafting_config_path = \"crafting.toml\"\n",
+        )
+        .unwrap();
+        let a = RewardConfig::load(&rewards)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        std::fs::write(
+            dir.path().join("crafting.toml"),
+            "[recipes]\nplanks = { reward = 2.0 }\n",
+        )
+        .unwrap();
+        let b = RewardConfig::load(&rewards)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        assert_ne!(a, b, "crafting_config_path nested content must fold");
+    }
+
+    #[test]
+    fn nested_repo_style_path_prefers_sibling_over_cwd_relative() {
+        // Docker mounts `configs/minecraft/` as a flat dir. Shipped
+        // rewards.toml uses `configs/minecraft/milestone_rewards.toml`.
+        // Sibling lookup (filename) must win over cwd-relative lookup
+        // of the same repo-style path (which would hit the shipped file
+        // when tests run from the workspace root).
+        let unique = "[milestones]\nsibling_only = { reward = 99.0, once = true }\n";
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("milestone_rewards.toml"), unique).unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = \"configs/minecraft/milestone_rewards.toml\"\n",
+        )
+        .unwrap();
+        let from_repo_style = RewardConfig::load(&rewards)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+
+        let dir2 = tempfile::tempdir().unwrap();
+        std::fs::write(dir2.path().join("milestone_rewards.toml"), unique).unwrap();
+        let rewards2 = dir2.path().join("rewards.toml");
+        std::fs::write(
+            &rewards2,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = \"milestone_rewards.toml\"\n",
+        )
+        .unwrap();
+        let from_basename = RewardConfig::load(&rewards2)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        assert_eq!(
+            from_repo_style, from_basename,
+            "sibling lookup must fold the temp nested file, not the cwd-relative shipped one"
+        );
+    }
+
+    /// Pinned cross-language regression gate over the **shipped**
+    /// `rewards.toml` + nested milestone/crafting files. Pair tests in
+    /// JS and Python. Bumping nested content without updating all three
+    /// pins fails CI simultaneously.
+    #[test]
+    fn xlang_shipped_rewards_schema_id_folds_nested_files() {
+        let path = crate::test_support::workspace_config_path("configs/minecraft/rewards.toml");
+        let cfg = RewardConfig::load(&path).expect("load shipped rewards");
+        let h = cfg.canonical_sha256().expect("hash shipped rewards");
+        assert_eq!(
+            h, "78f96c103767f3db7280175e92b8564937bcb5d505e4d75e8aab0c570d237f4b",
+            "shipped rewards schema_id drift (nested files folded) — \
+             update Rust/JS/Python pins together.",
+        );
     }
 }

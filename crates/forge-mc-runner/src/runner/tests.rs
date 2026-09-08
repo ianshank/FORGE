@@ -1,5 +1,10 @@
 use super::*;
+use crate::config::{
+    DEFAULT_METRICS_EPISODE_LENGTH_BUCKETS, DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS,
+};
+use crate::error::{TRANSIENT_ENV_CODE_MESSAGE_SEP, TRANSIENT_ENV_DISPLAY_PREFIX};
 use crate::manifest::{ModelFileEntry, ModelManifestFiles, MANIFEST_SCHEMA_VERSION};
+use crate::metrics::{MetricsRecorder, METRIC_REASON_ENV_RESET, METRIC_REASON_ENV_STEP};
 use forge_agent::latent_mcts::model::StubLatentModel;
 use forge_agent::latent_mcts::search::LatentMctsConfig;
 use forge_env::spec::{ActionSpec, ObsSpec};
@@ -98,6 +103,155 @@ impl FlatObsEnv for StubFlatEnv {
     }
 }
 
+/// Stub that emits a parseable transient Display on the first N steps
+/// (or resets), then delegates to [`StubFlatEnv`].
+struct TransientThenOkEnv {
+    inner: StubFlatEnv,
+    fail_first_n_steps: u32,
+    steps_seen: u32,
+    fail_first_n_resets: u32,
+    resets_seen: u32,
+    code: &'static str,
+}
+
+impl TransientThenOkEnv {
+    fn fail_first_n_steps(obs_dim: usize, action_count: u32, n: u32) -> Self {
+        Self::fail_first_n_steps_with_code(
+            obs_dim,
+            action_count,
+            n,
+            forge_env_mc::ERROR_CODE_RECONNECTING,
+        )
+    }
+
+    fn fail_first_n_steps_with_code(
+        obs_dim: usize,
+        action_count: u32,
+        n: u32,
+        code: &'static str,
+    ) -> Self {
+        Self {
+            inner: StubFlatEnv::new(obs_dim, action_count, Some(1)),
+            fail_first_n_steps: n,
+            steps_seen: 0,
+            fail_first_n_resets: 0,
+            resets_seen: 0,
+            code,
+        }
+    }
+
+    fn fail_first_n_resets(obs_dim: usize, action_count: u32, n: u32) -> Self {
+        let mut env = Self::fail_first_n_steps(obs_dim, action_count, 0);
+        env.fail_first_n_resets = n;
+        env
+    }
+}
+
+impl Env for TransientThenOkEnv {
+    type Obs = Vec<f32>;
+    type Action = u32;
+    type Info = ();
+    type Error = EnvError;
+
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Vec<f32>) -> Result<(), Self::Error> {
+        self.resets_seen += 1;
+        if self.resets_seen <= self.fail_first_n_resets {
+            return Err(EnvError::Other(format!(
+                "{TRANSIENT_ENV_DISPLAY_PREFIX}{}{TRANSIENT_ENV_CODE_MESSAGE_SEP}synthetic reset",
+                self.code
+            )));
+        }
+        self.inner.reset_into(seed, out)
+    }
+
+    fn step_into(
+        &mut self,
+        action: u32,
+        out: &mut StepOutput<Vec<f32>, ()>,
+    ) -> Result<(), Self::Error> {
+        self.steps_seen += 1;
+        if self.steps_seen <= self.fail_first_n_steps {
+            return Err(EnvError::Other(format!(
+                "{TRANSIENT_ENV_DISPLAY_PREFIX}{}{TRANSIENT_ENV_CODE_MESSAGE_SEP}synthetic step",
+                self.code
+            )));
+        }
+        self.inner.step_into(action, out)
+    }
+
+    fn obs_spec(&self) -> &ObsSpec {
+        self.inner.obs_spec()
+    }
+    fn action_spec(&self) -> &ActionSpec {
+        self.inner.action_spec()
+    }
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("transient-stub")
+    }
+}
+
+impl FlatObsEnv for TransientThenOkEnv {
+    fn obs_dim(&self) -> usize {
+        self.inner.obs_dim()
+    }
+    fn num_actions(&self) -> u32 {
+        self.inner.num_actions()
+    }
+}
+
+/// Stub that always fails `step_into` with a caller-supplied Display.
+struct FatalStepEnv {
+    inner: StubFlatEnv,
+    message: String,
+}
+
+impl FatalStepEnv {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            inner: StubFlatEnv::new(4, 3, Some(5)),
+            message: message.into(),
+        }
+    }
+}
+
+impl Env for FatalStepEnv {
+    type Obs = Vec<f32>;
+    type Action = u32;
+    type Info = ();
+    type Error = EnvError;
+
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Vec<f32>) -> Result<(), Self::Error> {
+        self.inner.reset_into(seed, out)
+    }
+
+    fn step_into(
+        &mut self,
+        _action: u32,
+        _out: &mut StepOutput<Vec<f32>, ()>,
+    ) -> Result<(), Self::Error> {
+        Err(EnvError::Other(self.message.clone()))
+    }
+
+    fn obs_spec(&self) -> &ObsSpec {
+        self.inner.obs_spec()
+    }
+    fn action_spec(&self) -> &ActionSpec {
+        self.inner.action_spec()
+    }
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("fatal-stub")
+    }
+}
+
+impl FlatObsEnv for FatalStepEnv {
+    fn obs_dim(&self) -> usize {
+        self.inner.obs_dim()
+    }
+    fn num_actions(&self) -> u32 {
+        self.inner.num_actions()
+    }
+}
+
 // ----------------- helpers -----------------
 
 fn make_search(action_count: u32, sims: u32) -> LatentMctsSearch<StubLatentModel> {
@@ -126,6 +280,14 @@ fn make_config(episodes: u64, max_steps: u64) -> RunnerConfig {
         metrics_port: 0,
         ..RunnerConfig::default()
     }
+}
+
+fn make_metrics() -> MetricsRecorder {
+    MetricsRecorder::new(
+        DEFAULT_METRICS_HISTOGRAM_BUCKETS_SECONDS,
+        DEFAULT_METRICS_EPISODE_LENGTH_BUCKETS,
+    )
+    .expect("metrics recorder")
 }
 
 use std::path::PathBuf;
@@ -623,4 +785,194 @@ fn benchmark_trajectory_compression_sweep() {
         );
     }
     println!("==========================================\n");
+}
+
+#[test]
+fn run_discards_transient_episode_and_continues() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env = TransientThenOkEnv::fail_first_n_steps(4, 3, 1);
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(1, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+    cfg.max_consecutive_transient_failures = 3;
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    let outcome = runner
+        .run(None)
+        .expect("run must continue after RECONNECTING");
+    assert_eq!(outcome.episodes_completed, 1);
+    assert_eq!(outcome.transient_discards, 1);
+    let saved: Vec<_> = std::fs::read_dir(&traj_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(saved.len(), 1, "partial episode must not be written");
+}
+
+#[test]
+fn run_discards_busy_episode_and_continues() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env =
+        TransientThenOkEnv::fail_first_n_steps_with_code(4, 3, 1, forge_env_mc::ERROR_CODE_BUSY);
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(1, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+    cfg.max_consecutive_transient_failures = 3;
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    let outcome = runner.run(None).expect("run must continue after BUSY");
+    assert_eq!(outcome.episodes_completed, 1);
+    assert_eq!(outcome.transient_discards, 1);
+}
+
+#[test]
+fn run_records_env_step_reason_for_step_transient() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env = TransientThenOkEnv::fail_first_n_steps(4, 3, 1);
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(1, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+    cfg.max_consecutive_transient_failures = 3;
+
+    let rec = make_metrics();
+    let mut runner = Runner::new(cfg, env, search, writer, watcher).with_metrics(rec.clone());
+    let outcome = runner
+        .run(None)
+        .expect("run must continue after step RECONNECTING");
+    assert_eq!(outcome.transient_discards, 1);
+    let text = rec.encode_text().unwrap();
+    assert!(
+        text.contains(&format!(
+            r#"forge_mc_protocol_error_total{{reason="{METRIC_REASON_ENV_STEP}"}} 1"#
+        )),
+        "step transient must record {METRIC_REASON_ENV_STEP}, got:\n{text}"
+    );
+    assert!(
+        !text.contains(&format!(r#"reason="{METRIC_REASON_ENV_RESET}""#)),
+        "step transient must not record {METRIC_REASON_ENV_RESET}, got:\n{text}"
+    );
+}
+
+#[test]
+fn run_records_env_reset_reason_for_reset_transient() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env = TransientThenOkEnv::fail_first_n_resets(4, 3, 1);
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(1, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+    cfg.max_consecutive_transient_failures = 3;
+
+    let rec = make_metrics();
+    let mut runner = Runner::new(cfg, env, search, writer, watcher).with_metrics(rec.clone());
+    let outcome = runner
+        .run(None)
+        .expect("run must continue after reset RECONNECTING");
+    assert_eq!(outcome.episodes_completed, 1);
+    assert_eq!(outcome.transient_discards, 1);
+    let text = rec.encode_text().unwrap();
+    assert!(
+        text.contains(&format!(
+            r#"forge_mc_protocol_error_total{{reason="{METRIC_REASON_ENV_RESET}"}} 1"#
+        )),
+        "reset transient must record {METRIC_REASON_ENV_RESET}, got:\n{text}"
+    );
+    assert!(
+        !text.contains(&format!(r#"reason="{METRIC_REASON_ENV_STEP}""#)),
+        "reset transient must not record {METRIC_REASON_ENV_STEP}, got:\n{text}"
+    );
+}
+
+#[test]
+fn run_fails_after_consecutive_transient_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env = TransientThenOkEnv::fail_first_n_steps(4, 3, 10);
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(5, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+    cfg.max_consecutive_transient_failures = 3;
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    let err = runner.run(None).expect_err("cap must fail the run");
+    assert!(
+        matches!(err, RunnerError::TooManyTransientFailures { count: 3, .. }),
+        "expected TooManyTransientFailures, got {err:?}"
+    );
+}
+
+#[test]
+fn run_still_fails_closed_on_non_transient_env_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env = FatalStepEnv::new("protocol error [INTERNAL]: boom");
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(2, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    let err = runner.run(None).expect_err("INTERNAL must fail the run");
+    assert!(
+        matches!(err, RunnerError::Env(_)),
+        "INTERNAL must stay RunnerError::Env, got {err:?}"
+    );
+}
+
+#[test]
+fn run_still_fails_closed_on_internal_under_transient_display_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env = FatalStepEnv::new(format!(
+        "{TRANSIENT_ENV_DISPLAY_PREFIX}INTERNAL{TRANSIENT_ENV_CODE_MESSAGE_SEP}boom"
+    ));
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(2, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    let err = runner
+        .run(None)
+        .expect_err("INTERNAL under the transient prefix must fail the run");
+    assert!(
+        matches!(err, RunnerError::Env(_)),
+        "INTERNAL must stay RunnerError::Env, got {err:?}"
+    );
 }

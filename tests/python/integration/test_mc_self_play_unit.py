@@ -117,6 +117,34 @@ def test_dry_run_exports_forge_mc_schema_id(script_path: Path) -> None:
     assert "deadbeef" in combined
 
 
+def test_dry_run_exports_trained_identity(script_path: Path) -> None:
+    """Default self-play MUST flip trained identity via the env ladder
+    (`RUNNER_RANDOM_ACTIONS=false`) and request the bundled image
+    (`RUNNER_FEATURES=mc-live-bundled`), plus `--build` so a stale
+    `mc-live` image is not reused.
+    """
+    result = _run_dry(script_path)
+    combined = result.stdout + result.stderr
+    assert "RUNNER_RANDOM_ACTIONS=false" in combined
+    assert "RUNNER_FEATURES=mc-live-bundled" in combined
+    assert "--build" in combined
+    assert "--profile" in combined
+    assert "self-play" in combined
+
+
+def test_dry_run_baseline_only_skips_trainer_and_does_not_force_trained(script_path: Path) -> None:
+    """`--baseline-only` omits the self-play profile and must not
+    export trained identity (shipped runner.toml stays random).
+    """
+    result = _run_dry(script_path, "--baseline-only")
+    combined = result.stdout + result.stderr
+    assert "compute-schema-id" not in combined
+    assert "RUNNER_RANDOM_ACTIONS=false" not in combined
+    assert "mc-live-bundled" not in combined
+    assert "--profile self-play" not in combined
+    assert "baseline-only" in combined
+
+
 def test_dry_run_gpu_flag_includes_overlay(script_path: Path) -> None:
     """With `--gpu`, the compose-up argv must include
     `-f docker/compose.minecraft.gpu.yml` AFTER the base file."""

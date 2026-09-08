@@ -8,7 +8,17 @@ import {
 import { createLogger } from './logger.js';
 import { snapshotObservation, computeObsDim, type Snapshot } from './observation.js';
 import { gridShapePayload } from './observation_grid.js';
-import { errorMsg, helloMsg, observationMsg, parseClientMsg } from './protocol.js';
+import {
+  ERROR_CODE_BAD_MESSAGE,
+  ERROR_CODE_BUSY,
+  ERROR_CODE_INTERNAL,
+  ERROR_CODE_INVALID_ACTION,
+  ERROR_CODE_RECONNECTING,
+  errorMsg,
+  helloMsg,
+  observationMsg,
+  parseClientMsg,
+} from './protocol.js';
 import { applyReset } from './reset.js';
 
 export const WS_OPEN = 1;
@@ -106,7 +116,7 @@ export function createConnectionHandler(options: {
     };
 
     if (activeSocket && activeSocket.readyState === WS_OPEN) {
-      safeSend(errorMsg('BUSY', 'another client is already connected'), 'send_busy_error');
+      safeSend(errorMsg(ERROR_CODE_BUSY, 'another client is already connected'), 'send_busy_error');
       socket.close();
       return;
     }
@@ -248,7 +258,7 @@ export function createConnectionHandler(options: {
         .then(() => (overflowed ? undefined : handleClientMessage(socket, asText(data))))
         .catch((error: any) => {
           logger.warn?.({ event: 'protocol_handler_error', ...describeError(error) });
-          safeSend(errorMsg('INTERNAL', GENERIC_INTERNAL_MESSAGE), 'send_internal_error');
+          safeSend(errorMsg(ERROR_CODE_INTERNAL, GENERIC_INTERNAL_MESSAGE), 'send_internal_error');
         })
         .finally(() => {
           queueDepth -= 1;
@@ -261,7 +271,7 @@ export function createConnectionHandler(options: {
         message = parseClientMsg(text);
       } catch (error: any) {
         // Parse failures echo only the client's own malformed input.
-        safeSend(errorMsg('BAD_MESSAGE', error.message), 'send_bad_message_error');
+        safeSend(errorMsg(ERROR_CODE_BAD_MESSAGE, error.message), 'send_bad_message_error');
         return;
       }
 
@@ -272,13 +282,13 @@ export function createConnectionHandler(options: {
 
       // Guard: if the botManager is mid-reconnect, return RECONNECTING
       if (botManager?.isReconnecting()) {
-        safeSend(errorMsg('RECONNECTING', 'mineflayer reconnecting, please retry'), 'send_reconnecting_error');
+        safeSend(errorMsg(ERROR_CODE_RECONNECTING, 'mineflayer reconnecting; discard this episode'), 'send_reconnecting_error');
         return;
       }
 
       const currentBot = resolveBot();
       if (!currentBot) {
-        safeSend(errorMsg('RECONNECTING', 'bot unavailable, reconnecting'), 'send_reconnecting_error');
+        safeSend(errorMsg(ERROR_CODE_RECONNECTING, 'bot unavailable, reconnecting'), 'send_reconnecting_error');
         return;
       }
 
@@ -303,9 +313,9 @@ export function createConnectionHandler(options: {
             botManager.reconnect().catch((reconnectErr: any) => {
               logger.error?.({ event: 'reconnect_failed', origin: 'reset', ...describeError(reconnectErr) });
             });
-            resultMsg = errorMsg('RECONNECTING', 'mineflayer reconnecting after reset error');
+            resultMsg = errorMsg(ERROR_CODE_RECONNECTING, 'mineflayer reconnecting after reset error');
           } else {
-            resultMsg = errorMsg('INTERNAL', GENERIC_INTERNAL_MESSAGE);
+            resultMsg = errorMsg(ERROR_CODE_INTERNAL, GENERIC_INTERNAL_MESSAGE);
           }
         }
         safeSend(resultMsg, 'send_reset_reply_error');
@@ -316,7 +326,7 @@ export function createConnectionHandler(options: {
         const action = bundle.actionMap.get(message.action_id);
         if (!action) {
           safeSend(
-            errorMsg('INVALID_ACTION', `unknown action_id ${message.action_id}`),
+            errorMsg(ERROR_CODE_INVALID_ACTION, `unknown action_id ${message.action_id}`),
             'send_invalid_action_reply_error',
           );
           return;
@@ -352,9 +362,9 @@ export function createConnectionHandler(options: {
             botManager.reconnect().catch((reconnectErr: any) => {
               logger.error?.({ event: 'reconnect_failed', origin: 'step', ...describeError(reconnectErr) });
             });
-            resultMsg = errorMsg('RECONNECTING', 'mineflayer reconnecting after step error');
+            resultMsg = errorMsg(ERROR_CODE_RECONNECTING, 'mineflayer reconnecting after step error');
           } else {
-            resultMsg = errorMsg('INTERNAL', GENERIC_INTERNAL_MESSAGE);
+            resultMsg = errorMsg(ERROR_CODE_INTERNAL, GENERIC_INTERNAL_MESSAGE);
           }
         }
         safeSend(resultMsg, 'send_step_reply_error');

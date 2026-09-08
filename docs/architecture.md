@@ -330,9 +330,12 @@ starter dashboard from `docker/monitoring/grafana/`. Requires
 │              │                    │ debian:bookworm-slim (135 MB)│    │
 │              │                    │                              │    │
 │              │                    │ - forge-mc-runner            │    │
-│              │                    │   --features mc-live         │    │
-│              │                    │ - random_actions=true        │    │
-│              │                    │   (runner.toml default)      │    │
+│              │                    │   FEATURES=${RUNNER_FEATURES:-mc-live}│
+│              │                    │ - shipped runner.toml        │    │
+│              │                    │   random_actions=true        │    │
+│              │                    │ - self-play (no --baseline-only):│
+│              │                    │   FORGE_MC_RANDOM_ACTIONS=false│
+│              │                    │   FEATURES=mc-live-bundled   │    │
 │              │                    │                              │    │
 │              │                    │ Metrics :9090 (container)    │    │
 │              │                    │   forge_mc_episode_total     │    │
@@ -1205,7 +1208,9 @@ serde produce byte-identical canonical strings. Both sides ship a
 pinned-fixture xlang regression test:
 
 - action map: pinned `587b13077b8c7cd90503f9ee5e1bae1bb92bdf738c8abc51d2ff6deb1908224f`
-- rewards:    pinned `451b10f995371924a374633e5c42deab35c137fbbc65bc8f551bf2bd7844b478`
+- rewards fixture: pinned `451b10f995371924a374633e5c42deab35c137fbbc65bc8f551bf2bd7844b478`
+- shipped rewards (nested milestone/crafting file **contents** folded into the hash; path-string rename without a content change does not bump): see `xlang_shipped_rewards_schema_id_folds_nested_files`
+- obs-layout `block_embeddings.toml` `[blocks]` table: a **separate** pin (`xlang_block_embeddings_pinned_to_known_good`), not folded into the two-input `schema_id`
 
 Drift on either side trips both tests simultaneously.
 
@@ -1743,6 +1748,10 @@ Five Prometheus signals matching v2-plan §3.6 (`forge_mc_episode_total`,
 `forge_mc_episode_reward_sum`, `forge_mc_planning_latency_seconds`,
 `forge_mc_model_version`, `forge_mc_protocol_error_total`). Metric names
 are `const &str` at the top of `metrics.rs` — single source of truth.
+`forge_mc_protocol_error_total` is labelled by `reason`
+(`METRIC_REASON_ENV_STEP`, `METRIC_REASON_ENV_RESET`,
+`METRIC_REASON_PLANNER`, plus caller-supplied low-cardinality strings
+such as reload failures). The Grafana panel legends `{{reason}}`.
 
 `cfg.metrics_port = 0` (the existing `RunnerConfig::metrics_disabled`
 helper) skips the entire `tokio::spawn` branch, so the binary's
@@ -2166,7 +2175,12 @@ on every push, so it can't silently rot again.
 
 ### 3.10.15 Manual baseline path + handshake probe (v0.5 Phase 1, 2026-05-21)
 
-Stand-in for the (currently mc-live-bundled-blocked) Rust runner.
+Stand-in for a Python-driven random baseline when the operator is not
+running the Rust runner. The trained compose path is no longer
+mc-live-bundled-blocked (`mc_self_play.sh` without `--baseline-only`
+exports `RUNNER_FEATURES=mc-live-bundled` + `FORGE_MC_RANDOM_ACTIONS=false`).
+These scripts remain useful for handshake CI gating and hosts without
+the bundled image.
 Two Python scripts share a stdlib-only RFC 6455 WebSocket client
 (`scripts/_ws_client.py`):
 

@@ -515,7 +515,7 @@ the v2 plan supersedes v1 with peer-review fixes (reward subsystem,
 episode reset, dynamic env names, dyn-compatible trait).
 
 **v0.5 Phase 1 — first-real-run readiness** ([`docs/results/v0.5-first-real-run.md`](docs/results/v0.5-first-real-run.md)).
-Adds the ego-centric block-grid observation encoder (`mc-bot/src/observation_grid.js`,
+Adds the ego-centric block-grid observation encoder (`mc-bot/src/observation_grid.ts`,
 `11×11×1×7 + 73 = 920 floats`), the `Hello.grid_shape` cross-language
 handshake gate, a `forge.training.muzero_mc.cli capture-baseline` CLI
 subcommand for random-vs-trained snapshots, the `mc_plot_baseline.py`
@@ -523,10 +523,14 @@ report generator, a Python `scripts/v05_handshake_probe.py` that
 validates the v0.5 contract against a live bot, and the
 `docker/mc-runner.Dockerfile` for a from-source runner image. The
 v0.5 grid_shape handshake has been verified end-to-end against a real
-`itzg/minecraft-server`; the report documents what's verified and the
-infrastructure issue deferred to Phase 2 (mineflayer
-auto-reconnect). The trained-mode docker image's `ort` rc.13
-build/runtime break (see CHANGELOG) has since been fixed.
+`itzg/minecraft-server`. Mid-episode `RECONNECTING`/`BUSY` now discard
+the partial trajectory and continue the run (do not retry `recv` /
+resend Step). Trained compose identity is the env-var ladder
+(`FORGE_MC_RANDOM_ACTIONS=false` + `FEATURES=mc-live-bundled`); shipped
+`runner.toml` stays `random_actions = true`. Remaining live Paper/MC
+ops: [`docs/results/v0.5-loop-survival.md`](docs/results/v0.5-loop-survival.md).
+The trained-mode docker image's `ort` rc.13 build/runtime break (see
+CHANGELOG) has since been fixed.
 
 ### Quickstart
 
@@ -553,12 +557,15 @@ open http://localhost:3007
 scripts/mc_self_play.sh --down
 ```
 
-The orchestrator computes `schema_id`, runs `bootstrap` inside a
-one-shot container if no manifest exists, exports
-`FORGE_MC_SCHEMA_ID` to the runner, and brings up all four services
-(`minecraft`, `mc-bot`, `runner`, `trainer`). The trainer
-continuously consumes runner-emitted trajectories and bumps the
-manifest the runner's `HotReloadWatcher` picks up.
+The orchestrator computes `schema_id` (nested reward **contents**
+folded in), runs `bootstrap` inside a one-shot container if no
+manifest exists, exports `FORGE_MC_SCHEMA_ID` plus trained identity
+(`FORGE_MC_RANDOM_ACTIONS=false`, `RUNNER_FEATURES=mc-live-bundled`),
+and brings up all four services (`minecraft`, `mc-bot`, `runner`,
+`trainer`). Use `--baseline-only` to leave shipped
+`random_actions=true` / `FEATURES=mc-live`. The trainer continuously
+consumes runner-emitted trajectories and bumps the manifest the
+runner's `HotReloadWatcher` picks up.
 
 **v0.5 Phase 1 — capture a random-vs-trained baseline** (after the
 self-play stack is up):

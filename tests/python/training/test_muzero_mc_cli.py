@@ -163,6 +163,33 @@ def test_compute_schema_id_missing_rewards_returns_io(tmp_path: Path) -> None:
     assert rc == EXIT_IO
 
 
+def test_compute_schema_id_missing_nested_reward_file_returns_validation(
+    tmp_path: Path,
+) -> None:
+    """A rewards.toml that names a missing nested file must fail closed
+    (EXIT_VALIDATION), not hash as if the bot's hardcoded milestone
+    defaults applied.
+    """
+    am_path = tmp_path / "action_map.toml"
+    am_path.write_text('[[action]]\nid = 0\nkind = "noop"\nticks = 1\n', encoding="utf-8")
+    rw_path = tmp_path / "rewards.toml"
+    rw_path.write_text(
+        '[[reward]]\nkind = "milestone"\nconfig_path = "missing.toml"\n',
+        encoding="utf-8",
+    )
+    rc = main(
+        [
+            "compute-schema-id",
+            "--action-map",
+            str(am_path),
+            "--rewards",
+            str(rw_path),
+            "--quiet",
+        ]
+    )
+    assert rc == EXIT_VALIDATION
+
+
 def test_train_subcommand_requires_input_dir(tmp_path: Path) -> None:
     """argparse rejects `train` invocations missing the mandatory
     `--input` flag. Confirms the subcommand is registered and exposes

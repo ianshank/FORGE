@@ -102,6 +102,11 @@ JOB_EXCEPTIONS: dict[str, str] = {
         "baseline to compare against and its numbers are not portable between "
         "machines. `cargo bench -p forge-bench` runs the benchmarks themselves"
     ),
+    "mc-runner-bundled-image": (
+        "builds docker/mc-runner.Dockerfile with FEATURES=mc-live-bundled; "
+        "needs the daemon and a full rust+ORT compile inside it, not a "
+        "`make verify` laptop gate"
+    ),
 }
 
 #: Jobs that must be reachable from `make verify` specifically, not merely

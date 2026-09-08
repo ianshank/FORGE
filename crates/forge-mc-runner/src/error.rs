@@ -78,6 +78,32 @@ pub enum RunnerError {
     #[error("env error: {0}")]
     Env(String),
 
+    /// Transient env protocol error (`RECONNECTING` / `BUSY`). The
+    /// episode is discarded; [`crate::Runner::run`] continues until
+    /// [`crate::config::RunnerConfig::max_consecutive_transient_failures`].
+    #[error("transient env error [{code}]: {message}")]
+    TransientEnv {
+        /// Protocol error code (`RECONNECTING` or `BUSY`).
+        code: String,
+        /// Bot-supplied human message.
+        message: String,
+        /// Prometheus `reason` label (`env_reset` or `env_step`).
+        reason: &'static str,
+    },
+
+    /// The consecutive-transient cap was hit. Distinct from
+    /// [`Self::TransientEnv`] so callers do not retry a run that has
+    /// already exhausted its budget.
+    #[error("too many consecutive transient env errors ({count}): last [{code}]: {message}")]
+    TooManyTransientFailures {
+        /// How many consecutive transients were observed.
+        count: u32,
+        /// Last protocol error code.
+        code: String,
+        /// Last bot-supplied message.
+        message: String,
+    },
+
     /// Wrapped error from the latent-MCTS planner (`anyhow::Error` from
     /// `forge_agent::latent_mcts::search::LatentMctsSearch::search`).
     #[error("planner error: {0}")]
@@ -152,5 +178,135 @@ impl RunnerError {
             path: path.into(),
             source,
         }
+    }
+}
+
+/// Display prefix `forge_env_mc::McEnvError::Transient` emits.
+///
+/// `Runner` is generic over `Env::Error` and cannot downcast to
+/// `McEnvError` when `mc-live` is off, so classification is by
+/// Display. Must stay byte-identical to
+/// `forge_env_mc::error::TRANSIENT_PROTOCOL_ERROR_DISPLAY_PREFIX`.
+pub const TRANSIENT_ENV_DISPLAY_PREFIX: &str = "transient protocol error [";
+
+/// Separator between the protocol code and message in a transient
+/// Display string (`[CODE]: message`). Twin of the `thiserror` format
+/// on `McEnvError::Transient`.
+pub const TRANSIENT_ENV_CODE_MESSAGE_SEP: &str = "]: ";
+
+/// Twin of `forge_env_mc::ERROR_CODE_RECONNECTING`.
+///
+/// Kept on the runner lib path (not a `forge-env-mc` dependency) so
+/// [`parse_transient_env_error`] can filter codes when `mc-live` is off.
+pub const TRANSIENT_ERROR_CODE_RECONNECTING: &str = "RECONNECTING";
+
+/// Twin of `forge_env_mc::ERROR_CODE_BUSY`.
+pub const TRANSIENT_ERROR_CODE_BUSY: &str = "BUSY";
+
+/// True when `code` is a runner-continue protocol code.
+///
+/// Twin of `forge_env_mc::is_transient_error_code`. Unknown codes,
+/// including `INTERNAL`, must not take the discard-and-continue path.
+#[must_use]
+pub fn is_runner_transient_error_code(code: &str) -> bool {
+    code == TRANSIENT_ERROR_CODE_RECONNECTING || code == TRANSIENT_ERROR_CODE_BUSY
+}
+
+/// Parse a transient env error out of an `Env::Error` Display string.
+///
+/// Expected form: `transient protocol error [CODE]: message`, optionally
+/// wrapped by another error's Display (e.g. `EnvError::Other`).
+/// `CODE` must be [`TRANSIENT_ERROR_CODE_RECONNECTING`] or
+/// [`TRANSIENT_ERROR_CODE_BUSY`]; any other bracketed code returns
+/// `None` so the runner fails closed.
+#[must_use]
+pub fn parse_transient_env_error(msg: &str) -> Option<(String, String)> {
+    let start = msg.find(TRANSIENT_ENV_DISPLAY_PREFIX)?;
+    let rest = &msg[start + TRANSIENT_ENV_DISPLAY_PREFIX.len()..];
+    let (code, message) = rest.split_once(TRANSIENT_ENV_CODE_MESSAGE_SEP)?;
+    if !is_runner_transient_error_code(code) {
+        return None;
+    }
+    Some((code.to_string(), message.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transient_display_prefix_matches_forge_env_mc() {
+        assert_eq!(
+            TRANSIENT_ENV_DISPLAY_PREFIX,
+            forge_env_mc::TRANSIENT_PROTOCOL_ERROR_DISPLAY_PREFIX,
+            "Display-prefix twins must stay byte-identical so Runner can \
+             classify McEnvError::Transient without a downcast"
+        );
+    }
+
+    #[test]
+    fn transient_error_code_twins_match_forge_env_mc() {
+        assert_eq!(
+            TRANSIENT_ERROR_CODE_RECONNECTING,
+            forge_env_mc::ERROR_CODE_RECONNECTING,
+            "RECONNECTING twins must stay byte-identical"
+        );
+        assert_eq!(
+            TRANSIENT_ERROR_CODE_BUSY,
+            forge_env_mc::ERROR_CODE_BUSY,
+            "BUSY twins must stay byte-identical"
+        );
+        assert!(is_runner_transient_error_code(
+            TRANSIENT_ERROR_CODE_RECONNECTING
+        ));
+        assert!(is_runner_transient_error_code(TRANSIENT_ERROR_CODE_BUSY));
+        assert!(!is_runner_transient_error_code("INTERNAL"));
+        assert!(!is_runner_transient_error_code("INVALID_ACTION"));
+        assert!(!is_runner_transient_error_code(""));
+    }
+
+    #[test]
+    fn parse_transient_env_error_roundtrip() {
+        let msg = format!(
+            "{TRANSIENT_ENV_DISPLAY_PREFIX}{TRANSIENT_ERROR_CODE_RECONNECTING}{TRANSIENT_ENV_CODE_MESSAGE_SEP}bot rebuilding"
+        );
+        assert_eq!(
+            parse_transient_env_error(&msg),
+            Some((
+                TRANSIENT_ERROR_CODE_RECONNECTING.to_string(),
+                "bot rebuilding".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_transient_env_error_ignores_fatal_protocol() {
+        assert_eq!(
+            parse_transient_env_error("protocol error [INTERNAL]: boom"),
+            None
+        );
+        assert_eq!(parse_transient_env_error("env error: nope"), None);
+        assert_eq!(
+            parse_transient_env_error("transient protocol error []: empty code"),
+            None
+        );
+        let wrapped_busy = format!(
+            "env error: {TRANSIENT_ENV_DISPLAY_PREFIX}{TRANSIENT_ERROR_CODE_BUSY}{TRANSIENT_ENV_CODE_MESSAGE_SEP}wrapped"
+        );
+        assert_eq!(
+            parse_transient_env_error(&wrapped_busy),
+            Some((TRANSIENT_ERROR_CODE_BUSY.to_string(), "wrapped".into()))
+        );
+    }
+
+    #[test]
+    fn parse_transient_env_error_rejects_internal_inside_transient_prefix() {
+        let msg =
+            format!("{TRANSIENT_ENV_DISPLAY_PREFIX}INTERNAL{TRANSIENT_ENV_CODE_MESSAGE_SEP}x");
+        assert_eq!(
+            parse_transient_env_error(&msg),
+            None,
+            "INTERNAL under the transient Display prefix must fail closed"
+        );
     }
 }

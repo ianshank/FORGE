@@ -82,8 +82,8 @@ class RSSMWorldModel(WorldModel):
     """
 
     def __init__(self, config: RSSMConfig | None = None) -> None:
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         self._config = config or RSSMConfig()
         c = self._config
@@ -144,7 +144,7 @@ class RSSMWorldModel(WorldModel):
         Raises:
             ValueError: If action is not in [0, action_dim).
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         if not 0 <= action < self._config.action_dim:
             msg = (
@@ -165,7 +165,7 @@ class RSSMWorldModel(WorldModel):
         full concatenated state ``(B, deterministic_dim + stochastic_dim)``.
         Any other shape is considered invalid and results in a ``ValueError``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         c = self._config
         if state_t.shape[-1] == c.stochastic_dim:
@@ -185,7 +185,7 @@ class RSSMWorldModel(WorldModel):
 
     def _reparametrise(self, mean_logvar: torch.Tensor) -> torch.Tensor:
         """Sample from a Gaussian using the reparametrisation trick."""
-        import torch  # noqa: PLC0415
+        import torch
 
         dim = mean_logvar.shape[-1] // 2
         mean, logvar = mean_logvar[..., :dim], mean_logvar[..., dim:]
@@ -202,7 +202,7 @@ class RSSMWorldModel(WorldModel):
         Returns:
             Latent state of shape ``(stochastic_dim,)``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self._device)
@@ -224,7 +224,7 @@ class RSSMWorldModel(WorldModel):
         Returns:
             Predicted next observation of shape ``(obs_dim,)``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             state_t = torch.as_tensor(state, dtype=torch.float32, device=self._device)
@@ -252,7 +252,7 @@ class RSSMWorldModel(WorldModel):
         Returns:
             Predicted observations of shape ``(T, obs_dim)``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         T = len(actions)
         with torch.no_grad():
@@ -290,8 +290,8 @@ class RSSMWorldModel(WorldModel):
             call ``backward()`` or update any parameters. The caller is
             responsible for driving the optimizer.
         """
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         obs = torch.as_tensor(
             batch["observations"], dtype=torch.float32, device=self._device
@@ -326,7 +326,7 @@ class RSSMWorldModel(WorldModel):
 
     def save(self, path: str) -> None:
         """Save all RSSM module weights to disk."""
-        import torch  # noqa: PLC0415
+        import torch
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -347,7 +347,7 @@ class RSSMWorldModel(WorldModel):
 
     def load(self, path: str) -> None:
         """Load RSSM module weights from disk."""
-        import torch  # noqa: PLC0415
+        import torch
 
         checkpoint = torch.load(path, map_location=self._device, weights_only=True)
         saved_cfg = checkpoint.get("config", {})

@@ -24,8 +24,12 @@ env_id = "minecraft"
 schema_id = "unset"
 
 # v0.5 Phase 1: random-actions baseline mode bypasses MCTS + ONNX
-# entirely.  Set false for the trained variant (requires a valid
-# manifest + ONNX bundle under manifest_path's parent dir).
+# entirely.  Leave this `true` so a vanilla compose-up captures the
+# untrained baseline. Trained identity is an env-var, not a second
+# TOML: `FORGE_MC_RANDOM_ACTIONS=false` (compose:
+# `RUNNER_RANDOM_ACTIONS`) plus a `mc-live-bundled` image
+# (`RUNNER_FEATURES`). The CLI `--random-actions` flag can only force
+# true, never false over this file.
 random_actions = true
 
 # Planning is bypassed in random mode, but leaving sensible

@@ -77,13 +77,13 @@ branch and what specifically remains.
 
 ### Phase 3 mineflayer wire-up (Node entry point)
 
-- `mc-bot/src/index.js` — spin up the mineflayer bot, attach
+- `mc-bot/src/index.ts` — spin up the mineflayer bot, attach
   prismarine-viewer on `viewer.port`, plumb `applyReset` +
   `RewardConfig` + `ActionMap` into the WS event loop.
 - Needs a real Minecraft server (Paper/vanilla) to exercise; CI gate
   can use `flying-squid` mock server but real-bot work happens off-CI.
 - Action execution mapping (`ActionKind` → mineflayer commands) —
-  implementation guide already documented in `mc-bot/src/action_map.js`
+  implementation guide already documented in `mc-bot/src/action_map.ts`
   validators and `configs/minecraft/action_map.toml` comments.
 
 ### Phase 4 — `forge-mc-runner` + ONNX hot-reload + bench
@@ -327,7 +327,13 @@ actions). Full report: [`docs/results/v0.5-first-real-run.md`](results/v0.5-firs
 All Phase 2 production-stability and code-hardening goals are **COMPLETED**:
 
 - **Mineflayer auto-reconnect on MC-side tick timeout**  `[STATUS: COMPLETED]`
-  Implemented connection health monitoring and tick-age checks in `mc-bot/src/bot_manager.ts`. The `BotManager` automatically tears down and rebuilds the mineflayer instance on stale connection detection using exponential backoff, keeping the WebSocket layer continuously alive.
+  Bot-side reconnect landed in `mc-bot/src/bot_manager.ts`. The Rust
+  runner now **continues the run** after a mid-episode `RECONNECTING` /
+  `BUSY`: it discards the partial trajectory (not evidential) and
+  Reset-s into a fresh MDP. `INTERNAL` still fails the run (existing
+  pin). Health checks use advancing `bot.time.age`, not wall-clock
+  since the last WS observation, so trained MCTS think-time does not
+  look like a dead bot.
 - **`ort` API drift (rc.9 → rc.12 → rc.13)**  `[STATUS: COMPLETED, 2026-08 tech-debt pass]`
   This entry previously claimed COMPLETED via a "pin to rc.9" fix, but that
   claim didn't match reality: `crates/forge-agent/Cargo.toml` was actually
@@ -349,30 +355,50 @@ All Phase 2 production-stability and code-hardening goals are **COMPLETED**:
 Phase-2 RL-specific candidates (deferred from Phase 1's "Out of
 scope" + the first-real-run report's next-steps):
 
-- **Bigger random baseline.** With bot auto-reconnect in place, run
-  the full 100-ep × 6000-tick baseline overnight (the v0.5 Phase 1
-  evidence is 3-4 real rollouts; enough to validate the contract
-  but not statistically meaningful as a trained-vs-random
-  comparison).  `[STATUS: not-started]`
-- **Block-ID embeddings** (replace the `block_type_hash` mod-N
-  with a learned lookup table). Eliminates hash collisions and
-  gives the CNN a richer per-tile signal.  `[STATUS: not-started]`
-- **Resource-acquisition + milestone reward shapers** ("first
-  wood", "first stone tool", etc.) so the planner sees a useful
-  gradient beyond the current survival/inventory/distance/health
-  composite.  `[STATUS: not-started]`
+- **Bigger random baseline.** With bot auto-reconnect **and** runner
+  continue-on-`RECONNECTING` in place, run a short evidential capture
+  (floor = 3) then scale. Committed declarations still have
+  `evidential_episodes = 0`; do not fill
+  `docs/results/v0.5-trained-vs-random.md` until both variants clear
+  that floor. Remaining operator steps:
+  [`docs/results/v0.5-loop-survival.md`](results/v0.5-loop-survival.md).
+  `[STATUS: ops, blocked on live Paper/MC]`
+- **Block-ID embeddings**  `[STATUS: simple table LANDED]`
+  `configs/minecraft/block_embeddings.toml` + `nn.Embedding` in
+  `python/forge/models/muzero_networks.py` + `use_raw_block_id` in
+  `mc-bot/src/observation_grid.ts`. Richer / learned embeddings remain
+  deferred (CHARTER). The obs-layout pin (`BlockEmbeddings::canonical_sha256`
+  / JS / Python twins) is a **separate** hash, not folded into today's
+  two-input `schema_id`. Python `MuZeroConfig.num_block_embeddings`
+  loads `max(index)+1` from the TOML vocab.
+- **Resource-acquisition + milestone reward shapers**  `[STATUS: LANDED]`
+  `configs/minecraft/milestone_rewards.toml` +
+  `mc-bot/src/reward/builtins/milestone.ts` (`first_wood`, etc.). Nested
+  file **contents** are folded into `schema_id` (path strings are not
+  the only hashed bytes); missing nested files fail closed.
 - **HuggingFace pretrained-checkpoint loader** for warm-starts so
   the trained variant doesn't start from random init.  `[STATUS: done]`
   — `checkpoint_loader.load_from_hf` wired to `bootstrap --from-hf`;
   publish-side counterpart in `scripts/hf_publish_model.py` +
   `.github/workflows/hf-model.yml` (see `docs/hf/README.md`).
 - **DPO trainer** consuming `top_k_probs` / `value_hat` from the
-  trajectory traces (the schema already carries these; the trainer
-  doesn't consume them yet).  `[STATUS: not-started]`
+  trajectory traces.  `[STATUS: not-started, research-parallel]`
+  MangoMAS DPO does not consume Minecraft `TrajectoryV2`. Parked until
+  the live loop produces evidential trajectories.
 - **3D block-grid variant** (`grid_height_radius > 0`) once the
   Conv3d branch is wired on the trainer side. The v0.5 encoder
   defaults to single-Y-layer (`depth=1`) matching MuZero's 2D
   CNN.  `[STATUS: not-started]`
+- **Trained compose identity**  `[STATUS: LANDED]`
+  `FORGE_MC_RANDOM_ACTIONS` env ladder; `mc_self_play.sh` (without
+  `--baseline-only`) exports `RUNNER_RANDOM_ACTIONS=false` and
+  `RUNNER_FEATURES=mc-live-bundled`. Shipped `runner.toml` stays
+  `random_actions = true`. `--baseline-only` is the random-only path.
+- **forge-core HRL skills vs Minecraft action_map**  `[STATUS: do-not-alias]`
+  `configs/agents/skills_default.toml` is the engine options/HRL catalog.
+  Do **not** alias Minecraft `action_map.toml` ids onto forge-core
+  `Action` / skill ids. Remaining live ops:
+  [`docs/results/v0.5-loop-survival.md`](results/v0.5-loop-survival.md).
 
 ### Minecraft RL — v0.5 Completed Sweeps
 
@@ -562,7 +588,7 @@ surfaced during triage.
 | Crate dependency layering & architecture governance | Resolved | **[STATUS: LANDED 2026-09]** Codified 6-tier architecture (L0–L5) in `docs/architecture.md` and enforced strict dependency bans via `deny.toml` in CI. |
 | Remaining production god files (`mlflow_http.rs`, `harness.rs`, `runner.rs`, `predicate.rs`, `gcs_storage.rs`) | Resolved | **[STATUS: LANDED 2026-09]** Extracted in-file tests from `harness.rs`, `mlflow_http.rs`, `runner.rs`, `predicate.rs`, and `gcs_storage.rs` using `#[path = ".../tests.rs"]`. 100% of identified production god files decomposed with zero test coverage loss. Do not split hot-path bodies (`WorldState::step_into`) without an allocation-audit follow-up. |
 | Canonical action space constants & circular dependency decoupling | Resolved | **[STATUS: LANDED 2026-09]** Created root-level `python/forge/actions.py` as canonical action constants and decoders source of truth, removing circular import loops between `forge.agents` and `forge.mangomas`. Bound action base count to Rust constants layout. |
-| Baseline aggregates include non-episodes | ✅ Done | **[STATUS: LANDED 2026-09]** Added evidential predicate filtering in `scripts/mc_plot_baseline.py` (pins step floor and evidential count floor), error-frame outcome separation and consecutive-failure halting in `scripts/v05_manual_baseline.py`, declared historical baseline artifacts in `docs/results/` with `INDEX.toml` SHA-256 integrity gate, corrected results table and architecture documentation, updated Invariant 6 job citations and advisory scanner claims in `docs/CHARTER.md`, and implemented automated evidence integrity gate `tests/python/test_evidence_integrity.py` with marker exclusion guards under `python-test`. OpenSpec proposal [`openspec/changes/refuse-non-evidential-aggregates/`](../openspec/changes/refuse-non-evidential-aggregates/) completed. |
+| Baseline aggregates include non-episodes | ✅ Done | **[STATUS: LANDED 2026-09]** Added evidential predicate filtering in `scripts/mc_plot_baseline.py` (pins step floor and evidential count floor), error-frame outcome separation and consecutive-failure halting in `scripts/v05_manual_baseline.py`, declared historical baseline artifacts in `docs/results/` with `INDEX.toml` SHA-256 integrity gate, corrected results table and architecture documentation, updated Invariant 6 job citations and advisory scanner claims in `docs/CHARTER.md`, and implemented automated evidence integrity gate `tests/python/test_evidence_integrity.py` with marker exclusion guards under `python-test`. OpenSpec proposal [`openspec/changes/archive/refuse-non-evidential-aggregates/`](../openspec/changes/archive/refuse-non-evidential-aggregates/) completed. |
 | Committed throughput baseline for the "130,000+ steps/second" claim | ✅ Done | **[STATUS: LANDED 2026-09]** Committed labeled `cloud_agent` artefacts: PyO3 report `benchmarks/baselines/cloud_agent/pyo3_step.json` (189k steps/sec, 5.3 μs/step) backs the Python headline; Criterion `multi_agent_scaling.json` records Rust `WorldState::step` scaling separately (`env_steps_per_sec` vs `agent_steps_per_sec`). Exporter `benchmarks/runner/export_criterion_scaling.py` + `make bench-export`. `tests/python/test_throughput_claim.py` fails if a published Python floor exceeds the committed PyO3 report. `reference_a` scaling JSON is a CI `bench` job artifact, not a number copied from this host; `reference_b` remains workstation-only. |
 | Mypy strict mode for `demo_ui/tests/` | ✅ Done | **[STATUS: LANDED 2026-09]** `demo_ui/backend` added to CI/Makefile mypy. `test_backend.py` uses the `TYPE_CHECKING` importorskip pattern; `playwright.*` added to mypy overrides. Tests remain out of the `python-lint` mypy command (pytest untyped decorators), matching the rest of `tests/`. |
 | `conftest.py` root sys.path approach | ✅ Done | **[STATUS: LANDED 2026-09]** `pip install -e demo_ui/` now exports `demo_ui` / `demo_ui.backend` (setuptools `package-dir` mapping). Root `conftest.py` sys.path kept as a fallback for source-tree pytest. |
@@ -589,7 +615,7 @@ surfaced during triage.
 | Dashboard `npm ci` does not install `eslint` into `node_modules/.bin/` | ✅ Resolved | **Stale entry, verified false during the 2026-08 tech-debt pass.** `dashboard/package.json`'s devDependencies now contain no `eslint`/`@typescript-eslint/*` entries at all; `lint` is already `"biome check ."`, matching CI's `Dashboard Build + Lint + Coverage` job. Reproduced fresh (`rm -rf node_modules && npm ci`): no `eslint` binary, `biome` present, `npm run lint` passes clean, lockfile stable. The `lint`-to-Biome migration this row anticipated has already happened; no action remains. |
 | Local `mypy python` walks into installed `torch` and fails on Python-3.10 `match` syntax | ✅ Done | Raised `[tool.mypy] python_version` to `"3.11"` (matches CI's actual runtime), fixing the local torch-stub failure without affecting CI (whose lint job never installs torch either way). |
 | CI Python installs use ad hoc `pip install "pkg>=x,<y"` ranges instead of syncing the committed `uv.lock` | Medium — feasibility researched, **no-go as-is** | `ci.yml`'s `python-lint`/`python-test`/`python-test-fast`/`hf-dataset`/`e2e-long`/`hf-space` jobs each hand-list version ranges rather than running `uv sync` against `uv.lock` (224-package universal lock spanning Python 3.9–3.13+, comfortably covering CI's pinned 3.11) — so the lockfile isn't actually what CI installs from. **Researched with real `uv lock`/`uv sync --dry-run --frozen` experiments in an isolated git worktree** (repo left untouched): the specific fear (lockfile might not resolve, or conflict) is **not confirmed** — adding a `lint` dev-group and relocking resolved clean with zero conflicts (ruff 0.15.22, mypy 2.3.1, numpy 1.26.4 — satisfies the `<2.0` CI pin). The real blocker is structural: `pyproject.toml` has **zero** `dependencies`/dev-dependency-groups today — `ruff`/`mypy`/`pytest`/`pytest-cov`/`maturin`/`onnxscript`/`datasets`/`toml`/`playwright`/`pip-audit` appear **zero times** in `uv.lock` (never declared, not just under-pinned), and `torch` has no CPU-wheel index configured (`uv sync` would default to pulling the CUDA build + 15 `nvidia-*` packages instead of CI's explicit `--index-url .../whl/cpu`). Per-job verdict: `python-lint` is **validated safe to convert first** (no torch, 9-package dev-group resolves clean) once a `lint` dev-group is added and the lockfile is relocked (note: `uv lock --check` fails against live PyPI right now while `uv lock --dry-run` reports no changes — the two disagree today, so relock once for a clean baseline before converting anything); `python-test`/`python-test-fast`/`hf-model` need the torch CPU-index fixed first; `e2e-long`/`hf-dataset` need `datasets` declared as a new dependency group first; `demo-ui` is a separate `demo_ui/pyproject.toml` package, not a uv workspace member, out of scope for this lockfile; `security.yml`'s pip-audit is a scanning tool, fits `uv tool run`, not the lock. Sequence for a future pass: relock → add `lint`/`test` dependency-groups → convert `python-lint` (proven safe) → fix torch's CPU index → declare `datasets` → convert the rest. |
-| No repo-checked-in Claude Code skills/hooks despite a large, repetitive validation surface | ✅ Done | Added `.claude/skills/forge-verify/SKILL.md` (`/forge-verify`, wraps `make verify`/`verify-full` with a per-category report) and two `PreToolUse` hooks registered in `.claude/settings.json`: `guard_tracked_deletion.py` (blocks a `Bash` `rm`/`find -delete` whose glob matches a git-tracked file, cross-checked against `git ls-files`; motivated by a real incident where a `.coverage*` cleanup glob deleted the tracked `.coveragerc`; hardened through two rounds of adversarial review that found and closed real bypasses — see CHANGELOG.md) and `guard_staged_secrets.py` (runs `gitleaks protect --staged` before a `git commit`, closing the gap that `security.yml`'s own gitleaks job is history-only and report-only). Covered by a stdlib-only self-test suite auto-discovered via `python3 -m unittest discover -s .claude/hooks` (`make hooks-test`), wired into `make verify` and CI's `python-lint` job (plus `security.yml`'s `gitleaks` job for the two cases needing a real binary). A fresh re-survey identified further opportunities and this pass acted on the highest-priority one: added `.claude/skills/forge-docs-audit/SKILL.md` (re-verifies factual claims across this doc/`CHANGELOG.md`/`README.md`/`docs/architecture.md`/`Agent.md`/`CLAUDE.md` against the actual codebase, in the house style already used throughout this table). Remaining lower-priority proposals from the same survey (a `forge-onnx-bump` skill for the `ort`-API-drift diagnosis pattern, a guard against direct edits to `model_manifest.json`/trajectory files) are tracked here as future work, not yet implemented. |
+| No repo-checked-in Claude Code skills/hooks despite a large, repetitive validation surface | ✅ Done | Added `.claude/skills/forge-verify/SKILL.md`, docs-audit, PR-review, skills-catalog, and PreToolUse hooks in `.claude/settings.json`: `guard_tracked_deletion.py`, `guard_staged_secrets.py`, `guard_line_ending_drift.py`, and advisory `guard_schema_id_pins.py` (reminds on `git commit` when Minecraft xlang-pin TOML is staged; always exit 0). `make hooks-test` discovers `test_*.py`. |
 | Rust toolchain (18 lines/8 files), ONNX Runtime (2 files), and LM Studio port/URL (3 files) pins can drift silently — no single source of truth possible across TOML/YAML/Dockerfile/Python | ✅ Done | `scripts/check_pinned_config_consistency.py` re-derives every copy (15 `dtolnay/rust-toolchain@stable toolchain:` inputs across 5 workflow files + 2 Dockerfiles' `RUST_IMAGE_TAG` against `rust-toolchain.toml`'s `channel`; `ci.yml`'s `onnx-features` job `ORT_VERSION` against `docker/mc-runner.Dockerfile`'s `ONNXRUNTIME_VERSION`; `ci.yml` + `e2e-long.yml`'s `LMSTUDIO_PORT`/`LMSTUDIO_BASE_URL` against `providers.py`'s `DEFAULT_LMSTUDIO_BASE_URL`) and fails on drift instead of eliminating the duplication outright. Verified against deliberately-introduced mismatches in all three checks. Deliberately excludes `docker/trainer.Dockerfile`'s independent Python-wheel `ONNXRUNTIME_VERSION` (different artifact, legitimately different version). Wired into `make verify` (`pin-check` target) and CI's `python-lint` job; see `docs/hardcoded-values-audit.md`. |
 | Docker image Python ABI mismatch | ✅ Done (2026-09-06) | `docker/Dockerfile` wheel-builder stage uses `rust:1.94.1-bookworm` (Python 3.11), but runtime stage used `python:3.14-slim-bookworm`. Maturin embeds the Python ABI tag into the wheel filename (cp311), causing `pip install` to fail with "not a supported wheel on this platform". Fixed by changing runtime to `python:3.11-slim-bookworm`. Also removed unused `FORGE_CONFIG_PATH` env var since `forge-server` uses `ForgeConfig::default()` and never loads from TOML. |
 | Rust `ForgeConfig` silently ignores unknown TOML fields | ✅ Done (2026-09-06) | Root `forge.toml` uses Python schema (`[hardware]`, `[simulation]`, `[training]`) which doesn't match Rust `ForgeConfig` schema (`[world]`, `[physics]`, `[agents]`). Without `deny_unknown_fields`, serde silently ignored all values. Added `#[serde(deny_unknown_fields)]` to `ForgeConfig` and all nested config structs, plus documentation clarifying the schema difference between Python and Rust configs. |

@@ -36,6 +36,10 @@ export class BotManager extends EventEmitter {
   #createBot: (config: any) => any;
   #bot: any = null;
   #lastTickTime = 0;
+  /** Last sampled `bot.time.age`. Null until a sample succeeds. */
+  #lastSeenMcAge: number | null = null;
+  /** Wall-clock of the last time sampled MC age *changed*. */
+  #lastMcAgeChangeAt = 0;
   #reconnectAttempts = 0;
   #reconnecting = false;
   #reconnectPromise: Promise<void> | null = null;
@@ -70,7 +74,7 @@ export class BotManager extends EventEmitter {
     this.#bot = this.#buildBot();
     this.#wireEvents(this.#bot);
     await this.#waitForSpawn(this.#bot);
-    this.#lastTickTime = Date.now();
+    this.#markTickFresh(this.#bot?.time?.age);
     this.#logger.info?.({ event: 'bot_created', username: this.#botConfig.username });
     return this.#bot;
   }
@@ -80,9 +84,20 @@ export class BotManager extends EventEmitter {
     return this.#bot;
   }
 
-  /** @returns {boolean} true when the bot's tick age was updated recently */
+  /**
+   * True when mineflayer game ticks are still advancing.
+   *
+   * Trained MCTS can spend longer than `stale_timeout_ms` between WS
+   * observations; wall-clock since the last observation is therefore
+   * **not** a dead-bot signal. Frozen `bot.time.age` for longer than
+   * the timeout is.
+   */
   isHealthy(): boolean {
     if (!this.#bot || this.#reconnecting) return false;
+    this.#sampleMcTickAge();
+    if (this.#lastMcAgeChangeAt > 0) {
+      return (Date.now() - this.#lastMcAgeChangeAt) < this.#reconnectConfig.stale_timeout_ms;
+    }
     return (Date.now() - this.#lastTickTime) < this.#reconnectConfig.stale_timeout_ms;
   }
 
@@ -93,13 +108,38 @@ export class BotManager extends EventEmitter {
 
   /**
    * Called by the observation layer each time a successful snapshot is taken.
-   * Resets reconnect counter and refreshes the stale-detection clock.
+   * Resets the reconnect counter. MC tick age is sampled live from the
+   * bot; a frozen age does **not** count as healthy just because WS
+   * traffic arrived.
    *
-   * @param {number} _age  bot.time.age (unused but kept for future metrics)
+   * @param {number} age  bot.time.age when the snapshot was taken
    */
-  updateTickAge(_age: number): void {
+  updateTickAge(age: number): void {
     this.#lastTickTime = Date.now();
     this.#reconnectAttempts = 0;
+    this.#noteMcAge(age);
+  }
+
+  #noteMcAge(age: unknown): void {
+    if (typeof age !== 'number' || !Number.isFinite(age)) {
+      return;
+    }
+    if (this.#lastSeenMcAge === null || age !== this.#lastSeenMcAge) {
+      this.#lastSeenMcAge = age;
+      this.#lastMcAgeChangeAt = Date.now();
+    }
+  }
+
+  #sampleMcTickAge(): void {
+    this.#noteMcAge(this.#bot?.time?.age);
+  }
+
+  #markTickFresh(age: unknown): void {
+    this.#lastTickTime = Date.now();
+    this.#lastMcAgeChangeAt = Date.now();
+    if (typeof age === 'number' && Number.isFinite(age)) {
+      this.#lastSeenMcAge = age;
+    }
   }
 
   /**
@@ -301,7 +341,7 @@ export class BotManager extends EventEmitter {
           this.#bot = this.#buildBot();
           this.#wireEvents(this.#bot);
           await this.#waitForSpawn(this.#bot);
-          this.#lastTickTime = Date.now();
+          this.#markTickFresh(this.#bot?.time?.age);
           this.#reconnectAttempts = 0;
           this.#reconnecting = false;
           this.#logger.info?.({ event: 'reconnected', attempt: attempt + 1 });

@@ -172,6 +172,11 @@ teacher_traces/
 # ML Models and ONNX Exports
 *.onnx
 models/
+# The Python package `python/forge/models/` is source (MuZeroConfig),
+# not ONNX exports. `models/` above would otherwise hide new files
+# there from `git add` of the directory.
+!python/forge/models/
+!python/forge/models/*.py
 *.pt
 *.pth
 
