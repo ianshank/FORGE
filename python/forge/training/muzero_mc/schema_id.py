@@ -52,7 +52,7 @@ import logging
 import sys
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Final, Optional, Union
+from typing import Any, Final
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -228,7 +228,7 @@ def _resolve_nested_reward_path(base_dir: Path, key: str, value: str) -> Path:
     raise FileNotFoundError(msg)
 
 
-def _fold_nested_path_keys(value: Any, base_dir: Optional[Path]) -> Any:
+def _fold_nested_path_keys(value: Any, base_dir: Path | None) -> Any:
     """Replace nested path keys with the nested file's canonical SHA."""
     if isinstance(value, dict):
         out: dict[str, Any] = {}
@@ -256,7 +256,7 @@ def _fold_nested_path_keys(value: Any, base_dir: Optional[Path]) -> Any:
 def rewards_canonical_sha256(
     rewards: Mapping[str, Any],
     *,
-    source_path: Optional[Union[str, Path]] = None,
+    source_path: str | Path | None = None,
 ) -> str:
     """Compute the canonical SHA256 of a rewards config.
 
@@ -320,8 +320,8 @@ def block_embeddings_vocab_size(embeddings: Mapping[str, Any]) -> int:
 
 
 def compute_schema_id_from_paths(
-    action_map_path: Union[str, Path],
-    rewards_path: Union[str, Path],
+    action_map_path: str | Path,
+    rewards_path: str | Path,
 ) -> str:
     """End-to-end helper: load the two TOML files and return the
     combined ``schema_id``. Used by the ``compute-schema-id`` CLI
