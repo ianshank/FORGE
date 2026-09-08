@@ -74,11 +74,19 @@ export function buildRewardConfig(
   const schemaVersion = data.schema_version ?? 1;
   const baseDir = options.sourcePath !== undefined ? dirname(options.sourcePath) : undefined;
   const tomlParse = options.tomlParse ?? parseToml;
+  let memoizedCanonicalSha256: string | undefined;
   return {
     schemaVersion,
     entries,
     canonicalSha256() {
-      return canonicalRewardsSha256(entries, { baseDir, tomlParse });
+      // Handshake hash is load-time: nested TOMLs are folded once per
+      // instance so later FS rewrites cannot silently change schema_id
+      // mid-run. A fresh `loadRewardConfig` still picks up content
+      // changes (fail-closed at load).
+      if (memoizedCanonicalSha256 === undefined) {
+        memoizedCanonicalSha256 = canonicalRewardsSha256(entries, { baseDir, tomlParse });
+      }
+      return memoizedCanonicalSha256;
     },
     validate() {
       // Already validated at build time; provided for symmetry.

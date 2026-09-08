@@ -139,7 +139,7 @@ identify the file that broke.
 |---|---|
 | `Env(String)` | Wrapped `forge_env::Env::Error` from the underlying env (Display form — concrete type isn't nameable from this crate) |
 | `Planner(String)` | Wrapped anyhow error from `LatentMctsSearch::search` |
-| `TransientEnv { code, message }` | Mid-episode `RECONNECTING` / `BUSY`. Display-parsed via `TRANSIENT_ENV_DISPLAY_PREFIX` (must stay byte-identical to `forge_env_mc::TRANSIENT_PROTOCOL_ERROR_DISPLAY_PREFIX`). |
+| `TransientEnv { code, message, reason }` | Mid-episode `RECONNECTING` / `BUSY` from `reset_into` or `step_into`. Display-parsed via `TRANSIENT_ENV_DISPLAY_PREFIX` (must stay byte-identical to `forge_env_mc::TRANSIENT_PROTOCOL_ERROR_DISPLAY_PREFIX`). `CODE` must match the `TRANSIENT_ERROR_CODE_*` twins (`RECONNECTING` / `BUSY`); `INTERNAL` under the same prefix stays `Env`. `reason` is `METRIC_REASON_ENV_RESET` or `METRIC_REASON_ENV_STEP`. |
 | `TooManyTransientFailures` | Consecutive transient discards hit `max_consecutive_transient_failures`. |
 
 **Do not retry `recv` or resend the failed Step** after a transient:

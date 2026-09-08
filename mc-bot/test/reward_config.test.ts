@@ -145,6 +145,27 @@ describe('reward_config — nested path folding', () => {
     assert.notEqual(hashA, hashChanged);
   });
 
+  it('canonicalSha256 is memoized; nested FS rewrite does not change the same instance', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'forge-rewards-memo-'));
+    const nested = join(dir, 'mil.toml');
+    await writeFile(nested, '[milestones]\nfirst_wood = { reward = 10.0, once = true }\n');
+    const rewards = join(dir, 'rewards.toml');
+    await writeFile(
+      rewards,
+      'schema_version = 1\n\n[[reward]]\nkind = "milestone"\nconfig_path = "mil.toml"\n',
+    );
+    const cfg = await loadRewardConfig(rewards, parse);
+    const handshake = cfg.canonicalSha256();
+    await writeFile(nested, '[milestones]\nfirst_wood = { reward = 11.0, once = true }\n');
+    assert.equal(
+      cfg.canonicalSha256(),
+      handshake,
+      'load-time handshake hash must not track mid-run nested-file rewrites',
+    );
+    const reloaded = (await loadRewardConfig(rewards, parse)).canonicalSha256();
+    assert.notEqual(reloaded, handshake);
+  });
+
   it('shipped rewards.toml hash matches Rust pin (nested files folded)', async () => {
     const cfg = await loadRewardConfig(
       resolve(repoRoot, 'configs/minecraft/rewards.toml'),

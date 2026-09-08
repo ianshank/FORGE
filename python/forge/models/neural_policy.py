@@ -64,8 +64,8 @@ class NeuralMCTSPolicy(PolicyNetwork):
     """
 
     def __init__(self, config: NeuralPolicyConfig | None = None) -> None:
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         self._config = config or NeuralPolicyConfig()
         c = self._config
@@ -119,7 +119,7 @@ class NeuralMCTSPolicy(PolicyNetwork):
             Action probability distribution of shape ``(action_dim,)``
             or ``(batch, action_dim)``.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self._device)
@@ -148,7 +148,7 @@ class NeuralMCTSPolicy(PolicyNetwork):
             Tuple of (action_priors, value) where action_priors has shape
             ``(action_dim,)`` and value is a scalar float.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self._device)
@@ -172,8 +172,8 @@ class NeuralMCTSPolicy(PolicyNetwork):
         Returns:
             Dictionary of training metrics.
         """
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         obs = torch.as_tensor(
             batch["observations"], dtype=torch.float32, device=self._device
@@ -208,7 +208,7 @@ class NeuralMCTSPolicy(PolicyNetwork):
 
     def save(self, path: str) -> None:
         """Save policy weights to disk."""
-        import torch  # noqa: PLC0415
+        import torch
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -226,7 +226,7 @@ class NeuralMCTSPolicy(PolicyNetwork):
 
     def load(self, path: str) -> None:
         """Load policy weights from disk."""
-        import torch  # noqa: PLC0415
+        import torch
 
         checkpoint = torch.load(path, map_location=self._device, weights_only=True)
         saved_obs = checkpoint.get("obs_dim")
@@ -265,7 +265,7 @@ class NeuralMCTSPolicy(PolicyNetwork):
             loader: A configured :class:`WeightLoader`.
             filename: Path within the repository.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         data = loader.load_npz(filename)
 

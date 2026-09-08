@@ -50,7 +50,9 @@ use crate::config::RunnerConfig;
 use crate::error::RunnerError;
 use crate::hot_reload::{HotReloadWatcher, ReloadEvent};
 use crate::manifest::ModelManifest;
-use crate::metrics::{MetricsRecorder, METRIC_REASON_ENV_STEP, METRIC_REASON_PLANNER};
+use crate::metrics::{
+    MetricsRecorder, METRIC_REASON_ENV_RESET, METRIC_REASON_ENV_STEP, METRIC_REASON_PLANNER,
+};
 use crate::random_baseline::sample_random_action;
 use crate::trajectory::TrajectoryWriter;
 
@@ -359,7 +361,7 @@ where
         // Reset env into reused buffer.
         self.env
             .reset_into(seed, &mut self.obs_buf)
-            .map_err(env_err)?;
+            .map_err(|e| env_err(e, METRIC_REASON_ENV_RESET))?;
 
         let max_steps = self.config.max_steps_per_episode;
         let action_repeat = self.config.action_repeat.max(1);
@@ -425,7 +427,7 @@ where
             for _ in 0..action_repeat {
                 self.env
                     .step_into(action, &mut self.step_out)
-                    .map_err(env_err)?;
+                    .map_err(|e| env_err(e, METRIC_REASON_ENV_STEP))?;
                 step_reward += self.step_out.reward;
                 if self.step_out.terminated || self.step_out.truncated {
                     break;
@@ -568,7 +570,11 @@ where
                         outcome.truncated_count += 1;
                     }
                 }
-                Err(RunnerError::TransientEnv { code, message }) => {
+                Err(RunnerError::TransientEnv {
+                    code,
+                    message,
+                    reason,
+                }) => {
                     // Reconnect tears down mineflayer and starts a new
                     // world. The WS Error frame completed the pair —
                     // retrying recv hangs, resending Step stitches two
@@ -576,7 +582,7 @@ where
                     // into a fresh episode.
                     self.writer.discard_current();
                     if let Some(rec) = self.metrics.as_ref() {
-                        rec.record_protocol_error(METRIC_REASON_ENV_STEP);
+                        rec.record_protocol_error(reason);
                     }
                     consecutive_transient = consecutive_transient.saturating_add(1);
                     outcome.transient_discards = outcome.transient_discards.saturating_add(1);
@@ -630,13 +636,17 @@ fn normalize_visits(visits: &[u32]) -> Vec<f32> {
     visits.iter().map(|&v| v as f32 * inv).collect()
 }
 
-fn env_err<E>(e: E) -> RunnerError
+fn env_err<E>(e: E, reason: &'static str) -> RunnerError
 where
     E: std::error::Error + Send + Sync + 'static,
 {
     let msg = e.to_string();
     if let Some((code, message)) = crate::error::parse_transient_env_error(&msg) {
-        RunnerError::TransientEnv { code, message }
+        RunnerError::TransientEnv {
+            code,
+            message,
+            reason,
+        }
     } else {
         RunnerError::Env(msg)
     }

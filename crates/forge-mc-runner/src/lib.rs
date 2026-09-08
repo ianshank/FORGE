@@ -45,8 +45,9 @@ pub mod trajectory;
 
 pub use config::{RunnerConfig, EPISODES_ENV_VAR, RANDOM_ACTIONS_ENV_VAR, SCHEMA_ID_ENV_VAR};
 pub use error::{
-    parse_transient_env_error, RunnerError, TRANSIENT_ENV_CODE_MESSAGE_SEP,
-    TRANSIENT_ENV_DISPLAY_PREFIX,
+    is_runner_transient_error_code, parse_transient_env_error, RunnerError,
+    TRANSIENT_ENV_CODE_MESSAGE_SEP, TRANSIENT_ENV_DISPLAY_PREFIX, TRANSIENT_ERROR_CODE_BUSY,
+    TRANSIENT_ERROR_CODE_RECONNECTING,
 };
 pub use hot_reload::{HotReloadWatcher, ReloadEvent};
 pub use integrity::{
@@ -56,7 +57,8 @@ pub use integrity::{
 pub use live::run_live;
 pub use manifest::{ModelFileEntry, ModelManifest, ModelManifestFiles, MANIFEST_SCHEMA_VERSION};
 pub use metrics::{
-    serve_metrics, MetricsError, MetricsRecorder, METRIC_REASON_ENV_STEP, METRIC_REASON_PLANNER,
+    serve_metrics, MetricsError, MetricsRecorder, METRIC_REASON_ENV_RESET, METRIC_REASON_ENV_STEP,
+    METRIC_REASON_PLANNER,
 };
 #[cfg(feature = "onnx-reload")]
 pub use onnx_reload::{config_from_manifest, into_reload_fn};

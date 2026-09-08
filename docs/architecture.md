@@ -1748,6 +1748,10 @@ Five Prometheus signals matching v2-plan §3.6 (`forge_mc_episode_total`,
 `forge_mc_episode_reward_sum`, `forge_mc_planning_latency_seconds`,
 `forge_mc_model_version`, `forge_mc_protocol_error_total`). Metric names
 are `const &str` at the top of `metrics.rs` — single source of truth.
+`forge_mc_protocol_error_total` is labelled by `reason`
+(`METRIC_REASON_ENV_STEP`, `METRIC_REASON_ENV_RESET`,
+`METRIC_REASON_PLANNER`, plus caller-supplied low-cardinality strings
+such as reload failures). The Grafana panel legends `{{reason}}`.
 
 `cfg.metrics_port = 0` (the existing `RunnerConfig::metrics_disabled`
 helper) skips the entire `tokio::spawn` branch, so the binary's

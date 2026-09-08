@@ -75,7 +75,7 @@ class MuZeroWorldModel(WorldModel):
     """
 
     def __init__(self, config: MuZeroConfig | None = None) -> None:
-        import torch  # noqa: PLC0415
+        import torch
 
         self._config = config or MuZeroConfig()
         c = self._config
@@ -115,7 +115,7 @@ class MuZeroWorldModel(WorldModel):
         Raises:
             ValueError: If action is out of bounds.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         if not 0 <= action < self._config.action_dim:
             msg = (
@@ -137,7 +137,7 @@ class MuZeroWorldModel(WorldModel):
             :class:`NetworkOutput` with latent state, policy, and value.
             Reward is 0.0 (no transition occurred).
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             obs_t = torch.as_tensor(observation, dtype=torch.float32, device=self._device)
@@ -170,7 +170,7 @@ class MuZeroWorldModel(WorldModel):
             :class:`NetworkOutput` with next latent state, reward,
             policy, and value.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         with torch.no_grad():
             state_t = torch.as_tensor(
@@ -230,8 +230,8 @@ class MuZeroWorldModel(WorldModel):
         Returns:
             Dictionary of training metrics.
         """
-        import torch  # noqa: PLC0415
-        from torch import nn  # noqa: PLC0415
+        import torch
+        from torch import nn
 
         c = self._config
         obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=self._device)
@@ -305,7 +305,7 @@ class MuZeroWorldModel(WorldModel):
         Args:
             path: File path for the checkpoint.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -342,7 +342,7 @@ class MuZeroWorldModel(WorldModel):
         Raises:
             ValueError: If checkpoint dimensions don't match config.
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         checkpoint = torch.load(path, map_location=self._device, weights_only=True)
         saved_cfg = checkpoint.get("config", {})
@@ -363,7 +363,7 @@ class MuZeroWorldModel(WorldModel):
         """Return all trainable parameters across all networks."""
         return list(self._all_params)
 
-    def to(self, device: "torch.device | str") -> "MuZeroWorldModel":
+    def to(self, device: torch.device | str) -> MuZeroWorldModel:
         """Move every sub-network's parameters to ``device``. Mirrors
         :meth:`torch.nn.Module.to` so a caller can write
         ``model.to(trainer.device)`` regardless of whether ``model`` is
@@ -375,7 +375,7 @@ class MuZeroWorldModel(WorldModel):
         Returns ``self`` for chainability (matches
         ``nn.Module.to``'s contract).
         """
-        import torch  # noqa: PLC0415
+        import torch
 
         resolved = torch.device(device) if not isinstance(device, torch.device) else device
         self.representation.modules_list.to(resolved)
