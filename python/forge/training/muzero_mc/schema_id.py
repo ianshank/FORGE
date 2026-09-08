@@ -24,16 +24,21 @@ Canonicalisation rules (must match the Rust reference exactly):
   recursively. Whole-number TOML floats normalised to integers
   (matches JS ``JSON.stringify(100.0) === "100"``). Table keys
   emitted in alphabetical order (Rust's ``toml::Table`` is
-  ``BTreeMap``-backed).
+  ``BTreeMap``-backed). When hashing a file on disk, nested path keys
+  (``config_path``, ``crafting_config_path``) are replaced with the
+  nested file's own canonical SHA (whole parsed TOML document).
 - **Combined**: ``sha256(action_map_hash + ":" + rewards_hash)``,
-  hex-encoded.
+  hex-encoded. Block embeddings are a separate obs-layout pin.
 """
 
 from __future__ import annotations
 
 __all__ = [
     "ACTION_KIND_FIELD_ORDER",
+    "NESTED_REWARD_PATH_KEYS",
     "action_map_canonical_sha256",
+    "block_embeddings_canonical_sha256",
+    "block_embeddings_vocab_size",
     "combined_schema_id",
     "compute_schema_id_from_paths",
     "rewards_canonical_sha256",
@@ -42,7 +47,7 @@ __all__ = [
 import hashlib
 import json
 import sys
-from collections.abc import Mapping  # noqa: TC003 — used at runtime by isinstance/type hints
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
@@ -83,6 +88,11 @@ ACTION_KIND_FIELD_ORDER: Final[Mapping[str, tuple[str, ...]]] = {
     "sneak": ("ticks",),
     "swim_up": ("ticks",),
 }
+
+#: Nested path keys whose **file contents** (not the path string) fold
+#: into ``rewards_canonical_sha256`` when ``source_path`` is set. Twin
+#: of Rust ``NESTED_REWARD_PATH_KEYS`` and JS ``NESTED_REWARD_PATH_KEYS``.
+NESTED_REWARD_PATH_KEYS: Final[frozenset[str]] = frozenset({"config_path", "crafting_config_path"})
 
 
 def _canonical_action_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
@@ -155,7 +165,77 @@ def _toml_to_canonical_json(value: Any) -> Any:
     return value
 
 
-def rewards_canonical_sha256(rewards: Mapping[str, Any]) -> str:
+def _document_canonical_sha256(doc: Mapping[str, Any]) -> str:
+    """SHA256 of the canonical JSON form of a parsed TOML document.
+
+    Mirrors Rust ``canonical_json_sha256``.
+    """
+    normalised = _toml_to_canonical_json(doc)
+    text = json.dumps(normalised, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _resolve_nested_reward_path(base_dir: Path, key: str, value: str) -> Path:
+    """Resolve a nested reward path relative to ``base_dir``.
+
+    Candidates, first existing file wins:
+
+    1. ``value`` if it is an absolute path to a file
+    2. ``base_dir / filename`` — sibling lookup
+    3. ``base_dir / value``
+    4. cwd-relative ``value``
+    """
+    if not value:
+        msg = f"nested reward path key {key!r} must be a non-empty string"
+        raise ValueError(msg)
+    given = Path(value)
+    candidates: list[Path] = []
+    if given.is_absolute():
+        candidates.append(given)
+    candidates.append(base_dir / given.name)
+    candidates.append(base_dir / given)
+    if not given.is_absolute():
+        candidates.append(given)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    msg = (
+        f"nested reward file not found for `{key}` = `{value}` "
+        "(searched sibling, base_dir-relative, and cwd-relative; "
+        "hashing fails closed rather than using hardcoded milestone defaults)"
+    )
+    raise FileNotFoundError(msg)
+
+
+def _fold_nested_path_keys(value: Any, base_dir: Path | None) -> Any:
+    """Replace nested path keys with the nested file's canonical SHA."""
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            if k in NESTED_REWARD_PATH_KEYS:
+                if not isinstance(v, str) or not v:
+                    msg = f"nested reward path key {k!r} must be a non-empty string"
+                    raise ValueError(msg)
+                if base_dir is None:
+                    out[k] = v
+                else:
+                    nested_path = _resolve_nested_reward_path(base_dir, k, v)
+                    with nested_path.open("rb") as handle:
+                        nested_doc = tomllib.load(handle)
+                    out[k] = _document_canonical_sha256(nested_doc)
+            else:
+                out[k] = _fold_nested_path_keys(v, base_dir)
+        return out
+    if isinstance(value, list):
+        return [_fold_nested_path_keys(item, base_dir) for item in value]
+    return value
+
+
+def rewards_canonical_sha256(
+    rewards: Mapping[str, Any],
+    *,
+    source_path: str | Path | None = None,
+) -> str:
     """Compute the canonical SHA256 of a rewards config.
 
     Mirrors ``forge_env_mc::reward_config::RewardConfig::canonical_sha256``.
@@ -164,12 +244,19 @@ def rewards_canonical_sha256(rewards: Mapping[str, Any]) -> str:
         rewards: Parsed TOML mapping with key ``"reward"`` holding a
             list of reward entries (file-order preserved at the top
             level — only nested table keys are alphabetically sorted).
+        source_path: Path to the rewards.toml this mapping was loaded
+            from. When set, nested path keys (``config_path``,
+            ``crafting_config_path``) are replaced with the nested
+            file's own canonical SHA. When omitted, path strings are
+            hashed as-is so the fixture xlang pin stays stable.
 
     Returns:
         Lowercase-hex SHA256 of the canonical serialisation.
     """
     entries = list(rewards.get("reward", []))
-    normalised = [_toml_to_canonical_json(e) for e in entries]
+    base_dir = Path(source_path).parent if source_path is not None else None
+    folded = [_fold_nested_path_keys(e, base_dir) for e in entries]
+    normalised = [_toml_to_canonical_json(e) for e in folded]
     text = json.dumps(normalised, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -179,9 +266,35 @@ def combined_schema_id(action_map_hash: str, rewards_hash: str) -> str:
 
     Order is fixed: ``sha256(action_map_hash + ":" + rewards_hash)``.
     Mirrors ``forge_env_mc::reward_config::combined_schema_id``.
+    Block embeddings are a **separate** obs-layout pin and are not
+    folded into this two-input formula.
     """
     combined = f"{action_map_hash}:{rewards_hash}"
     return hashlib.sha256(combined.encode("utf-8")).hexdigest()
+
+
+def block_embeddings_canonical_sha256(embeddings: Mapping[str, Any]) -> str:
+    """SHA256 of the canonical JSON form of the ``[blocks]`` table.
+
+    Mirrors ``BlockEmbeddings::canonical_sha256``. This is an
+    observation-layout pin, **not** part of today's two-input
+    ``schema_id``.
+    """
+    blocks = embeddings.get("blocks")
+    if not isinstance(blocks, Mapping) or not blocks:
+        msg = "block embeddings config has no [blocks] entries"
+        raise ValueError(msg)
+    normalised = _toml_to_canonical_json(blocks)
+    text = json.dumps(normalised, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def block_embeddings_vocab_size(embeddings: Mapping[str, Any]) -> int:
+    """Return ``max(index) + 1`` from a parsed ``block_embeddings.toml``."""
+    blocks = embeddings.get("blocks")
+    if not isinstance(blocks, Mapping) or not blocks:
+        return 0
+    return max(int(v) for v in blocks.values()) + 1
 
 
 def compute_schema_id_from_paths(
@@ -191,12 +304,15 @@ def compute_schema_id_from_paths(
     """End-to-end helper: load the two TOML files and return the
     combined ``schema_id``. Used by the ``compute-schema-id`` CLI
     subcommand + ``scripts/mc_self_play.sh``.
+
+    Nested reward files are folded into the rewards hash.
     """
     with Path(action_map_path).open("rb") as f:
         action_map = tomllib.load(f)
-    with Path(rewards_path).open("rb") as f:
+    rewards_path = Path(rewards_path)
+    with rewards_path.open("rb") as f:
         rewards = tomllib.load(f)
     return combined_schema_id(
         action_map_canonical_sha256(action_map),
-        rewards_canonical_sha256(rewards),
+        rewards_canonical_sha256(rewards, source_path=rewards_path),
     )

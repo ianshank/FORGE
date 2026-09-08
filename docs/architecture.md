@@ -1205,7 +1205,9 @@ serde produce byte-identical canonical strings. Both sides ship a
 pinned-fixture xlang regression test:
 
 - action map: pinned `587b13077b8c7cd90503f9ee5e1bae1bb92bdf738c8abc51d2ff6deb1908224f`
-- rewards:    pinned `451b10f995371924a374633e5c42deab35c137fbbc65bc8f551bf2bd7844b478`
+- rewards fixture: pinned `451b10f995371924a374633e5c42deab35c137fbbc65bc8f551bf2bd7844b478`
+- shipped rewards (nested milestone/crafting file **contents** folded into the hash; path-string rename without a content change does not bump): see `xlang_shipped_rewards_schema_id_folds_nested_files`
+- obs-layout `block_embeddings.toml` `[blocks]` table: a **separate** pin (`xlang_block_embeddings_pinned_to_known_good`), not folded into the two-input `schema_id`
 
 Drift on either side trips both tests simultaneously.
 

@@ -1,10 +1,17 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parse } from 'smol-toml';
+
 import {
   buildRewardConfig,
   canonicalRewardsSha256,
   combinedSchemaId,
+  loadRewardConfig,
 } from '../src/reward_config.js';
 
 // Same fixture as the Rust `sample_toml()` in
@@ -90,6 +97,61 @@ describe('reward_config — xlang regression', () => {
       cfg.canonicalSha256(),
       '451b10f995371924a374633e5c42deab35c137fbbc65bc8f551bf2bd7844b478',
       'rewards schema_id drift — Rust xlang_rewards_schema_id_pinned_to_known_good will also fail',
+    );
+  });
+});
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+
+describe('reward_config — nested path folding', () => {
+  it('fails closed when a nested path key is set and the file is missing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'forge-rewards-'));
+    const rewardsPath = join(dir, 'rewards.toml');
+    await writeFile(
+      rewardsPath,
+      'schema_version = 1\n\n[[reward]]\nkind = "milestone"\nconfig_path = "missing.toml"\n',
+    );
+    await assert.rejects(
+      () => loadRewardConfig(rewardsPath, parse),
+      /nested reward file not found/,
+    );
+  });
+
+  it('nested content change bumps hash; rename without content change does not', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'forge-rewards-'));
+    const nestedA = join(dir, 'mil_a.toml');
+    await writeFile(nestedA, '[milestones]\nfirst_wood = { reward = 10.0, once = true }\n');
+    const rewardsA = join(dir, 'rewards.toml');
+    await writeFile(
+      rewardsA,
+      'schema_version = 1\n\n[[reward]]\nkind = "milestone"\nconfig_path = "mil_a.toml"\n',
+    );
+    const hashA = (await loadRewardConfig(rewardsA, parse)).canonicalSha256();
+
+    const nestedB = join(dir, 'mil_b.toml');
+    await writeFile(nestedB, '[milestones]\nfirst_wood = { reward = 10.0, once = true }\n');
+    const rewardsB = join(dir, 'rewards_b.toml');
+    await writeFile(
+      rewardsB,
+      'schema_version = 1\n\n[[reward]]\nkind = "milestone"\nconfig_path = "mil_b.toml"\n',
+    );
+    const hashB = (await loadRewardConfig(rewardsB, parse)).canonicalSha256();
+    assert.equal(hashA, hashB);
+
+    await writeFile(nestedA, '[milestones]\nfirst_wood = { reward = 11.0, once = true }\n');
+    const hashChanged = (await loadRewardConfig(rewardsA, parse)).canonicalSha256();
+    assert.notEqual(hashA, hashChanged);
+  });
+
+  it('shipped rewards.toml hash matches Rust pin (nested files folded)', async () => {
+    const cfg = await loadRewardConfig(
+      resolve(repoRoot, 'configs/minecraft/rewards.toml'),
+      parse,
+    );
+    assert.equal(
+      cfg.canonicalSha256(),
+      '78f96c103767f3db7280175e92b8564937bcb5d505e4d75e8aab0c570d237f4b',
+      'shipped rewards schema_id drift — Rust xlang_shipped_rewards_schema_id_folds_nested_files will also fail',
     );
   });
 });

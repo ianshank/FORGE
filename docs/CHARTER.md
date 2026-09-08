@@ -166,7 +166,9 @@ suites that pin the value, simultaneously:
 | Pinned value | Rust | Node | Python |
 |---|---|---|---|
 | action-map `schema_id` | `crates/forge-env-mc/src/action_map.rs` | `mc-bot/test/schema_id.test.ts` | `tests/python/training/test_muzero_mc_schema_id.py` |
-| rewards `schema_id` | `crates/forge-env-mc/src/reward_config.rs` | `mc-bot/test/reward_config.test.ts` | `tests/python/training/test_muzero_mc_schema_id.py` |
+| rewards `schema_id` (fixture) | `crates/forge-env-mc/src/reward_config.rs` | `mc-bot/test/reward_config.test.ts` | `tests/python/training/test_muzero_mc_schema_id.py` |
+| shipped rewards `schema_id` (nested files folded) | `crates/forge-env-mc/src/reward_config.rs` | `mc-bot/test/reward_config.test.ts` | `tests/python/training/test_muzero_mc_schema_id.py` |
+| obs-layout `block_embeddings` | `crates/forge-env-mc/src/block_embeddings.rs` | `mc-bot/test/block_embeddings.test.ts` | `tests/python/training/test_muzero_mc_schema_id.py` |
 | protocol `SCHEMA_VERSION` | `crates/forge-env-mc/src/protocol.rs` | `mc-bot/src/protocol.ts` | — |
 | `BLOCK_FEATURE_CHANNELS` | `crates/forge-env-mc/src/protocol.rs` | `mc-bot/src/observation_grid.ts` | — |
 

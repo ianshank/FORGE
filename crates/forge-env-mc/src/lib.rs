@@ -23,6 +23,7 @@
 //! [`protocol::SCHEMA_VERSION`].
 
 pub mod action_map;
+pub mod block_embeddings;
 pub mod client;
 pub mod config;
 pub mod error;
@@ -37,6 +38,7 @@ pub mod reward_config;
 pub mod testing;
 
 pub use action_map::{ActionEntry, ActionKind, ActionMap};
+pub use block_embeddings::{BlockEmbeddings, DEFAULT_NUM_BLOCK_EMBEDDINGS};
 pub use client::ProtocolClient;
 pub use config::MinecraftEnvConfig;
 pub use error::McEnvError;
@@ -45,7 +47,10 @@ pub use protocol::{
     is_transient_error_code, ClientMsg, ServerMsg, ERROR_CODE_BUSY, ERROR_CODE_RECONNECTING,
     SCHEMA_VERSION,
 };
-pub use reward_config::{combined_schema_id, RewardConfig};
+pub use reward_config::{
+    combined_schema_id, is_nested_reward_path_key, RewardConfig, NESTED_REWARD_PATH_KEYS,
+    NESTED_REWARD_PATH_KEY_CONFIG, NESTED_REWARD_PATH_KEY_CRAFTING,
+};
 
 /// Test-only helpers shared across this crate's unit tests. Not compiled
 /// into non-test builds.
@@ -53,17 +58,26 @@ pub use reward_config::{combined_schema_id, RewardConfig};
 pub(crate) mod test_support {
     use std::path::{Path, PathBuf};
 
-    /// Read a repo-relative config file (e.g. `configs/minecraft/env.toml`)
-    /// from the workspace root, resolved two directories up from this crate's
-    /// `CARGO_MANIFEST_DIR`. Panics (with the resolved path) on failure —
-    /// intended only for the "shipped default config parses" pin tests.
-    pub(crate) fn read_workspace_config(rel_path: &str) -> String {
-        let workspace_root: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))
+    /// Workspace root, two directories up from this crate's
+    /// `CARGO_MANIFEST_DIR`.
+    pub(crate) fn workspace_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .and_then(Path::parent)
             .expect("workspace root (two levels up from CARGO_MANIFEST_DIR)")
-            .to_path_buf();
-        let path = workspace_root.join(rel_path);
+            .to_path_buf()
+    }
+
+    /// Repo-relative config path (e.g. `configs/minecraft/env.toml`).
+    pub(crate) fn workspace_config_path(rel_path: &str) -> PathBuf {
+        workspace_root().join(rel_path)
+    }
+
+    /// Read a repo-relative config file (e.g. `configs/minecraft/env.toml`)
+    /// from the workspace root. Panics (with the resolved path) on failure —
+    /// intended only for the "shipped default config parses" pin tests.
+    pub(crate) fn read_workspace_config(rel_path: &str) -> String {
+        let path = workspace_config_path(rel_path);
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
     }
 }

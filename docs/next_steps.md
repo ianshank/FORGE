@@ -365,13 +365,15 @@ scope" + the first-real-run report's next-steps):
   `configs/minecraft/block_embeddings.toml` + `nn.Embedding` in
   `python/forge/models/muzero_networks.py` + `use_raw_block_id` in
   `mc-bot/src/observation_grid.ts`. Richer / learned embeddings remain
-  deferred (CHARTER). The obs-layout pin is a **separate** hash, not
-  folded into today's two-input `schema_id`.
+  deferred (CHARTER). The obs-layout pin (`BlockEmbeddings::canonical_sha256`
+  / JS / Python twins) is a **separate** hash, not folded into today's
+  two-input `schema_id`. Python `MuZeroConfig.num_block_embeddings`
+  loads `max(index)+1` from the TOML vocab.
 - **Resource-acquisition + milestone reward shapers**  `[STATUS: LANDED]`
   `configs/minecraft/milestone_rewards.toml` +
   `mc-bot/src/reward/builtins/milestone.ts` (`first_wood`, etc.). Nested
-  file **contents** belong in `schema_id` (path strings must not be the
-  only hashed bytes).
+  file **contents** are folded into `schema_id` (path strings are not
+  the only hashed bytes); missing nested files fail closed.
 - **HuggingFace pretrained-checkpoint loader** for warm-starts so
   the trained variant doesn't start from random init.  `[STATUS: done]`
   — `checkpoint_loader.load_from_hf` wired to `bootstrap --from-hf`;
