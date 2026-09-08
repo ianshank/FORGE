@@ -562,3 +562,26 @@ def test_negative_unindexed_snapshot_fails(tmp_path: Path) -> None:
     errors = check_evidence_integrity(tmp_path)
     assert any("Unindexed snapshot on disk: docs/results/sample.json" in e for e in errors), errors
     assert any("Remedy: add docs/results/sample.json" in e for e in errors), errors
+
+
+def test_trained_vs_random_report_stays_template_until_evidential_floor() -> None:
+    """The comparative report must keep numeric placeholders until both
+    live variants clear the plotter floor of 3 evidential episodes.
+
+    Filling it from zero-evidential snapshots (or MockBot) would be a
+    false trained>random claim. See docs/results/v0.5-loop-survival.md.
+    """
+    report = REPO_ROOT / "docs" / "results" / "v0.5-trained-vs-random.md"
+    text = report.read_text(encoding="utf-8")
+    for placeholder in (
+        "[RANDOM_MEAN_REWARD]",
+        "[TRAINED_MEAN_REWARD]",
+        "[RANDOM_EPISODES]",
+        "[TRAINED_EPISODES]",
+    ):
+        assert placeholder in text, (
+            f"{report} is missing placeholder {placeholder}; do not fill "
+            "trained-vs-random until both live variants have evidential_episodes >= 3"
+        )
+    survival = REPO_ROOT / "docs" / "results" / "v0.5-loop-survival.md"
+    assert survival.is_file(), "remaining ops notes missing at docs/results/v0.5-loop-survival.md"

@@ -360,7 +360,9 @@ scope" + the first-real-run report's next-steps):
   (floor = 3) then scale. Committed declarations still have
   `evidential_episodes = 0`; do not fill
   `docs/results/v0.5-trained-vs-random.md` until both variants clear
-  that floor.  `[STATUS: ops, blocked on live Paper/MC]`
+  that floor. Remaining operator steps:
+  [`docs/results/v0.5-loop-survival.md`](results/v0.5-loop-survival.md).
+  `[STATUS: ops, blocked on live Paper/MC]`
 - **Block-ID embeddings**  `[STATUS: simple table LANDED]`
   `configs/minecraft/block_embeddings.toml` + `nn.Embedding` in
   `python/forge/models/muzero_networks.py` + `use_raw_block_id` in
