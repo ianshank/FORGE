@@ -29,7 +29,7 @@ any record that is not a confirmed natural terminal, truncated or
 ambiguous alike — whose step count falls short of
 ``MIN_EVIDENTIAL_STEPS_IF_TRUNCATED``, did not measure the system and
 is excluded before any mean, median, deviation, curve, or histogram
-is computed. See ``openspec/changes/refuse-non-evidential-aggregates/``.
+is computed. See ``openspec/changes/archive/refuse-non-evidential-aggregates/``.
 
 matplotlib is an opt-in dependency; install via
 ``pip install -e '.[minecraft-plots]'`` (or just
@@ -73,7 +73,7 @@ DEFAULT_REWARD_SMOOTH_WINDOW = 5
 # changes what counts as evidence, so each is pinned by a paired test
 # in tests/python/test_mc_plot_baseline_unit.py that must be edited in
 # the same change — the review sees the lowering rather than it
-# passing silently. See openspec/changes/refuse-non-evidential-aggregates/.
+# passing silently. See openspec/changes/archive/refuse-non-evidential-aggregates/.
 MIN_EVIDENTIAL_STEPS_IF_TRUNCATED = 5
 MIN_EVIDENTIAL_EPISODES_FOR_COMPARISON = 3
 

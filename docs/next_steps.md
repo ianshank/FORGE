@@ -77,13 +77,13 @@ branch and what specifically remains.
 
 ### Phase 3 mineflayer wire-up (Node entry point)
 
-- `mc-bot/src/index.js` — spin up the mineflayer bot, attach
+- `mc-bot/src/index.ts` — spin up the mineflayer bot, attach
   prismarine-viewer on `viewer.port`, plumb `applyReset` +
   `RewardConfig` + `ActionMap` into the WS event loop.
 - Needs a real Minecraft server (Paper/vanilla) to exercise; CI gate
   can use `flying-squid` mock server but real-bot work happens off-CI.
 - Action execution mapping (`ActionKind` → mineflayer commands) —
-  implementation guide already documented in `mc-bot/src/action_map.js`
+  implementation guide already documented in `mc-bot/src/action_map.ts`
   validators and `configs/minecraft/action_map.toml` comments.
 
 ### Phase 4 — `forge-mc-runner` + ONNX hot-reload + bench
@@ -327,7 +327,13 @@ actions). Full report: [`docs/results/v0.5-first-real-run.md`](results/v0.5-firs
 All Phase 2 production-stability and code-hardening goals are **COMPLETED**:
 
 - **Mineflayer auto-reconnect on MC-side tick timeout**  `[STATUS: COMPLETED]`
-  Implemented connection health monitoring and tick-age checks in `mc-bot/src/bot_manager.ts`. The `BotManager` automatically tears down and rebuilds the mineflayer instance on stale connection detection using exponential backoff, keeping the WebSocket layer continuously alive.
+  Bot-side reconnect landed in `mc-bot/src/bot_manager.ts`. The Rust
+  runner now **continues the run** after a mid-episode `RECONNECTING` /
+  `BUSY`: it discards the partial trajectory (not evidential) and
+  Reset-s into a fresh MDP. `INTERNAL` still fails the run (existing
+  pin). Health checks use advancing `bot.time.age`, not wall-clock
+  since the last WS observation, so trained MCTS think-time does not
+  look like a dead bot.
 - **`ort` API drift (rc.9 → rc.12 → rc.13)**  `[STATUS: COMPLETED, 2026-08 tech-debt pass]`
   This entry previously claimed COMPLETED via a "pin to rc.9" fix, but that
   claim didn't match reality: `crates/forge-agent/Cargo.toml` was actually
@@ -349,30 +355,41 @@ All Phase 2 production-stability and code-hardening goals are **COMPLETED**:
 Phase-2 RL-specific candidates (deferred from Phase 1's "Out of
 scope" + the first-real-run report's next-steps):
 
-- **Bigger random baseline.** With bot auto-reconnect in place, run
-  the full 100-ep × 6000-tick baseline overnight (the v0.5 Phase 1
-  evidence is 3-4 real rollouts; enough to validate the contract
-  but not statistically meaningful as a trained-vs-random
-  comparison).  `[STATUS: not-started]`
-- **Block-ID embeddings** (replace the `block_type_hash` mod-N
-  with a learned lookup table). Eliminates hash collisions and
-  gives the CNN a richer per-tile signal.  `[STATUS: not-started]`
-- **Resource-acquisition + milestone reward shapers** ("first
-  wood", "first stone tool", etc.) so the planner sees a useful
-  gradient beyond the current survival/inventory/distance/health
-  composite.  `[STATUS: not-started]`
+- **Bigger random baseline.** With bot auto-reconnect **and** runner
+  continue-on-`RECONNECTING` in place, run a short evidential capture
+  (floor = 3) then scale. Committed declarations still have
+  `evidential_episodes = 0`; do not fill
+  `docs/results/v0.5-trained-vs-random.md` until both variants clear
+  that floor.  `[STATUS: ops, blocked on live Paper/MC]`
+- **Block-ID embeddings**  `[STATUS: simple table LANDED]`
+  `configs/minecraft/block_embeddings.toml` + `nn.Embedding` in
+  `python/forge/models/muzero_networks.py` + `use_raw_block_id` in
+  `mc-bot/src/observation_grid.ts`. Richer / learned embeddings remain
+  deferred (CHARTER). The obs-layout pin is a **separate** hash, not
+  folded into today's two-input `schema_id`.
+- **Resource-acquisition + milestone reward shapers**  `[STATUS: LANDED]`
+  `configs/minecraft/milestone_rewards.toml` +
+  `mc-bot/src/reward/builtins/milestone.ts` (`first_wood`, etc.). Nested
+  file **contents** belong in `schema_id` (path strings must not be the
+  only hashed bytes).
 - **HuggingFace pretrained-checkpoint loader** for warm-starts so
   the trained variant doesn't start from random init.  `[STATUS: done]`
   — `checkpoint_loader.load_from_hf` wired to `bootstrap --from-hf`;
   publish-side counterpart in `scripts/hf_publish_model.py` +
   `.github/workflows/hf-model.yml` (see `docs/hf/README.md`).
 - **DPO trainer** consuming `top_k_probs` / `value_hat` from the
-  trajectory traces (the schema already carries these; the trainer
-  doesn't consume them yet).  `[STATUS: not-started]`
+  trajectory traces.  `[STATUS: not-started, research-parallel]`
+  MangoMAS DPO does not consume Minecraft `TrajectoryV2`. Parked until
+  the live loop produces evidential trajectories.
 - **3D block-grid variant** (`grid_height_radius > 0`) once the
   Conv3d branch is wired on the trainer side. The v0.5 encoder
   defaults to single-Y-layer (`depth=1`) matching MuZero's 2D
   CNN.  `[STATUS: not-started]`
+- **Trained compose identity**  `[STATUS: LANDED]`
+  `FORGE_MC_RANDOM_ACTIONS` env ladder; `mc_self_play.sh` (without
+  `--baseline-only`) exports `RUNNER_RANDOM_ACTIONS=false` and
+  `RUNNER_FEATURES=mc-live-bundled`. Shipped `runner.toml` stays
+  `random_actions = true`. `--baseline-only` is the random-only path.
 
 ### Minecraft RL — v0.5 Completed Sweeps
 
@@ -562,7 +579,7 @@ surfaced during triage.
 | Crate dependency layering & architecture governance | Resolved | **[STATUS: LANDED 2026-09]** Codified 6-tier architecture (L0–L5) in `docs/architecture.md` and enforced strict dependency bans via `deny.toml` in CI. |
 | Remaining production god files (`mlflow_http.rs`, `harness.rs`, `runner.rs`, `predicate.rs`, `gcs_storage.rs`) | Resolved | **[STATUS: LANDED 2026-09]** Extracted in-file tests from `harness.rs`, `mlflow_http.rs`, `runner.rs`, `predicate.rs`, and `gcs_storage.rs` using `#[path = ".../tests.rs"]`. 100% of identified production god files decomposed with zero test coverage loss. Do not split hot-path bodies (`WorldState::step_into`) without an allocation-audit follow-up. |
 | Canonical action space constants & circular dependency decoupling | Resolved | **[STATUS: LANDED 2026-09]** Created root-level `python/forge/actions.py` as canonical action constants and decoders source of truth, removing circular import loops between `forge.agents` and `forge.mangomas`. Bound action base count to Rust constants layout. |
-| Baseline aggregates include non-episodes | ✅ Done | **[STATUS: LANDED 2026-09]** Added evidential predicate filtering in `scripts/mc_plot_baseline.py` (pins step floor and evidential count floor), error-frame outcome separation and consecutive-failure halting in `scripts/v05_manual_baseline.py`, declared historical baseline artifacts in `docs/results/` with `INDEX.toml` SHA-256 integrity gate, corrected results table and architecture documentation, updated Invariant 6 job citations and advisory scanner claims in `docs/CHARTER.md`, and implemented automated evidence integrity gate `tests/python/test_evidence_integrity.py` with marker exclusion guards under `python-test`. OpenSpec proposal [`openspec/changes/refuse-non-evidential-aggregates/`](../openspec/changes/refuse-non-evidential-aggregates/) completed. |
+| Baseline aggregates include non-episodes | ✅ Done | **[STATUS: LANDED 2026-09]** Added evidential predicate filtering in `scripts/mc_plot_baseline.py` (pins step floor and evidential count floor), error-frame outcome separation and consecutive-failure halting in `scripts/v05_manual_baseline.py`, declared historical baseline artifacts in `docs/results/` with `INDEX.toml` SHA-256 integrity gate, corrected results table and architecture documentation, updated Invariant 6 job citations and advisory scanner claims in `docs/CHARTER.md`, and implemented automated evidence integrity gate `tests/python/test_evidence_integrity.py` with marker exclusion guards under `python-test`. OpenSpec proposal [`openspec/changes/archive/refuse-non-evidential-aggregates/`](../openspec/changes/archive/refuse-non-evidential-aggregates/) completed. |
 | Committed throughput baseline for the "130,000+ steps/second" claim | ✅ Done | **[STATUS: LANDED 2026-09]** Committed labeled `cloud_agent` artefacts: PyO3 report `benchmarks/baselines/cloud_agent/pyo3_step.json` (189k steps/sec, 5.3 μs/step) backs the Python headline; Criterion `multi_agent_scaling.json` records Rust `WorldState::step` scaling separately (`env_steps_per_sec` vs `agent_steps_per_sec`). Exporter `benchmarks/runner/export_criterion_scaling.py` + `make bench-export`. `tests/python/test_throughput_claim.py` fails if a published Python floor exceeds the committed PyO3 report. `reference_a` scaling JSON is a CI `bench` job artifact, not a number copied from this host; `reference_b` remains workstation-only. |
 | Mypy strict mode for `demo_ui/tests/` | ✅ Done | **[STATUS: LANDED 2026-09]** `demo_ui/backend` added to CI/Makefile mypy. `test_backend.py` uses the `TYPE_CHECKING` importorskip pattern; `playwright.*` added to mypy overrides. Tests remain out of the `python-lint` mypy command (pytest untyped decorators), matching the rest of `tests/`. |
 | `conftest.py` root sys.path approach | ✅ Done | **[STATUS: LANDED 2026-09]** `pip install -e demo_ui/` now exports `demo_ui` / `demo_ui.backend` (setuptools `package-dir` mapping). Root `conftest.py` sys.path kept as a fallback for source-tree pytest. |

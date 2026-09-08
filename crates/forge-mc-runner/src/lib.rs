@@ -43,8 +43,8 @@ pub mod random_baseline;
 pub mod runner;
 pub mod trajectory;
 
-pub use config::{RunnerConfig, EPISODES_ENV_VAR, SCHEMA_ID_ENV_VAR};
-pub use error::RunnerError;
+pub use config::{RunnerConfig, EPISODES_ENV_VAR, RANDOM_ACTIONS_ENV_VAR, SCHEMA_ID_ENV_VAR};
+pub use error::{parse_transient_env_error, RunnerError, TRANSIENT_ENV_DISPLAY_PREFIX};
 pub use hot_reload::{HotReloadWatcher, ReloadEvent};
 pub use integrity::{
     file_sha256_hex, resolve_bundle_path, verify_bundle, VerifiedBundle, DIGEST_CHUNK_BYTES,

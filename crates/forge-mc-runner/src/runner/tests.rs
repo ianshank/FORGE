@@ -98,6 +98,82 @@ impl FlatObsEnv for StubFlatEnv {
     }
 }
 
+/// Stub that emits a parseable transient Display on the first N steps
+/// (or resets), then delegates to [`StubFlatEnv`].
+struct TransientThenOkEnv {
+    inner: StubFlatEnv,
+    fail_first_n_steps: u32,
+    steps_seen: u32,
+    fail_first_n_resets: u32,
+    resets_seen: u32,
+    code: &'static str,
+}
+
+impl TransientThenOkEnv {
+    fn fail_first_n_steps(obs_dim: usize, action_count: u32, n: u32) -> Self {
+        Self {
+            inner: StubFlatEnv::new(obs_dim, action_count, Some(1)),
+            fail_first_n_steps: n,
+            steps_seen: 0,
+            fail_first_n_resets: 0,
+            resets_seen: 0,
+            code: "RECONNECTING",
+        }
+    }
+}
+
+impl Env for TransientThenOkEnv {
+    type Obs = Vec<f32>;
+    type Action = u32;
+    type Info = ();
+    type Error = EnvError;
+
+    fn reset_into(&mut self, seed: Option<u64>, out: &mut Vec<f32>) -> Result<(), Self::Error> {
+        self.resets_seen += 1;
+        if self.resets_seen <= self.fail_first_n_resets {
+            return Err(EnvError::Other(format!(
+                "transient protocol error [{}]: synthetic reset",
+                self.code
+            )));
+        }
+        self.inner.reset_into(seed, out)
+    }
+
+    fn step_into(
+        &mut self,
+        action: u32,
+        out: &mut StepOutput<Vec<f32>, ()>,
+    ) -> Result<(), Self::Error> {
+        self.steps_seen += 1;
+        if self.steps_seen <= self.fail_first_n_steps {
+            return Err(EnvError::Other(format!(
+                "transient protocol error [{}]: synthetic step",
+                self.code
+            )));
+        }
+        self.inner.step_into(action, out)
+    }
+
+    fn obs_spec(&self) -> &ObsSpec {
+        self.inner.obs_spec()
+    }
+    fn action_spec(&self) -> &ActionSpec {
+        self.inner.action_spec()
+    }
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("transient-stub")
+    }
+}
+
+impl FlatObsEnv for TransientThenOkEnv {
+    fn obs_dim(&self) -> usize {
+        self.inner.obs_dim()
+    }
+    fn num_actions(&self) -> u32 {
+        self.inner.num_actions()
+    }
+}
+
 // ----------------- helpers -----------------
 
 fn make_search(action_count: u32, sims: u32) -> LatentMctsSearch<StubLatentModel> {
@@ -623,4 +699,112 @@ fn benchmark_trajectory_compression_sweep() {
         );
     }
     println!("==========================================\n");
+}
+
+#[test]
+fn run_discards_transient_episode_and_continues() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env = TransientThenOkEnv::fail_first_n_steps(4, 3, 1);
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(1, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+    cfg.max_consecutive_transient_failures = 3;
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    let outcome = runner
+        .run(None)
+        .expect("run must continue after RECONNECTING");
+    assert_eq!(outcome.episodes_completed, 1);
+    assert_eq!(outcome.transient_discards, 1);
+    let saved: Vec<_> = std::fs::read_dir(&traj_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(saved.len(), 1, "partial episode must not be written");
+}
+
+#[test]
+fn run_fails_after_consecutive_transient_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env = TransientThenOkEnv::fail_first_n_steps(4, 3, 10);
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(5, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+    cfg.max_consecutive_transient_failures = 3;
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    let err = runner.run(None).expect_err("cap must fail the run");
+    assert!(
+        matches!(err, RunnerError::TooManyTransientFailures { count: 3, .. }),
+        "expected TooManyTransientFailures, got {err:?}"
+    );
+}
+
+#[test]
+fn run_still_fails_closed_on_non_transient_env_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    struct FatalEnv(StubFlatEnv);
+    impl Env for FatalEnv {
+        type Obs = Vec<f32>;
+        type Action = u32;
+        type Info = ();
+        type Error = EnvError;
+        fn reset_into(&mut self, seed: Option<u64>, out: &mut Vec<f32>) -> Result<(), Self::Error> {
+            self.0.reset_into(seed, out)
+        }
+        fn step_into(
+            &mut self,
+            _action: u32,
+            _out: &mut StepOutput<Vec<f32>, ()>,
+        ) -> Result<(), Self::Error> {
+            Err(EnvError::Other("protocol error [INTERNAL]: boom".into()))
+        }
+        fn obs_spec(&self) -> &ObsSpec {
+            self.0.obs_spec()
+        }
+        fn action_spec(&self) -> &ActionSpec {
+            self.0.action_spec()
+        }
+        fn name(&self) -> Cow<'_, str> {
+            Cow::Borrowed("fatal-stub")
+        }
+    }
+    impl FlatObsEnv for FatalEnv {
+        fn obs_dim(&self) -> usize {
+            self.0.obs_dim()
+        }
+        fn num_actions(&self) -> u32 {
+            self.0.num_actions()
+        }
+    }
+
+    let env = FatalEnv(StubFlatEnv::new(4, 3, Some(5)));
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(2, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    let err = runner.run(None).expect_err("INTERNAL must fail the run");
+    assert!(
+        matches!(err, RunnerError::Env(_)),
+        "INTERNAL must stay RunnerError::Env, got {err:?}"
+    );
 }

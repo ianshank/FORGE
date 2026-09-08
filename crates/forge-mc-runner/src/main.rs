@@ -67,10 +67,10 @@ struct Cli {
 ///
 /// **Precedence is CLI > env > TOML.** The env ladder is applied *first*
 /// so an explicitly typed flag still wins: `episodes` is the only field
-/// both layers can set, and before [`RunnerConfig::with_env_var_overrides`]
-/// gained a reader for it `--episodes` always won. Applying the ladder
-/// last would silently reverse that for anyone running the container,
-/// where `FORGE_MC_RUNNER_EPISODES` may be set ambiently.
+/// both layers can set as a count, and `--random-actions` is OR-only
+/// (it can force true over an env `false`, never the reverse). Applying
+/// the ladder last would silently reverse `--episodes` for anyone running
+/// the container, where `FORGE_MC_RUNNER_EPISODES` may be set ambiently.
 ///
 /// Split out of `main` so the precedence is unit-testable without a
 /// process, per CHARTER Invariant 3 (testability without hardware).
@@ -441,7 +441,7 @@ mod dry_run {
 mod resolve_config_tests {
     use super::*;
     use clap::Parser;
-    use forge_mc_runner::EPISODES_ENV_VAR;
+    use forge_mc_runner::{EPISODES_ENV_VAR, RANDOM_ACTIONS_ENV_VAR};
 
     /// Serialises every test that touches the process-global
     /// environment table, mirroring the `ENV_LOCK` idiom already used
@@ -571,5 +571,37 @@ mod resolve_config_tests {
             resolve_config(&bare, from_toml).random_actions,
             "--random-actions is OR-ed, so omitting it must not disable the TOML value"
         );
+    }
+
+    #[test]
+    fn random_actions_env_false_beats_toml_true_but_cli_or_wins() {
+        let _env = env_guard();
+        let saved = std::env::var(RANDOM_ACTIONS_ENV_VAR).ok();
+        let from_toml = RunnerConfig {
+            random_actions: true,
+            ..RunnerConfig::default()
+        };
+        let bare = Cli::parse_from(["forge-mc-runner"]);
+        let with_flag = Cli::parse_from(["forge-mc-runner", "--random-actions"]);
+
+        unsafe {
+            std::env::set_var(RANDOM_ACTIONS_ENV_VAR, "false");
+        }
+        assert!(
+            !resolve_config(&bare, from_toml.clone()).random_actions,
+            "FORGE_MC_RANDOM_ACTIONS=false must override TOML true"
+        );
+        assert!(
+            resolve_config(&with_flag, from_toml).random_actions,
+            "--random-actions remains OR-only and must beat env false"
+        );
+
+        unsafe {
+            if let Some(v) = saved {
+                std::env::set_var(RANDOM_ACTIONS_ENV_VAR, v);
+            } else {
+                std::env::remove_var(RANDOM_ACTIONS_ENV_VAR);
+            }
+        }
     }
 }

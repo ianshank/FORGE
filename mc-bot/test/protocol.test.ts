@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 
 import {
   SCHEMA_VERSION,
+  ERROR_CODE_BUSY,
+  ERROR_CODE_INTERNAL,
+  ERROR_CODE_RECONNECTING,
   helloMsg,
+  isTransientErrorCode,
   observationMsg,
   errorMsg,
   parseClientMsg,
@@ -207,5 +211,12 @@ describe('protocol — xlang regression', () => {
       'protocol SCHEMA_VERSION drift — Rust ' +
         'xlang_schema_version_pinned_to_known_good will also fail',
     );
+  });
+
+  it('isTransientErrorCode covers RECONNECTING and BUSY only', () => {
+    assert.equal(isTransientErrorCode(ERROR_CODE_RECONNECTING), true);
+    assert.equal(isTransientErrorCode(ERROR_CODE_BUSY), true);
+    assert.equal(isTransientErrorCode(ERROR_CODE_INTERNAL), false);
+    assert.equal(isTransientErrorCode('INVALID_ACTION'), false);
   });
 });

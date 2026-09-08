@@ -78,6 +78,30 @@ pub enum RunnerError {
     #[error("env error: {0}")]
     Env(String),
 
+    /// Transient env protocol error (`RECONNECTING` / `BUSY`). The
+    /// episode is discarded; [`crate::Runner::run`] continues until
+    /// [`crate::config::RunnerConfig::max_consecutive_transient_failures`].
+    #[error("transient env error [{code}]: {message}")]
+    TransientEnv {
+        /// Protocol error code (`RECONNECTING` or `BUSY`).
+        code: String,
+        /// Bot-supplied human message.
+        message: String,
+    },
+
+    /// The consecutive-transient cap was hit. Distinct from
+    /// [`Self::TransientEnv`] so callers do not retry a run that has
+    /// already exhausted its budget.
+    #[error("too many consecutive transient env errors ({count}): last [{code}]: {message}")]
+    TooManyTransientFailures {
+        /// How many consecutive transients were observed.
+        count: u32,
+        /// Last protocol error code.
+        code: String,
+        /// Last bot-supplied message.
+        message: String,
+    },
+
     /// Wrapped error from the latent-MCTS planner (`anyhow::Error` from
     /// `forge_agent::latent_mcts::search::LatentMctsSearch::search`).
     #[error("planner error: {0}")]
@@ -152,5 +176,59 @@ impl RunnerError {
             path: path.into(),
             source,
         }
+    }
+}
+
+/// Display prefix `forge_env_mc::McEnvError::Transient` emits.
+///
+/// `Runner` is generic over `Env::Error` and cannot downcast to
+/// `McEnvError` when `mc-live` is off, so classification is by
+/// Display. Must stay byte-identical to
+/// `forge_env_mc::error::TRANSIENT_PROTOCOL_ERROR_DISPLAY_PREFIX`.
+pub const TRANSIENT_ENV_DISPLAY_PREFIX: &str = "transient protocol error [";
+
+/// Parse a transient env error out of an `Env::Error` Display string.
+///
+/// Expected form: `transient protocol error [CODE]: message`, optionally
+/// wrapped by another error's Display (e.g. `EnvError::Other`).
+#[must_use]
+pub fn parse_transient_env_error(msg: &str) -> Option<(String, String)> {
+    let start = msg.find(TRANSIENT_ENV_DISPLAY_PREFIX)?;
+    let rest = &msg[start + TRANSIENT_ENV_DISPLAY_PREFIX.len()..];
+    let (code, message) = rest.split_once("]: ")?;
+    if code.is_empty() {
+        return None;
+    }
+    Some((code.to_string(), message.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_transient_env_error_roundtrip() {
+        let msg = "transient protocol error [RECONNECTING]: bot rebuilding";
+        assert_eq!(
+            parse_transient_env_error(msg),
+            Some(("RECONNECTING".into(), "bot rebuilding".into()))
+        );
+    }
+
+    #[test]
+    fn parse_transient_env_error_ignores_fatal_protocol() {
+        assert_eq!(
+            parse_transient_env_error("protocol error [INTERNAL]: boom"),
+            None
+        );
+        assert_eq!(parse_transient_env_error("env error: nope"), None);
+        assert_eq!(
+            parse_transient_env_error("transient protocol error []: empty code"),
+            None
+        );
+        assert_eq!(
+            parse_transient_env_error("env error: transient protocol error [BUSY]: wrapped"),
+            Some(("BUSY".into(), "wrapped".into()))
+        );
     }
 }

@@ -10,6 +10,26 @@ use serde::{Deserialize, Serialize};
 /// The bot's `Hello` reply must match.
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// Bot is tearing down / rebuilding mineflayer. Completes the current
+/// request–response pair; the MDP episode is **not** resumable.
+///
+/// MUST stay in sync with `mc-bot/src/protocol.ts::ERROR_CODE_RECONNECTING`.
+pub const ERROR_CODE_RECONNECTING: &str = "RECONNECTING";
+
+/// Bot already has a client attached. Completes the pair; treat as
+/// transient at the runner (discard episode, continue the run).
+///
+/// MUST stay in sync with `mc-bot/src/protocol.ts::ERROR_CODE_BUSY`.
+pub const ERROR_CODE_BUSY: &str = "BUSY";
+
+/// True for protocol error codes that end the current episode without
+/// failing the whole run. `INTERNAL`, `INVALID_ACTION`, `BAD_MESSAGE`,
+/// and unknown codes are **not** transient.
+#[must_use]
+pub fn is_transient_error_code(code: &str) -> bool {
+    code == ERROR_CODE_RECONNECTING || code == ERROR_CODE_BUSY
+}
+
 /// Frozen channel order for the block-grid observation prefix.
 ///
 /// MUST stay in sync with the JS-side
@@ -286,5 +306,15 @@ mod tests {
              mc-bot/src/observation_grid.ts + its JS-side pin test"
         );
         assert_eq!(BLOCK_FEATURE_CHANNELS.len(), 7);
+    }
+
+    #[test]
+    fn is_transient_error_code_covers_reconnect_and_busy_only() {
+        assert!(is_transient_error_code(ERROR_CODE_RECONNECTING));
+        assert!(is_transient_error_code(ERROR_CODE_BUSY));
+        assert!(!is_transient_error_code("INTERNAL"));
+        assert!(!is_transient_error_code("INVALID_ACTION"));
+        assert!(!is_transient_error_code("BAD_MESSAGE"));
+        assert!(!is_transient_error_code("unknown"));
     }
 }

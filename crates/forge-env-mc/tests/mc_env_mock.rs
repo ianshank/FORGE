@@ -715,6 +715,33 @@ fn server_error_message_propagates() {
     server.join();
 }
 
+#[test]
+fn reconnecting_error_maps_to_transient() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    let replies = vec![
+        obs_msg(0),
+        ServerMsg::Error {
+            code: "RECONNECTING".into(),
+            message: "synthetic".into(),
+        },
+    ];
+    let bot = MockBot::bind(hello, replies);
+    let url = bot.ws_url();
+    let server = bot.run();
+    let cfg = cfg_with_url(url);
+
+    let mut env = MinecraftEnv::connect(cfg, map).unwrap();
+    let _ = env.reset(None).unwrap();
+    let err = env.step(0).unwrap_err();
+    assert!(
+        matches!(err, McEnvError::Transient { ref code, .. } if code == "RECONNECTING"),
+        "expected Transient RECONNECTING, got {err:?}"
+    );
+    let _ = env.close();
+    server.join();
+}
+
 /// A client that closes gracefully mid-script must end the session, not
 /// fail the test.
 ///

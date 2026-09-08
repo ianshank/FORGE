@@ -41,7 +41,10 @@ pub use client::ProtocolClient;
 pub use config::MinecraftEnvConfig;
 pub use error::McEnvError;
 pub use mc_env::{MinecraftEnv, MinecraftStepInfo};
-pub use protocol::{ClientMsg, ServerMsg, SCHEMA_VERSION};
+pub use protocol::{
+    is_transient_error_code, ClientMsg, ServerMsg, ERROR_CODE_BUSY, ERROR_CODE_RECONNECTING,
+    SCHEMA_VERSION,
+};
 pub use reward_config::{combined_schema_id, RewardConfig};
 
 /// Test-only helpers shared across this crate's unit tests. Not compiled

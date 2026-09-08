@@ -3,6 +3,20 @@
 
 export const SCHEMA_VERSION = 1;
 
+/** Bot is tearing down / rebuilding mineflayer. Completes the pair; episode is not resumable. */
+export const ERROR_CODE_RECONNECTING = 'RECONNECTING';
+/** Bot already has a client attached. Transient at the runner. */
+export const ERROR_CODE_BUSY = 'BUSY';
+/** Fatal: keep the Rust runner fail-closed pin. */
+export const ERROR_CODE_INTERNAL = 'INTERNAL';
+export const ERROR_CODE_INVALID_ACTION = 'INVALID_ACTION';
+export const ERROR_CODE_BAD_MESSAGE = 'BAD_MESSAGE';
+
+/** True for codes that end the current episode without failing the whole run. */
+export function isTransientErrorCode(code: string): boolean {
+  return code === ERROR_CODE_RECONNECTING || code === ERROR_CODE_BUSY;
+}
+
 export interface GridShape {
   height: number;
   width: number;

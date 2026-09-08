@@ -307,3 +307,93 @@ fn mid_episode_protocol_error_surfaces_as_runner_env_error() {
     );
     server.join();
 }
+
+/// Mid-episode `RECONNECTING` discards the partial trajectory and
+/// continues the run. The next Reset starts a fresh MDP.
+#[test]
+fn mid_episode_reconnecting_discards_and_continues_run() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let map = sample_map();
+    let schema_id = map.canonical_sha256();
+
+    let script = vec![
+        obs(0, 0.0, false),
+        ServerMsg::Error {
+            code: "RECONNECTING".into(),
+            message: "mineflayer reconnecting; discard this episode".into(),
+        },
+        obs(0, 0.0, false),
+        obs(1, 1.0, true),
+    ];
+    let bot = MockBot::bind(hello_for(&map), script);
+    let cfg = MinecraftEnvConfig {
+        ws_url: bot.ws_url(),
+        ..MinecraftEnvConfig::default()
+    };
+    let server = bot.run();
+
+    let env = MinecraftEnv::connect(cfg, map).expect("handshake");
+    let mut config = runner_config(tmp.path(), &schema_id, 1);
+    config.random_actions = true;
+    config.action_repeat = 1;
+    config.transient_failure_backoff_ms = 0;
+    config.max_consecutive_transient_failures = 3;
+    let mut runner = build_runner(config, env);
+
+    let outcome = runner
+        .run(None)
+        .expect("RECONNECTING must not fail the run");
+    assert!(
+        outcome.episodes_completed >= 1,
+        "next episode after discard must complete, got {outcome:?}"
+    );
+    assert_eq!(outcome.transient_discards, 1);
+    server.join();
+}
+
+/// Three consecutive `RECONNECTING` frames hit the cap and fail the run.
+#[test]
+fn consecutive_reconnecting_hits_cap_and_fails_run() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let map = sample_map();
+    let schema_id = map.canonical_sha256();
+
+    let script = vec![
+        obs(0, 0.0, false),
+        ServerMsg::Error {
+            code: "RECONNECTING".into(),
+            message: "1".into(),
+        },
+        obs(0, 0.0, false),
+        ServerMsg::Error {
+            code: "BUSY".into(),
+            message: "2".into(),
+        },
+        obs(0, 0.0, false),
+        ServerMsg::Error {
+            code: "RECONNECTING".into(),
+            message: "3".into(),
+        },
+    ];
+    let bot = MockBot::bind(hello_for(&map), script);
+    let cfg = MinecraftEnvConfig {
+        ws_url: bot.ws_url(),
+        ..MinecraftEnvConfig::default()
+    };
+    let server = bot.run();
+
+    let env = MinecraftEnv::connect(cfg, map).expect("handshake");
+    let mut config = runner_config(tmp.path(), &schema_id, 10);
+    config.random_actions = true;
+    config.action_repeat = 1;
+    config.transient_failure_backoff_ms = 0;
+    config.max_consecutive_transient_failures = 3;
+    let mut runner = build_runner(config, env);
+
+    let err = runner.run(None).expect_err("cap must fail the run");
+    assert!(
+        matches!(err, RunnerError::TooManyTransientFailures { count: 3, .. }),
+        "expected TooManyTransientFailures, got {err:?}"
+    );
+    server.join();
+}

@@ -207,7 +207,7 @@ impl MinecraftEnv {
             }
             ServerMsg::Error { code, message } => {
                 warn!(code, message, "bot reported protocol error");
-                Err(McEnvError::Protocol { code, message })
+                Err(McEnvError::from_protocol_error(code, message))
             }
             ServerMsg::Hello { .. } => {
                 Err(McEnvError::Unexpected("duplicate Hello mid-episode".into()))
@@ -249,7 +249,7 @@ impl Env for MinecraftEnv {
             }
             ServerMsg::Error { code, message } => {
                 warn!(code, message, "bot reported protocol error on reset");
-                Err(McEnvError::Protocol { code, message })
+                Err(McEnvError::from_protocol_error(code, message))
             }
             ServerMsg::Hello { .. } => {
                 Err(McEnvError::Unexpected("duplicate Hello mid-episode".into()))

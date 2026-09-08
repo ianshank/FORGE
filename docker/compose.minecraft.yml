@@ -185,6 +185,11 @@ services:
     build:
       context: ..
       dockerfile: docker/mc-runner.Dockerfile
+      args:
+        # Default stays random-baseline-only (`mc-live`). Self-play
+        # exports RUNNER_FEATURES=mc-live-bundled so the image can
+        # load ONNX. Rebuild (`mc_run.sh --build`) after flipping.
+        FEATURES: ${RUNNER_FEATURES:-mc-live}
     image: ${FORGE_MC_RUNNER_IMAGE:-forge-mc-runner:dev}
     container_name: forge-mc-runner
     restart: ${RUNNER_RESTART_POLICY:-on-failure}
@@ -223,6 +228,10 @@ services:
       # v0.4: propagates the freshly-computed schema_id from
       # `mc_self_play.sh`.
       FORGE_MC_SCHEMA_ID: ${FORGE_MC_SCHEMA_ID:-}
+      # Empty = no override (shipped runner.toml random_actions=true).
+      # Self-play (not --baseline-only) exports `false` so trained
+      # identity actually loads ONNX.
+      FORGE_MC_RANDOM_ACTIONS: ${RUNNER_RANDOM_ACTIONS:-}
       RUST_LOG: ${RUST_LOG:-forge_mc_runner=info,forge_env_mc=info,forge_agent=info}
     volumes:
       - ${MC_CONFIG_DIR:-../configs/minecraft}:/app/configs:ro

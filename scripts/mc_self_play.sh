@@ -17,7 +17,7 @@
 #
 # Usage:
 #   scripts/mc_self_play.sh [--dry-run] [--gpu] [--detach] [--down] \
-#                            [--env-file PATH]
+#                            [--baseline-only] [--env-file PATH]
 #
 # Flags:
 #   --dry-run          Print every step's command + exit 0; nothing
@@ -29,6 +29,10 @@
 #                      Default is foreground (logs stream to TTY,
 #                      Ctrl-C tears down).
 #   --down             Tear the stack down only; skip steps 1-5.
+#   --baseline-only    Skip trainer/self-play profile, schema_id
+#                      compute, and model bootstrap. Does **not**
+#                      force trained identity: leaves runner.toml's
+#                      random_actions=true and FEATURES=mc-live.
 #   --env-file PATH    Override the env file. Forwarded to mc_run.sh +
 #                      the compose-run-bootstrap invocations.
 #
@@ -72,7 +76,7 @@ ACTION_DIM="${ACTION_DIM:-12}"
 
 log()   { printf '%s [mc_self_play] %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 die()   { log "ERROR: $*"; exit 1; }
-usage() { sed -n '2,40p' "$0"; }
+usage() { sed -n '2,44p' "$0"; }
 
 # Run a command or print it in dry-run mode. The dry-run trace goes
 # to STDERR so callers capturing stdout (e.g. command substitution
@@ -159,8 +163,15 @@ fi
 if (( BASELINE_ONLY )); then
   SCHEMA_ID="unset"
   log "baseline-only mode: skipping schema_id computation and model bootstrap"
+  log "baseline-only: not forcing trained identity (runner.toml random_actions stays true)"
   export FORGE_MC_SCHEMA_ID="${SCHEMA_ID}"
 else
+  # Trained loop identity: env-var ladder + bundled image. The shipped
+  # runner.toml stays random_actions=true so the baseline pin test
+  # remains green; compose interpolates these into the runner service.
+  export RUNNER_RANDOM_ACTIONS=false
+  export RUNNER_FEATURES=mc-live-bundled
+  log "trained identity: RUNNER_RANDOM_ACTIONS=false RUNNER_FEATURES=mc-live-bundled"
   # ---------- step 2: compute schema_id ----------
   log "computing schema_id via trainer-bootstrap one-shot"
   compose_args=(
@@ -241,8 +252,21 @@ up_args=("--env-file" "${ENV_FILE}")
 (( BASELINE_ONLY )) || up_args+=("--profile" "self-play")
 (( USE_GPU )) && up_args+=("--gpu")
 (( DETACH )) && up_args+=("--detach")
-# Forward FORGE_MC_SCHEMA_ID into the child shell so `mc_run.sh`'s
-# compose invocation picks it up via env-file interpolation.
-run_or_echo env "FORGE_MC_SCHEMA_ID=${SCHEMA_ID}" "${MC_RUN_SH}" "${up_args[@]}"
+# Rebuild when asking for the bundled image so an older `mc-live`
+# forge-mc-runner:dev is not reused (trained mode hard-errors without
+# onnx-reload).
+if [[ "${RUNNER_FEATURES:-}" == "mc-live-bundled" ]]; then
+  up_args+=("--build")
+fi
+# Forward FORGE_MC_SCHEMA_ID + trained-identity knobs into the child
+# shell so `mc_run.sh`'s compose invocation interpolates them.
+forward_env=( "FORGE_MC_SCHEMA_ID=${SCHEMA_ID}" )
+if [[ -n "${RUNNER_RANDOM_ACTIONS-}" ]]; then
+  forward_env+=( "RUNNER_RANDOM_ACTIONS=${RUNNER_RANDOM_ACTIONS}" )
+fi
+if [[ -n "${RUNNER_FEATURES-}" ]]; then
+  forward_env+=( "RUNNER_FEATURES=${RUNNER_FEATURES}" )
+fi
+run_or_echo env "${forward_env[@]}" "${MC_RUN_SH}" "${up_args[@]}"
 
 log "mc_self_play complete"

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Close the self-improving loop (2026-09)
+
+- **Trained compose identity**: `FORGE_MC_RANDOM_ACTIONS` env-var ladder (empty = no override; `true`/`false`/`1`/`0`). `mc_self_play.sh` (without `--baseline-only`) exports `RUNNER_RANDOM_ACTIONS=false` and `RUNNER_FEATURES=mc-live-bundled` and rebuilds the runner image. Shipped `configs/minecraft/runner.toml` stays `random_actions = true`. Compose plumbs `build.args.FEATURES` and the env var. CI job `mc-runner-bundled-image` smoke-builds the Dockerfile with `FEATURES=mc-live-bundled` and runs `--help`.
+- **Runner continue-on-reconnect**: mid-episode `RECONNECTING`/`BUSY` discards the partial trajectory (`discard_current`), records `env_step` protocol errors, and continues `Runner::run` after a config-driven backoff (`max_consecutive_transient_failures` default 3, `transient_failure_backoff_ms` default 500). `INTERNAL` still fails the run. Do not retry `recv` or resend Step -- reconnect is a new MDP. Typed `McEnvError::Transient` at the protocol boundary; `RunnerError::TransientEnv` / `TooManyTransientFailures` on the generic runner.
+- **Honest bot health**: `BotManager.isHealthy` tracks advancing mineflayer `bot.time.age`, not wall-clock since the last WS observation, so trained MCTS think-time does not manufacture reconnects.
+- **Docs / OpenSpec**: Phase-2 next_steps rows for simple embeddings and milestone shapers marked landed; reconnect = bot done and runner continues; `--baseline-only` documented. Completed OpenSpec changes archived under `openspec/changes/archive/`.
+
 ### Throughput Evidence, demo_ui Packaging, and torch.export (2026-09)
 
 - **Committed Python throughput evidence**: labeled `cloud_agent` PyO3 report
