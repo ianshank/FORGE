@@ -36,6 +36,8 @@ else:  # pragma: no cover
 
 from forge.training.muzero_mc.schema_id import (
     ACTION_KIND_FIELD_ORDER,
+    NESTED_REWARD_PATH_KEY_CONFIG,
+    NESTED_REWARD_PATH_KEY_CRAFTING,
     action_map_canonical_sha256,
     block_embeddings_canonical_sha256,
     block_embeddings_vocab_size,
@@ -293,3 +295,113 @@ def test_block_embeddings_shipped_pin() -> None:
         block_embeddings_canonical_sha256(data)
         == "b5aef9f434474c17ffbdee7fe894ae93ada0f4e6477cb51b0a8cf4fc0d7a7a7e"
     )
+
+
+def test_empty_nested_path_fails_closed(tmp_path: Path) -> None:
+    rewards_path = tmp_path / "rewards.toml"
+    rewards_path.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CONFIG} = ""\n',
+        encoding="utf-8",
+    )
+    rewards = {"reward": [{"kind": "milestone", NESTED_REWARD_PATH_KEY_CONFIG: ""}]}
+    with pytest.raises(ValueError, match="non-empty string"):
+        rewards_canonical_sha256(rewards, source_path=rewards_path)
+
+
+def test_non_string_nested_path_fails_closed(tmp_path: Path) -> None:
+    rewards_path = tmp_path / "rewards.toml"
+    rewards_path.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CONFIG} = 1\n',
+        encoding="utf-8",
+    )
+    rewards = {"reward": [{"kind": "milestone", NESTED_REWARD_PATH_KEY_CONFIG: 1}]}
+    with pytest.raises(ValueError, match="non-empty string"):
+        rewards_canonical_sha256(rewards, source_path=rewards_path)
+
+
+def test_missing_crafting_config_path_fails_closed(tmp_path: Path) -> None:
+    rewards_path = tmp_path / "rewards.toml"
+    rewards_path.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CRAFTING} = "missing.toml"\n',
+        encoding="utf-8",
+    )
+    rewards = {"reward": [{"kind": "milestone", NESTED_REWARD_PATH_KEY_CRAFTING: "missing.toml"}]}
+    with pytest.raises(FileNotFoundError, match="nested reward file not found"):
+        rewards_canonical_sha256(rewards, source_path=rewards_path)
+
+
+def test_without_source_path_hashes_path_strings() -> None:
+    """Fixture pin: omitted source_path must not try to load nested files."""
+    rewards = {
+        "reward": [
+            {
+                "kind": "milestone",
+                NESTED_REWARD_PATH_KEY_CONFIG: "configs/minecraft/does-not-exist.toml",
+            }
+        ]
+    }
+    digest = rewards_canonical_sha256(rewards)
+    assert len(digest) == 64
+
+
+def test_repo_style_nested_path_prefers_sibling_over_cwd_relative(tmp_path: Path) -> None:
+    unique = "[milestones]\nsibling_only = { reward = 99.0, once = true }\n"
+    (tmp_path / "milestone_rewards.toml").write_text(unique, encoding="utf-8")
+    rewards_path = tmp_path / "rewards.toml"
+    rewards_path.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CONFIG} = '
+        '"configs/minecraft/milestone_rewards.toml"\n',
+        encoding="utf-8",
+    )
+    with rewards_path.open("rb") as handle:
+        data = tomllib.load(handle)
+    from_repo_style = rewards_canonical_sha256(data, source_path=rewards_path)
+
+    dir2 = tmp_path / "basename"
+    dir2.mkdir()
+    (dir2 / "milestone_rewards.toml").write_text(unique, encoding="utf-8")
+    rewards2 = dir2 / "rewards.toml"
+    rewards2.write_text(
+        f'[[reward]]\nkind = "milestone"\n{NESTED_REWARD_PATH_KEY_CONFIG} = '
+        '"milestone_rewards.toml"\n',
+        encoding="utf-8",
+    )
+    with rewards2.open("rb") as handle:
+        data2 = tomllib.load(handle)
+    from_basename = rewards_canonical_sha256(data2, source_path=rewards2)
+    assert from_repo_style == from_basename
+
+
+def test_load_num_block_embeddings_missing_file_warns(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from forge.models.muzero_config import (
+        DEFAULT_NUM_BLOCK_EMBEDDINGS,
+        load_num_block_embeddings,
+    )
+
+    missing = tmp_path / "no_such_embeddings.toml"
+    with caplog.at_level("WARNING", logger="forge.models.muzero_config"):
+        assert load_num_block_embeddings(missing) == DEFAULT_NUM_BLOCK_EMBEDDINGS
+    assert "missing" in caplog.text.lower()
+
+
+def test_load_num_block_embeddings_corrupt_toml_warns(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from forge.models.muzero_config import (
+        DEFAULT_NUM_BLOCK_EMBEDDINGS,
+        load_num_block_embeddings,
+    )
+
+    corrupt = tmp_path / "bad.toml"
+    corrupt.write_text("not = valid toml [", encoding="utf-8")
+    with caplog.at_level("WARNING", logger="forge.models.muzero_config"):
+        assert load_num_block_embeddings(corrupt) == DEFAULT_NUM_BLOCK_EMBEDDINGS
+    assert "Failed to parse" in caplog.text
+
+
+def test_muzero_config_grid_depth_uses_named_default() -> None:
+    from forge.models.muzero_config import DEFAULT_GRID_DEPTH, MuZeroConfig
+
+    assert MuZeroConfig().grid_depth == DEFAULT_GRID_DEPTH

@@ -12,6 +12,8 @@ import {
   canonicalRewardsSha256,
   combinedSchemaId,
   loadRewardConfig,
+  NESTED_REWARD_PATH_KEY_CONFIG,
+  NESTED_REWARD_PATH_KEY_CRAFTING,
 } from '../src/reward_config.js';
 
 // Same fixture as the Rust `sample_toml()` in
@@ -153,5 +155,71 @@ describe('reward_config — nested path folding', () => {
       '78f96c103767f3db7280175e92b8564937bcb5d505e4d75e8aab0c570d237f4b',
       'shipped rewards schema_id drift — Rust xlang_shipped_rewards_schema_id_folds_nested_files will also fail',
     );
+  });
+
+  it('hashes path strings when sourcePath is omitted (fixture pin)', () => {
+    const cfg = buildRewardConfig({
+      schema_version: 1,
+      reward: [
+        {
+          kind: 'milestone',
+          [NESTED_REWARD_PATH_KEY_CONFIG]: 'configs/minecraft/does-not-exist.toml',
+        },
+      ],
+    });
+    const h = cfg.canonicalSha256();
+    assert.equal(h.length, 64);
+  });
+
+  it('fails closed on empty nested path', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'forge-rewards-'));
+    const rewardsPath = join(dir, 'rewards.toml');
+    await writeFile(
+      rewardsPath,
+      `schema_version = 1\n\n[[reward]]\nkind = "milestone"\n${NESTED_REWARD_PATH_KEY_CONFIG} = ""\n`,
+    );
+    await assert.rejects(() => loadRewardConfig(rewardsPath, parse), /must be a non-empty string/);
+  });
+
+  it('fails closed on non-string nested path', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'forge-rewards-'));
+    const rewardsPath = join(dir, 'rewards.toml');
+    await writeFile(
+      rewardsPath,
+      `schema_version = 1\n\n[[reward]]\nkind = "milestone"\n${NESTED_REWARD_PATH_KEY_CONFIG} = 1\n`,
+    );
+    await assert.rejects(() => loadRewardConfig(rewardsPath, parse), /must be a non-empty string/);
+  });
+
+  it('fails closed when crafting_config_path is set and missing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'forge-rewards-'));
+    const rewardsPath = join(dir, 'rewards.toml');
+    await writeFile(
+      rewardsPath,
+      `schema_version = 1\n\n[[reward]]\nkind = "milestone"\n${NESTED_REWARD_PATH_KEY_CRAFTING} = "missing.toml"\n`,
+    );
+    await assert.rejects(() => loadRewardConfig(rewardsPath, parse), /nested reward file not found/);
+  });
+
+  it('repo-style nested path prefers sibling over cwd-relative shipped file', async () => {
+    const unique = '[milestones]\nsibling_only = { reward = 99.0, once = true }\n';
+    const dir = await mkdtemp(join(tmpdir(), 'forge-rewards-'));
+    await writeFile(join(dir, 'milestone_rewards.toml'), unique);
+    const rewardsPath = join(dir, 'rewards.toml');
+    await writeFile(
+      rewardsPath,
+      `schema_version = 1\n\n[[reward]]\nkind = "milestone"\n${NESTED_REWARD_PATH_KEY_CONFIG} = "configs/minecraft/milestone_rewards.toml"\n`,
+    );
+    const fromRepoStyle = (await loadRewardConfig(rewardsPath, parse)).canonicalSha256();
+
+    const dir2 = await mkdtemp(join(tmpdir(), 'forge-rewards-'));
+    await writeFile(join(dir2, 'milestone_rewards.toml'), unique);
+    const rewards2 = join(dir2, 'rewards.toml');
+    await writeFile(
+      rewards2,
+      `schema_version = 1\n\n[[reward]]\nkind = "milestone"\n${NESTED_REWARD_PATH_KEY_CONFIG} = "milestone_rewards.toml"\n`,
+    );
+    const fromBasename = (await loadRewardConfig(rewards2, parse)).canonicalSha256();
+    assert.equal(fromRepoStyle, fromBasename);
   });
 });

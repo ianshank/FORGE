@@ -157,8 +157,12 @@ mod tests {
 
     #[test]
     fn from_protocol_error_classifies_transient_vs_fatal() {
-        let t = McEnvError::from_protocol_error("RECONNECTING", "x");
+        let t = McEnvError::from_protocol_error(crate::protocol::ERROR_CODE_RECONNECTING, "x");
         assert!(matches!(t, McEnvError::Transient { .. }));
+        let busy = McEnvError::from_protocol_error(crate::protocol::ERROR_CODE_BUSY, "x");
+        assert!(
+            matches!(busy, McEnvError::Transient { ref code, .. } if code == crate::protocol::ERROR_CODE_BUSY)
+        );
         let p = McEnvError::from_protocol_error("INTERNAL", "x");
         assert!(matches!(p, McEnvError::Protocol { .. }));
         assert!(!p.is_transient());

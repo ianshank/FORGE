@@ -22,6 +22,9 @@ This catalog documents all configuration files across `configs/` and the root wo
 | `FORGE_LOG_FORMAT` | `forge-observability` | `text` | Log format: `text` or `json` |
 | `FORGE_PLOTLY_JS_URL` | `forge-eval` | `https://cdn.plot.ly/plotly-3.7.0.min.js` | Custom Plotly URL for air-gapped evaluation artifact rendering |
 | `FORGE_MC_METRICS_URL` | `forge-mc-runner` / Python | `http://127.0.0.1:9090/metrics` | Prometheus metrics scrape target |
+| `FORGE_MC_SCHEMA_ID` | `forge-mc-runner` | *(none — required in TOML or env)* | Combined two-input `schema_id` (`sha256(action_map + ":" + rewards)`). Nested reward **contents** fold in. |
+| `FORGE_MC_RANDOM_ACTIONS` | `forge-mc-runner` | empty = no override | Env-var ladder over `runner.toml` `random_actions`. `true`/`false`/`1`/`0`; garbage keeps TOML. CLI `--random-actions` is OR-only (can force true, never false). |
+| `FORGE_MC_RUNNER_EPISODES` | `forge-mc-runner` | *(TOML default)* | Override `RunnerConfig.episodes` |
 | `FORGE_LMSTUDIO_BASE_URL` | `forge-cognitive` / Eval | `http://127.0.0.1:1234/v1` | Base URL for local LLM teacher inference |
 | `MLFLOW_TRACKING_URI` | `forge-eval` | *(none)* | Remote MLflow tracking server URI |
 | `MLFLOW_TRACKING_TOKEN` | `forge-eval` | *(none)* | Bearer authentication token for MLflow REST API |
@@ -58,11 +61,11 @@ This catalog documents all configuration files across `configs/` and the root wo
 | `configs/minecraft/env.docker.toml` | `MinecraftEnvConfig` / `mc-bot` | v1 | Containerized connection parameters for Dockerized runner pipelines |
 | `configs/minecraft/runner.toml` | `forge_mc_runner::config::RunnerConfig` | v1 | Episode batch limits, max steps, trajectory export dir, and schema hash |
 | `configs/minecraft/action_map.toml` | `forge_env_mc::action_map::ActionMap` | `schema_version = "v1"` | Discrete integer action ID to mineflayer command mappings |
-| `configs/minecraft/rewards.toml` | `forge_env_mc::reward_config::RewardConfig` | `schema_version = "v1"` | Dense and sparse reward weights for health, inventory, and distance |
-| `configs/minecraft/milestone_rewards.toml` | `RewardConfig` | v1 | Milestone bonus rewards for achieving discrete objectives |
-| `configs/minecraft/crafting_rewards.toml` | `RewardConfig` | v1 | Reward multipliers for crafting advanced items |
+| `configs/minecraft/rewards.toml` | `forge_env_mc::reward_config::RewardConfig` | `schema_version = "v1"` | Dense and sparse reward weights. Nested `config_path` / `crafting_config_path` **file contents** fold into `schema_id` (path-string rename without a content change does not bump). Missing nested files fail closed. |
+| `configs/minecraft/milestone_rewards.toml` | nested under rewards | v1 | Milestone bonus rewards; hashed by content into the rewards canonical SHA |
+| `configs/minecraft/crafting_rewards.toml` | nested under rewards | v1 | Crafting reward tables; hashed by content into the rewards canonical SHA |
 | `configs/minecraft/reset.toml` | `forge_env_mc::protocol::ResetPayload` | v1 | Bot respawn strategy, inventory clearing, and coordinate teleportation |
-| `configs/minecraft/block_embeddings.toml` | `forge_env_mc` | v1 | Semantic vector embeddings for Minecraft block types |
+| `configs/minecraft/block_embeddings.toml` | `forge_env_mc::block_embeddings::BlockEmbeddings` | v1 | Block-id embedding vocab (`max(index)+1`). **Obs-layout pin**, not folded into today's two-input `schema_id`. |
 
 ### 3.3 MangoMAS Multi-Agent Benchmark & Scenario Collection
 

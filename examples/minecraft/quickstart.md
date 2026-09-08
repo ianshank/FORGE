@@ -31,6 +31,12 @@ scripts/mc_self_play.sh --down
 via the `trainer-bootstrap` one-shot container — your host needs
 **only Docker Compose v2.20+**, no local Python / torch install.
 
+Default (no `--baseline-only`) is **trained identity**:
+`FORGE_MC_RANDOM_ACTIONS=false` and `RUNNER_FEATURES=mc-live-bundled`
+(rebuilds the runner image). Shipped `configs/minecraft/runner.toml`
+stays `random_actions = true` so `--baseline-only` keeps the random
+path. Nested reward file **contents** fold into `schema_id`.
+
 The longer-form sections below are for operators who want to drive
 the runner without the trainer (v0.3-pre flow) or who need to override
 specific steps.

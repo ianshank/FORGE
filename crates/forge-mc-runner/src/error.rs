@@ -187,6 +187,11 @@ impl RunnerError {
 /// `forge_env_mc::error::TRANSIENT_PROTOCOL_ERROR_DISPLAY_PREFIX`.
 pub const TRANSIENT_ENV_DISPLAY_PREFIX: &str = "transient protocol error [";
 
+/// Separator between the protocol code and message in a transient
+/// Display string (`[CODE]: message`). Twin of the `thiserror` format
+/// on `McEnvError::Transient`.
+pub const TRANSIENT_ENV_CODE_MESSAGE_SEP: &str = "]: ";
+
 /// Parse a transient env error out of an `Env::Error` Display string.
 ///
 /// Expected form: `transient protocol error [CODE]: message`, optionally
@@ -195,7 +200,7 @@ pub const TRANSIENT_ENV_DISPLAY_PREFIX: &str = "transient protocol error [";
 pub fn parse_transient_env_error(msg: &str) -> Option<(String, String)> {
     let start = msg.find(TRANSIENT_ENV_DISPLAY_PREFIX)?;
     let rest = &msg[start + TRANSIENT_ENV_DISPLAY_PREFIX.len()..];
-    let (code, message) = rest.split_once("]: ")?;
+    let (code, message) = rest.split_once(TRANSIENT_ENV_CODE_MESSAGE_SEP)?;
     if code.is_empty() {
         return None;
     }
@@ -205,6 +210,16 @@ pub fn parse_transient_env_error(msg: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transient_display_prefix_matches_forge_env_mc() {
+        assert_eq!(
+            TRANSIENT_ENV_DISPLAY_PREFIX,
+            forge_env_mc::TRANSIENT_PROTOCOL_ERROR_DISPLAY_PREFIX,
+            "Display-prefix twins must stay byte-identical so Runner can \
+             classify McEnvError::Transient without a downcast"
+        );
+    }
 
     #[test]
     fn parse_transient_env_error_roundtrip() {

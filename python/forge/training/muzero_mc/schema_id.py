@@ -36,6 +36,8 @@ from __future__ import annotations
 __all__ = [
     "ACTION_KIND_FIELD_ORDER",
     "NESTED_REWARD_PATH_KEYS",
+    "NESTED_REWARD_PATH_KEY_CONFIG",
+    "NESTED_REWARD_PATH_KEY_CRAFTING",
     "action_map_canonical_sha256",
     "block_embeddings_canonical_sha256",
     "block_embeddings_vocab_size",
@@ -46,6 +48,7 @@ __all__ = [
 
 import hashlib
 import json
+import logging
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -55,6 +58,8 @@ if sys.version_info >= (3, 11):
     import tomllib
 else:  # pragma: no cover — py3.9/3.10 fallback
     import tomli as tomllib
+
+logger = logging.getLogger(__name__)
 
 #: Canonical field order per ``ActionKind`` variant. MUST mirror the
 #: Rust enum declaration order in
@@ -92,7 +97,11 @@ ACTION_KIND_FIELD_ORDER: Final[Mapping[str, tuple[str, ...]]] = {
 #: Nested path keys whose **file contents** (not the path string) fold
 #: into ``rewards_canonical_sha256`` when ``source_path`` is set. Twin
 #: of Rust ``NESTED_REWARD_PATH_KEYS`` and JS ``NESTED_REWARD_PATH_KEYS``.
-NESTED_REWARD_PATH_KEYS: Final[frozenset[str]] = frozenset({"config_path", "crafting_config_path"})
+NESTED_REWARD_PATH_KEY_CONFIG: Final[str] = "config_path"
+NESTED_REWARD_PATH_KEY_CRAFTING: Final[str] = "crafting_config_path"
+NESTED_REWARD_PATH_KEYS: Final[frozenset[str]] = frozenset(
+    {NESTED_REWARD_PATH_KEY_CONFIG, NESTED_REWARD_PATH_KEY_CRAFTING}
+)
 
 
 def _canonical_action_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
@@ -198,7 +207,19 @@ def _resolve_nested_reward_path(base_dir: Path, key: str, value: str) -> Path:
         candidates.append(given)
     for candidate in candidates:
         if candidate.is_file():
+            logger.debug(
+                "resolved nested reward file key=%s value=%s path=%s",
+                key,
+                value,
+                candidate,
+            )
             return candidate
+    logger.warning(
+        "nested reward file not found for key=%s value=%s base_dir=%s; failing closed",
+        key,
+        value,
+        base_dir,
+    )
     msg = (
         f"nested reward file not found for `{key}` = `{value}` "
         "(searched sibling, base_dir-relative, and cwd-relative; "
@@ -215,6 +236,7 @@ def _fold_nested_path_keys(value: Any, base_dir: Path | None) -> Any:
             if k in NESTED_REWARD_PATH_KEYS:
                 if not isinstance(v, str) or not v:
                     msg = f"nested reward path key {k!r} must be a non-empty string"
+                    logger.warning("%s; failing closed", msg)
                     raise ValueError(msg)
                 if base_dir is None:
                     out[k] = v

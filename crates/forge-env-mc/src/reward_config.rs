@@ -24,6 +24,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
 use crate::error::McEnvError;
 use crate::hash_util::{canonical_json_sha256, sha256_hex, toml_to_canonical_json};
@@ -173,6 +174,7 @@ fn resolve_nested_reward_path(
     value: &str,
 ) -> Result<PathBuf, McEnvError> {
     if value.is_empty() {
+        warn!(key, "nested reward path key is empty; failing closed");
         return Err(McEnvError::Config(format!(
             "nested reward path key `{key}` is empty"
         )));
@@ -191,9 +193,21 @@ fn resolve_nested_reward_path(
     }
     for candidate in &candidates {
         if candidate.is_file() {
+            debug!(
+                key,
+                value,
+                resolved = %candidate.display(),
+                "resolved nested reward file"
+            );
             return Ok(candidate.clone());
         }
     }
+    warn!(
+        key,
+        value,
+        base_dir = %base_dir.display(),
+        "nested reward file not found; failing closed"
+    );
     Err(McEnvError::Config(format!(
         "nested reward file not found for `{key}` = `{value}` \
          (searched sibling, base_dir-relative, and cwd-relative; \
@@ -224,6 +238,7 @@ fn fold_toml_to_canonical_json(
             for (k, val) in t {
                 if is_nested_reward_path_key(k) {
                     let path_str = val.as_str().ok_or_else(|| {
+                        warn!(key = %k, "nested reward path key is not a string; failing closed");
                         McEnvError::Config(format!("nested reward path key `{k}` must be a string"))
                     })?;
                     let folded = match base_dir {
@@ -495,6 +510,138 @@ config_path = "configs/minecraft/milestone_rewards.toml"
         let h = cfg.canonical_sha256().unwrap();
         assert_eq!(h.len(), 64);
         // Must succeed even though the nested file is not resolved.
+    }
+
+    #[test]
+    fn empty_nested_path_fails_closed_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = \"\"\n",
+        )
+        .unwrap();
+        let err = RewardConfig::load(&rewards).unwrap_err();
+        match err {
+            McEnvError::Config(msg) => {
+                assert!(
+                    msg.contains("empty"),
+                    "expected empty-path fail-closed error, got: {msg}"
+                );
+            }
+            other => panic!("expected Config error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_string_nested_path_fails_closed_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = 1\n",
+        )
+        .unwrap();
+        let err = RewardConfig::load(&rewards).unwrap_err();
+        match err {
+            McEnvError::Config(msg) => {
+                assert!(
+                    msg.contains("must be a string"),
+                    "expected non-string fail-closed error, got: {msg}"
+                );
+            }
+            other => panic!("expected Config error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_crafting_config_path_fails_closed_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\ncrafting_config_path = \"missing.toml\"\n",
+        )
+        .unwrap();
+        let err = RewardConfig::load(&rewards).unwrap_err();
+        match err {
+            McEnvError::Config(msg) => {
+                assert!(
+                    msg.contains("nested reward file not found"),
+                    "expected fail-closed crafting_config_path error, got: {msg}"
+                );
+            }
+            other => panic!("expected Config error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn crafting_config_path_content_folds_into_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("crafting.toml"),
+            "[recipes]\nplanks = { reward = 1.0 }\n",
+        )
+        .unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\ncrafting_config_path = \"crafting.toml\"\n",
+        )
+        .unwrap();
+        let a = RewardConfig::load(&rewards)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        std::fs::write(
+            dir.path().join("crafting.toml"),
+            "[recipes]\nplanks = { reward = 2.0 }\n",
+        )
+        .unwrap();
+        let b = RewardConfig::load(&rewards)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        assert_ne!(a, b, "crafting_config_path nested content must fold");
+    }
+
+    #[test]
+    fn nested_repo_style_path_prefers_sibling_over_cwd_relative() {
+        // Docker mounts `configs/minecraft/` as a flat dir. Shipped
+        // rewards.toml uses `configs/minecraft/milestone_rewards.toml`.
+        // Sibling lookup (filename) must win over cwd-relative lookup
+        // of the same repo-style path (which would hit the shipped file
+        // when tests run from the workspace root).
+        let unique = "[milestones]\nsibling_only = { reward = 99.0, once = true }\n";
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("milestone_rewards.toml"), unique).unwrap();
+        let rewards = dir.path().join("rewards.toml");
+        std::fs::write(
+            &rewards,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = \"configs/minecraft/milestone_rewards.toml\"\n",
+        )
+        .unwrap();
+        let from_repo_style = RewardConfig::load(&rewards)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+
+        let dir2 = tempfile::tempdir().unwrap();
+        std::fs::write(dir2.path().join("milestone_rewards.toml"), unique).unwrap();
+        let rewards2 = dir2.path().join("rewards.toml");
+        std::fs::write(
+            &rewards2,
+            "schema_version = 1\n\n[[reward]]\nkind = \"milestone\"\nconfig_path = \"milestone_rewards.toml\"\n",
+        )
+        .unwrap();
+        let from_basename = RewardConfig::load(&rewards2)
+            .unwrap()
+            .canonical_sha256()
+            .unwrap();
+        assert_eq!(
+            from_repo_style, from_basename,
+            "sibling lookup must fold the temp nested file, not the cwd-relative shipped one"
+        );
     }
 
     /// Pinned cross-language regression gate over the **shipped**

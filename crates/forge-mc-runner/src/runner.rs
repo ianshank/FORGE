@@ -50,7 +50,7 @@ use crate::config::RunnerConfig;
 use crate::error::RunnerError;
 use crate::hot_reload::{HotReloadWatcher, ReloadEvent};
 use crate::manifest::ModelManifest;
-use crate::metrics::MetricsRecorder;
+use crate::metrics::{MetricsRecorder, METRIC_REASON_ENV_STEP, METRIC_REASON_PLANNER};
 use crate::random_baseline::sample_random_action;
 use crate::trajectory::TrajectoryWriter;
 
@@ -410,7 +410,7 @@ where
                 Ok(r) => r,
                 Err(e) => {
                     if let Some(rec) = self.metrics.as_ref() {
-                        rec.record_protocol_error("planner");
+                        rec.record_protocol_error(METRIC_REASON_PLANNER);
                     }
                     return Err(e);
                 }
@@ -576,7 +576,7 @@ where
                     // into a fresh episode.
                     self.writer.discard_current();
                     if let Some(rec) = self.metrics.as_ref() {
-                        rec.record_protocol_error("env_step");
+                        rec.record_protocol_error(METRIC_REASON_ENV_STEP);
                     }
                     consecutive_transient = consecutive_transient.saturating_add(1);
                     outcome.transient_discards = outcome.transient_discards.saturating_add(1);
@@ -585,6 +585,8 @@ where
                         message = %message,
                         consecutive_transient,
                         max_transient,
+                        episodes_completed = outcome.episodes_completed,
+                        transient_discards = outcome.transient_discards,
                         "transient env error; discarding episode and continuing the run"
                     );
                     if max_transient == 0 || consecutive_transient >= max_transient {

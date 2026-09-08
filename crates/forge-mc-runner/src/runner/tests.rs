@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::{TRANSIENT_ENV_CODE_MESSAGE_SEP, TRANSIENT_ENV_DISPLAY_PREFIX};
 use crate::manifest::{ModelFileEntry, ModelManifestFiles, MANIFEST_SCHEMA_VERSION};
 use forge_agent::latent_mcts::model::StubLatentModel;
 use forge_agent::latent_mcts::search::LatentMctsConfig;
@@ -111,13 +112,27 @@ struct TransientThenOkEnv {
 
 impl TransientThenOkEnv {
     fn fail_first_n_steps(obs_dim: usize, action_count: u32, n: u32) -> Self {
+        Self::fail_first_n_steps_with_code(
+            obs_dim,
+            action_count,
+            n,
+            forge_env_mc::ERROR_CODE_RECONNECTING,
+        )
+    }
+
+    fn fail_first_n_steps_with_code(
+        obs_dim: usize,
+        action_count: u32,
+        n: u32,
+        code: &'static str,
+    ) -> Self {
         Self {
             inner: StubFlatEnv::new(obs_dim, action_count, Some(1)),
             fail_first_n_steps: n,
             steps_seen: 0,
             fail_first_n_resets: 0,
             resets_seen: 0,
-            code: "RECONNECTING",
+            code,
         }
     }
 }
@@ -132,7 +147,7 @@ impl Env for TransientThenOkEnv {
         self.resets_seen += 1;
         if self.resets_seen <= self.fail_first_n_resets {
             return Err(EnvError::Other(format!(
-                "transient protocol error [{}]: synthetic reset",
+                "{TRANSIENT_ENV_DISPLAY_PREFIX}{}{TRANSIENT_ENV_CODE_MESSAGE_SEP}synthetic reset",
                 self.code
             )));
         }
@@ -147,7 +162,7 @@ impl Env for TransientThenOkEnv {
         self.steps_seen += 1;
         if self.steps_seen <= self.fail_first_n_steps {
             return Err(EnvError::Other(format!(
-                "transient protocol error [{}]: synthetic step",
+                "{TRANSIENT_ENV_DISPLAY_PREFIX}{}{TRANSIENT_ENV_CODE_MESSAGE_SEP}synthetic step",
                 self.code
             )));
         }
@@ -727,6 +742,28 @@ fn run_discards_transient_episode_and_continues() {
         .filter_map(|e| e.ok())
         .collect();
     assert_eq!(saved.len(), 1, "partial episode must not be written");
+}
+
+#[test]
+fn run_discards_busy_episode_and_continues() {
+    let dir = tempfile::tempdir().unwrap();
+    let traj_dir = dir.path().join("traj");
+    let manifest_path = dir.path().join("model_manifest.json");
+
+    let env =
+        TransientThenOkEnv::fail_first_n_steps_with_code(4, 3, 1, forge_env_mc::ERROR_CODE_BUSY);
+    let search = make_search(3, 0);
+    let writer = make_writer(&traj_dir, 4, 3);
+    let watcher = HotReloadWatcher::new(&manifest_path);
+    let mut cfg = make_config(1, 8);
+    cfg.random_actions = true;
+    cfg.transient_failure_backoff_ms = 0;
+    cfg.max_consecutive_transient_failures = 3;
+
+    let mut runner = Runner::new(cfg, env, search, writer, watcher);
+    let outcome = runner.run(None).expect("run must continue after BUSY");
+    assert_eq!(outcome.episodes_completed, 1);
+    assert_eq!(outcome.transient_discards, 1);
 }
 
 #[test]

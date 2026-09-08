@@ -36,8 +36,8 @@
 #   --env-file PATH    Override the env file. Forwarded to mc_run.sh +
 #                      the compose-run-bootstrap invocations.
 #
-# Every behaviour is driven by env vars or flags — no values are
-# hard-coded inside this script.
+# Every behaviour is driven by env vars or flags. Named defaults below
+# are the single source of truth for trained-loop identity.
 
 set -euo pipefail
 
@@ -73,6 +73,9 @@ MANIFEST_IN_CONTAINER="${MANIFEST_IN_CONTAINER:-/app/models/model_manifest.json}
 # flat-only shape (see `include_block_grid = false` in env.toml).
 OBS_DIM="${OBS_DIM:-920}"
 ACTION_DIM="${ACTION_DIM:-12}"
+SCHEMA_ID_HEX_LEN="${SCHEMA_ID_HEX_LEN:-64}"
+TRAINED_FEATURES="${TRAINED_FEATURES:-mc-live-bundled}"
+TRAINED_RANDOM_ACTIONS="${TRAINED_RANDOM_ACTIONS:-false}"
 
 log()   { printf '%s [mc_self_play] %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 die()   { log "ERROR: $*"; exit 1; }
@@ -169,9 +172,9 @@ else
   # Trained loop identity: env-var ladder + bundled image. The shipped
   # runner.toml stays random_actions=true so the baseline pin test
   # remains green; compose interpolates these into the runner service.
-  export RUNNER_RANDOM_ACTIONS=false
-  export RUNNER_FEATURES=mc-live-bundled
-  log "trained identity: RUNNER_RANDOM_ACTIONS=false RUNNER_FEATURES=mc-live-bundled"
+  export RUNNER_RANDOM_ACTIONS="${TRAINED_RANDOM_ACTIONS}"
+  export RUNNER_FEATURES="${TRAINED_FEATURES}"
+  log "trained identity: RUNNER_RANDOM_ACTIONS=${TRAINED_RANDOM_ACTIONS} RUNNER_FEATURES=${TRAINED_FEATURES}"
   # ---------- step 2: compute schema_id ----------
   log "computing schema_id via trainer-bootstrap one-shot"
   compose_args=(
@@ -192,8 +195,8 @@ else
   # Validate the captured schema_id (skip in dry-run since it's
   # synthetic).
   if (( ! DRY_RUN )); then
-    [[ ${#SCHEMA_ID} -eq 64 ]] \
-      || die "compute-schema-id returned non-64-hex output: ${SCHEMA_ID}"
+    [[ ${#SCHEMA_ID} -eq "${SCHEMA_ID_HEX_LEN}" ]] \
+      || die "compute-schema-id returned non-${SCHEMA_ID_HEX_LEN}-hex output: ${SCHEMA_ID}"
   fi
   log "schema_id=${SCHEMA_ID}"
   export FORGE_MC_SCHEMA_ID="${SCHEMA_ID}"
@@ -255,7 +258,7 @@ up_args=("--env-file" "${ENV_FILE}")
 # Rebuild when asking for the bundled image so an older `mc-live`
 # forge-mc-runner:dev is not reused (trained mode hard-errors without
 # onnx-reload).
-if [[ "${RUNNER_FEATURES:-}" == "mc-live-bundled" ]]; then
+if [[ "${RUNNER_FEATURES:-}" == "${TRAINED_FEATURES}" ]]; then
   up_args+=("--build")
 fi
 # Forward FORGE_MC_SCHEMA_ID + trained-identity knobs into the child

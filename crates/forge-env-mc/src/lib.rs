@@ -41,7 +41,7 @@ pub use action_map::{ActionEntry, ActionKind, ActionMap};
 pub use block_embeddings::{BlockEmbeddings, DEFAULT_NUM_BLOCK_EMBEDDINGS};
 pub use client::ProtocolClient;
 pub use config::MinecraftEnvConfig;
-pub use error::McEnvError;
+pub use error::{McEnvError, TRANSIENT_PROTOCOL_ERROR_DISPLAY_PREFIX};
 pub use mc_env::{MinecraftEnv, MinecraftStepInfo};
 pub use protocol::{
     is_transient_error_code, ClientMsg, ServerMsg, ERROR_CODE_BUSY, ERROR_CODE_RECONNECTING,

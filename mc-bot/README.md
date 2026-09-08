@@ -3,7 +3,7 @@
 Node bridge from mineflayer to FORGE's `forge-env-mc` Rust client.
 
 Protocol v1 — JSON-only WebSocket. Wire format defined in
-[`src/protocol.js`](src/protocol.js); must agree byte-for-byte with
+[`src/protocol.ts`](src/protocol.ts); must agree byte-for-byte with
 `crates/forge-env-mc/src/protocol.rs`.
 
 ## Layout
@@ -11,23 +11,24 @@ Protocol v1 — JSON-only WebSocket. Wire format defined in
 ```
 mc-bot/
   src/
-    protocol.js          - ClientMsg parser + ServerMsg builders
+    protocol.ts          - ClientMsg parser + ServerMsg builders
                            (Hello may carry optional `grid_shape` since v0.5)
-    action_map.js        - loads + validates action_map.toml; canonicalises
-    schema_id.js         - SHA256 over canonical action map (xlang-pinned)
-    hash.js              - shared FNV-1a `stableStringHash` + `finiteNumber`
-    observation.js       - flat scalar observation vector + `flat_vector_dim` pad
-    observation_grid.js  - v0.5 ego-centric block-grid encoder
+    action_map.ts        - loads + validates action_map.toml; canonicalises
+    schema_id.ts         - SHA256 over canonical action map (xlang-pinned)
+    hash.ts              - shared FNV-1a `stableStringHash` + `finiteNumber`
+    canonical_json.ts    - recursive key-sort for xlang hashes (not FNV)
+    observation.ts       - flat scalar observation vector + `flat_vector_dim` pad
+    observation_grid.ts  - v0.5 ego-centric block-grid encoder
                            (xlang-pinned `BLOCK_FEATURE_CHANNELS`)
     reward/
-      index.js           - composer over named built-ins
+      index.ts           - composer over named built-ins
       builtins/
-        survival.js
-        inventory_acquired.js
-        distance_to_goal.js
-        health_delta.js
-        composite.js
-    reset.js             - teleport-based episode reset (v1 strategy)
+        survival.ts
+        inventory_acquired.ts
+        distance_to_goal.ts
+        health_delta.ts
+        composite.ts
+    reset.ts             - teleport-based episode reset (v1 strategy)
   test/                  - node:test suites (no install needed for these)
 ```
 
@@ -146,13 +147,12 @@ the canonical-form drift on both sides before bumping.
 - ✅ prismarine-viewer integration (browser viewer at :3007)
 - ✅ End-to-end episode against a real Minecraft server (v0.5 Phase 1
        — see [`docs/results/v0.5-first-real-run.md`](../docs/results/v0.5-first-real-run.md))
-- ✅ v0.5 block-grid observation encoder (`observation_grid.js`) +
+- ✅ v0.5 block-grid observation encoder (`observation_grid.ts`) +
        `Hello.grid_shape` cross-language pin
-- ⏳ Mineflayer auto-reconnect on MC-side tick timeout (Phase 2 —
-       known production-stability gap; the bot's WS layer stays UP
-       but the mineflayer connection enters a half-open state after
-       the first MC server-side exception, requiring a
-       `docker compose restart mc-bot` between captures today)
+- ✅ Mineflayer reconnect: WS Error `RECONNECTING`/`BUSY` complete the
+       pair; the runner discards the episode and continues (new MDP).
+       `BotManager.isHealthy` tracks advancing `bot.time.age`. Do not
+       retry `recv` or resend the failed Step.
 
 ## Docker vs local-dev hostnames
 

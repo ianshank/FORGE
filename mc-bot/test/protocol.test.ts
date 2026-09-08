@@ -214,6 +214,8 @@ describe('protocol — xlang regression', () => {
   });
 
   it('isTransientErrorCode covers RECONNECTING and BUSY only', () => {
+    assert.equal(ERROR_CODE_RECONNECTING, 'RECONNECTING');
+    assert.equal(ERROR_CODE_BUSY, 'BUSY');
     assert.equal(isTransientErrorCode(ERROR_CODE_RECONNECTING), true);
     assert.equal(isTransientErrorCode(ERROR_CODE_BUSY), true);
     assert.equal(isTransientErrorCode(ERROR_CODE_INTERNAL), false);

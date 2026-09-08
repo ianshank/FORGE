@@ -330,9 +330,12 @@ starter dashboard from `docker/monitoring/grafana/`. Requires
 │              │                    │ debian:bookworm-slim (135 MB)│    │
 │              │                    │                              │    │
 │              │                    │ - forge-mc-runner            │    │
-│              │                    │   --features mc-live         │    │
-│              │                    │ - random_actions=true        │    │
-│              │                    │   (runner.toml default)      │    │
+│              │                    │   FEATURES=${RUNNER_FEATURES:-mc-live}│
+│              │                    │ - shipped runner.toml        │    │
+│              │                    │   random_actions=true        │    │
+│              │                    │ - self-play (no --baseline-only):│
+│              │                    │   FORGE_MC_RANDOM_ACTIONS=false│
+│              │                    │   FEATURES=mc-live-bundled   │    │
 │              │                    │                              │    │
 │              │                    │ Metrics :9090 (container)    │    │
 │              │                    │   forge_mc_episode_total     │    │
@@ -2168,7 +2171,12 @@ on every push, so it can't silently rot again.
 
 ### 3.10.15 Manual baseline path + handshake probe (v0.5 Phase 1, 2026-05-21)
 
-Stand-in for the (currently mc-live-bundled-blocked) Rust runner.
+Stand-in for a Python-driven random baseline when the operator is not
+running the Rust runner. The trained compose path is no longer
+mc-live-bundled-blocked (`mc_self_play.sh` without `--baseline-only`
+exports `RUNNER_FEATURES=mc-live-bundled` + `FORGE_MC_RANDOM_ACTIONS=false`).
+These scripts remain useful for handshake CI gating and hosts without
+the bundled image.
 Two Python scripts share a stdlib-only RFC 6455 WebSocket client
 (`scripts/_ws_client.py`):
 

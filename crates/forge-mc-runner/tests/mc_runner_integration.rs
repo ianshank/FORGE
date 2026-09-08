@@ -23,7 +23,9 @@ use forge_agent::latent_mcts::search::{LatentMctsConfig, LatentMctsSearch};
 use forge_env::FlatObsEnv;
 use forge_env_mc::action_map::{ActionEntry, ActionKind, ActionMap};
 use forge_env_mc::config::MinecraftEnvConfig;
-use forge_env_mc::protocol::{ClientMsg, ServerMsg, SCHEMA_VERSION};
+use forge_env_mc::protocol::{
+    ClientMsg, ServerMsg, ERROR_CODE_BUSY, ERROR_CODE_RECONNECTING, SCHEMA_VERSION,
+};
 use forge_env_mc::testing::MockBot;
 use forge_env_mc::{McEnvError, MinecraftEnv};
 use forge_mc_runner::{HotReloadWatcher, Runner, RunnerConfig, RunnerError, TrajectoryWriter};
@@ -319,7 +321,7 @@ fn mid_episode_reconnecting_discards_and_continues_run() {
     let script = vec![
         obs(0, 0.0, false),
         ServerMsg::Error {
-            code: "RECONNECTING".into(),
+            code: ERROR_CODE_RECONNECTING.into(),
             message: "mineflayer reconnecting; discard this episode".into(),
         },
         obs(0, 0.0, false),
@@ -351,6 +353,48 @@ fn mid_episode_reconnecting_discards_and_continues_run() {
     server.join();
 }
 
+/// Mid-episode `BUSY` is the same continue-on-transient path as
+/// `RECONNECTING`. A mutation that only special-cases reconnect would
+/// fail this clone.
+#[test]
+fn mid_episode_busy_discards_and_continues_run() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let map = sample_map();
+    let schema_id = map.canonical_sha256();
+
+    let script = vec![
+        obs(0, 0.0, false),
+        ServerMsg::Error {
+            code: ERROR_CODE_BUSY.into(),
+            message: "bot already has a client".into(),
+        },
+        obs(0, 0.0, false),
+        obs(1, 1.0, true),
+    ];
+    let bot = MockBot::bind(hello_for(&map), script);
+    let cfg = MinecraftEnvConfig {
+        ws_url: bot.ws_url(),
+        ..MinecraftEnvConfig::default()
+    };
+    let server = bot.run();
+
+    let env = MinecraftEnv::connect(cfg, map).expect("handshake");
+    let mut config = runner_config(tmp.path(), &schema_id, 1);
+    config.random_actions = true;
+    config.action_repeat = 1;
+    config.transient_failure_backoff_ms = 0;
+    config.max_consecutive_transient_failures = 3;
+    let mut runner = build_runner(config, env);
+
+    let outcome = runner.run(None).expect("BUSY must not fail the run");
+    assert!(
+        outcome.episodes_completed >= 1,
+        "next episode after discard must complete, got {outcome:?}"
+    );
+    assert_eq!(outcome.transient_discards, 1);
+    server.join();
+}
+
 /// Three consecutive `RECONNECTING` frames hit the cap and fail the run.
 #[test]
 fn consecutive_reconnecting_hits_cap_and_fails_run() {
@@ -361,17 +405,17 @@ fn consecutive_reconnecting_hits_cap_and_fails_run() {
     let script = vec![
         obs(0, 0.0, false),
         ServerMsg::Error {
-            code: "RECONNECTING".into(),
+            code: ERROR_CODE_RECONNECTING.into(),
             message: "1".into(),
         },
         obs(0, 0.0, false),
         ServerMsg::Error {
-            code: "BUSY".into(),
+            code: ERROR_CODE_BUSY.into(),
             message: "2".into(),
         },
         obs(0, 0.0, false),
         ServerMsg::Error {
-            code: "RECONNECTING".into(),
+            code: ERROR_CODE_RECONNECTING.into(),
             message: "3".into(),
         },
     ];

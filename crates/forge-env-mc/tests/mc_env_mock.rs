@@ -722,7 +722,7 @@ fn reconnecting_error_maps_to_transient() {
     let replies = vec![
         obs_msg(0),
         ServerMsg::Error {
-            code: "RECONNECTING".into(),
+            code: forge_env_mc::ERROR_CODE_RECONNECTING.into(),
             message: "synthetic".into(),
         },
     ];
@@ -735,8 +735,35 @@ fn reconnecting_error_maps_to_transient() {
     let _ = env.reset(None).unwrap();
     let err = env.step(0).unwrap_err();
     assert!(
-        matches!(err, McEnvError::Transient { ref code, .. } if code == "RECONNECTING"),
+        matches!(err, McEnvError::Transient { ref code, .. } if code == forge_env_mc::ERROR_CODE_RECONNECTING),
         "expected Transient RECONNECTING, got {err:?}"
+    );
+    let _ = env.close();
+    server.join();
+}
+
+#[test]
+fn busy_error_maps_to_transient() {
+    let map = sample_map();
+    let hello = build_hello(map.action_count(), OBS_DIM, map.canonical_sha256());
+    let replies = vec![
+        obs_msg(0),
+        ServerMsg::Error {
+            code: forge_env_mc::ERROR_CODE_BUSY.into(),
+            message: "synthetic".into(),
+        },
+    ];
+    let bot = MockBot::bind(hello, replies);
+    let url = bot.ws_url();
+    let server = bot.run();
+    let cfg = cfg_with_url(url);
+
+    let mut env = MinecraftEnv::connect(cfg, map).unwrap();
+    let _ = env.reset(None).unwrap();
+    let err = env.step(0).unwrap_err();
+    assert!(
+        matches!(err, McEnvError::Transient { ref code, .. } if code == forge_env_mc::ERROR_CODE_BUSY),
+        "expected Transient BUSY, got {err:?}"
     );
     let _ = env.close();
     server.join();

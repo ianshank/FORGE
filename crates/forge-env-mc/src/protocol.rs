@@ -107,7 +107,11 @@ pub enum ServerMsg {
         action_count: u32,
         /// Flat observation dimension.
         obs_dim: usize,
-        /// SHA256 of `(action_map_canonical, rewards_canonical, obs_layout)`.
+        /// Combined two-input `schema_id`:
+        /// `sha256(action_map_hash + ":" + rewards_hash)`.
+        /// Nested reward-file **contents** fold into `rewards_hash` when
+        /// the rewards config was loaded from disk. Block embeddings are
+        /// a **separate** obs-layout pin and are not part of this field.
         /// Client MUST refuse to start if this disagrees with its own.
         schema_id: String,
         /// Optional spatial layout of the block-grid prefix in the
@@ -310,6 +314,10 @@ mod tests {
 
     #[test]
     fn is_transient_error_code_covers_reconnect_and_busy_only() {
+        // Wire strings are part of the xlang contract — pin the values,
+        // not just the identifiers, so a silent rename fails CI.
+        assert_eq!(ERROR_CODE_RECONNECTING, "RECONNECTING");
+        assert_eq!(ERROR_CODE_BUSY, "BUSY");
         assert!(is_transient_error_code(ERROR_CODE_RECONNECTING));
         assert!(is_transient_error_code(ERROR_CODE_BUSY));
         assert!(!is_transient_error_code("INTERNAL"));

@@ -3,6 +3,8 @@ import { readFileSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 
+import { sortKeysDeep } from './canonical_json.js';
+
 export interface RewardEntry {
   kind: string;
   [key: string]: any;
@@ -20,9 +22,11 @@ export interface RewardConfig {
  * the rewards canonical SHA when the config was loaded from disk.
  * Twin of Rust `NESTED_REWARD_PATH_KEYS` and Python `NESTED_REWARD_PATH_KEYS`.
  */
+export const NESTED_REWARD_PATH_KEY_CONFIG = 'config_path';
+export const NESTED_REWARD_PATH_KEY_CRAFTING = 'crafting_config_path';
 export const NESTED_REWARD_PATH_KEYS: readonly string[] = Object.freeze([
-  'config_path',
-  'crafting_config_path',
+  NESTED_REWARD_PATH_KEY_CONFIG,
+  NESTED_REWARD_PATH_KEY_CRAFTING,
 ]);
 
 export function isNestedRewardPathKey(key: string): boolean {
@@ -80,24 +84,6 @@ export function buildRewardConfig(
       // Already validated at build time; provided for symmetry.
     },
   };
-}
-
-/**
- * Recursively sort object keys before serialising. Rust's
- * `toml::Value::Table` is backed by a `BTreeMap` and therefore
- * always serialises keys in alphabetical order; we mirror that here
- * so the two sides produce byte-identical canonical strings.
- */
-function sortKeysDeep(v: any): any {
-  if (Array.isArray(v)) return v.map(sortKeysDeep);
-  if (v !== null && typeof v === 'object') {
-    const out: Record<string, any> = {};
-    for (const k of Object.keys(v).sort()) {
-      out[k] = sortKeysDeep(v[k]);
-    }
-    return out;
-  }
-  return v;
 }
 
 /**

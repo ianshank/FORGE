@@ -1,23 +1,13 @@
 import { createHash } from 'node:crypto';
 
+import { sortKeysDeep } from './canonical_json.js';
+
 /**
  * Named fallback when the TOML is missing. Matches the shipped
  * `unknown = 35` vocab (`max(index) + 1`). Twin of Rust
  * `DEFAULT_NUM_BLOCK_EMBEDDINGS`.
  */
 export const DEFAULT_NUM_BLOCK_EMBEDDINGS = 36;
-
-function sortKeysDeep(v: any): any {
-  if (Array.isArray(v)) return v.map(sortKeysDeep);
-  if (v !== null && typeof v === 'object') {
-    const out: Record<string, any> = {};
-    for (const k of Object.keys(v).sort()) {
-      out[k] = sortKeysDeep(v[k]);
-    }
-    return out;
-  }
-  return v;
-}
 
 /**
  * Vocab size: `max(index) + 1` so sparse tables still cover every

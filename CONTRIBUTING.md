@@ -145,6 +145,11 @@ no per-user setup needed):
   `python3 .claude/hooks/test_guard_line_ending_drift.py -v` (stdlib +
   `git` only, no external binary — always runs as part of `make
   hooks-test`).
+- **Minecraft schema_id pin reminder** (`.claude/hooks/guard_schema_id_pins.py`,
+  same `PreToolUse`/`Bash` wiring) — advisory (always exit 0). When a
+  `git commit` stages `configs/minecraft/{action_map,rewards,milestone_rewards,crafting_rewards,block_embeddings}.toml`,
+  prints a reminder to bump the Rust/JS/Python xlang pins together.
+  Self-tests: `python3 .claude/hooks/test_guard_schema_id_pins.py -v`.
 
 ## Conventions
 
@@ -155,7 +160,14 @@ no per-user setup needed):
 - Add **property tests** (`proptest`) for invariants alongside unit tests.
 - JS/TS: ESM modules, Node 22+, `node:test`, Biome for lint/format, no `eval`.
 - Cross-language config (e.g. `configs/minecraft/*.toml`) must keep the paired
-  `schema_id` tests (Rust ↔ JS ↔ Python) in agreement.
+  `schema_id` tests (Rust ↔ JS ↔ Python) in agreement. Nested
+  `config_path` / `crafting_config_path` **contents** fold into the shipped
+  rewards pin (`xlang_shipped_rewards_schema_id_folds_nested_files`);
+  `block_embeddings.toml` is a separate obs-layout pin. Changing those
+  TOML files without bumping all three language pins fails CI. An advisory
+  PreToolUse hook (`.claude/hooks/guard_schema_id_pins.py`, wired in
+  `.claude/settings.json`) prints a reminder on `git commit` when they are
+  staged — it does **not** block; `make hooks-test` covers it.
 
 ## Branch & PR workflow
 

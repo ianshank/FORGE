@@ -14,6 +14,7 @@ Usage::
 from __future__ import annotations
 
 __all__ = [
+    "DEFAULT_GRID_DEPTH",
     "DEFAULT_NUM_BLOCK_EMBEDDINGS",
     "MuZeroConfig",
     "load_num_block_embeddings",
@@ -48,6 +49,7 @@ DEFAULT_LEARNING_RATE: float = 3e-4
 DEFAULT_GRID_HEIGHT: int = 11
 DEFAULT_GRID_WIDTH: int = 11
 DEFAULT_GRID_CHANNELS: int = 7  # OBS_FEATURES_PER_TILE
+DEFAULT_GRID_DEPTH: int = 1
 
 # Vector observation defaults (inventory + scalars + comm + day + task_progress + drone + agri)
 DEFAULT_VECTOR_DIM: int = 73
@@ -82,6 +84,11 @@ def load_num_block_embeddings(path: Path | str | None = None) -> int:
     """
     target = Path(path) if path is not None else _default_block_embeddings_path()
     if not target.is_file():
+        logger.warning(
+            "Block embeddings file missing at %s; using default vocab %d",
+            target,
+            DEFAULT_NUM_BLOCK_EMBEDDINGS,
+        )
         return DEFAULT_NUM_BLOCK_EMBEDDINGS
     try:
         with target.open("rb") as handle:
@@ -123,6 +130,7 @@ class MuZeroConfig:
         grid_height: Height of the ego-centric grid observation.
         grid_width: Width of the ego-centric grid observation.
         grid_channels: Number of feature channels per grid tile.
+        grid_depth: Number of Y-layers in the ego-centric grid (v0.5 default 1).
         vector_dim: Dimensionality of the non-spatial observation vector.
         cnn_channels: Output channels for each CNN layer.
         cnn_kernel_sizes: Kernel sizes for each CNN layer.
@@ -150,7 +158,7 @@ class MuZeroConfig:
     grid_height: int = DEFAULT_GRID_HEIGHT
     grid_width: int = DEFAULT_GRID_WIDTH
     grid_channels: int = DEFAULT_GRID_CHANNELS
-    grid_depth: int = 1
+    grid_depth: int = DEFAULT_GRID_DEPTH
     vector_dim: int = DEFAULT_VECTOR_DIM
     cnn_channels: tuple[int, ...] = DEFAULT_CNN_CHANNELS
     cnn_kernel_sizes: tuple[int, ...] = DEFAULT_CNN_KERNEL_SIZES

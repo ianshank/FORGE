@@ -54,6 +54,11 @@ pub const METRIC_EPISODE_LENGTH_STEPS: &str = "forge_mc_episode_length_steps";
 /// CounterVec of episode rewards, broken down by reward component.
 pub const METRIC_EPISODE_REWARD_COMPONENTS: &str = "forge_mc_episode_reward_components";
 
+/// `reason` label for a protocol error recorded during `env.step`.
+pub const METRIC_REASON_ENV_STEP: &str = "env_step";
+/// `reason` label for a protocol error recorded during planner search.
+pub const METRIC_REASON_PLANNER: &str = "planner";
+
 /// Errors raised by metrics setup. Distinct from
 /// [`crate::RunnerError`] so the binary's main can surface
 /// metrics-startup failures with a precise exit code.
@@ -315,7 +320,7 @@ mod tests {
         rec.record_episode_complete(1.5);
         rec.record_planning_latency_seconds(0.02);
         rec.set_model_version(7);
-        rec.record_protocol_error("env_step");
+        rec.record_protocol_error(METRIC_REASON_ENV_STEP);
         let text = rec.encode_text().unwrap();
         for name in [
             METRIC_EPISODE_TOTAL,
@@ -353,8 +358,8 @@ mod tests {
     #[test]
     fn record_protocol_error_increments_per_label() {
         let rec = recorder();
-        rec.record_protocol_error("env_step");
-        rec.record_protocol_error("env_step");
+        rec.record_protocol_error(METRIC_REASON_ENV_STEP);
+        rec.record_protocol_error(METRIC_REASON_ENV_STEP);
         rec.record_protocol_error("reload");
         let text = rec.encode_text().unwrap();
         assert!(text.contains(r#"forge_mc_protocol_error_total{reason="env_step"} 2"#));
