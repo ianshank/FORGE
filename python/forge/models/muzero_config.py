@@ -24,6 +24,7 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional, Union
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -75,7 +76,7 @@ def _default_block_embeddings_path() -> Path:
     return Path(__file__).resolve().parents[3] / "configs" / "minecraft" / "block_embeddings.toml"
 
 
-def load_num_block_embeddings(path: Path | str | None = None) -> int:
+def load_num_block_embeddings(path: Optional[Union[Path, str]] = None) -> int:
     """Return ``max(index) + 1`` from ``block_embeddings.toml``.
 
     Falls back to :data:`DEFAULT_NUM_BLOCK_EMBEDDINGS` when the file is
