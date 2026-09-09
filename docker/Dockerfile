@@ -82,8 +82,26 @@ RUN pip install --no-cache-dir /tmp/*.whl && rm -rf /tmp/
 COPY configs/ /app/configs/
 RUN pip install --no-cache-dir numpy tomli
 
-# Run as non-root user
-RUN useradd --create-home forge
+# Run as non-root user. History must live somewhere `forge` can write:
+# WORKDIR /app is root-owned, so the binary default (`forge-history/`)
+# fails with Permission denied and falls back to in-memory storage.
+RUN useradd --create-home forge && \
+    mkdir -p /home/forge/forge-history && \
+    chown -R forge:forge /home/forge/forge-history
+
+# Container bind differs from the binary default (127.0.0.1:8080).
+# A loopback-bound process refuses Docker port-forward traffic, which
+# arrives on the container's own interface — so a bare
+# `docker run -p 8080:8080` (CI GHCR smoke) never reaches /health.
+# Binding 0.0.0.0 here is the same contract as docker/docker-compose.yml:
+# the network namespace is the isolation boundary, and compose still
+# publishes host ports on 127.0.0.1. Port matches DEFAULT_SERVER_PORT /
+# EXPOSE / HEALTHCHECK (8080). Compose interpolates FORGE_SERVER_PORT
+# when it differs; this ENV is the image contract for `docker run`.
+# Host `cargo run` is unchanged: it does not inherit image ENV.
+ENV FORGE_SERVER_BIND=0.0.0.0:8080
+ENV FORGE_SERVER_HISTORY_DIR=/home/forge/forge-history
+
 USER forge
 
 ENV PYTHONPATH=/app/python:$PYTHONPATH

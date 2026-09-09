@@ -1275,7 +1275,14 @@ jobs:
           IMAGE="$(printf '%s\n' "$IMAGE_TAGS" | head -n1)"
           echo "Smoke-testing $IMAGE"
           docker pull "$IMAGE"
-          docker run -d --name forge-smoke -p 8080:8080 "$IMAGE"
+          # Belt-and-suspenders with docker/Dockerfile runtime ENV and
+          # docker/docker-compose.yml: forge-server defaults to loopback,
+          # which a published container port cannot reach (22d0fb80).
+          docker run -d --name forge-smoke \
+            -p 8080:8080 \
+            -e FORGE_SERVER_BIND=0.0.0.0:8080 \
+            -e FORGE_SERVER_HISTORY_DIR=/home/forge/forge-history \
+            "$IMAGE"
           ok=0
           for i in $(seq 1 30); do
             if curl -sf "http://127.0.0.1:8080/health"; then ok=1; break; fi
