@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed / CI
+
+- **Docker GHCR `/health` smoke**: After `22d0fb80`, `forge-server` defaults to loopback (`127.0.0.1:8080`). Compose already sets `FORGE_SERVER_BIND=0.0.0.0:${FORGE_SERVER_PORT:-8080}`, but the smoke `docker run -p 8080:8080` did not, so host curl never reached the process. The simulation image now sets that bind via runtime ENV (binary default unchanged) and a writable `FORGE_SERVER_HISTORY_DIR` for `USER forge`. CI smoke passes the same BIND env and publishes `127.0.0.1:8080:8080`. `tests/python/test_docker_server_bind_contract.py` pins the image/CI/compose strings (the smoke job only runs on the default branch / `v*` tags).
+
 ### Close the self-improving loop (2026-09)
 
 - **Trained compose identity**: `FORGE_MC_RANDOM_ACTIONS` env-var ladder (empty = no override; `true`/`false`/`1`/`0`). `mc_self_play.sh` (without `--baseline-only`) exports `RUNNER_RANDOM_ACTIONS=false` and `RUNNER_FEATURES=mc-live-bundled` and rebuilds the runner image. Shipped `configs/minecraft/runner.toml` stays `random_actions = true`. Compose plumbs `build.args.FEATURES` and the env var. CI job `mc-runner-bundled-image` smoke-builds the Dockerfile with `FEATURES=mc-live-bundled` and runs `--help`.

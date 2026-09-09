@@ -68,13 +68,12 @@ services:
       - replay-storage:/app/replays
       - model-registry:/app/models:ro
     environment:
-      # Deliberately NOT setting FORGE_SERVER_BIND here, unlike the
-      # coordinator above. The worker publishes no host port, and its
-      # healthcheck runs inside the container against localhost, so the new
-      # loopback default works and is the tighter setting. Workers dial the
-      # coordinator (FORGE_CLOUD_COORDINATOR_PORT); nothing dials them.
-      # Only add a 0.0.0.0 bind here if a service starts connecting *to* a
+      # Image ENV binds 0.0.0.0 so a published `docker run -p` can reach
+      # forge-server. Workers publish no host port; healthcheck is
+      # localhost. Keep the tighter loopback bind by overriding the image.
+      # Only switch to 0.0.0.0 here if a service starts connecting *to* a
       # worker's HTTP port across forge-net.
+      - FORGE_SERVER_BIND=127.0.0.1:8080
       - FORGE_CLOUD_ENABLED=true
       - FORGE_CLOUD_COORDINATOR_PORT=${FORGE_CLOUD_COORDINATOR_PORT:-9090}
       - FORGE_CLOUD_REPLAY_BATCH_SIZE=${FORGE_CLOUD_REPLAY_BATCH_SIZE:-64}

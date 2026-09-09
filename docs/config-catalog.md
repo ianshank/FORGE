@@ -28,10 +28,11 @@ This catalog documents all configuration files across `configs/` and the root wo
 | `FORGE_LMSTUDIO_BASE_URL` | `forge-cognitive` / Eval | `http://127.0.0.1:1234/v1` | Base URL for local LLM teacher inference |
 | `MLFLOW_TRACKING_URI` | `forge-eval` | *(none)* | Remote MLflow tracking server URI |
 | `MLFLOW_TRACKING_TOKEN` | `forge-eval` | *(none)* | Bearer authentication token for MLflow REST API |
-| `FORGE_SERVER_BIND` | `forge-server` | `127.0.0.1:8765` | Socket address for simulation WebSocket/REST server |
-| `FORGE_SERVER_PORT` | `forge-server` | `8765` | Port override for simulation server |
-| `FORGE_SERVER_TICK_MS` | `forge-server` | `50` | Tick rate interval in milliseconds |
-| `FORGE_SERVER_AUTH_TOKEN`| `forge-server` | *(none)* | Shared secret token required for authorized API calls |
+| `FORGE_SERVER_BIND` | `forge-server` | `127.0.0.1:8080` | Socket address. Loopback by default; image/compose set `0.0.0.0:8080` inside containers. Wins over `FORGE_SERVER_PORT`. |
+| `FORGE_SERVER_PORT` | `forge-server` | `8080` | Port-only override; ignored when `FORGE_SERVER_BIND` is set |
+| `FORGE_SERVER_TICK_MS` | `forge-server` | `100` | Tick interval in milliseconds |
+| `FORGE_SERVER_AUTH_TOKEN`| `forge-server` | *(none)* | Bearer token required on mutating routes when set |
+| `FORGE_SERVER_HISTORY_DIR` | `forge-server` | `forge-history` | JSONL history directory (`/home/forge/forge-history` in the simulation image) |
 | `FORGE_CLOUD_STORAGE_BACKEND` | `forge-cloud` | `local` | Storage provider: `local` or `gcs` |
 | `FORGE_CLOUD_GCS_BUCKET` | `forge-cloud` | *(none)* | Google Cloud Storage bucket for replays & models |
 | `FORGE_CLOUD_GCS_PREFIX` | `forge-cloud` | `forge/` | GCS key prefix |

@@ -258,7 +258,7 @@ The production deployment packages FORGE as three Docker containers orchestrated
 1. `simulation` starts → waits for `/health` to return 200 (up to 3×15s retries)
 2. `dashboard` and `demo` start only after `simulation` is **healthy**
 
-**Ports** (all bound to `127.0.0.1`):
+**Ports** (all bound to `127.0.0.1` on the host):
 
 | Container | Internal | Host | Protocol |
 |-----------|----------|------|----------|
@@ -266,11 +266,13 @@ The production deployment packages FORGE as three Docker containers orchestrated
 | dashboard | 80 | 3000 | HTTP |
 | demo | 8765 | 8765 | HTTP/SSE |
 
+The simulation process listens on all interfaces *inside* the container so Docker port publishing can reach it. Host exposure is the `ports:` bind to `127.0.0.1`, not the process bind. Pin: `tests/python/test_docker_server_bind_contract.py`.
+
 **Key files:**
 
 | File | Purpose |
 |------|---------|
-| `docker/Dockerfile` | `rust:1.94.1-bookworm` build → `python:3.11-slim` runtime; maturin native ext |
+| `docker/Dockerfile` | `rust:1.94.1-bookworm` build → `python:3.11-slim` runtime; maturin native ext. Runtime ENV `FORGE_SERVER_BIND=0.0.0.0:8080` (binary default stays loopback) and writable `FORGE_SERVER_HISTORY_DIR` for `USER forge`. |
 | `docker/Dockerfile.dashboard` | `node:20` build → `nginx:1.27-alpine` serve |
 | `docker/Dockerfile.demo` | `python:3.11-slim`; FastAPI/uvicorn |
 | `docker/docker-compose.yml` | Three-service orchestration with health gates |

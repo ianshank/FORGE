@@ -263,8 +263,10 @@ The full three-service Docker Compose stack is now deployed:
 - ✅ Post-push smoke probe: pulls the first GHCR-emitted tag (NOT
   `github.sha`, which is the full 40-char SHA that metadata-action's
   `type=sha,prefix=` never emits) and runs `/health` against
-  `127.0.0.1:8080` with a 30 s retry budget. Container `logs` + `inspect`
-  dumped on failure for debuggability.
+  `127.0.0.1:8080` with a 30 s retry budget. After `22d0fb80` the binary
+  defaults to loopback, so the image ENV and smoke `docker run -e
+  FORGE_SERVER_BIND=0.0.0.0:8080` are load-bearing; host publish is
+  `127.0.0.1:8080:8080`. Container `logs` + `inspect` dumped on failure.
 
 ---
 
