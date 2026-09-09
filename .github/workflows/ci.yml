@@ -1279,7 +1279,7 @@ jobs:
           # docker/docker-compose.yml: forge-server defaults to loopback,
           # which a published container port cannot reach (22d0fb80).
           docker run -d --name forge-smoke \
-            -p 8080:8080 \
+            -p 127.0.0.1:8080:8080 \
             -e FORGE_SERVER_BIND=0.0.0.0:8080 \
             -e FORGE_SERVER_HISTORY_DIR=/home/forge/forge-history \
             "$IMAGE"

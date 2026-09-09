@@ -321,7 +321,7 @@ defaults):
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `FORGE_LOG_FORMAT` | `text` | Log output format (`text` or `json`); shared by Rust, Python, and the Node mc-bot |
-| `FORGE_SERVER_BIND` / `FORGE_SERVER_PORT` | `127.0.0.1:8080` | HTTP/WebSocket bind address. Loopback by default — the API can reset/step the simulation and write history, so it is not exposed off-host unless you ask. Set `0.0.0.0:8080` to serve externally. The simulation image (`docker/Dockerfile`) and bundled compose files already set that bind inside the container, where the published port is what limits exposure. |
+| `FORGE_SERVER_BIND` / `FORGE_SERVER_PORT` | `127.0.0.1:8080` | HTTP/WebSocket bind address. Loopback by default — the API can reset/step the simulation and write history, so it is not exposed off-host unless you ask. Set `0.0.0.0:8080` to serve externally. `FORGE_SERVER_BIND` wins over `FORGE_SERVER_PORT`. The simulation image (`docker/Dockerfile`) sets the all-interfaces bind inside the container; compose interpolates the port and publishes host ports on `127.0.0.1`. |
 | `FORGE_SERVER_AUTH_TOKEN` | unset | When set, mutating routes require `Authorization: Bearer <token>`. Unset leaves them unauthenticated and logs a startup warning. |
 | `FORGE_SERVER_REQUEST_TIMEOUT_MS` | `30000` | Per-request deadline (not applied to the `/ws` upgrade). |
 | `FORGE_SERVER_MAX_BODY_BYTES` | `1048576` | Request body cap; oversize requests get 413. |
@@ -920,7 +920,8 @@ docker build -f docker/Dockerfile -t forge-simulation .
 docker build -f docker/Dockerfile.dashboard -t forge-dashboard .
 docker build -f docker/Dockerfile.demo -t forge-demo .
 # Image ENV listens on 0.0.0.0:8080 (binary default stays loopback).
-docker run --rm -p 8080:8080 forge-simulation
+# Publish on loopback so the unauthenticated mutating API is not off-host.
+docker run --rm -p 127.0.0.1:8080:8080 forge-simulation
 ```
 
 ## Project Stats
