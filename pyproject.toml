@@ -19,7 +19,7 @@ classifiers = [
 #   pip install -e ".[mlflow]"    -- MLflow
 #   pip install -e ".[teacher]"   -- LM Studio offline teacher (openai + jsonschema)
 #   pip install -e ".[all]"       -- everything
-sb3        = ["stable-baselines3>=2.0", "torch>=2.0"]
+sb3        = ["stable-baselines3>=2.9.0", "torch>=2.0"]
 cleanrl    = ["torch>=2.0"]
 wandb      = ["wandb>=0.16"]
 mlflow     = ["mlflow>=3.15.1"]
@@ -43,7 +43,7 @@ teacher    = ["openai>=1.0,<2.0", "jsonschema>=4.0,<5.0"]
 #                        mounted into the runner container)
 minecraft  = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17", "huggingface-hub>=1.28.0"]
 all        = [
-    "stable-baselines3>=2.0",
+    "stable-baselines3>=2.9.0",
     "torch>=2.0",
     "wandb>=0.16",
     "mlflow>=3.15.1",
