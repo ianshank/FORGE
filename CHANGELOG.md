@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### VecEnv SPS @ N (Karten 2026)
+
+- **Committed `ForgeAsyncVecEnv` evidence**: labeled `cloud_agent` report
+  (`benchmarks/baselines/cloud_agent/vecenv_step.json`) measures random-action
+  SPS for `n_envs ∈ {1,8,16,32,64}` (process-parallel PyO3, **not** a JAX
+  `vmap`; `ForgeJaxEnv` / `RealisticFakeEnv` are out of scope). README
+  performance table publishes floors at or below those numbers (15k / 40k /
+  40k / 35k / 35k). Do not imply N-linear scale-up: IPC saturates after N=8
+  on this host. Guarded by `tests/python/test_throughput_claim.py`. Producer:
+  `tests/python/test_vecenv_throughput.py` (heavy sweep behind
+  `FORGE_RUN_VECENV_THROUGHPUT=1`). CompactReplay golden fidelity is published
+  as 100% on the format-v2 corpus.
+
 ### CompactReplay fidelity (format version 2)
 
 - **Portable config hash**: `CompactReplay.config_hash` is a 64-char SHA-256 hex of `serde_json::to_vec(&ForgeConfig)` (Minecraft `schema_id` convention). rustc `DefaultHasher` is gone so goldens do not flake on toolchain bumps.

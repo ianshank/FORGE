@@ -18,6 +18,10 @@ deterministic, procedurally generated grid worlds with crafting, combat,
 multi-agent cooperation, and a composable task curriculum, running at
 130,000+ steps/second from Python
 ([`benchmarks/baselines/cloud_agent/pyo3_step.json`](../benchmarks/baselines/cloud_agent/pyo3_step.json)).
+Process-parallel `ForgeAsyncVecEnv` SPS @ N lives in
+[`vecenv_step.json`](../benchmarks/baselines/cloud_agent/vecenv_step.json)
+and is not a JAX physics `vmap`. CompactReplay golden replay fidelity is 100%
+on the format-v2 corpus.
 
 On top of that core, FORGE runs a **self-improving MuZero loop against live
 Minecraft**: a Rust episode runner drives an environment over a WebSocket

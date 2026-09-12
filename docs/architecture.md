@@ -35,7 +35,11 @@ Shows FORGE and its external actors.
 
 Python throughput floor: 130K+ steps/sec from Python, evidenced by
 [`benchmarks/baselines/cloud_agent/pyo3_step.json`](../benchmarks/baselines/cloud_agent/pyo3_step.json)
-(`cloud_agent` profile; 189k measured).
+(`cloud_agent` profile; 189k measured). `ForgeAsyncVecEnv` SPS @ N is a
+separate process-parallel measurement
+([`vecenv_step.json`](../benchmarks/baselines/cloud_agent/vecenv_step.json));
+`ForgeJaxEnv` is `io_callback` around native envs, not a JAX `vmap` of the
+physics. CompactReplay golden replay fidelity is 100% on the format-v2 corpus.
 
 ### External Actors
 

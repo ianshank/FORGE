@@ -7,7 +7,7 @@ Fast Open-source Runtime for Generalist Environments
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 
 A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python
-([`cloud_agent` PyO3 measurement](benchmarks/baselines/cloud_agent/pyo3_step.json): 189k steps/sec).
+([`cloud_agent` PyO3 measurement](benchmarks/baselines/cloud_agent/pyo3_step.json): 189k steps/sec). Process-parallel `ForgeAsyncVecEnv` SPS @ N is a separate Karten-protocol number ([`vecenv_step.json`](benchmarks/baselines/cloud_agent/vecenv_step.json)); CompactReplay golden replay fidelity is 100% on the format-v2 corpus.
 
 See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope boundaries, and Seven Core Invariants.
 
@@ -808,10 +808,17 @@ Benchmarked on a single core. The Python steps/second floor is gated
 against [`benchmarks/baselines/cloud_agent/pyo3_step.json`](benchmarks/baselines/cloud_agent/pyo3_step.json)
 (`tests/python/test_throughput_claim.py`). Rust multi-agent scaling is a
 separate Criterion measurement ([`cloud_agent/multi_agent_scaling.json`](benchmarks/baselines/cloud_agent/multi_agent_scaling.json)) and is not the headline.
+`ForgeAsyncVecEnv` SPS @ N is gated against [`cloud_agent/vecenv_step.json`](benchmarks/baselines/cloud_agent/vecenv_step.json) (process-parallel PyO3, **not** a JAX `vmap` of the physics). Do not treat N=64 as 64× serial.
 
 | Metric | Value |
 | --- | --- |
 | Steps/second (from Python) | 130,000+ |
+| SPS @ 1 (ForgeAsyncVecEnv) | 15,000+ |
+| SPS @ 8 (ForgeAsyncVecEnv) | 40,000+ |
+| SPS @ 16 (ForgeAsyncVecEnv) | 40,000+ |
+| SPS @ 32 (ForgeAsyncVecEnv) | 35,000+ |
+| SPS @ 64 (ForgeAsyncVecEnv) | 35,000+ |
+| CompactReplay replay fidelity | 100% (format v2 golden corpus) |
 | Microseconds/step | ~5.3 μs (measured); <8 μs claimed |
 | World creation (64x64) | ~3.5 ms |
 | Zero-alloc step | Yes (hot path) |
