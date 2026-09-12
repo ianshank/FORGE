@@ -11,6 +11,8 @@ its own ``Path(__file__).resolve().parents[N]`` and TOML loader.
 
 from __future__ import annotations
 
+import logging
+import os
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
@@ -22,6 +24,83 @@ from forge_env.gymnasium_env import (
     _DEFAULT_GRID_CHANNELS,
     _DEFAULT_VIEW_SIDE,
 )
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Determinism-gate depth.
+#
+# How many steps `test_determinism.py` drives is a knob, not a literal: PR CI
+# wants a fast gate, while a release wants a long soak. Resolution order is
+# CLI flag, then environment variable, then the default -- the same ladder the
+# repository's other opt-in harnesses use (see `FORGE_RUN_STEP_THROUGHPUT` and
+# friends in `tests/python/test_step_throughput.py`).
+# ---------------------------------------------------------------------------
+
+#: Steps driven by the determinism gate when nothing overrides it. Sized to run
+#: in seconds on PR CI while still crossing episode boundaries.
+DEFAULT_DETERMINISM_STEPS: int = 10_000
+
+#: Environment variable equivalent of ``--determinism-steps``, for CI matrices
+#: and Makefile targets that cannot easily append pytest flags.
+DETERMINISM_STEPS_ENV_VAR: str = "FORGE_DETERMINISM_STEPS"
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register FORGE-specific pytest options."""
+    parser.addoption(
+        "--determinism-steps",
+        action="store",
+        type=int,
+        default=None,
+        help=(
+            "Steps to drive in the determinism gate "
+            f"(default {DEFAULT_DETERMINISM_STEPS}; "
+            f"also settable via ${DETERMINISM_STEPS_ENV_VAR})."
+        ),
+    )
+
+
+def resolve_determinism_steps(cli_value: int | None) -> int:
+    """Resolve the determinism step count from CLI, environment, then default.
+
+    Args:
+        cli_value: Value of ``--determinism-steps``, or ``None`` when unset.
+
+    Returns:
+        A positive step count.
+
+    Raises:
+        ValueError: If a supplied value is not a positive integer.
+    """
+    if cli_value is not None:
+        resolved = cli_value
+        source = "--determinism-steps"
+    else:
+        raw = os.environ.get(DETERMINISM_STEPS_ENV_VAR)
+        if raw is None:
+            return DEFAULT_DETERMINISM_STEPS
+        try:
+            resolved = int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{DETERMINISM_STEPS_ENV_VAR}={raw!r} is not an integer. "
+                f"Remedy: set it to a positive step count, or unset it to use "
+                f"the default of {DEFAULT_DETERMINISM_STEPS}."
+            ) from exc
+        source = DETERMINISM_STEPS_ENV_VAR
+
+    if resolved < 1:
+        raise ValueError(f"{source} must be >= 1, got {resolved}.")
+    return resolved
+
+
+@pytest.fixture(scope="session")
+def determinism_steps(request: pytest.FixtureRequest) -> int:
+    """Number of steps the determinism gate should drive."""
+    steps = resolve_determinism_steps(request.config.getoption("--determinism-steps"))
+    logger.info("Determinism gate step count resolved to %d.", steps)
+    return steps
 
 # ---------------------------------------------------------------------------
 # Shared filesystem helpers.

@@ -31,7 +31,9 @@ resolver = "2"
 
 [package]
 name = "forge-integration-tests"
-version = "0.5.0"
+# Inherited rather than restated: this was the one crate in the workspace
+# carrying its own literal, so a release bump silently left it behind.
+version.workspace = true
 edition = "2021"
 publish = false
 
@@ -92,7 +94,11 @@ name = "integration_agent_skills_deterministic"
 path = "tests/rust/integration_agent_skills_deterministic.rs"
 
 [workspace.package]
-version = "0.5.0"
+# Single source of truth for the workspace version. Every crate inherits it via
+# `version.workspace = true`, the Python package resolves it through
+# `forge_env._version`, and `tests/python/test_version_consistency.py` fails if
+# any other surface drifts from it.
+version = "0.6.0"
 edition = "2021"
 authors = ["Ian Shank"]
 license = "Apache-2.0"

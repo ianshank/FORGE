@@ -28,6 +28,14 @@ mousedroid = ["huggingface-hub>=1.28.0", "torch>=2.0"]
 #   - openai SDK    -> sync/async OpenAI-compatible HTTP client
 #   - jsonschema    -> validates few-shot exemplars against the action schema
 teacher    = ["openai>=1.0,<2.0", "jsonschema>=4.0,<5.0"]
+# Upstream RL-ecosystem compliance suites, exercised by
+# `tests/python/test_api_compliance.py` and the `api-compliance` CI job:
+#   - gymnasium  -> `gymnasium.utils.env_checker.check_env` + the space types
+#                   `ForgeGymnasiumEnv` declares and `gymnasium.make`
+#   - pettingzoo -> `pettingzoo.test.parallel_api_test` + `ParallelEnv`
+# Floors, not pins: 1.0 is where Gymnasium's API settled after the Gym split,
+# and 1.24 is the first PettingZoo with the current Parallel API signatures.
+compliance = ["gymnasium>=1.0", "pettingzoo>=1.24"]
 # Minecraft MuZero training pipeline (Phase 5 — consumed by
 # `python/forge/training/muzero_mc/`):
 #   - torch           -> network init + ONNX export
@@ -43,6 +51,8 @@ teacher    = ["openai>=1.0,<2.0", "jsonschema>=4.0,<5.0"]
 #                        mounted into the runner container)
 minecraft  = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17", "huggingface-hub>=1.28.0"]
 all        = [
+    "gymnasium>=1.0",
+    "pettingzoo>=1.24",
     "stable-baselines3>=2.0",
     "torch>=2.0",
     "wandb>=0.16",

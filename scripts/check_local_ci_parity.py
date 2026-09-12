@@ -59,6 +59,8 @@ JOB_TO_MAKE_TARGET: dict[str, str] = {
     "python-lint": "py-lint",
     "python-test": "py-test",
     "python-test-fast": "py-test",
+    "api-compliance": "api-compliance",
+    "pip-install-clean": "pip-install-smoke",
     "mc-bot-test": "mc-bot-test",
     "dashboard": "dashboard-test",
     "dashboard-e2e": "dashboard-e2e",

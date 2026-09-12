@@ -170,9 +170,12 @@ def test_deterministic_seed() -> None:
     obs2, _ = env2.reset(seed=123)
     env2.close()
 
+    # Every component is compared as an array: the wrapper now fits observations
+    # to their declared Box spaces, so `position` is a (2,) uint16 array rather
+    # than a Python tuple and `==` on it yields an elementwise array.
     np.testing.assert_array_equal(obs1["grid_view"], obs2["grid_view"])
-    assert obs1["health"] == obs2["health"]
-    assert obs1["position"] == obs2["position"]
+    np.testing.assert_array_equal(obs1["health"], obs2["health"])
+    np.testing.assert_array_equal(obs1["position"], obs2["position"])
 
 
 def test_wrapper_flatten() -> None:

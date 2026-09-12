@@ -1,19 +1,47 @@
-"""Pure Python Gymnasium wrapper for FORGE.
+"""Gymnasium wrapper for FORGE.
 
-Wraps the native Rust ForgeEnv to provide full Gymnasium Env compliance
-with proper Space objects from the gymnasium library.
+Wraps the native Rust ``ForgeEnv`` as a real :class:`gymnasium.Env` subclass, so
+the environment passes ``gymnasium.utils.env_checker.check_env`` rather than
+merely resembling the API. Two properties make that work and are worth calling
+out because both were previously wrong:
+
+* **It subclasses** :class:`gymnasium.Env`. The upstream checker asserts this
+  outright, and inheriting also supplies ``np_random`` seeding, the ``unwrapped``
+  contract, and wrapper interoperability for free.
+* **Observations are fitted to the declared spaces.** A declared space is a
+  promise the checker verifies with ``space.contains(obs)``. The native env
+  hands back Python scalars, a position tuple, and a variable-length message
+  list, none of which satisfy a fixed-shape ``Box``. The coercion lives in
+  :mod:`forge_env.space_builder`, shared with the PettingZoo wrapper.
+
+Spaces themselves are built from the descriptor the native env publishes, which
+Rust derives from :class:`ForgeConfig` — so vision radius, carry capacity, comm
+buffer size, and the enabled action families flow through from config instead of
+being restated here.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from forge_env.space_builder import (
+    DEFAULT_ACTION_COUNT,
+    DEFAULT_CARRY_CAPACITY,
+    DEFAULT_GRID_CHANNELS,
+    DEFAULT_NUM_DAY_PHASES,
+    DEFAULT_VIEW_SIDE,
+    DEFAULT_VISION_RADIUS,
+    UINT16_MAX,
+    build_action_space,
+    build_observation_space,
+    fit_observation,
+)
 
 logger = logging.getLogger(__name__)
 
 try:
-    import numpy as np
-    from gymnasium import spaces
+    from gymnasium import spaces  # noqa: F401  (re-exported for callers/tests)
 
     HAS_GYMNASIUM = True
 except ImportError:
@@ -24,33 +52,45 @@ try:
 except ImportError:
     _NativeEnv = None
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    # Always the real base for the type checker. At runtime the base falls back
+    # to ``object`` when gymnasium is absent, so importing ``forge_env`` never
+    # requires it; ``__init__`` raises a directive ImportError in that case.
+    from gymnasium import Env as _EnvBase
+elif HAS_GYMNASIUM:
+    from gymnasium import Env as _EnvBase
+else:
+    _EnvBase = object
+
 __all__ = ["ForgeGymnasiumEnv"]
 
-# Fallback defaults that mirror Rust-side constants (forge_types::constants).
-# These are only used when the native observation_space dict does not provide
-# the corresponding key — in normal operation the Rust side always sets them.
-_DEFAULT_VISION_RADIUS = 5  # forge_types::constants::DEFAULT_VISION_RADIUS
-_DEFAULT_VIEW_SIDE = 2 * _DEFAULT_VISION_RADIUS + 1
-_DEFAULT_GRID_CHANNELS = 7  # forge_types::constants::OBS_FEATURES_PER_TILE
-_DEFAULT_CARRY_CAPACITY = 10  # forge_types::constants::DEFAULT_CARRY_CAPACITY
-_DEFAULT_NUM_DAY_PHASES = 4  # forge_types::constants::NUM_DAY_PHASES
-_DEFAULT_ACTION_N = 40  # Action::space_size(0, false) base actions with no comm/drone
-_UINT16_MAX = 65535  # Maximum value for uint16 observation ranges
+# Backwards-compatible aliases. These names were this module's own constants
+# before the space definitions moved to `forge_env.space_builder` to be shared
+# with the PettingZoo wrapper; `tests/python/conftest.py` and downstream code
+# import them from here, so they stay as re-exports of the single definition.
+_DEFAULT_VISION_RADIUS = DEFAULT_VISION_RADIUS
+_DEFAULT_VIEW_SIDE = DEFAULT_VIEW_SIDE
+_DEFAULT_GRID_CHANNELS = DEFAULT_GRID_CHANNELS
+_DEFAULT_CARRY_CAPACITY = DEFAULT_CARRY_CAPACITY
+_DEFAULT_NUM_DAY_PHASES = DEFAULT_NUM_DAY_PHASES
+_DEFAULT_ACTION_N = DEFAULT_ACTION_COUNT
+_UINT16_MAX = UINT16_MAX
 
 
-class ForgeGymnasiumEnv:
-    """Gymnasium-compatible wrapper around the native FORGE environment.
-
-    This wraps the Rust-backed ForgeEnv to provide proper gymnasium.Space
-    objects for observation_space and action_space, and ensures all returned
-    observations comply with the declared spaces.
+class ForgeGymnasiumEnv(_EnvBase):
+    """Gymnasium-compatible environment backed by the native FORGE engine.
 
     Args:
-        config: Optional configuration dict matching ForgeConfig structure.
-        render_mode: Optional render mode ('ascii' or None).
+        config: Optional configuration dict matching ``ForgeConfig``.
+        render_mode: Optional render mode. Must be ``None`` or a member of
+            ``metadata["render_modes"]``.
+
+    Raises:
+        ImportError: If the native extension or gymnasium is unavailable.
+        ValueError: If ``render_mode`` is not a supported mode.
     """
 
-    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": ["ascii"]}
+    metadata: ClassVar[dict[str, Any]] = {"render_modes": ["ascii"]}
 
     def __init__(
         self,
@@ -65,45 +105,21 @@ class ForgeGymnasiumEnv:
         if not HAS_GYMNASIUM:
             raise ImportError("gymnasium not installed. Install with: pip install gymnasium")
 
+        supported_modes = self.metadata["render_modes"]
+        if render_mode is not None and render_mode not in supported_modes:
+            raise ValueError(
+                f"Unsupported render_mode {render_mode!r}. "
+                f"Supported modes: {supported_modes} (or None)."
+            )
+
         self._env = _NativeEnv(config=config)
         self.render_mode = render_mode
         self._config = config or {}
 
-        # Build proper Gymnasium spaces
-        native_obs_space = self._env.observation_space
-        native_act_space = self._env.action_space
-
-        # Observation space is a Dict — values come from Rust-side config,
-        # with module-level constants as fallbacks for backwards compatibility.
-        view_h = native_obs_space.get("grid_view_height", _DEFAULT_VIEW_SIDE)
-        view_w = native_obs_space.get("grid_view_width", _DEFAULT_VIEW_SIDE)
-        channels = native_obs_space.get("grid_view_channels", _DEFAULT_GRID_CHANNELS)
-        inv_capacity = native_obs_space.get("inventory_capacity", _DEFAULT_CARRY_CAPACITY)
-
-        self.observation_space = spaces.Dict(
-            {
-                "grid_view": spaces.Box(
-                    low=0, high=255, shape=(view_h, view_w, channels), dtype=np.uint8
-                ),
-                "inventory": spaces.Box(
-                    low=0, high=_UINT16_MAX, shape=(inv_capacity, 2), dtype=np.uint16
-                ),
-                "health": spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32),
-                "stamina": spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32),
-                "position": spaces.Box(low=0, high=_UINT16_MAX, shape=(2,), dtype=np.uint16),
-                "messages": spaces.Box(
-                    low=0,
-                    high=_UINT16_MAX,
-                    shape=(native_obs_space.get("messages", {}).get("shape", (0,))),
-                    dtype=np.uint16,
-                ),
-                "day_phase": spaces.Discrete(_DEFAULT_NUM_DAY_PHASES),
-            }
-        )
-
-        # Action space is Discrete
-        action_n = native_act_space.get("n", _DEFAULT_ACTION_N)
-        self.action_space: spaces.Discrete = spaces.Discrete(action_n)
+        # Both spaces come from the native descriptor, which Rust derives from
+        # the resolved ForgeConfig -- no shape or bound is restated here.
+        self.observation_space = build_observation_space(self._env.observation_space)
+        self.action_space = build_action_space(self._env.action_space)
 
     def reset(
         self,
@@ -113,31 +129,60 @@ class ForgeGymnasiumEnv:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Reset the environment.
 
+        Args:
+            seed: Seed for both the native simulation and ``self.np_random``.
+            options: Passed through to the native env.
+
         Returns:
-            (observation, info) tuple.
+            An ``(observation, info)`` tuple whose observation is contained in
+            :attr:`observation_space`.
         """
+        # Seeds `self.np_random`, which gymnasium's checker and every
+        # `action_space.sample()`-driven rollout rely on.
+        super().reset(seed=seed)
         obs, info = self._env.reset(seed=seed, options=options)
-        return obs, info
+        return fit_observation(obs, self.observation_space), info
 
-    def step(self, action: int) -> tuple[Any, float, bool, bool, dict[str, Any]]:
-        """Step the environment with the given action.
+    def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
+        """Advance the environment by one step.
+
+        Args:
+            action: Discrete action index. Accepts numpy integers, which is what
+                ``action_space.sample()`` returns.
 
         Returns:
-            (observation, reward, terminated, truncated, info) tuple.
+            An ``(observation, reward, terminated, truncated, info)`` tuple.
         """
-        return self._env.step(action)  # type: ignore[no-any-return]
+        obs, reward, terminated, truncated, info = self._env.step(int(action))
+        return (
+            fit_observation(obs, self.observation_space),
+            float(reward),
+            bool(terminated),
+            bool(truncated),
+            info,
+        )
 
     def render(self) -> str | None:
-        """Render the environment."""
+        """Render the environment, or return ``None`` when no mode is set."""
         if self.render_mode == "ascii":
             return self._env.render()  # type: ignore[no-any-return]
         return None
 
     def close(self) -> None:
-        """Close the environment."""
+        """Close the environment and release the native handle's resources."""
         self._env.close()
 
     @property
-    def unwrapped(self) -> Any:
-        """Return the native environment."""
+    def native(self) -> Any:
+        """The wrapped native ``ForgeEnv`` handle.
+
+        Use this to reach engine-only methods such as ``step_multi``.
+
+        Note:
+            This is where the native handle now lives. ``unwrapped`` previously
+            returned it, which violated the Gymnasium contract that
+            ``unwrapped`` yields the base :class:`gymnasium.Env` — the inherited
+            behaviour (returning ``self``) is what wrapper chains and the
+            upstream checker require.
+        """
         return self._env
