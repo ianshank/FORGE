@@ -65,6 +65,17 @@ pub const DEFAULT_MAX_PREDICATES: u16 = 32;
 pub const DEFAULT_MAX_EPISODE_LENGTH: u64 = 10000;
 /// Default reward scaling factor.
 pub const DEFAULT_REWARD_SCALE: f32 = 1.0;
+/// Default field-survey completion fraction used by the high-level scenario
+/// compiler when `[scenario.objectives]` omits `survey_threshold`.
+pub const DEFAULT_SURVEY_THRESHOLD: f32 = 0.8;
+/// Default sprayed-diseased fraction used by the high-level scenario compiler
+/// when `[scenario.objectives]` omits `spray_threshold`.
+pub const DEFAULT_SPRAY_THRESHOLD: f32 = 0.8;
+/// Default soil-node collection count used when `collect_threshold` is omitted.
+pub const DEFAULT_SOIL_COLLECT_COUNT: u16 = 1;
+/// Aerial agents spawned by the scenario compiler when drone is enabled but
+/// `num_aerial` is left at zero.
+pub const DEFAULT_SCENARIO_NUM_AERIAL: u32 = 1;
 
 /// Default target success rate for curriculum advancement.
 pub const DEFAULT_TARGET_SUCCESS_RATE: f32 = 0.5;

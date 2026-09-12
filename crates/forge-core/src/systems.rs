@@ -209,14 +209,50 @@ pub fn run_systems(state: &mut WorldState) {
 
     // 10. Task evaluation and reward computation
     if !state.tasks.is_empty() {
+        state.task_action_ids.clear();
+        let comm_vocab = state.config.agents.comm_vocab_size;
+        let drone_enabled = state.config.drone.enabled;
+        let agri_enabled = state.config.agri.enabled && drone_enabled;
+        let hex_enabled = matches!(
+            state.config.world.grid_type,
+            forge_types::config::GridType::Hex
+        );
+        for action in &state.validated_actions {
+            match action.try_to_discrete_configured(
+                comm_vocab,
+                drone_enabled,
+                agri_enabled,
+                hex_enabled,
+            ) {
+                Ok(id) => state.task_action_ids.push(id),
+                Err(e) => {
+                    warn!(error = %e, "skipping unencodable validated action for Without");
+                }
+            }
+        }
+        let crop_states = if state.crop_states.is_empty() {
+            None
+        } else {
+            Some(state.crop_states.as_slice())
+        };
+        let soil_nodes = if state.soil_nodes.is_empty() {
+            None
+        } else {
+            Some(state.soil_nodes.as_slice())
+        };
+        let ctx = forge_task::predicate::EvalContext {
+            agents: &state.agents,
+            tick: state.tick,
+            grid: Some(&state.grid),
+            objects: Some(&state.objects),
+            crop_states,
+            soil_nodes,
+        };
         let task_result = forge_task::evaluator::evaluate_tasks(
             &mut state.tasks,
-            &state.agents,
-            state.tick,
+            &ctx,
             state.config.task.reward_scale,
-            &[],
-            Some(&state.grid),
-            Some(&state.objects),
+            &state.task_action_ids,
         );
         state.last_task_rewards = Some(task_result.rewards);
         if task_result.should_terminate {

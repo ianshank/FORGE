@@ -28,6 +28,50 @@ fn test_world_creation() {
 }
 
 #[test]
+fn scenario_tasks_attach_when_task_enabled() {
+    use forge_types::task::{Predicate, TaskComposition, TaskDefinition, TaskTier};
+
+    let mut config = ForgeConfig::default();
+    config.world.width = 16;
+    config.world.height = 16;
+    config.task.enabled = true;
+    config.task.scenario_tasks = vec![TaskDefinition {
+        id: 7,
+        description: "reach origin".to_string(),
+        goal: TaskComposition::Atom(Predicate::AgentAt(0, Position::new(0, 0))),
+        tier: TaskTier::new(1),
+        estimated_steps: 10,
+        reward: 1.0,
+        dense_reward_weights: vec![1.0],
+    }];
+    let world = WorldState::new(config).unwrap();
+    assert_eq!(world.tasks.len(), 1);
+    assert_eq!(world.tasks[0].definition.id, 7);
+    assert!(!world.tasks[0].completed);
+}
+
+#[test]
+fn scenario_tasks_skipped_when_task_disabled() {
+    use forge_types::task::{Predicate, TaskComposition, TaskDefinition, TaskTier};
+
+    let mut config = ForgeConfig::default();
+    config.world.width = 16;
+    config.world.height = 16;
+    config.task.enabled = false;
+    config.task.scenario_tasks = vec![TaskDefinition {
+        id: 7,
+        description: "reach origin".to_string(),
+        goal: TaskComposition::Atom(Predicate::AgentAt(0, Position::new(0, 0))),
+        tier: TaskTier::new(1),
+        estimated_steps: 10,
+        reward: 1.0,
+        dense_reward_weights: vec![1.0],
+    }];
+    let world = WorldState::new(config).unwrap();
+    assert!(world.tasks.is_empty());
+}
+
+#[test]
 fn test_world_step() {
     let mut world = make_test_world();
     let start_pos = world.agents[0].position;
@@ -1131,6 +1175,11 @@ mod proptests {
             format!("{:?}", a.push_scratch),
             format!("{:?}", b.push_scratch),
             "push_scratch diverged"
+        );
+        prop_assert_eq!(
+            &a.task_action_ids,
+            &b.task_action_ids,
+            "task_action_ids diverged"
         );
         Ok(())
     }

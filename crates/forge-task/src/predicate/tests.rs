@@ -6,13 +6,7 @@ fn make_agent(id: u32, x: u16, y: u16) -> Agent {
 }
 
 fn make_ctx(agents: &[Agent], tick: u64) -> EvalContext<'_> {
-    EvalContext {
-        agents,
-        tick,
-        grid: None,
-        objects: None,
-        crop_states: None,
-    }
+    EvalContext::new(agents, tick)
 }
 
 #[test]
@@ -229,6 +223,7 @@ fn test_agent_on_terrain_invalid_terrain_id() {
         grid: Some(&grid),
         objects: None,
         crop_states: None,
+        soil_nodes: None,
     };
     // terrain_id 255 is invalid
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 255), &ctx);
@@ -246,6 +241,7 @@ fn test_agent_on_terrain_next_after_last_valid_id_is_unsatisfied() {
         grid: Some(&grid),
         objects: None,
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 8), &ctx);
     assert!(!result.satisfied);
@@ -262,6 +258,7 @@ fn test_agent_on_terrain_nonexistent_agent() {
         grid: Some(&grid),
         objects: None,
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(99, 0), &ctx);
     assert!(!result.satisfied);
@@ -278,6 +275,7 @@ fn test_agent_on_terrain_all_terrain_ids() {
         grid: Some(&grid),
         objects: None,
         crop_states: None,
+        soil_nodes: None,
     };
     // Test all valid terrain IDs (0-7) don't panic
     for terrain_id in 0..=7 {
@@ -308,6 +306,7 @@ fn test_object_at_nonexistent_object() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     // Object 99 doesn't exist
     let result = evaluate_predicate(&Predicate::ObjectAt(99, Position::new(5, 5)), &ctx);
@@ -323,6 +322,7 @@ fn test_object_in_state_no_objects() {
         grid: None,
         objects: None,
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "Active".to_string()), &ctx);
     assert!(!result.satisfied);
@@ -346,6 +346,7 @@ fn test_object_in_state_invalid_state_name() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(
         &Predicate::ObjectInState(0, "InvalidState".to_string()),
@@ -372,6 +373,7 @@ fn test_object_in_state_nonexistent_object() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(99, "Active".to_string()), &ctx);
     assert!(!result.satisfied);
@@ -395,6 +397,7 @@ fn test_object_in_state_all_valid_states() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     // Test all valid state names
     for state_name in &[
@@ -440,6 +443,7 @@ fn test_agent_on_terrain_satisfied() {
         grid: Some(&grid),
         objects: None,
         crop_states: None,
+        soil_nodes: None,
     };
     // Forest = terrain_id 6
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
@@ -456,6 +460,7 @@ fn test_agent_on_terrain_unsatisfied() {
         grid: Some(&grid),
         objects: None,
         crop_states: None,
+        soil_nodes: None,
     };
     // Forest = terrain_id 6, but agent is on Ground
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
@@ -491,6 +496,7 @@ fn test_object_at_satisfied() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
     assert!(result.satisfied);
@@ -514,6 +520,7 @@ fn test_object_at_unsatisfied() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
     assert!(!result.satisfied);
@@ -549,6 +556,7 @@ fn test_object_in_state_satisfied() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
     assert!(result.satisfied);
@@ -572,6 +580,7 @@ fn test_object_in_state_unsatisfied() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
     assert!(!result.satisfied);
@@ -595,6 +604,7 @@ fn test_object_in_state_case_insensitive() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "active".to_string()), &ctx);
     assert!(result.satisfied);
@@ -618,6 +628,7 @@ fn test_object_in_state_uppercase_name_is_rejected() {
         grid: None,
         objects: Some(&objects),
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "ACTIVE".to_string()), &ctx);
     assert!(!result.satisfied);
@@ -674,6 +685,7 @@ fn test_agent_on_terrain_position_outside_grid() {
         grid: Some(&grid),
         objects: None,
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 0), &ctx);
     assert!(!result.satisfied);
@@ -688,6 +700,7 @@ fn test_object_at_with_none_objects() {
         grid: None,
         objects: None,
         crop_states: None,
+        soil_nodes: None,
     };
     let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
     assert!(!result.satisfied);

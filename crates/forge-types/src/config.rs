@@ -247,6 +247,14 @@ pub struct TaskConfig {
     pub reward_scale: f32,
     /// Whether to provide dense reward shaping.
     pub dense_rewards: bool,
+    /// Tasks attached when a world is created or reset, if [`Self::enabled`].
+    ///
+    /// Populated by the high-level scenario compiler. Empty by default so
+    /// Gymnasium episodes without a scenario stay task-free (and remain on
+    /// the zero-alloc hot path). Procedural curriculum tasks from
+    /// `forge-data` are attached separately.
+    #[serde(default)]
+    pub scenario_tasks: Vec<crate::task::TaskDefinition>,
 }
 
 impl Default for TaskConfig {
@@ -258,6 +266,7 @@ impl Default for TaskConfig {
             max_episode_length: constants::DEFAULT_MAX_EPISODE_LENGTH,
             reward_scale: constants::DEFAULT_REWARD_SCALE,
             dense_rewards: true,
+            scenario_tasks: Vec::new(),
         }
     }
 }

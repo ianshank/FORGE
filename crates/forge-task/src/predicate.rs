@@ -4,7 +4,7 @@
 //! Each predicate evaluates to a boolean (satisfied or not) and
 //! optionally a progress value in [0.0, 1.0].
 
-use forge_types::agriculture::CropState;
+use forge_types::agriculture::{CropState, SoilSensorNode};
 use forge_types::entity::{Agent, AgentId, ObjectState};
 use forge_types::grid::{Grid, Position, TerrainType};
 use forge_types::resource::ItemType;
@@ -29,6 +29,22 @@ pub struct EvalContext<'a> {
     pub objects: Option<&'a [Object]>,
     /// Per-tile crop states (optional — required for agricultural predicates).
     pub crop_states: Option<&'a [CropState]>,
+    /// Soil sensor nodes (optional — required for `SoilDataCollected`).
+    pub soil_nodes: Option<&'a [SoilSensorNode]>,
+}
+
+impl<'a> EvalContext<'a> {
+    /// Builds a context with only agents and tick populated.
+    pub fn new(agents: &'a [Agent], tick: u64) -> Self {
+        Self {
+            agents,
+            tick,
+            grid: None,
+            objects: None,
+            crop_states: None,
+            soil_nodes: None,
+        }
+    }
 }
 
 /// Result of evaluating a predicate.
@@ -38,20 +54,35 @@ pub struct PredicateResult {
     pub satisfied: bool,
     /// Progress toward satisfaction (0.0 = no progress, 1.0 = complete).
     pub progress: f32,
+    /// Whether the composition failed this tick (deadline, Without, While).
+    pub failed: bool,
 }
 
 impl PredicateResult {
-    fn satisfied() -> Self {
+    /// Predicate (or composition) is fully satisfied.
+    pub fn satisfied() -> Self {
         Self {
             satisfied: true,
             progress: 1.0,
+            failed: false,
         }
     }
 
-    fn unsatisfied(progress: f32) -> Self {
+    /// Predicate is not yet satisfied; `progress` is clamped to `[0, 1]`.
+    pub fn unsatisfied(progress: f32) -> Self {
         Self {
             satisfied: false,
             progress: progress.clamp(0.0, 1.0),
+            failed: false,
+        }
+    }
+
+    /// Hard failure (forbidden action, missed deadline, broken While).
+    pub fn failed() -> Self {
+        Self {
+            satisfied: false,
+            progress: 0.0,
+            failed: true,
         }
     }
 }
