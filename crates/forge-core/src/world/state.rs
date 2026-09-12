@@ -78,6 +78,9 @@ pub struct WorldState {
     /// Replaces the `SmallVec<[_; 8]>` that previously lived in
     /// `run_systems` and would heap-allocate when `agents.len() > 8`.
     pub(crate) push_scratch: Vec<crate::physics::AgentPushData>,
+    /// Reusable discrete action ids for this tick's `validated_actions`.
+    /// Filled only when `tasks` is non-empty (already an alloc-audit carve-out).
+    pub(crate) task_action_ids: Vec<u32>,
 }
 
 impl WorldState {
@@ -130,6 +133,9 @@ impl WorldState {
                         agent.capabilities.can_fly = true;
                         agent.capabilities.max_altitude = config.drone.max_altitude;
                         agent.battery = config.drone.starting_battery;
+                        if let Some(home) = config.drone.spawn_home {
+                            agent.position = home;
+                        }
                     }
                     forge_types::entity::AgentMorphology::GroundVehicle => {
                         agent.capabilities.turn_radius = config.drone.vehicle_turn_radius;
@@ -168,13 +174,24 @@ impl WorldState {
         };
 
         let agent_count = agents.len();
+        let tasks = if config.task.enabled {
+            config
+                .task
+                .scenario_tasks
+                .iter()
+                .cloned()
+                .map(ActiveTask::from_definition)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let mut state = Self {
             tick: 0,
             grid,
             agents,
             objects,
             resources,
-            tasks: Vec::new(),
+            tasks,
             recipe_book: RecipeBook::default(),
             day_phase: 0,
             rng,
@@ -193,6 +210,7 @@ impl WorldState {
             crafting_object_map: HashMap::new(),
             comm_messages: Vec::with_capacity(agent_count),
             push_scratch: Vec::with_capacity(agent_count),
+            task_action_ids: Vec::with_capacity(agent_count),
         };
 
         // Place agents on the grid

@@ -276,8 +276,16 @@ jobs:
           path: ~/.cargo/bin/cargo-tarpaulin
           key: tarpaulin-v0.31.0-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - name: Install cargo-tarpaulin
-        if: steps.cache-tarpaulin.outputs.cache-hit != 'true'
-        run: cargo install cargo-tarpaulin --version 0.31.0 --locked
+        run: |
+          # rust-cache restores ~/.cargo/bin independently of the
+          # tarpaulin-specific cache key (which hashes Cargo.lock). A
+          # lockfile-only cache miss used to run `cargo install` against an
+          # already-present binary and fail with "already exists" (exit 101).
+          if cargo tarpaulin --version 2>/dev/null | grep -q '0.31.0'; then
+            cargo tarpaulin --version
+          else
+            cargo install cargo-tarpaulin --version 0.31.0 --locked --force
+          fi
       - name: Run coverage
         run: |
           cargo tarpaulin \

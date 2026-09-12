@@ -398,14 +398,8 @@ mod tests {
         let mut batch = ReplayBatch::new("w-001".to_string(), None);
         assert!(batch.is_empty());
 
-        let replay = CompactReplay {
-            format_version: 1,
-            config_hash: 0,
-            config: forge_types::config::ForgeConfig::default(),
-            seed: 42,
-            actions: vec![],
-            metadata: forge_replay::compact::ReplayMetadata::default(),
-        };
+        let replay =
+            CompactReplay::builder(forge_types::config::ForgeConfig::default(), 42).build();
         batch.push(replay);
         assert_eq!(batch.len(), 1);
         assert!(!batch.is_empty());

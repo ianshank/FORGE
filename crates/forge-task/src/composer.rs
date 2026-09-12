@@ -23,57 +23,53 @@ pub fn evaluate_composition(
 
         TaskComposition::And(subtasks) => {
             if subtasks.is_empty() {
-                return PredicateResult {
-                    satisfied: true,
-                    progress: 1.0,
-                };
+                return PredicateResult::satisfied();
             }
             let results: Vec<PredicateResult> = subtasks
                 .iter()
                 .map(|t| evaluate_composition(t, ctx, sequence_index, forbidden_actions))
                 .collect();
+            if results.iter().any(|r| r.failed) {
+                return PredicateResult::failed();
+            }
             let all_satisfied = results.iter().all(|r| r.satisfied);
             let avg_progress =
                 results.iter().map(|r| r.progress).sum::<f32>() / results.len() as f32;
             PredicateResult {
                 satisfied: all_satisfied,
                 progress: avg_progress,
+                failed: false,
             }
         }
 
         TaskComposition::Or(subtasks) => {
             if subtasks.is_empty() {
-                return PredicateResult {
-                    satisfied: false,
-                    progress: 0.0,
-                };
+                return PredicateResult::unsatisfied(0.0);
             }
             let results: Vec<PredicateResult> = subtasks
                 .iter()
                 .map(|t| evaluate_composition(t, ctx, sequence_index, forbidden_actions))
                 .collect();
             let any_satisfied = results.iter().any(|r| r.satisfied);
+            if !any_satisfied && results.iter().any(|r| r.failed) {
+                return PredicateResult::failed();
+            }
             let max_progress = results.iter().map(|r| r.progress).fold(0.0_f32, f32::max);
             PredicateResult {
                 satisfied: any_satisfied,
                 progress: max_progress,
+                failed: false,
             }
         }
 
         TaskComposition::Sequence(subtasks) => {
             if subtasks.is_empty() {
-                return PredicateResult {
-                    satisfied: true,
-                    progress: 1.0,
-                };
+                return PredicateResult::satisfied();
             }
 
             let current_idx = *sequence_index;
             if current_idx >= subtasks.len() {
-                return PredicateResult {
-                    satisfied: true,
-                    progress: 1.0,
-                };
+                return PredicateResult::satisfied();
             }
 
             let current_result = evaluate_composition(
@@ -83,14 +79,15 @@ pub fn evaluate_composition(
                 forbidden_actions,
             );
 
+            if current_result.failed {
+                return PredicateResult::failed();
+            }
+
             if current_result.satisfied {
                 trace!(step = current_idx, "sequence step completed");
                 *sequence_index = current_idx + 1;
                 if *sequence_index >= subtasks.len() {
-                    return PredicateResult {
-                        satisfied: true,
-                        progress: 1.0,
-                    };
+                    return PredicateResult::satisfied();
                 }
             }
 
@@ -99,19 +96,12 @@ pub fn evaluate_composition(
             let step_progress = current_result.progress;
             let overall_progress = (completed_steps as f32 + step_progress) / total_steps as f32;
 
-            PredicateResult {
-                satisfied: false,
-                progress: overall_progress,
-            }
+            PredicateResult::unsatisfied(overall_progress)
         }
 
         TaskComposition::Before(subtask, deadline) => {
             if ctx.tick > *deadline {
-                // Deadline passed — task failed
-                PredicateResult {
-                    satisfied: false,
-                    progress: 0.0,
-                }
+                PredicateResult::failed()
             } else {
                 evaluate_composition(subtask, ctx, sequence_index, forbidden_actions)
             }
@@ -121,11 +111,7 @@ pub fn evaluate_composition(
             let cond_result =
                 evaluate_composition(condition, ctx, sequence_index, forbidden_actions);
             if !cond_result.satisfied {
-                // Condition violated — task failed
-                PredicateResult {
-                    satisfied: false,
-                    progress: 0.0,
-                }
+                PredicateResult::failed()
             } else {
                 evaluate_composition(goal, ctx, sequence_index, forbidden_actions)
             }
@@ -133,11 +119,7 @@ pub fn evaluate_composition(
 
         TaskComposition::Without(subtask, forbidden_action_id) => {
             if forbidden_actions.contains(forbidden_action_id) {
-                // Forbidden action was taken — task failed
-                PredicateResult {
-                    satisfied: false,
-                    progress: 0.0,
-                }
+                PredicateResult::failed()
             } else {
                 evaluate_composition(subtask, ctx, sequence_index, forbidden_actions)
             }
@@ -148,10 +130,7 @@ pub fn evaluate_composition(
                 ?other,
                 "unhandled TaskComposition variant in evaluate_composition"
             );
-            PredicateResult {
-                satisfied: false,
-                progress: 0.0,
-            }
+            PredicateResult::unsatisfied(0.0)
         }
     }
 }
@@ -170,13 +149,7 @@ mod tests {
     }
 
     fn make_ctx(agents: &[Agent], tick: u64) -> EvalContext<'_> {
-        EvalContext {
-            agents,
-            tick,
-            grid: None,
-            objects: None,
-            crop_states: None,
-        }
+        EvalContext::new(agents, tick)
     }
 
     #[test]
@@ -275,6 +248,7 @@ mod tests {
         // With the forbidden action, should fail
         let result2 = evaluate_composition(&task, &ctx, &mut seq_idx, &[42]);
         assert!(!result2.satisfied);
+        assert!(result2.failed);
     }
 
     #[test]

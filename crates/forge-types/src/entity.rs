@@ -78,6 +78,9 @@ pub struct Agent {
     /// cardinal direction for compatibility with this field.
     #[serde(default)]
     pub heading: crate::grid::Direction,
+    /// Whether this agent has generated a field report this episode.
+    #[serde(default)]
+    pub generated_field_report: bool,
 }
 
 /// Default battery value for serde deserialization (matches starting stamina).
@@ -104,6 +107,7 @@ impl Agent {
             altitude: 0,
             battery: crate::constants::DEFAULT_STARTING_BATTERY,
             heading: crate::grid::Direction::Up,
+            generated_field_report: false,
         }
     }
 

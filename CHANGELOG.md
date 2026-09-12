@@ -9,8 +9,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Graded-loop hygiene
+
+- **CompactReplay hash fail-closed**: `hash_config` never returns an empty
+  string (serde failure panics; `ForgeConfig` is always `Serialize`).
+  `replay()` rejects non-canonical hashes and `format_version != 2`
+  (`InvalidConfigHash`, `UnsupportedFormat`).
+- **Process-constraint logging**: geofence and battery-floor `Noop`s log at
+  `debug!`/`trace!` (charger skip-recharge already traced in `drone.rs`).
+- **Rust↔Python scenario compiler pin**: `orchard_coverage` and `crop_scout`
+  xlang tests. Python lawnmower imports `FORGE_BASE_ACTIONS` /
+  `FORGE_DRONE_ACTION_COUNT` from `forge.actions`.
+- **Eval contract tests**: success requires attached tasks complete; `MoveHex`
+  geofence + depot exception; evidential script exit 3 without docker;
+  OpenEnv `_unpack_step` rejects non-5-tuples.
+- **Skill + hook**: `.claude/skills/forge-scenario-compiler/SKILL.md` and
+  advisory `guard_golden_replay.py`. CHARTER records Agent Skills packaging
+  as gated until eval-gated HRL winners exist (operator `.claude/skills/`
+  are not that packaging).
+
+### VecEnv SPS @ N (Karten 2026)
+
+- **Committed `ForgeAsyncVecEnv` evidence**: labeled `cloud_agent` report
+  (`benchmarks/baselines/cloud_agent/vecenv_step.json`) measures random-action
+  SPS for `n_envs ∈ {1,8,16,32,64}` (process-parallel PyO3, **not** a JAX
+  `vmap`; `ForgeJaxEnv` / `RealisticFakeEnv` are out of scope). README
+  performance table publishes floors at or below those numbers (15k / 40k /
+  40k / 35k / 35k). Do not imply N-linear scale-up: IPC saturates after N=8
+  on this host. Guarded by `tests/python/test_throughput_claim.py`. Producer:
+  `tests/python/test_vecenv_throughput.py` (heavy sweep behind
+  `FORGE_RUN_VECENV_THROUGHPUT=1`). CompactReplay golden fidelity is published
+  as 100% on the format-v2 corpus.
+
+### Energy-aware orchard coverage
+
+- **Home/charger recharge**: opt-in `drone.restrict_recharge_to_chargers` +
+  `charger_tiles` / `spawn_home`. Default remains "land anywhere". Geofence,
+  battery-action floor, and max-altitude `Ascend` are hard `Noop`s in
+  `validate_actions` (config-driven). High-level `type = "coverage"|"orchard"`
+  compiles to `And([FieldSurveyed, BatteryAbove, AgentAt(home)])`. Scenario:
+  `configs/scenarios/orchard_coverage.toml`. Baselines: lawnmower
+  (`forge-core::baselines`, `python/forge/baselines/coverage.py`) vs random;
+  SAC hook via `examples/train_sac_cleanrl.py --config configs/training/sac_orchard.toml`.
+  Wu et al. is cited as the ground CPP problem class, not a replica.
+
+### Minecraft evidential ops
+
+- **`scripts/mc_evidential_capture.sh`**: operator capture for N≥3 random +
+  trained episodes. `--dry-run` is the CI surface. Live capture still requires
+  Docker + Paper; this environment does not invent `evidential_episodes >= 3`.
+  `mc_plot_baseline.py` continues to refuse comparison below the floor of 3.
+
+### OpenEnv sidecar
+
+- **`python/forge_env/openenv_env.py`**: `ForgeOpenEnv` wraps in-process
+  `ForgeEnv`. Observation carries `reward`/`done`. Optional `create_app` if
+  the OpenEnv SDK is installed. PyO3 remains the training path.
+
+### CompactReplay fidelity (format version 2)
+
+- **Portable config hash**: `CompactReplay.config_hash` is a 64-char SHA-256 hex of `serde_json::to_vec(&ForgeConfig)` (Minecraft `schema_id` convention). rustc `DefaultHasher` is gone so goldens do not flake on toolchain bumps.
+- **Seed is binding**: `replay()` writes `self.seed` onto `config.world.seed` before `WorldState::new`. The builder pins the same field so the fingerprint covers the seed that will actually run.
+- **Unknown action ids fail closed**: illegal discrete ids are `ReplayError::UnknownActionId`, never rewritten to `Noop`. Decode uses `from_discrete_full` (drone + agri + hex flags).
+- **`BehavioralCoverage`**: tiles visited, action-type histogram, predicate-arm activations, seeds, constraint-violation classes — exact CompactReplay measurement; cite ECC rather than claiming a new coverage invention.
+- **CI**: `tests/golden/replays/v2_seed42.json` is a PR bit-identity gate (`cargo test -p forge-replay --test golden_replay`). Scheduled / `workflow_dispatch` workflow `golden-replay.yml` runs `scripts/check_golden_replays.sh` (full crate suite + flip-log remedy). Intentional corpus changes go in `docs/results/replay_flip_log.md`.
+
 ### Fixed / CI
 
+- **Tarpaulin install vs rust-cache**: `coverage` no longer treats a
+  tarpaulin-cache miss as "must `cargo install`". `Swatinem/rust-cache`
+  can already have restored `~/.cargo/bin/cargo-tarpaulin`; installing
+  then failed with "binary already exists" (exit 101) and skipped the
+  85% gate. Skip install when 0.31.0 is on PATH; `--force` only when
+  installing.
 - **Docker GHCR `/health` smoke**: After `22d0fb80`, `forge-server` defaults to loopback (`127.0.0.1:8080`). Compose already sets `FORGE_SERVER_BIND=0.0.0.0:${FORGE_SERVER_PORT:-8080}`, but the smoke `docker run -p 8080:8080` did not, so host curl never reached the process. The simulation image now sets that bind via runtime ENV (binary default unchanged) and a writable `FORGE_SERVER_HISTORY_DIR` for `USER forge`. CI smoke passes the same BIND env and publishes `127.0.0.1:8080:8080`. `tests/python/test_docker_server_bind_contract.py` pins the image/CI/compose strings (the smoke job only runs on the default branch / `v*` tags).
 
 ### Close the self-improving loop (2026-09)

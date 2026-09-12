@@ -41,6 +41,7 @@ impl WorldState {
         self.crafting_object_map.clear();
         self.comm_messages.clear();
         self.push_scratch.clear();
+        self.task_action_ids.clear();
 
         let mut result = StepResult::default();
         self.fill_step_result(&mut result);

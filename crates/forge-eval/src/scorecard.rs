@@ -76,6 +76,32 @@ pub struct EpisodeResult {
     pub truncated: bool,
     /// Mean decision time per step in milliseconds.
     pub mean_decision_time_ms: f64,
+    /// Process signal: every agent's battery stayed `>= 0`.
+    #[serde(default = "default_process_ok")]
+    pub battery_nonnegative: bool,
+    /// Process signal: every agent's altitude stayed `<= max_altitude`.
+    #[serde(default = "default_process_ok")]
+    pub altitude_within_cap: bool,
+}
+
+fn default_process_ok() -> bool {
+    true
+}
+
+impl Default for EpisodeResult {
+    fn default() -> Self {
+        Self {
+            seed: 0,
+            total_reward: 0.0,
+            success: false,
+            steps: 0,
+            terminated: false,
+            truncated: false,
+            mean_decision_time_ms: 0.0,
+            battery_nonnegative: true,
+            altitude_within_cap: true,
+        }
+    }
 }
 
 /// Summary statistics for the full evaluation run.
@@ -213,6 +239,7 @@ mod tests {
             terminated: success,
             truncated: !success,
             mean_decision_time_ms: 1.0,
+            ..EpisodeResult::default()
         }
     }
 
@@ -417,6 +444,7 @@ mod tests {
                 terminated: false,
                 truncated: true,
                 mean_decision_time_ms: 2.0,
+                ..EpisodeResult::default()
             },
             EpisodeResult {
                 seed: 1,
@@ -426,6 +454,7 @@ mod tests {
                 terminated: false,
                 truncated: true,
                 mean_decision_time_ms: 4.0,
+                ..EpisodeResult::default()
             },
             EpisodeResult {
                 seed: 2,
@@ -435,6 +464,7 @@ mod tests {
                 terminated: false,
                 truncated: true,
                 mean_decision_time_ms: 6.0,
+                ..EpisodeResult::default()
             },
         ];
         let result = ScenarioResult::from_episodes("test".into(), 1, episodes);
@@ -570,6 +600,7 @@ mod proptests {
                     seed: i as u64, total_reward: 1.0, success: true,
                     steps: 10, terminated: true, truncated: false,
                     mean_decision_time_ms: 1.0,
+                    ..EpisodeResult::default()
                 });
             }
             for i in 0..n_fail {
@@ -577,6 +608,7 @@ mod proptests {
                     seed: (n_success + i) as u64, total_reward: 0.0, success: false,
                     steps: 100, terminated: false, truncated: true,
                     mean_decision_time_ms: 1.0,
+                    ..EpisodeResult::default()
                 });
             }
             let result = ScenarioResult::from_episodes("test".into(), 1, episodes);

@@ -139,6 +139,12 @@ def _build_argparser(defaults: dict[str, Any]) -> argparse.ArgumentParser:
     p.add_argument("--env-height", type=int, default=env_cfg.get("height", _DEFAULT_ENV_HEIGHT))
     p.add_argument("--max-steps", type=int, default=env_cfg.get("max_steps", _DEFAULT_MAX_STEPS))
     p.add_argument("--seed", type=int, default=env_cfg.get("seed", _DEFAULT_SEED))
+    p.add_argument(
+        "--scenario",
+        type=str,
+        default=str(env_cfg.get("scenario", "")),
+        help="Optional high-level scenario TOML compiled into ForgeConfig.",
+    )
 
     # SAC hyperparams
     p.add_argument("--total-timesteps", type=int, default=hp.get("total_timesteps", 1_000_000))
@@ -345,10 +351,19 @@ def train(args: argparse.Namespace) -> None:  # noqa: PLR0912, PLR0915
     logger.info("Device: %s", device)
 
     # --- Build single environment ---
-    env_config = {
+    env_config: dict[str, Any] = {
         "world": {"width": args.env_width, "height": args.env_height},
         "agents": {"num_agents": 1},
     }
+    scenario = str(getattr(args, "scenario", "") or "").strip()
+    if scenario:
+        from forge.mangomas.collector.scenario import resolve_forge_scenarios
+
+        resolved = resolve_forge_scenarios([scenario])
+        if not resolved:
+            raise FileNotFoundError(f"scenario not found: {scenario}")
+        env_config = dict(resolved[0].forge_config)
+        logger.info("Loaded scenario %s", scenario)
     env: Any = ForgeGymnasiumEnv(config=env_config)
     env = TimeLimit(env, max_steps=args.max_steps)
     env = FlattenObservationWrapper(env)

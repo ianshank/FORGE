@@ -282,7 +282,8 @@ pub fn process_multispectral_scan(
                 });
 
                 // Mark as surveyed
-                crop.surveyed_tick = tick;
+                // Tick 0 is a valid first-step scan; 0 is reserved for "never".
+                crop.surveyed_tick = tick.max(1);
             }
         }
 
@@ -445,6 +446,7 @@ pub fn process_report_generation(
 
         // Deduct battery
         agents[i].battery = (agents[i].battery - config.report_generation_cost).max(0);
+        agents[i].generated_field_report = true;
         report_flags[i] = true;
 
         trace!(agent_id, "field report generated");

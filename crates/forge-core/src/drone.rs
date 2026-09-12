@@ -132,6 +132,15 @@ pub fn process_battery_recharge(agents: &mut [Agent], config: &DroneConfig) {
         }
 
         let old_battery = agent.battery;
+        if !config.allows_recharge_at(agent.position) {
+            trace!(
+                agent_id = agent.id,
+                x = agent.position.x,
+                y = agent.position.y,
+                "landed off charger; skip recharge"
+            );
+            continue;
+        }
         agent.battery = (agent.battery + config.recharge_rate).min(config.max_battery);
         if agent.battery == config.max_battery && old_battery < config.max_battery {
             debug!(
@@ -457,6 +466,34 @@ mod tests {
         process_battery_recharge(&mut agents, &config);
 
         assert_eq!(agents[0].battery, 100000);
+    }
+
+    #[test]
+    fn test_battery_no_recharge_off_charger_when_restricted() {
+        let mut config = make_drone_config();
+        config.restrict_recharge_to_chargers = true;
+        config.charger_tiles = vec![Position::new(0, 0)];
+        let mut agents = vec![make_aerial_agent(0, 5, 5)];
+        agents[0].altitude = 0;
+        agents[0].battery = 100000;
+
+        process_battery_recharge(&mut agents, &config);
+
+        assert_eq!(agents[0].battery, 100000);
+    }
+
+    #[test]
+    fn test_battery_recharge_on_charger_when_restricted() {
+        let mut config = make_drone_config();
+        config.restrict_recharge_to_chargers = true;
+        config.charger_tiles = vec![Position::new(5, 5)];
+        let mut agents = vec![make_aerial_agent(0, 5, 5)];
+        agents[0].altitude = 0;
+        agents[0].battery = 100000;
+
+        process_battery_recharge(&mut agents, &config);
+
+        assert_eq!(agents[0].battery, 100000 + config.recharge_rate);
     }
 
     // ---- Hover test ----

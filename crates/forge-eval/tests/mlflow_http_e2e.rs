@@ -55,6 +55,7 @@ fn fixture_scorecard() -> Scorecard {
         terminated: true,
         truncated: false,
         mean_decision_time_ms: 1.5,
+        ..EpisodeResult::default()
     };
     Scorecard {
         agent_metadata: AgentMetadata::heuristic("TestAgent"),

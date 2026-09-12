@@ -429,6 +429,7 @@ mod tests {
                             terminated: true,
                             truncated: false,
                             mean_decision_time_ms: 0.3,
+                            ..EpisodeResult::default()
                         },
                         EpisodeResult {
                             seed: 1,
@@ -438,6 +439,7 @@ mod tests {
                             terminated: true,
                             truncated: false,
                             mean_decision_time_ms: 0.4,
+                            ..EpisodeResult::default()
                         },
                     ],
                     success_rate: 1.0,
@@ -455,6 +457,7 @@ mod tests {
                         terminated: false,
                         truncated: true,
                         mean_decision_time_ms: 1.1,
+                        ..EpisodeResult::default()
                     }],
                     success_rate: 0.0,
                     mean_reward: 0.5,

@@ -135,6 +135,65 @@ fn test_single_episode() {
     assert!(result.truncated || result.terminated);
 }
 
+fn task_definition(goal: forge_types::task::TaskComposition) -> forge_types::task::TaskDefinition {
+    use forge_types::task::{TaskDefinition, TaskTier};
+    TaskDefinition {
+        id: 1,
+        description: "eval contract".to_string(),
+        goal,
+        tier: TaskTier::new(1),
+        estimated_steps: 16,
+        reward: 1.0,
+        dense_reward_weights: vec![1.0],
+    }
+}
+
+#[test]
+fn eval_success_when_time_elapsed_task_completes() {
+    use forge_types::task::{Predicate, TaskComposition};
+
+    let mut config = make_eval_config();
+    config.episodes_per_scenario = 1;
+    config.max_steps_per_episode = 20;
+    config.base_forge_config.task.enabled = true;
+    config.base_forge_config.task.max_episode_length = 100;
+    config.base_forge_config.task.scenario_tasks = vec![task_definition(TaskComposition::Atom(
+        Predicate::TimeElapsed(1),
+    ))];
+
+    let harness = EvalHarness::new(config.clone());
+    let result =
+        harness.run_single_episode(42, &config.base_forge_config, &|| Box::new(NoopEvalAgent));
+    assert!(result.success, "completed task must count as success");
+    assert!(result.terminated);
+    assert!(!result.truncated);
+}
+
+#[test]
+fn eval_success_requires_attached_tasks_complete() {
+    use forge_types::grid::Position;
+    use forge_types::task::{Predicate, TaskComposition};
+
+    let mut config = make_eval_config();
+    config.episodes_per_scenario = 1;
+    config.max_steps_per_episode = 8;
+    config.base_forge_config.task.enabled = true;
+    config.base_forge_config.task.max_episode_length = 8;
+    config.base_forge_config.task.scenario_tasks = vec![task_definition(TaskComposition::Atom(
+        Predicate::AgentAt(0, Position::new(15, 15)),
+    ))];
+
+    let harness = EvalHarness::new(config.clone());
+    let result =
+        harness.run_single_episode(42, &config.base_forge_config, &|| Box::new(NoopEvalAgent));
+    assert!(
+        !result.success,
+        "alive+truncated with incomplete tasks must not succeed"
+    );
+    assert!(!result.terminated);
+    assert!(result.truncated);
+}
+
 #[test]
 fn test_eval_harness_config_accessor() {
     let config = make_eval_config();
