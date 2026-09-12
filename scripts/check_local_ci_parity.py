@@ -73,6 +73,8 @@ JOB_TO_MAKE_TARGET: dict[str, str] = {
     "machete": "machete",
     "markdownlint": "md-lint",
     "mutants": "mutants",
+    "pip-install-clean": "pip-install-smoke",
+    "api-compliance": "api-compliance",
 }
 
 #: CI job id -> why no ``make`` target exists for it.

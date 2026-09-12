@@ -638,6 +638,52 @@ jobs:
         run: |
           pytest tests/python/test_mangomas_smoke.py -v --no-cov
 
+  pip-install-clean:
+    name: Clean wheel install smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94.1"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install maturin
+      - run: maturin build --release -m crates/forge-python/Cargo.toml
+      - run: |
+          python -m venv /tmp/clean && . /tmp/clean/bin/activate
+          pip install target/wheels/forge_env-*.whl
+          pip check
+          cd /tmp && python -c "import forge_env, forge; from forge_env import ForgeEnv; ForgeEnv().reset(seed=0)"
+
+  api-compliance:
+    name: API compliance (Gymnasium + PettingZoo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94.1"
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Create + activate virtualenv
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest numpy
+          pip install -e ".[compliance]"
+      - name: Build native extension
+        run: maturin develop
+      - name: Gymnasium env_checker + PettingZoo parallel_api_test
+        run: pytest tests/python/test_api_compliance.py -v --no-cov
+
   mc-bot-test:
     name: mc-bot Node Tests + Biome Lint
     runs-on: ubuntu-latest

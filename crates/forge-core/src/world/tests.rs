@@ -683,6 +683,33 @@ fn golden_digest_for_seed(seed: u64) -> u64 {
     fnv1a64(&bytes)
 }
 
+/// Same as [`make_golden_world`] but with aerial morphology enabled so the
+/// integer-grid drone path is covered without rewriting the ground digests.
+fn make_golden_aerial_world(seed: u64) -> WorldState {
+    let mut config = ForgeConfig::default();
+    config.world.width = GOLDEN_WORLD_SIZE;
+    config.world.height = GOLDEN_WORLD_SIZE;
+    config.world.seed = seed;
+    config.agents.num_agents = GOLDEN_AGENT_COUNT;
+    config.task.max_episode_length = GOLDEN_MAX_EPISODE_LEN;
+    config.drone.enabled = true;
+    config.drone.num_aerial = GOLDEN_AGENT_COUNT;
+    WorldState::new(config).expect("golden aerial config must be valid")
+}
+
+fn golden_aerial_digest_for_seed(seed: u64) -> u64 {
+    let script = golden_action_script();
+    let mut world = make_golden_aerial_world(seed);
+    for step in 0..GOLDEN_STEP_COUNT {
+        world.step(&script[step % script.len()]);
+    }
+    let bytes = world
+        .try_to_bytes()
+        .expect("golden aerial world must serialize successfully");
+    assert!(!bytes.is_empty(), "golden aerial world serialized empty");
+    fnv1a64(&bytes)
+}
+
 #[test]
 fn test_golden_state_hash() {
     let actual: Vec<u64> = GOLDEN_SEEDS
@@ -700,6 +727,28 @@ fn test_golden_state_hash() {
         "golden state digests drifted for seeds {GOLDEN_SEEDS:?}; actual \
          values are {actual:#018x?} — update GOLDEN_DIGESTS only if the \
          change to simulation behaviour was intentional"
+    );
+}
+
+const GOLDEN_AERIAL_DIGESTS: [u64; 3] = [
+    0x08d9_9c10_a75f_54dc,
+    0x1fb0_25ff_5c93_080e,
+    0x6383_f129_8c9b_9e12,
+];
+
+#[test]
+fn test_golden_aerial_state_hash() {
+    let actual: Vec<u64> = GOLDEN_SEEDS
+        .iter()
+        .copied()
+        .map(golden_aerial_digest_for_seed)
+        .collect();
+    assert_eq!(
+        actual,
+        GOLDEN_AERIAL_DIGESTS.to_vec(),
+        "golden aerial digests drifted for seeds {GOLDEN_SEEDS:?}; actual \
+         values are {actual:#018x?} — update GOLDEN_AERIAL_DIGESTS only if \
+         the aerial path change was intentional"
     );
 }
 

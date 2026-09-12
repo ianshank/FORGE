@@ -5,6 +5,10 @@ All notable changes to FORGE will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+**Versioning:** GitHub Releases and GHCR tags use `v0.2.0` as the public
+channel tag. The Cargo workspace and the `forge-env` wheel remain `0.5.0`.
+See README "Versioning".
+
 ---
 
 ## [Unreleased]
@@ -98,9 +102,29 @@ Completed full implementation of the 5-phase optimization and enterprise hardeni
   - Implemented marker guard `tests/python/test_evidence_integrity_marker_guard.py` ensuring pytest marker expressions cannot bypass the evidence integrity gate.
   - Aligned `docs/CHARTER.md` Invariant 6 with all CI workflows, adding `python-test-minecraft-real-run` to the workflow_dispatch opt-ins list and accurately documenting the blocking vs advisory scanner posture in `security.yml`.
 
+### Ecosystem compliance (v0.2.0 channel)
+
+- `ForgeGymnasiumEnv` subclasses `gymnasium.Env`; `ForgeParallelEnv` subclasses `pettingzoo.ParallelEnv` and forwards per-agent actions via `ForgeEnv.step_multi`.
+- CI jobs `pip-install-clean` and `api-compliance`; Python lockstep `tests/python/test_determinism.py`; root `BENCHMARKS.md` gated by `CLAIM_FILES`.
+
 ---
 
-## [0.5.0] - 2026-09-05
+## [0.2.0] - 2026-09-11 (GitHub release tag; crates remain 0.5.0)
+
+First tagged public cut. Creates the public `main` branch from the development
+line (fast-forward; history preserved). Cargo/`forge-env` wheel version stays
+`0.5.0`. Release subtitle: Unifying the Rust Core, Deterministic Physics, and
+Ecosystem Compliance.
+
+Highlights: 26-crate workspace; 130,000+ steps/second from Python (189k on
+`cloud_agent`; see `BENCHMARKS.md`); deterministic aerial morphology on the
+integer grid; Gymnasium `env_checker` and PettingZoo `parallel_api_test` as CI
+gates; telemetry stack on `main`; TensorRT/Hailo remain roadmap
+(`docs/cloud_edge_proposal.md`).
+
+---
+
+## [0.5.1] - 2026-09-05
 
 A standards audit found that the controls were configured but could not
 fail, and that the test guarding Invariant 6 checked five fields out of

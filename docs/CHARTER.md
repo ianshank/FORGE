@@ -226,7 +226,9 @@ that must stay green.
 *Enforced by:* fixed-point physics + `rand_pcg` RNG, and the CI jobs in
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — `fmt`, `clippy`
 (`-D warnings`), `test`, `alloc-audit`, `coverage` (tarpaulin), `python-lint`
-/ `python-test` (ruff + mypy, pytest), `mc-bot-test` (tsc + Biome +
+/ `python-test` (ruff + mypy, pytest), `pip-install-clean` (fresh-venv wheel
+smoke), `api-compliance` (Gymnasium `env_checker` + PettingZoo
+`parallel_api_test`), `mc-bot-test` (tsc + Biome +
 `node:test`), the `forge-mc-runner-bin` smoke, and `wasm` — which lints and
 runs the crate's tests on the wasm32 target, the one place determinism is
 verified for the environment the browser demo actually ships to. Coverage thresholds and

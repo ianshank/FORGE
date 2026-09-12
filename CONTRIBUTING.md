@@ -52,6 +52,8 @@ gitleaks git --redact -v .   # secret scanning; needs the gitleaks binary on PAT
 ruff check
 mypy python/ scripts/ --config-file pyproject.toml
 pytest tests/python -m 'not lmstudio and not e2e_long and not minecraft_e2e'
+make pip-install-smoke   # fresh-venv wheel import; CI job pip-install-clean
+make api-compliance      # gymnasium env_checker + pettingzoo parallel_api_test
 
 # mc-bot
 cd mc-bot && npm ci && npm run typecheck && npm run lint && npm test && npm run test:coverage

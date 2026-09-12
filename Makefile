@@ -9,7 +9,7 @@ SHELL := /bin/bash
         onnx-check hf-check mlflow-check alloc-audit bench-export mc-runner-smoke machete mutants \
         wasm wasm-check wasm-test deny gitleaks pin-check text-check \
         md-lint ci-parity \
-        py-lint py-test hooks-test \
+        py-lint py-test hooks-test pip-install-smoke api-compliance \
         mc-bot-test dashboard-test dashboard-e2e demo-ui-test web-e2e \
         verify verify-full clean
 
@@ -160,6 +160,15 @@ py-lint: ## ruff + mypy (matches CI's python-lint job)
 py-test: ## pytest tests/python, excluding opt-in markers (build the native ext first: maturin develop)
 	pytest tests/python -m 'not lmstudio and not e2e_long and not minecraft_e2e'
 
+pip-install-smoke: ## Build the wheel and import it in a fresh venv (matches CI pip-install-clean)
+	maturin build --release -m crates/forge-python/Cargo.toml
+	python3 -m venv /tmp/forge-clean-wheel
+	. /tmp/forge-clean-wheel/bin/activate && pip install target/wheels/forge_env-*.whl && pip check && cd /tmp && python -c "import forge_env, forge; from forge_env import ForgeEnv; ForgeEnv().reset(seed=0)"
+
+api-compliance: ## Real gymnasium env_checker + pettingzoo parallel_api_test
+	pip install -e ".[compliance]"
+	pytest tests/python/test_api_compliance.py -v --no-cov
+
 hooks-test: ## Self-tests for .claude/hooks/ (stdlib-only, no project deps; matches CI's python-lint job)
 	python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
 
@@ -193,7 +202,7 @@ verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check text
 # renamed away. `md-lint` and `mc-runner-smoke` joined `verify` because both
 # are seconds-fast and both were CI jobs a contributor could go red on with a
 # fully green local run.
-verify-full: verify coverage hf-check mlflow-check alloc-audit mutants deny gitleaks ## verify, plus the slower/environment-dependent gates (tarpaulin, feature surfaces, allocation audit, mutation testing, cargo-deny, gitleaks). Does NOT include onnx-check (needs ORT_DYLIB_PATH) or the browser E2E targets (dashboard-e2e/demo-ui-test/web-e2e, each needs a Chromium download).
+verify-full: verify coverage hf-check mlflow-check alloc-audit mutants deny gitleaks pip-install-smoke api-compliance ## verify, plus the slower/environment-dependent gates (tarpaulin, feature surfaces, allocation audit, mutation testing, cargo-deny, gitleaks, clean-wheel smoke, API compliance). Does NOT include onnx-check (needs ORT_DYLIB_PATH) or the browser E2E targets (dashboard-e2e/demo-ui-test/web-e2e, each needs a Chromium download).
 	@echo "verify-full: all gates passed."
 
 clean: ## cargo clean (frees significant disk space; safe, fully reproducible)

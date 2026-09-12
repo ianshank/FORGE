@@ -21,6 +21,7 @@ PYO3_REPORT = REPO_ROOT / "benchmarks" / "baselines" / "cloud_agent" / "pyo3_ste
 #: Documents that publish a Python steps/second floor.
 CLAIM_FILES: tuple[str, ...] = (
     "README.md",
+    "BENCHMARKS.md",
     "docs/CHARTER.md",
     "docs/architecture.md",
     "docs/cloud_edge_proposal.md",

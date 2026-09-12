@@ -2,6 +2,15 @@
 
 Post-demo-UI priorities, roughly in order of impact.
 
+## v0.2.0 — LANDED
+
+Public channel tag `v0.2.0` (crates remain `0.5.0`). Gymnasium `Env` /
+PettingZoo `ParallelEnv` with per-agent PyO3 `step_multi`, `pip-install-clean`
+and `api-compliance` CI jobs, `BENCHMARKS.md` from committed `cloud_agent`
+evidence, and the Python observation/reward lockstep test. Creating `main`,
+branch protection, Dependabot retarget, and the annotated tag remain the
+maintainer gate.
+
 ## v0.5.0 — non-Minecraft tracks LANDED
 
 Three non-Minecraft tracks shipped in the `0.5.0` release-hygiene cut:
