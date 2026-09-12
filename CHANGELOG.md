@@ -76,6 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed / CI
 
+- **Tarpaulin install vs rust-cache**: `coverage` no longer treats a
+  tarpaulin-cache miss as "must `cargo install`". `Swatinem/rust-cache`
+  can already have restored `~/.cargo/bin/cargo-tarpaulin`; installing
+  then failed with "binary already exists" (exit 101) and skipped the
+  85% gate. Skip install when 0.31.0 is on PATH; `--force` only when
+  installing.
 - **Docker GHCR `/health` smoke**: After `22d0fb80`, `forge-server` defaults to loopback (`127.0.0.1:8080`). Compose already sets `FORGE_SERVER_BIND=0.0.0.0:${FORGE_SERVER_PORT:-8080}`, but the smoke `docker run -p 8080:8080` did not, so host curl never reached the process. The simulation image now sets that bind via runtime ENV (binary default unchanged) and a writable `FORGE_SERVER_HISTORY_DIR` for `USER forge`. CI smoke passes the same BIND env and publishes `127.0.0.1:8080:8080`. `tests/python/test_docker_server_bind_contract.py` pins the image/CI/compose strings (the smoke job only runs on the default branch / `v*` tags).
 
 ### Close the self-improving loop (2026-09)
