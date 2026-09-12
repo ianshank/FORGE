@@ -64,7 +64,7 @@ else:
 # Optional OpenEnv sidecar — contract lives in openenv_env.py even without the SDK.
 ForgeOpenEnv = None
 try:
-    from forge_env.openenv_env import ForgeOpenEnv as _ForgeOpenEnv  # noqa: E402
+    from forge_env.openenv_env import ForgeOpenEnv as _ForgeOpenEnv
 except ImportError:
     pass
 else:

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from forge.actions import FORGE_DEFAULT_COMM_VOCAB_SIZE
 from forge.agents.base_agent import AgentConfig
 from forge.agents.skills import (
     DEFAULT_SKILL_ID,
@@ -15,7 +16,6 @@ from forge.agents.skills import (
     SkillCatalog,
     SkillSpec,
 )
-from forge.actions import FORGE_DEFAULT_COMM_VOCAB_SIZE
 from forge.mangomas.collector.action_decoder import (
     ACTION_ID_NOOP,
     ACTION_ID_PICKUP,

@@ -106,10 +106,10 @@ def parse_sps_at_n_claims(text: str) -> list[tuple[int, int]]:
     """Return ``(n_envs, claimed_sps)`` floors published as ``SPS @ N``."""
     found: list[tuple[int, int]] = []
     for pattern in (_SPS_AT_N, _SPS_AT_N_PROSE):
-        for match in pattern.finditer(text):
-            found.append(
-                (int(match.group("n")), _token_to_steps(match.group("num"), match.group("k")))
-            )
+        found.extend(
+            (int(match.group("n")), _token_to_steps(match.group("num"), match.group("k")))
+            for match in pattern.finditer(text)
+        )
     return found
 
 
@@ -232,9 +232,11 @@ def test_published_replay_fidelity_is_at_most_100_percent() -> None:
     offenders: list[str] = []
     for rel in CLAIM_FILES:
         path = REPO_ROOT / rel
-        for value in parse_replay_fidelity_claims(path.read_text(encoding="utf-8")):
-            if value > 100.0:
-                offenders.append(f"{rel} claims replay fidelity {value}% (> 100)")
+        offenders.extend(
+            f"{rel} claims replay fidelity {value}% (> 100)"
+            for value in parse_replay_fidelity_claims(path.read_text(encoding="utf-8"))
+            if value > 100.0
+        )
     assert not offenders, "Replay fidelity percent must be <= 100:\n- " + "\n- ".join(
         offenders
     )
