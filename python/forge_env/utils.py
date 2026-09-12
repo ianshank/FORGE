@@ -115,14 +115,17 @@ def make_env(
 
 
 def check_env(env: Any) -> bool:
-    """Run basic sanity checks on an environment instance.
+    """Run a lightweight shape check on an environment instance.
 
-    The function calls ``reset()`` and ``step(0)`` and verifies that the
-    return values conform to the expected tuple structure:
+    This is **not** ``gymnasium.utils.env_checker.check_env``. It only
+    verifies tuple structure:
 
     * ``reset()`` must return a ``(obs, info)`` 2-tuple.
     * ``step(action)`` must return a ``(obs, reward, terminated, truncated, info)``
       5-tuple where ``terminated`` and ``truncated`` are booleans.
+
+    For the real Gymnasium and PettingZoo checkers, see
+    ``tests/python/test_api_compliance.py``.
 
     Args:
         env: An environment instance exposing ``reset`` and ``step`` methods.

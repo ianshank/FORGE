@@ -57,6 +57,14 @@ class TestStepReturnsFiveTuple:
         assert isinstance(info, dict)
 
 
+class TestIsGymnasiumEnv:
+    """ForgeGymnasiumEnv must subclass gymnasium.Env so env_checker can run."""
+
+    def test_is_gymnasium_env_subclass(self, env: ForgeGymnasiumEnv) -> None:
+        gymnasium = pytest.importorskip("gymnasium")
+        assert isinstance(env, gymnasium.Env)
+
+
 class TestObservationSpaceStructure:
     """observation_space should be a gymnasium Dict with expected keys."""
 
@@ -155,7 +163,7 @@ class TestPurePythonBranches:
         native_env.render.assert_called_once()
         env.close()
 
-    def test_unwrapped_returns_native_env(self) -> None:
+    def test_native_env_returns_native(self) -> None:
         pytest.importorskip("gymnasium")
         from forge_env import gymnasium_env
 
@@ -163,5 +171,5 @@ class TestPurePythonBranches:
         with patch.object(gymnasium_env, "_NativeEnv", MagicMock(return_value=native_env)):
             env = gymnasium_env.ForgeGymnasiumEnv()
 
-        assert env.unwrapped is native_env
+        assert env.native_env is native_env
         env.close()

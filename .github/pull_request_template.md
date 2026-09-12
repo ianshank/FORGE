@@ -24,6 +24,7 @@ isn't true. See CONTRIBUTING.md for the full gate list.
 - [ ] `cargo tarpaulin … --fail-under 85` (if Rust coverage-affecting)
 - [ ] `cargo deny check` (if dependencies changed)
 - [ ] Python: `ruff check` + `mypy --config-file pyproject.toml` + `pytest tests/python`
+- [ ] `make pip-install-smoke` / `make api-compliance` (if packaging or env wrappers changed)
 - [ ] mc-bot: `npm run typecheck && npm run lint && npm test`
 - [ ] Docs updated (architecture.md / CHARTER.md / CHANGELOG.md as applicable)
 

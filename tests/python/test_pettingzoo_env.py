@@ -66,22 +66,24 @@ class TestStepReturnsPerAgentResults:
 
 
 class TestObservationSpacePerAgent:
-    """observation_space() should return the space for a given agent."""
+    """observation_space() should return a Gymnasium space for a given agent."""
 
     def test_observation_space_per_agent(self, parallel_env: object) -> None:
+        gymnasium = pytest.importorskip("gymnasium")
         for agent_name in parallel_env.possible_agents:
             space = parallel_env.observation_space(agent_name)
-            assert isinstance(space, dict)
+            assert isinstance(space, gymnasium.spaces.Dict)
 
 
 class TestActionSpacePerAgent:
-    """action_space() should return the space for a given agent."""
+    """action_space() should return a Discrete space for a given agent."""
 
     def test_action_space_per_agent(self, parallel_env: object) -> None:
+        gymnasium = pytest.importorskip("gymnasium")
         for agent_name in parallel_env.possible_agents:
             space = parallel_env.action_space(agent_name)
-            assert isinstance(space, dict)
-            assert space.get("n", 0) > 0
+            assert isinstance(space, gymnasium.spaces.Discrete)
+            assert space.n > 0
 
 
 class TestRenderAndClose:

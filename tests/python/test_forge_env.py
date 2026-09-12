@@ -171,8 +171,8 @@ def test_deterministic_seed() -> None:
     env2.close()
 
     np.testing.assert_array_equal(obs1["grid_view"], obs2["grid_view"])
-    assert obs1["health"] == obs2["health"]
-    assert obs1["position"] == obs2["position"]
+    np.testing.assert_array_equal(obs1["health"], obs2["health"])
+    np.testing.assert_array_equal(obs1["position"], obs2["position"])
 
 
 def test_wrapper_flatten() -> None:

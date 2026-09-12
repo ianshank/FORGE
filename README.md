@@ -7,9 +7,17 @@ Fast Open-source Runtime for Generalist Environments
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 
 A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python
-([`cloud_agent` PyO3 measurement](benchmarks/baselines/cloud_agent/pyo3_step.json): 189k steps/sec).
+([`cloud_agent` PyO3 measurement](benchmarks/baselines/cloud_agent/pyo3_step.json): 189k steps/sec). See [`BENCHMARKS.md`](BENCHMARKS.md) for every published number and its reproduction command.
 
 See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope boundaries, and Seven Core Invariants.
+
+## Versioning
+
+GitHub Releases and GHCR image tags use **`v0.2.0`** as the public channel
+tag for the first tagged cut. The Cargo workspace and the `forge-env` Python
+wheel remain **`0.5.0`** (`pyproject.toml` reads the version from Cargo). The
+two version lines are intentional: do not treat the GitHub tag as a crate
+SemVer bump.
 
 ## Key Features
 
@@ -38,7 +46,7 @@ See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope bounda
 
 ### Prerequisites
 
-- Rust 1.75+ (`rustup`)
+- Rust 1.85+ (`rustup`)
 - Python 3.9+
 - [maturin](https://github.com/PyO3/maturin) (`pip install maturin`)
 - numpy (`pip install numpy`)

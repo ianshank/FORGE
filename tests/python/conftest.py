@@ -125,3 +125,14 @@ def make_mock_native_env(
     )
     env.action_space = NATIVE_ACT_SPACE
     return env
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register ``--determinism-steps`` for the Python lockstep gate."""
+    parser.addoption(
+        "--determinism-steps",
+        action="store",
+        type=int,
+        default=10_000,
+        help="Steps for tests/python/test_determinism.py (override with FORGE_RUN_LONG_DETERMINISM=1)",
+    )

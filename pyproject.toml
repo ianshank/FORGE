@@ -18,6 +18,7 @@ classifiers = [
 #   pip install -e ".[wandb]"     -- Weights & Biases
 #   pip install -e ".[mlflow]"    -- MLflow
 #   pip install -e ".[teacher]"   -- LM Studio offline teacher (openai + jsonschema)
+#   pip install -e ".[compliance]" -- Gymnasium env_checker + PettingZoo parallel_api_test
 #   pip install -e ".[all]"       -- everything
 sb3        = ["stable-baselines3>=2.0", "torch>=2.0"]
 cleanrl    = ["torch>=2.0"]
@@ -42,6 +43,7 @@ teacher    = ["openai>=1.0,<2.0", "jsonschema>=4.0,<5.0"]
 #                        files into the HF cache, which breaks bundles
 #                        mounted into the runner container)
 minecraft  = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17", "huggingface-hub>=1.28.0"]
+compliance = ["gymnasium>=1.0", "pettingzoo>=1.24"]
 all        = [
     "stable-baselines3>=2.0",
     "torch>=2.0",
@@ -52,6 +54,8 @@ all        = [
     "jsonschema>=4.0,<5.0",
     "onnx>=1.16",
     "onnxruntime>=1.17",
+    "gymnasium>=1.0",
+    "pettingzoo>=1.24",
 ]
 
 [tool.maturin]
