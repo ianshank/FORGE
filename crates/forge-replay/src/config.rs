@@ -39,7 +39,7 @@ mod tests {
         assert!(config.record_compact);
         assert!(!config.record_trajectories);
         assert!(!config.include_reasoning);
-        assert_eq!(config.format_version, 1);
+        assert_eq!(config.format_version, compact::FORMAT_VERSION);
     }
 
     #[test]

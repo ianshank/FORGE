@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CompactReplay fidelity (format version 2)
+
+- **Portable config hash**: `CompactReplay.config_hash` is a 64-char SHA-256 hex of `serde_json::to_vec(&ForgeConfig)` (Minecraft `schema_id` convention). rustc `DefaultHasher` is gone so goldens do not flake on toolchain bumps.
+- **Seed is binding**: `replay()` writes `self.seed` onto `config.world.seed` before `WorldState::new`. The builder pins the same field so the fingerprint covers the seed that will actually run.
+- **Unknown action ids fail closed**: illegal discrete ids are `ReplayError::UnknownActionId`, never rewritten to `Noop`. Decode uses `from_discrete_full` (drone + agri + hex flags).
+- **`BehavioralCoverage`**: tiles visited, action-type histogram, predicate-arm activations, seeds, constraint-violation classes — exact CompactReplay measurement; cite ECC rather than claiming a new coverage invention.
+- **CI**: `tests/golden/replays/v2_seed42.json` is a PR bit-identity gate (`cargo test -p forge-replay --test golden_replay`). Scheduled / `workflow_dispatch` workflow `golden-replay.yml` runs `scripts/check_golden_replays.sh` (full crate suite + flip-log remedy). Intentional corpus changes go in `docs/results/replay_flip_log.md`.
+
 ### Fixed / CI
 
 - **Docker GHCR `/health` smoke**: After `22d0fb80`, `forge-server` defaults to loopback (`127.0.0.1:8080`). Compose already sets `FORGE_SERVER_BIND=0.0.0.0:${FORGE_SERVER_PORT:-8080}`, but the smoke `docker run -p 8080:8080` did not, so host curl never reached the process. The simulation image now sets that bind via runtime ENV (binary default unchanged) and a writable `FORGE_SERVER_HISTORY_DIR` for `USER forge`. CI smoke passes the same BIND env and publishes `127.0.0.1:8080:8080`. `tests/python/test_docker_server_bind_contract.py` pins the image/CI/compose strings (the smoke job only runs on the default branch / `v*` tags).

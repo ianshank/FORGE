@@ -88,7 +88,7 @@ def _build_consistent_repo(
         # test_pin_inside_a_run_line_is_not_a_pin).
         + f'  WASM_PACK_VERSION: "{wasm_pack}"\n',
     )
-    for rel in ("e2e-long.yml", "gh-pages.yml", "hf-dataset.yml", "hf-space.yml"):
+    for rel in ("e2e-long.yml", "gh-pages.yml", "hf-dataset.yml", "hf-space.yml", "golden-replay.yml"):
         extra = f'\n          LMSTUDIO_PORT: "{lmstudio_port}"\n' if rel == "e2e-long.yml" else ""
         if rel in ("gh-pages.yml", "hf-space.yml"):
             extra += f'\n          WASM_PACK_VERSION: "{wasm_pack}"\n'

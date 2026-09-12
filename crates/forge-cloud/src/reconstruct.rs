@@ -31,17 +31,17 @@ impl TrajectoryReconstructor {
     /// config hash or world creation failure).
     #[instrument(skip_all, fields(seed = replay.seed, ticks = replay.metadata.total_ticks))]
     pub fn reconstruct(replay: &CompactReplay) -> ForgeResult<Trajectory> {
-        let mut iter = replay.replay().ok_or_else(|| {
-            warn!(seed = replay.seed, "Failed to create replay iterator");
-            ForgeError::Cloud(forge_types::error::CloudError::Coordinator(
-                "replay reconstruction failed: config hash mismatch or invalid world config"
-                    .to_string(),
-            ))
+        let mut iter = replay.replay().map_err(|err| {
+            warn!(seed = replay.seed, error = %err, "Failed to create replay iterator");
+            ForgeError::Cloud(forge_types::error::CloudError::Coordinator(err.to_string()))
         })?;
 
         let mut builder = TrajectoryBuilder::new();
 
-        for (tick, result) in (0_u64..).zip(iter.by_ref()) {
+        for (tick, step) in (0_u64..).zip(iter.by_ref()) {
+            let result = step.map_err(|err| {
+                ForgeError::Cloud(forge_types::error::CloudError::Coordinator(err.to_string()))
+            })?;
             let observations = result.observations;
             let rewards = result.rewards;
             let terminated = result.terminated;
@@ -227,7 +227,7 @@ mod tests {
         let config = test_config();
         let mut replay = CompactReplay::builder(config, 42).build();
         // Corrupt the config hash to force replay failure
-        replay.config_hash = 0;
+        replay.config_hash = "0".repeat(64);
 
         let result = TrajectoryReconstructor::reconstruct(&replay);
         assert!(result.is_err());

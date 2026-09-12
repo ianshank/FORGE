@@ -20,7 +20,11 @@ Dependency boundaries are strictly enforced via `deny.toml` `[bans]`. Introducin
 
 ## Key Types & Public API
 
-- `ReplayRecorder`: Captures tick-by-tick state diffs and action histories.
+- `CompactReplay`: seed + config + action sequence. Format version 2 uses a
+  portable SHA-256 config hash and treats unknown action ids as hard errors.
+- `BehavioralCoverage`: tiles, action histogram, predicate-arm activations,
+  seeds, and constraint-violation classes measured on CompactReplay (cite ECC;
+  exact measurement, not a new coverage invention).
 - `ReplayPlayer`: Plays back recorded sessions with bit-identical determinism.
 - `TrajectoryV2`: High-efficiency dataset format for offline RL and imitation learning.
 
@@ -49,5 +53,9 @@ Run tests for this crate:
 
 ```bash
 cargo test -p forge-replay
+cargo test -p forge-replay --test golden_replay
 cargo clippy -p forge-replay -- -D warnings
 ```
+
+Golden CompactReplay JSON lives in `tests/golden/replays/`. Regenerating
+requires `UPDATE_GOLDEN_REPLAYS=1` and a row in `docs/results/replay_flip_log.md`.

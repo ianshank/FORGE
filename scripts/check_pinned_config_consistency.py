@@ -7,8 +7,9 @@ canonical source and one or more dependent copies that must be kept in
 lock-step by hand:
 
 * The Rust toolchain version (canonical: ``rust-toolchain.toml``), copied
-  into 15 `dtolnay/rust-toolchain@stable` `toolchain:` inputs across 5
-  workflow files and 2 Dockerfiles' `RUST_IMAGE_TAG`.
+  into `dtolnay/rust-toolchain@stable` `toolchain:` inputs across the
+  workflows listed in ``RUST_TOOLCHAIN_WORKFLOWS`` and 2 Dockerfiles'
+  `RUST_IMAGE_TAG`.
 * The ONNX Runtime version for the Rust `ort` crate (canonical:
   ``docker/mc-runner.Dockerfile``'s `ONNXRUNTIME_VERSION`), copied into
   `ci.yml`'s `onnx-features` job as `ORT_VERSION`. Intentionally does NOT
@@ -80,6 +81,7 @@ RUST_TOOLCHAIN_WORKFLOWS = (
     ".github/workflows/gh-pages.yml",
     ".github/workflows/hf-dataset.yml",
     ".github/workflows/hf-space.yml",
+    ".github/workflows/golden-replay.yml",
 )
 
 RUST_TOOLCHAIN_DOCKERFILES = (

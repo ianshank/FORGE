@@ -22,6 +22,9 @@ bincode = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
+# Portable CompactReplay config fingerprint (FORMAT_VERSION = 2).
+# rustc DefaultHasher is not a compatibility guarantee across toolchains.
+sha2 = { workspace = true }
 # Gzip compression for the opt-in `TrajectoryV2::save_json_gz` path
 # (RunnerConfig.trajectory_compression = "gzip"). Always available;
 # the on-disk file extension drives the codec choice in `load_json`.
