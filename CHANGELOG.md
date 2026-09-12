@@ -24,7 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   geofence + depot exception; evidential script exit 3 without docker;
   OpenEnv `_unpack_step` rejects non-5-tuples.
 - **Skill + hook**: `.claude/skills/forge-scenario-compiler/SKILL.md` and
-  advisory `guard_golden_replay.py`.
+  advisory `guard_golden_replay.py`. CHARTER records Agent Skills packaging
+  as gated until eval-gated HRL winners exist (operator `.claude/skills/`
+  are not that packaging).
 
 ### VecEnv SPS @ N (Karten 2026)
 

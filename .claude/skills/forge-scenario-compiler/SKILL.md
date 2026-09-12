@@ -16,7 +16,7 @@ same `scenario_tasks` artifact:
 
 Do **not** fold this into `forge-skills-catalog` (that skill is in-engine
 HRL options over `Action`s). Do **not** package Anthropic Agent Skills
-until eval-gated HRL winners exist (CHARTER).
+until eval-gated HRL winners exist (`docs/CHARTER.md` deferred/gated).
 
 ## Source of truth
 

@@ -87,6 +87,14 @@ the README's "What's still out of scope" list:
   `configs/minecraft/block_embeddings.toml`, default-on via `use_raw_block_id`);
   the richer representation is what remains deferred.
 
+Gated until evidence exists (not on the README v1.0 list):
+
+- **Anthropic Agent Skills packaging** of in-engine HRL options. The catalog
+  (`configs/agents/skills_default.toml`) and `HierarchicalSkillAgent` /
+  `HierarchicalSkillPolicy` ship today. Exporting those as packaged Agent
+  Skills waits for eval-gated winning behaviors. `.claude/skills/` operator
+  runbooks are not that packaging.
+
 See [`docs/next_steps.md`](next_steps.md) for live status.
 
 ### Permanent non-goals (ratified)
