@@ -248,6 +248,50 @@ mod tests {
     }
 
     #[test]
+    fn coverage_catalogs_altitude_and_report_from_scenario_tasks() {
+        use forge_types::task::{Predicate, TaskComposition, TaskDefinition, TaskTier};
+
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.seed = 42;
+        config.agents.num_agents = 1;
+        config.agents.comm_vocab_size = 0;
+        config.task.max_episode_length = 32;
+        config.task.enabled = true;
+        config.task.scenario_tasks = vec![
+            TaskDefinition {
+                id: 1,
+                description: "altitude".to_string(),
+                goal: TaskComposition::Atom(Predicate::AgentAtAltitude(0, 3)),
+                tier: TaskTier::new(1),
+                estimated_steps: 8,
+                reward: 1.0,
+                dense_reward_weights: vec![1.0],
+            },
+            TaskDefinition {
+                id: 2,
+                description: "report".to_string(),
+                goal: TaskComposition::Atom(Predicate::FieldReportGenerated(0)),
+                tier: TaskTier::new(1),
+                estimated_steps: 8,
+                reward: 1.0,
+                dense_reward_weights: vec![1.0],
+            },
+        ];
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0]);
+        let replay = builder.build();
+        let coverage = BehavioralCoverage::from_replay(&replay).unwrap();
+        assert!(coverage
+            .predicate_arm_activations
+            .contains_key("AgentAtAltitude"));
+        assert!(coverage
+            .predicate_arm_activations
+            .contains_key("FieldReportGenerated"));
+    }
+
+    #[test]
     fn coverage_rejects_unknown_action_ids() {
         let mut replay = tiny_replay();
         replay.actions[0] = vec![u32::MAX];

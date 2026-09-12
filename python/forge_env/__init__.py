@@ -61,6 +61,15 @@ else:
         ForgeCurriculumCallback = _sb3_callbacks.ForgeCurriculumCallback
         ForgeMetricsCallback = _sb3_callbacks.ForgeMetricsCallback
 
+# Optional OpenEnv sidecar — contract lives in openenv_env.py even without the SDK.
+ForgeOpenEnv = None
+try:
+    from forge_env.openenv_env import ForgeOpenEnv as _ForgeOpenEnv  # noqa: E402
+except ImportError:
+    pass
+else:
+    ForgeOpenEnv = _ForgeOpenEnv
+
 __all__ = [
     "ForgeAsyncVecEnv",
     "ForgeCurriculumCallback",
@@ -69,6 +78,7 @@ __all__ = [
     "ForgeGymnasiumEnv",
     "ForgeMetricsCallback",
     "ForgeObsExtractor",
+    "ForgeOpenEnv",
     "ForgeParallelEnv",
     "ForgeSyncVecEnv",
     "__version__",

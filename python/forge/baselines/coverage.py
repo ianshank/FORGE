@@ -1,8 +1,8 @@
 """Lawnmower and random coverage baselines for energy-aware orchard scenarios.
 
-Action ids match ``Action::try_to_discrete_configured`` (base 40 + comm +
-drone 19 + agri). Training remains on PyO3; this module is a graded
-heuristic, not a learned policy.
+Action ids match ``Action::try_to_discrete_configured`` (base, comm, drone,
+agri). Training remains on PyO3; this module is a graded heuristic, not a
+learned policy.
 """
 
 from __future__ import annotations
@@ -10,18 +10,18 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from forge.actions import (
+    FORGE_BASE_ACTIONS,
+    FORGE_DEFAULT_COMM_VOCAB_SIZE,
+    FORGE_DRONE_ACTION_COUNT,
+)
 from forge.mangomas.collector.scenario import resolve_forge_scenarios
 
-# Mirrors crates/forge-types/src/constants.rs
-_ACTION_BASE_COUNT = 40
-_DRONE_ACTION_COUNT = 19
-_DEFAULT_COMM_VOCAB = 16
 
-
-def drone_action_ids(comm_vocab_size: int = _DEFAULT_COMM_VOCAB) -> dict[str, int]:
+def drone_action_ids(comm_vocab_size: int = FORGE_DEFAULT_COMM_VOCAB_SIZE) -> dict[str, int]:
     """Return discrete ids for lawnmower primitives under drone+agri layout."""
-    drone_base = _ACTION_BASE_COUNT + comm_vocab_size
-    agri_base = drone_base + _DRONE_ACTION_COUNT
+    drone_base = FORGE_BASE_ACTIONS + comm_vocab_size
+    agri_base = drone_base + FORGE_DRONE_ACTION_COUNT
     return {
         "noop": 0,
         "up": 1,
@@ -81,7 +81,7 @@ def lawnmower_action_ids(
     width: int,
     height: int,
     home: tuple[int, int],
-    comm_vocab_size: int = _DEFAULT_COMM_VOCAB,
+    comm_vocab_size: int = FORGE_DEFAULT_COMM_VOCAB_SIZE,
     margin: int = 0,
 ) -> list[int]:
     """Take off, scan every interior tile, return home, land."""

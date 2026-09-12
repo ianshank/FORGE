@@ -847,6 +847,7 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 | [`scripts/demo.py`](scripts/demo.py) | Launch demo server |
 | [`scripts/replay_viewer.py`](scripts/replay_viewer.py) | Replay visualization tool |
 | [`scripts/export_edge.py`](scripts/export_edge.py) | Export models for edge deployment |
+| [`scripts/mc_evidential_capture.sh`](scripts/mc_evidential_capture.sh) | Trained-vs-random capture runbook (`--dry-run` is CI; live needs Docker; refuses `evidential_episodes < 3`) |
 
 ## Configuration Files
 
@@ -862,9 +863,9 @@ configs/
 ├── mangomas/        # MangoMAS bridge configs (curriculum, constitutional, sweep, muzero, bdi)
 ├── memory/          # Memory system configs
 ├── minecraft/       # Minecraft env, rewards, action_map, reset, embeddings, runner configs
-├── scenarios/       # Scenario configs (patrol, escort, search_and_rescue, adversarial_recon, area_denial)
+├── scenarios/       # Scenario configs (patrol, escort, orchard_coverage, crop_scout, …)
 ├── social/          # Social system configs
-└── training/        # Training configs (PPO, SAC, distributed)
+└── training/        # Training configs (PPO, SAC, sac_orchard, distributed)
 ```
 
 All config structs derive `Clone, Debug, Serialize, Deserialize`, implement `Default` for programmatic use without config files, and enforce strict deserialization (`#[serde(deny_unknown_fields)]`) to eliminate silent config drift.

@@ -20,9 +20,14 @@ order (cheapest/highest-signal first):
    any NOT already marked `✅ Done`/`✅ Resolved` (those are candidates for
    having become true or false since they were written).
 2. `CHANGELOG.md`'s `[Unreleased]` section — claims about what's landed.
-3. `README.md`, `docs/architecture.md`, `Agent.md`, `CLAUDE.md` — counts
-   and structural claims (crate counts, CI job lists, badge versions,
-   command examples).
+3. `README.md`, `docs/architecture.md`, `Agent.md`, `CLAUDE.md`,
+   `docs/config-catalog.md` — counts and structural claims (crate counts,
+   CI job lists, badge versions, command examples, scenario counts).
+4. Graded agri/drone loop (A0–F) claims — if a doc says the compiler,
+   orchard grader, CompactReplay v2, VecEnv SPS@N, evidential capture,
+   or OpenEnv sidecar landed, confirm the files exist and do **not**
+   treat `docs/results/v0.5-trained-vs-random.md` as filled evidence
+   (`evidential_episodes >= 3` is still ops-blocked without Docker).
 
 ## What counts as a "verifiable claim"
 

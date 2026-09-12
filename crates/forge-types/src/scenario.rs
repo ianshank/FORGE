@@ -690,4 +690,70 @@ time_limit = 100
         assert_eq!(normalize_identifier("Crop Scout"), "crop_scout");
         assert_eq!(normalize_identifier("soil_relay"), "soil_relay");
     }
+
+    #[test]
+    fn xlang_orchard_coverage_pinned_to_known_good() {
+        let compiled = compile_high_level_scenario(ORCHARD, "orchard_coverage").unwrap();
+        assert_eq!(compiled.id, "orchard_coverage");
+        assert_eq!(compiled.forge_config.world.width, 16);
+        assert_eq!(compiled.forge_config.world.height, 16);
+        assert!(compiled.forge_config.world.geofence_enabled);
+        assert_eq!(compiled.forge_config.world.geofence_margin, 1);
+        assert!(compiled.forge_config.drone.enabled);
+        assert_eq!(compiled.forge_config.drone.num_aerial, 1);
+        assert!(compiled.forge_config.drone.restrict_recharge_to_chargers);
+        assert_eq!(
+            compiled.forge_config.drone.spawn_home,
+            Some(Position::new(0, 0))
+        );
+        assert_eq!(
+            compiled.forge_config.drone.charger_tiles,
+            vec![Position::new(0, 0)]
+        );
+        assert!(compiled.forge_config.agri.enabled);
+        assert_eq!(compiled.forge_config.task.max_episode_length, 800);
+        match &compiled.forge_config.task.scenario_tasks[0].goal {
+            TaskComposition::And(parts) => {
+                assert_eq!(parts.len(), 3);
+                match &parts[0] {
+                    TaskComposition::Atom(Predicate::FieldSurveyed(threshold)) => {
+                        assert!((*threshold - 0.8).abs() < f32::EPSILON);
+                    }
+                    other => panic!("expected FieldSurveyed, got {other:?}"),
+                }
+                match &parts[1] {
+                    TaskComposition::Atom(Predicate::BatteryAbove(0, threshold)) => {
+                        assert!((*threshold - 0.2).abs() < f32::EPSILON);
+                    }
+                    other => panic!("expected BatteryAbove, got {other:?}"),
+                }
+                match &parts[2] {
+                    TaskComposition::Atom(Predicate::AgentAt(0, pos)) => {
+                        assert_eq!(*pos, Position::new(0, 0));
+                    }
+                    other => panic!("expected AgentAt home, got {other:?}"),
+                }
+            }
+            other => panic!("expected And coverage goal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn xlang_crop_scout_pinned_to_known_good() {
+        let compiled = compile_high_level_scenario(CROP_SCOUT, "crop_scout").unwrap();
+        assert_eq!(compiled.id, "crop_scout");
+        assert_eq!(compiled.forge_config.world.width, 48);
+        assert_eq!(compiled.forge_config.world.height, 48);
+        assert!(!compiled.forge_config.world.geofence_enabled);
+        assert!(compiled.forge_config.drone.enabled);
+        assert_eq!(compiled.forge_config.drone.num_aerial, 1);
+        assert!(compiled.forge_config.agri.enabled);
+        assert_eq!(compiled.forge_config.task.max_episode_length, 1500);
+        match &compiled.forge_config.task.scenario_tasks[0].goal {
+            TaskComposition::Atom(Predicate::FieldSurveyed(threshold)) => {
+                assert!((*threshold - 0.8).abs() < f32::EPSILON);
+            }
+            other => panic!("expected FieldSurveyed, got {other:?}"),
+        }
+    }
 }

@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Graded-loop hygiene
+
+- **CompactReplay hash fail-closed**: `hash_config` never returns an empty
+  string (serde failure panics; `ForgeConfig` is always `Serialize`).
+  `replay()` rejects non-canonical hashes and `format_version != 2`
+  (`InvalidConfigHash`, `UnsupportedFormat`).
+- **Process-constraint logging**: geofence and battery-floor `Noop`s log at
+  `debug!`/`trace!` (charger skip-recharge already traced in `drone.rs`).
+- **Rust↔Python scenario compiler pin**: `orchard_coverage` and `crop_scout`
+  xlang tests. Python lawnmower imports `FORGE_BASE_ACTIONS` /
+  `FORGE_DRONE_ACTION_COUNT` from `forge.actions`.
+- **Eval contract tests**: success requires attached tasks complete; `MoveHex`
+  geofence + depot exception; evidential script exit 3 without docker;
+  OpenEnv `_unpack_step` rejects non-5-tuples.
+- **Skill + hook**: `.claude/skills/forge-scenario-compiler/SKILL.md` and
+  advisory `guard_golden_replay.py`.
+
 ### VecEnv SPS @ N (Karten 2026)
 
 - **Committed `ForgeAsyncVecEnv` evidence**: labeled `cloud_agent` report

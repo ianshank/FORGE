@@ -1,6 +1,6 @@
 use super::*;
-use forge_types::config::ForgeConfig;
-use forge_types::grid::Position;
+use forge_types::config::{ForgeConfig, GridType};
+use forge_types::grid::{HexDirection, Position};
 use std::collections::HashMap;
 
 /// Test wrapper around [`validate_actions_into`] that mirrors the
@@ -531,6 +531,41 @@ fn test_geofence_allows_depot_tile() {
 }
 
 #[test]
+fn test_geofence_noops_move_hex_outside_margin() {
+    let mut config = ForgeConfig::default();
+    config.world.width = 16;
+    config.world.height = 16;
+    config.world.grid_type = GridType::Hex;
+    config.world.geofence_enabled = true;
+    config.world.geofence_margin = 1;
+    config.agents.num_agents = 1;
+    let mut state = WorldState::new(config).unwrap();
+    state.agents[0].position = Position::new(1, 1);
+
+    let validated = validate_actions(&[Action::MoveHex(HexDirection::W)], &state);
+    assert_eq!(validated[0], Action::Noop);
+}
+
+#[test]
+fn test_geofence_allows_depot_tile_for_move_hex() {
+    let mut config = ForgeConfig::default();
+    config.world.width = 16;
+    config.world.height = 16;
+    config.world.grid_type = GridType::Hex;
+    config.world.geofence_enabled = true;
+    config.world.geofence_margin = 1;
+    config.agents.num_agents = 1;
+    config.drone.enabled = true;
+    config.drone.num_aerial = 1;
+    config.drone.spawn_home = Some(Position::new(0, 1));
+    let mut state = WorldState::new(config).unwrap();
+    state.agents[0].position = Position::new(1, 1);
+
+    let validated = validate_actions(&[Action::MoveHex(HexDirection::W)], &state);
+    assert_eq!(validated[0], Action::MoveHex(HexDirection::W));
+}
+
+#[test]
 fn test_battery_floor_noops_takeoff_but_allows_land() {
     let mut config = ForgeConfig::default();
     config.agents.num_agents = 1;
@@ -546,6 +581,10 @@ fn test_battery_floor_noops_takeoff_but_allows_land() {
         Action::Noop
     );
     assert_eq!(validate_actions(&[Action::Land], &state)[0], Action::Land);
+    assert_eq!(
+        validate_actions(&[Action::Descend], &state)[0],
+        Action::Descend
+    );
 }
 
 #[test]

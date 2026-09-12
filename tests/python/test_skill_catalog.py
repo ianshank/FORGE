@@ -15,6 +15,7 @@ from forge.agents.skills import (
     SkillCatalog,
     SkillSpec,
 )
+from forge.actions import FORGE_DEFAULT_COMM_VOCAB_SIZE
 from forge.mangomas.collector.action_decoder import (
     ACTION_ID_NOOP,
     ACTION_ID_PICKUP,
@@ -105,6 +106,7 @@ def test_action_layout_constants_are_internally_consistent() -> None:
     assert FORGE_BASE_ACTIONS == 40
     assert FORGE_DRONE_ACTION_COUNT == 19
     assert FORGE_AGRI_ACTION_COUNT == 14
+    assert FORGE_DEFAULT_COMM_VOCAB_SIZE == 16
 
 
 def test_hierarchical_skill_policy_is_deterministic() -> None:

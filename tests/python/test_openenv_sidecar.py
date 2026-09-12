@@ -56,3 +56,19 @@ def test_create_app_requires_openenv_sdk() -> None:
         return
     app = create_forge_openenv_app(config={"agents": {"num_agents": 1}})
     assert app is not None
+
+
+class _NonFiveTupleInner:
+    def reset(self, seed: int | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+        return {"tick": 0, "seed": seed}, {}
+
+    def step(self, action: int) -> dict[str, Any]:
+        return {"tick": 1, "action": action}
+
+
+def test_unpack_step_rejects_non_five_tuple() -> None:
+    env = ForgeOpenEnv(inner=_NonFiveTupleInner())
+    env.reset(seed=1)
+    with pytest.raises(TypeError, match="5-tuple"):
+        env.step(ForgeAction(action_id=0))
+    env.close()

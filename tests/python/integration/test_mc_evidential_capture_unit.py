@@ -5,6 +5,7 @@ Dry-run only — no Docker. Mirrors ``test_mc_self_play_unit.py``.
 
 from __future__ import annotations
 
+import os
 import shutil
 import stat
 import subprocess
@@ -83,3 +84,42 @@ def test_episodes_below_floor_exits_2(script_path: Path) -> None:
         )
     assert rc.returncode == 2
     assert "evidential floor" in (rc.stdout + rc.stderr)
+
+
+def test_unknown_flag_exits_2(script_path: Path) -> None:
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("bash not on PATH")
+    with lf_normalized_script(script_path) as posix_script:
+        rc = subprocess.run(
+            [bash, posix_script, "--not-a-real-flag"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    assert rc.returncode == 2
+    assert "unknown flag" in (rc.stdout + rc.stderr)
+
+
+def test_live_without_docker_exits_3(script_path: Path, tmp_path: Path) -> None:
+    bash = shutil.which("bash")
+    date = shutil.which("date")
+    if bash is None or date is None:
+        pytest.skip("bash/date not on PATH")
+    isolated = tmp_path / "bin"
+    isolated.mkdir()
+    (isolated / "date").symlink_to(date)
+    env = os.environ.copy()
+    env["PATH"] = str(isolated)
+    with lf_normalized_script(script_path) as posix_script:
+        rc = subprocess.run(
+            [bash, posix_script, "--episodes", "3"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+    assert rc.returncode == 3
+    assert "docker is not on PATH" in (rc.stdout + rc.stderr)

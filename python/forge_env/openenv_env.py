@@ -169,6 +169,10 @@ def _unpack_step(result: Any) -> tuple[dict[str, Any], float, bool, bool, dict[s
         obs_dict = dict(obs) if isinstance(obs, Mapping) else {"value": obs}
         info_dict = dict(info) if isinstance(info, Mapping) else {}
         return obs_dict, float(reward), bool(terminated), bool(truncated), info_dict
+    logger.error(
+        "inner env.step must return a Gymnasium 5-tuple, got %r",
+        type(result),
+    )
     msg = f"inner env.step must return a Gymnasium 5-tuple, got {type(result)!r}"
     raise TypeError(msg)
 

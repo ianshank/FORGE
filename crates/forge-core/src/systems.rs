@@ -498,16 +498,39 @@ fn apply_process_constraints(agent: &Agent, action: Action, state: &WorldState) 
     let drone = &state.config.drone;
     if drone.enabled && agent.morphology == AgentMorphology::Aerial {
         if matches!(action, Action::Ascend) && agent.altitude >= drone.max_altitude {
+            trace!(
+                agent_id = agent.id,
+                altitude = agent.altitude,
+                max_altitude = drone.max_altitude,
+                "ascend at max altitude, falling back to Noop"
+            );
             return Action::Noop;
         }
         if agent.battery < drone.battery_action_floor && energy_constrained_action(&action) {
+            debug!(
+                agent_id = agent.id,
+                battery = agent.battery,
+                floor = drone.battery_action_floor,
+                ?action,
+                "battery below action floor, falling back to Noop"
+            );
             return Action::Noop;
         }
     }
     if state.config.world.geofence_enabled && is_locomotion(&action) {
         match movement_target(state, agent.position, &action) {
             Some(next) if geofence_allows(state, next) => {}
-            _ => return Action::Noop,
+            other => {
+                debug!(
+                    agent_id = agent.id,
+                    ?action,
+                    x = agent.position.x,
+                    y = agent.position.y,
+                    target = ?other,
+                    "geofence rejected locomotion, falling back to Noop"
+                );
+                return Action::Noop;
+            }
         }
     }
     action

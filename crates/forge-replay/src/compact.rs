@@ -33,6 +33,9 @@ use tracing::{debug, info, instrument, warn};
 /// IDs fail replay instead of becoming `Noop`.
 pub const FORMAT_VERSION: u32 = 2;
 
+/// Length of a SHA-256 hex config fingerprint (`config_hash`).
+pub const CONFIG_HASH_HEX_LEN: usize = 64;
+
 /// RFC 3339 timestamp used by golden CompactReplay fixtures.
 ///
 /// Wall-clock `Utc::now()` would make bit-identity goldens flake.
@@ -62,6 +65,20 @@ pub enum ReplayError {
     /// [`WorldState::new`] failed after applying the replay seed.
     #[error("world construction failed: {0}")]
     World(#[from] ForgeError),
+    /// Recording `format_version` is not [`FORMAT_VERSION`].
+    #[error("unsupported compact replay format {found}; expected {expected}")]
+    UnsupportedFormat {
+        /// Version stored on the recording.
+        found: u32,
+        /// Version this crate can replay.
+        expected: u32,
+    },
+    /// Recorded fingerprint is empty or not 64 lowercase hex.
+    #[error("invalid config hash {recorded:?}; expected 64 lowercase hex")]
+    InvalidConfigHash {
+        /// Hash stored on the replay (may be empty).
+        recorded: String,
+    },
 }
 
 /// Compact deterministic replay.
@@ -150,9 +167,12 @@ impl CompactReplay {
     }
 
     /// Validates that the config hash matches the stored config.
+    ///
+    /// Empty or non-canonical fingerprints fail closed even if two broken
+    /// hashes would otherwise compare equal.
     #[instrument(skip_all)]
     pub fn validate_config(&self) -> bool {
-        hash_config(&self.config) == self.config_hash
+        is_canonical_config_hash(&self.config_hash) && hash_config(&self.config) == self.config_hash
     }
 
     /// Replays the episode, yielding `Result<StepResult, ReplayError>` per tick.
@@ -165,6 +185,17 @@ impl CompactReplay {
     /// being rewritten to [`Action::Noop`].
     #[instrument(skip_all)]
     pub fn replay(&self) -> Result<ReplayIterator<'_>, ReplayError> {
+        if self.format_version != FORMAT_VERSION {
+            return Err(ReplayError::UnsupportedFormat {
+                found: self.format_version,
+                expected: FORMAT_VERSION,
+            });
+        }
+        if !is_canonical_config_hash(&self.config_hash) {
+            return Err(ReplayError::InvalidConfigHash {
+                recorded: self.config_hash.clone(),
+            });
+        }
         let computed = hash_config(&self.config);
         if computed != self.config_hash {
             warn!(
@@ -366,15 +397,23 @@ impl CompactReplayBuilder {
 ///
 /// Uses `serde_json::to_vec` (struct field order is stable) so the digest is
 /// independent of rustc's hasher. Aligns with Minecraft `schema_id` hex.
+///
+/// Serialization failure panics: [`ForgeConfig`] is `Serialize` with no
+/// custom map keys, so `serde_json::to_vec` cannot fail. Returning an empty
+/// string would fail *open* (`validate_config` would treat two broken hashes
+/// as equal).
 #[must_use]
 pub fn hash_config(config: &ForgeConfig) -> String {
-    match serde_json::to_vec(config) {
-        Ok(json) => hex_sha256(&json),
-        Err(err) => {
-            warn!(error = %err, "compact replay: config hash serialization failed");
-            String::new()
-        }
-    }
+    let json = serde_json::to_vec(config)
+        .expect("ForgeConfig is Serialize; serde_json::to_vec cannot fail for this type");
+    hex_sha256(&json)
+}
+
+/// Returns true when `hash` is a 64-char lowercase hex SHA-256 digest.
+#[must_use]
+pub fn is_canonical_config_hash(hash: &str) -> bool {
+    hash.len() == CONFIG_HASH_HEX_LEN
+        && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {
@@ -823,5 +862,38 @@ mod tests {
             .timestamp(GOLDEN_TIMESTAMP)
             .build();
         assert_eq!(replay.metadata.timestamp, GOLDEN_TIMESTAMP);
+    }
+
+    #[test]
+    fn test_empty_config_hash_fails_closed() {
+        let config = test_config();
+        let mut replay = CompactReplay::builder(config, 42).build();
+        replay.config_hash.clear();
+        assert!(!replay.validate_config());
+        assert!(matches!(
+            replay.replay(),
+            Err(ReplayError::InvalidConfigHash { .. })
+        ));
+    }
+
+    #[test]
+    fn test_hash_config_never_empty() {
+        let hash = hash_config(&test_config());
+        assert!(is_canonical_config_hash(&hash));
+        assert_eq!(hash.len(), CONFIG_HASH_HEX_LEN);
+    }
+
+    #[test]
+    fn test_unsupported_format_version_fails_closed() {
+        let config = test_config();
+        let mut replay = CompactReplay::builder(config, 42).build();
+        replay.format_version = 1;
+        assert!(matches!(
+            replay.replay(),
+            Err(ReplayError::UnsupportedFormat {
+                found: 1,
+                expected: FORMAT_VERSION,
+            })
+        ));
     }
 }

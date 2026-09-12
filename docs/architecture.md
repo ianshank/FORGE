@@ -168,7 +168,7 @@ Shows the major containers (deployable units) within FORGE.
 | **forge-cloud** | Rust crate | Cloud training pipeline: workers, replay transport, storage backends (GCS behind the `gcs` feature), model registry. |
 | **forge-edge** | Rust crate | Edge deployment runtime: inference, telemetry, adaptive MCTS, latency estimation. |
 | **forge-proposal** | Rust crate | Composable proposal / document-template engine: agency profiles, cost volumes, technical and validation sections. |
-| **Python wrappers** | Python package (forge_env) | Gymnasium, PettingZoo, JAX wrappers, observation/reward transforms. |
+| **Python wrappers** | Python package (forge_env) | Gymnasium, PettingZoo, JAX wrappers, optional OpenEnv sidecar (`openenv_env.py`; not on the PyO3 training path). |
 | **Python framework** | Python package (forge) | Training pipeline, agent implementations, policy networks, MangoMAS bridge modules, decision traces, TOML config loader, utility modules. |
 
 The current PR surface adds two control layers around the deterministic core:
@@ -184,6 +184,17 @@ The Minecraft RL integration branch
   through the same interface. The shim `forge-env-forge` keeps
   `WorldState` flows working; the new `forge-env-mc` + `mc-bot/`
   containers extend FORGE into a live Minecraft server.
+
+A fourth control layer is the **graded agri/drone loop**: high-level
+`[scenario]` TOML compiles to `ForgeConfig` + `task.scenario_tasks`
+(Rust `forge-types::scenario` and Python `forge.mangomas.collector.scenario`,
+xlang-pinned for `orchard_coverage` and `crop_scout`). `forge-eval` success
+requires attached tasks complete, not mere `terminated`. Process constraints
+(geofence, charger pads, battery floor) are config-driven `Noop`s.
+CompactReplay v2 fingerprints `ForgeConfig` with portable SHA-256.
+`ForgeAsyncVecEnv` SPS @ N is a separate process-parallel measurement.
+OpenEnv is an eval/LLM-tool sidecar, not a replacement for `Env` /
+`FlatObsEnv`.
 
 ### 2.2 Topology Subsystem
 
@@ -441,7 +452,10 @@ The core engine executes a deterministic pipeline of systems every tick.
                                 │
                 ┌───────────────▼───────────────────┐
                 │         Action Validation          │
-                │   Replaces invalid → Noop           │
+                │   Shape checks + process           │
+                │   constraints (geofence,           │
+                │   battery floor, ascend cap)       │
+                │   Replaces invalid → Noop          │
                 └───────────────┬───────────────────┘
                                 │
          ┌──────────────────────▼───────────────────────────┐
@@ -539,6 +553,25 @@ The core engine executes a deterministic pipeline of systems every tick.
          │  └───────────────────────────────┘   │
          └──────────────────────────────────────┘
 ```
+
+### 3.1b High-level scenario compiler
+
+`configs/scenarios/*.toml` is a `[scenario]` document (map / drone / agri /
+objectives), not a raw `ForgeConfig`. Compilers:
+
+```
+  orchard_coverage.toml
+           │
+           ├── forge-types::compile_high_level_path  →  forge-eval
+           └── python forge.mangomas.collector.scenario
+                       resolve_forge_scenarios       →  Gymnasium / MangoMAS
+```
+
+`coverage` / `orchard` objectives compile to
+`And([FieldSurveyed, BatteryAbove, AgentAt(home)])`. Unmapped kinds
+(patrol, escort, SAR) yield an empty `scenario_tasks` list. Adding
+`ForgeConfig` fields requires regenerating `tests/golden/replays/`
+(see `docs/results/replay_flip_log.md`).
 
 ### 3.2 forge-worldgen — World Generation Pipeline
 
