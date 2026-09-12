@@ -31,6 +31,8 @@ pub struct EvalContext<'a> {
     pub crop_states: Option<&'a [CropState]>,
     /// Soil sensor nodes (optional — required for `SoilDataCollected`).
     pub soil_nodes: Option<&'a [SoilSensorNode]>,
+    /// Maximum battery used to normalize `BatteryAbove` (fixed-point).
+    pub max_battery: i32,
 }
 
 impl<'a> EvalContext<'a> {
@@ -43,6 +45,7 @@ impl<'a> EvalContext<'a> {
             objects: None,
             crop_states: None,
             soil_nodes: None,
+            max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
         }
     }
 }
@@ -119,20 +122,25 @@ pub fn evaluate_predicate(predicate: &Predicate, ctx: &EvalContext) -> Predicate
             eval_disease_detected(ctx, *count)
         }
         Predicate::FieldSurveyed(threshold) => eval_field_surveyed(ctx, *threshold),
-        Predicate::SoilDataCollected(_agent_id, _count) => {
-            // Not evaluatable without soil node state — falls through to wildcard
-            warn!("SoilDataCollected predicate requires runtime tracking");
-            PredicateResult::unsatisfied(0.0)
+        Predicate::SoilDataCollected(agent_id, count) => {
+            eval_soil_data_collected(ctx, *agent_id, *count)
         }
-        Predicate::FieldReportGenerated(_agent_id) => {
-            // Requires runtime report tracking — falls through
-            warn!("FieldReportGenerated predicate requires runtime tracking");
-            PredicateResult::unsatisfied(0.0)
-        }
+        Predicate::FieldReportGenerated(agent_id) => eval_field_report_generated(ctx, *agent_id),
         Predicate::IrrigationMapped(threshold) => eval_irrigation_mapped(ctx, *threshold),
         Predicate::AreaSprayed(threshold) => eval_area_sprayed(ctx, *threshold),
-        _ => {
-            warn!("unknown predicate variant encountered — treating as unsatisfied");
+        Predicate::AgentAtAltitude(agent_id, altitude) => {
+            eval_agent_at_altitude(ctx, *agent_id, *altitude)
+        }
+        Predicate::BatteryAbove(agent_id, threshold) => {
+            eval_battery_above(ctx, *agent_id, *threshold)
+        }
+        Predicate::AgentAirborne(agent_id) => eval_agent_airborne(ctx, *agent_id),
+        Predicate::AgentLanded(agent_id) => eval_agent_landed(ctx, *agent_id),
+        other => {
+            warn!(
+                ?other,
+                "unknown predicate variant — treating as unsatisfied"
+            );
             PredicateResult::unsatisfied(0.0)
         }
     }
@@ -452,6 +460,79 @@ fn eval_area_sprayed(ctx: &EvalContext, threshold: f32) -> PredicateResult {
         PredicateResult::satisfied()
     } else {
         PredicateResult::unsatisfied(fraction / threshold.max(0.001))
+    }
+}
+
+fn eval_agent_at_altitude(ctx: &EvalContext, agent_id: AgentId, altitude: u8) -> PredicateResult {
+    let agent = match find_agent(ctx.agents, agent_id) {
+        Some(a) => a,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+    if agent.altitude == altitude {
+        return PredicateResult::satisfied();
+    }
+    let diff = (agent.altitude as i16 - altitude as i16).unsigned_abs() as f32;
+    let denom = (altitude.max(1)) as f32;
+    PredicateResult::unsatisfied(1.0 - (diff / denom).min(1.0))
+}
+
+fn eval_battery_above(ctx: &EvalContext, agent_id: AgentId, threshold: f32) -> PredicateResult {
+    let agent = match find_agent(ctx.agents, agent_id) {
+        Some(a) => a,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+    let max_battery = ctx.max_battery as f32;
+    if max_battery <= 0.0 {
+        return PredicateResult::unsatisfied(0.0);
+    }
+    let normalized = (agent.battery as f32 / max_battery).clamp(0.0, 1.0);
+    if normalized >= threshold {
+        PredicateResult::satisfied()
+    } else if threshold > 0.0 {
+        PredicateResult::unsatisfied(normalized / threshold)
+    } else {
+        PredicateResult::satisfied()
+    }
+}
+
+fn eval_agent_airborne(ctx: &EvalContext, agent_id: AgentId) -> PredicateResult {
+    match find_agent(ctx.agents, agent_id) {
+        Some(agent) if agent.altitude > 0 => PredicateResult::satisfied(),
+        Some(_) => PredicateResult::unsatisfied(0.0),
+        None => PredicateResult::unsatisfied(0.0),
+    }
+}
+
+fn eval_agent_landed(ctx: &EvalContext, agent_id: AgentId) -> PredicateResult {
+    match find_agent(ctx.agents, agent_id) {
+        Some(agent) if agent.altitude == 0 => PredicateResult::satisfied(),
+        Some(_) => PredicateResult::unsatisfied(0.0),
+        None => PredicateResult::unsatisfied(0.0),
+    }
+}
+
+fn eval_soil_data_collected(ctx: &EvalContext, agent_id: AgentId, count: u16) -> PredicateResult {
+    if find_agent(ctx.agents, agent_id).is_none() {
+        return PredicateResult::unsatisfied(0.0);
+    }
+    let nodes = match ctx.soil_nodes {
+        Some(n) => n,
+        None => return PredicateResult::unsatisfied(0.0),
+    };
+    let collected = nodes.iter().filter(|n| n.collected).count() as u16;
+    if collected >= count {
+        PredicateResult::satisfied()
+    } else if count > 0 {
+        PredicateResult::unsatisfied(collected as f32 / count as f32)
+    } else {
+        PredicateResult::satisfied()
+    }
+}
+
+fn eval_field_report_generated(ctx: &EvalContext, agent_id: AgentId) -> PredicateResult {
+    match find_agent(ctx.agents, agent_id) {
+        Some(agent) if agent.generated_field_report => PredicateResult::satisfied(),
+        _ => PredicateResult::unsatisfied(0.0),
     }
 }
 

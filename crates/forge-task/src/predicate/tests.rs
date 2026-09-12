@@ -224,6 +224,7 @@ fn test_agent_on_terrain_invalid_terrain_id() {
         objects: None,
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     // terrain_id 255 is invalid
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 255), &ctx);
@@ -242,6 +243,7 @@ fn test_agent_on_terrain_next_after_last_valid_id_is_unsatisfied() {
         objects: None,
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 8), &ctx);
     assert!(!result.satisfied);
@@ -259,6 +261,7 @@ fn test_agent_on_terrain_nonexistent_agent() {
         objects: None,
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(99, 0), &ctx);
     assert!(!result.satisfied);
@@ -276,6 +279,7 @@ fn test_agent_on_terrain_all_terrain_ids() {
         objects: None,
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     // Test all valid terrain IDs (0-7) don't panic
     for terrain_id in 0..=7 {
@@ -307,6 +311,7 @@ fn test_object_at_nonexistent_object() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     // Object 99 doesn't exist
     let result = evaluate_predicate(&Predicate::ObjectAt(99, Position::new(5, 5)), &ctx);
@@ -323,6 +328,7 @@ fn test_object_in_state_no_objects() {
         objects: None,
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "Active".to_string()), &ctx);
     assert!(!result.satisfied);
@@ -347,6 +353,7 @@ fn test_object_in_state_invalid_state_name() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(
         &Predicate::ObjectInState(0, "InvalidState".to_string()),
@@ -374,6 +381,7 @@ fn test_object_in_state_nonexistent_object() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(99, "Active".to_string()), &ctx);
     assert!(!result.satisfied);
@@ -398,6 +406,7 @@ fn test_object_in_state_all_valid_states() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     // Test all valid state names
     for state_name in &[
@@ -444,6 +453,7 @@ fn test_agent_on_terrain_satisfied() {
         objects: None,
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     // Forest = terrain_id 6
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
@@ -461,6 +471,7 @@ fn test_agent_on_terrain_unsatisfied() {
         objects: None,
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     // Forest = terrain_id 6, but agent is on Ground
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 6), &ctx);
@@ -497,6 +508,7 @@ fn test_object_at_satisfied() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
     assert!(result.satisfied);
@@ -521,6 +533,7 @@ fn test_object_at_unsatisfied() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
     assert!(!result.satisfied);
@@ -557,6 +570,7 @@ fn test_object_in_state_satisfied() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
     assert!(result.satisfied);
@@ -581,6 +595,7 @@ fn test_object_in_state_unsatisfied() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "Open".to_string()), &ctx);
     assert!(!result.satisfied);
@@ -605,6 +620,7 @@ fn test_object_in_state_case_insensitive() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "active".to_string()), &ctx);
     assert!(result.satisfied);
@@ -629,49 +645,91 @@ fn test_object_in_state_uppercase_name_is_rejected() {
         objects: Some(&objects),
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::ObjectInState(0, "ACTIVE".to_string()), &ctx);
     assert!(!result.satisfied);
     assert_eq!(result.progress, 0.0);
 }
 
-// ---- Coverage gap tests: drone predicate wildcard branch ----
+// ---- Drone / agri predicates ----
 
 #[test]
-fn test_unknown_predicate_agent_at_altitude() {
-    let agents = vec![make_agent(0, 3, 3)];
+fn test_agent_at_altitude_satisfied() {
+    let mut agents = vec![make_agent(0, 3, 3)];
+    agents[0].altitude = 5;
     let ctx = make_ctx(&agents, 0);
-    // AgentAtAltitude hits the wildcard `_` branch
     let result = evaluate_predicate(&Predicate::AgentAtAltitude(0, 5), &ctx);
-    assert!(!result.satisfied);
-    assert_eq!(result.progress, 0.0);
+    assert!(result.satisfied);
+    assert_eq!(result.progress, 1.0);
 }
 
 #[test]
-fn test_unknown_predicate_battery_above() {
+fn test_agent_at_altitude_unsatisfied() {
     let agents = vec![make_agent(0, 3, 3)];
+    let ctx = make_ctx(&agents, 0);
+    let result = evaluate_predicate(&Predicate::AgentAtAltitude(0, 5), &ctx);
+    assert!(!result.satisfied);
+    assert!(result.progress < 1.0);
+}
+
+#[test]
+fn test_battery_above_satisfied() {
+    let mut agents = vec![make_agent(0, 3, 3)];
+    agents[0].battery = forge_types::constants::DEFAULT_MAX_BATTERY;
+    let ctx = make_ctx(&agents, 0);
+    let result = evaluate_predicate(&Predicate::BatteryAbove(0, 0.5), &ctx);
+    assert!(result.satisfied);
+}
+
+#[test]
+fn test_battery_above_unsatisfied() {
+    let mut agents = vec![make_agent(0, 3, 3)];
+    agents[0].battery = 0;
     let ctx = make_ctx(&agents, 0);
     let result = evaluate_predicate(&Predicate::BatteryAbove(0, 0.5), &ctx);
     assert!(!result.satisfied);
-    assert_eq!(result.progress, 0.0);
 }
 
 #[test]
-fn test_unknown_predicate_agent_airborne() {
-    let agents = vec![make_agent(0, 3, 3)];
+fn test_agent_airborne_and_landed() {
+    let mut agents = vec![make_agent(0, 3, 3)];
     let ctx = make_ctx(&agents, 0);
-    let result = evaluate_predicate(&Predicate::AgentAirborne(0), &ctx);
-    assert!(!result.satisfied);
-    assert_eq!(result.progress, 0.0);
+    assert!(evaluate_predicate(&Predicate::AgentLanded(0), &ctx).satisfied);
+    assert!(!evaluate_predicate(&Predicate::AgentAirborne(0), &ctx).satisfied);
+
+    agents[0].altitude = 2;
+    let ctx = make_ctx(&agents, 0);
+    assert!(evaluate_predicate(&Predicate::AgentAirborne(0), &ctx).satisfied);
+    assert!(!evaluate_predicate(&Predicate::AgentLanded(0), &ctx).satisfied);
 }
 
 #[test]
-fn test_unknown_predicate_agent_landed() {
-    let agents = vec![make_agent(0, 3, 3)];
+fn test_soil_data_collected() {
+    use forge_types::agriculture::SoilSensorNode;
+    let agents = vec![make_agent(0, 0, 0)];
+    let mut nodes = vec![
+        SoilSensorNode::new(0, Position::new(1, 1)),
+        SoilSensorNode::new(1, Position::new(2, 2)),
+    ];
+    nodes[0].collected = true;
+    nodes[1].collected = true;
+    let ctx = EvalContext {
+        soil_nodes: Some(&nodes),
+        ..EvalContext::new(&agents, 0)
+    };
+    assert!(evaluate_predicate(&Predicate::SoilDataCollected(0, 2), &ctx).satisfied);
+    assert!(!evaluate_predicate(&Predicate::SoilDataCollected(0, 3), &ctx).satisfied);
+}
+
+#[test]
+fn test_field_report_generated() {
+    let mut agents = vec![make_agent(0, 0, 0)];
     let ctx = make_ctx(&agents, 0);
-    let result = evaluate_predicate(&Predicate::AgentLanded(0), &ctx);
-    assert!(!result.satisfied);
-    assert_eq!(result.progress, 0.0);
+    assert!(!evaluate_predicate(&Predicate::FieldReportGenerated(0), &ctx).satisfied);
+    agents[0].generated_field_report = true;
+    let ctx = make_ctx(&agents, 0);
+    assert!(evaluate_predicate(&Predicate::FieldReportGenerated(0), &ctx).satisfied);
 }
 
 #[test]
@@ -686,6 +744,7 @@ fn test_agent_on_terrain_position_outside_grid() {
         objects: None,
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::AgentOnTerrain(0, 0), &ctx);
     assert!(!result.satisfied);
@@ -701,6 +760,7 @@ fn test_object_at_with_none_objects() {
         objects: None,
         crop_states: None,
         soil_nodes: None,
+        max_battery: forge_types::constants::DEFAULT_MAX_BATTERY,
     };
     let result = evaluate_predicate(&Predicate::ObjectAt(0, Position::new(5, 5)), &ctx);
     assert!(!result.satisfied);

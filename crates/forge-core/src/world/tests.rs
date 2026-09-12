@@ -72,6 +72,46 @@ fn scenario_tasks_skipped_when_task_disabled() {
 }
 
 #[test]
+fn airborne_multispectral_scan_fills_obs_and_marks_surveyed() {
+    use forge_types::grid::TerrainType;
+
+    let mut config = ForgeConfig::default();
+    config.world.width = 16;
+    config.world.height = 16;
+    config.world.seed = 7;
+    config.agents.num_agents = 1;
+    config.drone.enabled = true;
+    config.drone.num_aerial = 1;
+    config.agri.enabled = true;
+    config.agri.cropland_density = 1.0;
+    config.agri.ndvi_scan_radius = 3;
+    let mut world = WorldState::new(config).unwrap();
+
+    let pos = world.agents[0].position;
+    for dy in 0..3_u16 {
+        for dx in 0..3_u16 {
+            let x = pos.x.saturating_add(dx).min(world.grid.width - 1);
+            let y = pos.y.saturating_add(dy).min(world.grid.height - 1);
+            if let Some(tile) = world.grid.get_mut(x, y) {
+                tile.terrain = TerrainType::Cropland;
+            }
+        }
+    }
+    world.agents[0].altitude = 2;
+    world.agents[0].battery = world.config.drone.max_battery;
+
+    let result = world.step(&[Action::ScanMultispectral]);
+    assert!(
+        !result.observations[0].crop_scan_results.is_empty(),
+        "expected NDVI scan results in the observation"
+    );
+    assert!(
+        world.crop_states.iter().any(|c| c.surveyed_tick > 0),
+        "expected at least one crop tile marked surveyed"
+    );
+}
+
+#[test]
 fn test_world_step() {
     let mut world = make_test_world();
     let start_pos = world.agents[0].position;
@@ -651,9 +691,9 @@ const GOLDEN_MAX_EPISODE_LEN: u64 = 1000;
 /// was not, a determinism regression has been caught — investigate before
 /// updating the constants.
 const GOLDEN_DIGESTS: [u64; 3] = [
-    0x2622_5f16_87e9_0062,
-    0xf78d_bfe8_14b5_5f58,
-    0xe75a_cfb5_49aa_8dec,
+    0x3ff2_f622_1beb_1088,
+    0xa119_bf6d_7b46_ea4c,
+    0xfba3_2d6f_a4ad_bf6a,
 ];
 
 /// Version-stable 64-bit digest of a byte slice (FNV-1a).

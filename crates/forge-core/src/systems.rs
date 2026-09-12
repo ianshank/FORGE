@@ -247,6 +247,7 @@ pub fn run_systems(state: &mut WorldState) {
             objects: Some(&state.objects),
             crop_states,
             soil_nodes,
+            max_battery: state.config.drone.max_battery,
         };
         let task_result = forge_task::evaluator::evaluate_tasks(
             &mut state.tasks,

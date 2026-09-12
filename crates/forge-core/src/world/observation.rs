@@ -139,9 +139,29 @@ impl WorldState {
         };
         out.morphology = agent.morphology as u8;
         out.heading = agent.heading as u8;
+
         out.crop_scan_results.clear();
         out.soil_readings.clear();
-        out.disease_detections = 0;
-        out.report_ready = false;
+        if self.config.agri.enabled {
+            out.crop_scan_results
+                .extend_from_slice(&self.agri_scratch.scan_results);
+            out.soil_readings
+                .extend_from_slice(&self.agri_scratch.soil_readings);
+            let disease = self
+                .agri_scratch
+                .scan_results
+                .iter()
+                .filter(|r| r.disease_flag)
+                .count();
+            out.disease_detections = disease.min(u16::MAX as usize) as u16;
+            let idx = self.agents.iter().position(|a| a.id == agent.id);
+            let flag = idx
+                .and_then(|i| self.agri_scratch.report_flags.get(i).copied())
+                .unwrap_or(false);
+            out.report_ready = agent.generated_field_report || flag;
+        } else {
+            out.disease_detections = 0;
+            out.report_ready = false;
+        }
     }
 }
