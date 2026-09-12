@@ -168,6 +168,18 @@ def test_resolve_crop_scout_enables_drone_agri_and_survey_task() -> None:
     assert abs(float(tasks[0]["goal"]["Atom"]["FieldSurveyed"]) - 0.8) < 1e-6
 
 
+def test_resolve_orchard_coverage_and_goal_and_charger() -> None:
+    resolved = resolve_forge_scenarios([Path("configs/scenarios/orchard_coverage.toml")])
+    cfg = resolved[0].forge_config
+    assert cfg["drone"]["restrict_recharge_to_chargers"] is True
+    assert cfg["drone"]["spawn_home"] == {"x": 0, "y": 0}
+    assert cfg["world"]["geofence_enabled"] is True
+    parts = cfg["task"]["scenario_tasks"][0]["goal"]["And"]
+    assert "FieldSurveyed" in parts[0]["Atom"]
+    assert parts[1]["Atom"]["BatteryAbove"][0] == 0
+    assert parts[2]["Atom"]["AgentAt"][1] == {"x": 0, "y": 0}
+
+
 def test_resolve_patrol_does_not_invent_agri_tasks() -> None:
     resolved = resolve_forge_scenarios([Path("configs/scenarios/patrol.toml")])
     cfg = resolved[0].forge_config

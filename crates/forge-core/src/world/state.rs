@@ -133,6 +133,9 @@ impl WorldState {
                         agent.capabilities.can_fly = true;
                         agent.capabilities.max_altitude = config.drone.max_altitude;
                         agent.battery = config.drone.starting_battery;
+                        if let Some(home) = config.drone.spawn_home {
+                            agent.position = home;
+                        }
                     }
                     forge_types::entity::AgentMorphology::GroundVehicle => {
                         agent.capabilities.turn_radius = config.drone.vehicle_turn_radius;

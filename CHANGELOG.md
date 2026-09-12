@@ -22,6 +22,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FORGE_RUN_VECENV_THROUGHPUT=1`). CompactReplay golden fidelity is published
   as 100% on the format-v2 corpus.
 
+### Energy-aware orchard coverage
+
+- **Home/charger recharge**: opt-in `drone.restrict_recharge_to_chargers` +
+  `charger_tiles` / `spawn_home`. Default remains "land anywhere". Geofence,
+  battery-action floor, and max-altitude `Ascend` are hard `Noop`s in
+  `validate_actions` (config-driven). High-level `type = "coverage"|"orchard"`
+  compiles to `And([FieldSurveyed, BatteryAbove, AgentAt(home)])`. Scenario:
+  `configs/scenarios/orchard_coverage.toml`. Baselines: lawnmower
+  (`forge-core::baselines`, `python/forge/baselines/coverage.py`) vs random;
+  SAC hook via `examples/train_sac_cleanrl.py --config configs/training/sac_orchard.toml`.
+  Wu et al. is cited as the ground CPP problem class, not a replica.
+
+### Minecraft evidential ops
+
+- **`scripts/mc_evidential_capture.sh`**: operator capture for N≥3 random +
+  trained episodes. `--dry-run` is the CI surface. Live capture still requires
+  Docker + Paper; this environment does not invent `evidential_episodes >= 3`.
+  `mc_plot_baseline.py` continues to refuse comparison below the floor of 3.
+
+### OpenEnv sidecar
+
+- **`python/forge_env/openenv_env.py`**: `ForgeOpenEnv` wraps in-process
+  `ForgeEnv`. Observation carries `reward`/`done`. Optional `create_app` if
+  the OpenEnv SDK is installed. PyO3 remains the training path.
+
 ### CompactReplay fidelity (format version 2)
 
 - **Portable config hash**: `CompactReplay.config_hash` is a 64-char SHA-256 hex of `serde_json::to_vec(&ForgeConfig)` (Minecraft `schema_id` convention). rustc `DefaultHasher` is gone so goldens do not flake on toolchain bumps.

@@ -76,6 +76,15 @@ pub const DEFAULT_SOIL_COLLECT_COUNT: u16 = 1;
 /// Aerial agents spawned by the scenario compiler when drone is enabled but
 /// `num_aerial` is left at zero.
 pub const DEFAULT_SCENARIO_NUM_AERIAL: u32 = 1;
+/// Default remaining-battery fraction for `BatteryAbove` in coverage/orchard
+/// objectives when `[scenario.objectives]` omits `battery_threshold`.
+pub const DEFAULT_COVERAGE_BATTERY_THRESHOLD: f32 = 0.2;
+/// Default home-tile X used by the coverage compiler when neither
+/// `objectives.home` nor `drone.spawn_home` is set.
+pub const DEFAULT_SPAWN_HOME_X: u16 = 0;
+/// Default home-tile Y used by the coverage compiler when neither
+/// `objectives.home` nor `drone.spawn_home` is set.
+pub const DEFAULT_SPAWN_HOME_Y: u16 = 0;
 
 /// Default target success rate for curriculum advancement.
 pub const DEFAULT_TARGET_SUCCESS_RATE: f32 = 0.5;
@@ -299,6 +308,15 @@ pub const DEFAULT_STARTING_BATTERY: i32 = 655360;
 pub const DEFAULT_MAX_BATTERY: i32 = 655360;
 /// Default battery recharge rate per tick when landed (fixed-point ~0.03).
 pub const DEFAULT_RECHARGE_RATE: i32 = 1966;
+/// When false (default), landed aerial agents recharge on any tile.
+pub const DEFAULT_RESTRICT_RECHARGE_TO_CHARGERS: bool = false;
+/// Default battery floor below which energy-costing actions become `Noop`.
+/// `0` preserves pre-constraint behaviour.
+pub const DEFAULT_BATTERY_ACTION_FLOOR: i32 = 0;
+/// When false (default), movement is not geofence-rejected in `validate_actions`.
+pub const DEFAULT_GEOFENCE_ENABLED: bool = false;
+/// Default interior margin (tiles) for an enabled geofence.
+pub const DEFAULT_GEOFENCE_MARGIN: u16 = 0;
 /// Default vision bonus per altitude level for aerial agents.
 pub const DEFAULT_ALTITUDE_VISION_BONUS: u8 = 2;
 /// Default ground vehicle turn radius.

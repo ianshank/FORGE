@@ -1,0 +1,49 @@
+# Energy-aware aerial orchard coverage.
+#
+# Wu et al. (arXiv:2601.16405) is a *ground* 4-connected CPP with charging
+# stations. This scenario reproduces the problem class (grid coverage +
+# energy + return-to-home) with FORGE's aerial drain and NDVI FieldSurveyed
+# grader. It is not a paper-for-paper replica.
+
+[scenario]
+name = "orchard_coverage"
+description = "Single UAV surveys cropland, keeps a battery floor, and returns to a home charger"
+min_agents = 1
+max_agents = 1
+
+[scenario.map]
+grid_size = 16
+terrain_type = "agricultural"
+cropland_density = 0.5
+pasture_density = 0.0
+geofence_enabled = true
+geofence_margin = 1
+
+[scenario.drone]
+enabled = true
+num_aerial = 1
+max_altitude = 5
+starting_battery = 655360
+restrict_recharge_to_chargers = true
+charger_tiles = [{ x = 0, y = 0 }]
+spawn_home = { x = 0, y = 0 }
+battery_action_floor = 3277
+aerial_drain_rate = 2048
+
+[scenario.agri]
+enabled = true
+ndvi_scan_radius = 2
+scan_battery_cost = 500
+disease_spread_rate = 0
+
+[scenario.objectives]
+type = "coverage"
+survey_threshold = 0.8
+battery_threshold = 0.2
+home = { x = 0, y = 0 }
+time_limit = 800
+completion_bonus = 5.0
+
+[scenario.difficulty]
+base_tier = 2
+disease_spread_rate = 0

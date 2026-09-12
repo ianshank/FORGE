@@ -131,6 +131,14 @@ _DRONE_KEYS: tuple[str, ...] = (
     "altitude_vision_bonus",
     "vehicle_turn_radius",
     "fall_damage_per_level",
+    "restrict_recharge_to_chargers",
+    "charger_tiles",
+    "spawn_home",
+    "battery_action_floor",
+)
+_WORLD_GEOFENCE_KEYS: tuple[str, ...] = (
+    "geofence_enabled",
+    "geofence_margin",
 )
 _AGRI_KEYS: tuple[str, ...] = (
     "enabled",
@@ -157,6 +165,9 @@ _DEFAULT_SOIL_COLLECT_COUNT = 1
 _DEFAULT_SCENARIO_NUM_AERIAL = 1
 _DEFAULT_REWARD_SCALE = 1.0
 _DEFAULT_MAX_EPISODE_LENGTH = 10_000
+_DEFAULT_COVERAGE_BATTERY_THRESHOLD = 0.2
+_DEFAULT_SPAWN_HOME_X = 0
+_DEFAULT_SPAWN_HOME_Y = 0
 
 
 def _copy_known(src: Mapping[str, Any], keys: Sequence[str]) -> dict[str, Any]:
@@ -190,6 +201,12 @@ def _task_definition(
     }
 
 
+def _as_position(value: Any) -> dict[str, int] | None:
+    if isinstance(value, Mapping) and "x" in value and "y" in value:
+        return {"x": int(value["x"]), "y": int(value["y"])}
+    return None
+
+
 def _map_sequence_step(
     step: str,
     objectives: Mapping[str, Any],
@@ -197,9 +214,7 @@ def _map_sequence_step(
 ) -> dict[str, Any] | None:
     survey = float(objectives.get("survey_threshold", _DEFAULT_SURVEY_THRESHOLD))
     spray = float(objectives.get("spray_threshold", _DEFAULT_SPRAY_THRESHOLD))
-    collect = int(
-        objectives.get("collect_threshold", max(soil_nodes, _DEFAULT_SOIL_COLLECT_COUNT))
-    )
+    collect = int(objectives.get("collect_threshold", max(soil_nodes, _DEFAULT_SOIL_COLLECT_COUNT)))
     if step == "survey":
         return _atom({"FieldSurveyed": survey})
     if step == "spray":
@@ -215,6 +230,7 @@ def _compile_objectives(
     objectives: Mapping[str, Any],
     tier: int,
     soil_nodes: int,
+    home: dict[str, int],
 ) -> list[dict[str, Any]]:
     kind = str(objectives.get("type") or "")
     reward = float(objectives.get("completion_bonus", _DEFAULT_REWARD_SCALE))
@@ -228,6 +244,16 @@ def _compile_objectives(
             objectives.get("collect_threshold", max(soil_nodes, _DEFAULT_SOIL_COLLECT_COUNT))
         )
         goal = _atom({"SoilDataCollected": [0, count]})
+    elif kind in {"coverage", "orchard"}:
+        threshold = float(objectives.get("survey_threshold", _DEFAULT_SURVEY_THRESHOLD))
+        battery = float(objectives.get("battery_threshold", _DEFAULT_COVERAGE_BATTERY_THRESHOLD))
+        goal = {
+            "And": [
+                _atom({"FieldSurveyed": threshold}),
+                _atom({"BatteryAbove": [0, battery]}),
+                _atom({"AgentAt": [0, home]}),
+            ]
+        }
     elif kind == "sequence":
         steps_raw = objectives.get("steps")
         steps: list[str] = list(steps_raw) if isinstance(steps_raw, list) else []
@@ -275,29 +301,62 @@ def _goal_needs_agri(goal: Any) -> bool:
     return False
 
 
-def _compile_high_level_forge_config(scenario: Mapping[str, Any]) -> dict[str, Any]:
-    """Compile a high-level ``[scenario]`` table into a Rust ForgeConfig dict."""
-    map_data = _copy_mapping(
-        scenario.get("map") if isinstance(scenario.get("map"), Mapping) else None
-    )
-    objectives = _copy_mapping(
-        scenario.get("objectives") if isinstance(scenario.get("objectives"), Mapping) else None
-    )
-    difficulty = _copy_mapping(
-        scenario.get("difficulty") if isinstance(scenario.get("difficulty"), Mapping) else None
-    )
-    drone_src = _copy_mapping(
-        scenario.get("drone") if isinstance(scenario.get("drone"), Mapping) else None
-    )
-    agri_src = _copy_mapping(
-        scenario.get("agri") if isinstance(scenario.get("agri"), Mapping) else None
-    )
+def _section(scenario: Mapping[str, Any], key: str) -> dict[str, Any]:
+    raw = scenario.get(key)
+    return _copy_mapping(raw if isinstance(raw, Mapping) else None)
 
-    forge_config: dict[str, Any] = {}
+
+def _apply_map_to_world(forge_config: dict[str, Any], map_data: Mapping[str, Any]) -> None:
     grid_size = map_data.get("grid_size")
     if grid_size is not None:
         forge_config.setdefault("world", {})["width"] = int(grid_size)
         forge_config.setdefault("world", {})["height"] = int(grid_size)
+    for key in _WORLD_GEOFENCE_KEYS:
+        if map_data.get(key) is not None:
+            forge_config.setdefault("world", {})[key] = map_data[key]
+
+
+def _apply_agri_overlays(
+    agri: dict[str, Any],
+    map_data: Mapping[str, Any],
+    difficulty: Mapping[str, Any],
+) -> None:
+    if map_data.get("cropland_density") is not None and "cropland_density" not in agri:
+        agri["cropland_density"] = float(map_data["cropland_density"])
+    if map_data.get("pasture_density") is not None and "pasture_density" not in agri:
+        agri["pasture_density"] = float(map_data["pasture_density"])
+    if difficulty.get("disease_spread_rate") is not None:
+        agri["disease_spread_rate"] = int(difficulty["disease_spread_rate"])
+
+
+def _ensure_charger_from_home(drone: dict[str, Any]) -> None:
+    if drone.get("restrict_recharge_to_chargers") and not drone.get("charger_tiles"):
+        home_tile = _as_position(drone.get("spawn_home"))
+        if home_tile is not None:
+            drone["charger_tiles"] = [home_tile]
+
+
+def _resolve_home(objectives: Mapping[str, Any], drone: Mapping[str, Any]) -> dict[str, int]:
+    tiles = drone.get("charger_tiles") or []
+    first_tile = tiles[0] if isinstance(tiles, list) and tiles else None
+    return (
+        _as_position(objectives.get("home"))
+        or _as_position(drone.get("spawn_home"))
+        or _as_position(first_tile)
+        or {"x": _DEFAULT_SPAWN_HOME_X, "y": _DEFAULT_SPAWN_HOME_Y}
+    )
+
+
+def _compile_high_level_forge_config(scenario: Mapping[str, Any]) -> dict[str, Any]:
+    """Compile a high-level ``[scenario]`` table into a Rust ForgeConfig dict."""
+    map_data = _section(scenario, "map")
+    objectives = _section(scenario, "objectives")
+    difficulty = _section(scenario, "difficulty")
+    drone_src = _section(scenario, "drone")
+    agri_src = _section(scenario, "agri")
+
+    forge_config: dict[str, Any] = {}
+    _apply_map_to_world(forge_config, map_data)
 
     time_limit = objectives.get("time_limit")
     if time_limit is not None:
@@ -309,21 +368,20 @@ def _compile_high_level_forge_config(scenario: Mapping[str, Any]) -> dict[str, A
 
     drone = _copy_known(drone_src, _DRONE_KEYS)
     agri = _copy_known(agri_src, _AGRI_KEYS)
-    if map_data.get("cropland_density") is not None and "cropland_density" not in agri:
-        agri["cropland_density"] = float(map_data["cropland_density"])
-    if map_data.get("pasture_density") is not None and "pasture_density" not in agri:
-        agri["pasture_density"] = float(map_data["pasture_density"])
-    if difficulty.get("disease_spread_rate") is not None:
-        agri["disease_spread_rate"] = int(difficulty["disease_spread_rate"])
+    _apply_agri_overlays(agri, map_data, difficulty)
+    _ensure_charger_from_home(drone)
 
     soil_nodes = int(agri.get("num_soil_nodes", 0))
-    scenario_tasks = _compile_objectives(objectives, difficulty_tier, soil_nodes)
+    home = _resolve_home(objectives, drone)
+    scenario_tasks = _compile_objectives(objectives, difficulty_tier, soil_nodes, home)
     if any(_goal_needs_agri(task.get("goal")) for task in scenario_tasks):
         agri["enabled"] = True
         drone["enabled"] = True
-    if drone.get("enabled") and int(drone.get("num_aerial", 0)) == 0 and int(
-        drone.get("num_ground_vehicles", 0)
-    ) == 0:
+    if (
+        drone.get("enabled")
+        and int(drone.get("num_aerial", 0)) == 0
+        and int(drone.get("num_ground_vehicles", 0)) == 0
+    ):
         drone["num_aerial"] = _DEFAULT_SCENARIO_NUM_AERIAL
 
     if drone:

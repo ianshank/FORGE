@@ -1,6 +1,6 @@
 {
   "format_version": 2,
-  "config_hash": "a74fee1d5eaea7910e1b41309f2500ded8bf9c744b540a270c225adce165c0f0",
+  "config_hash": "e831b2c14031f0d10d4ebd3fff8259ec66bcc0727335d183c5b994f73eb27071",
   "config": {
     "world": {
       "grid_type": "square",
@@ -15,7 +15,9 @@
       "max_dimension": 256,
       "resource_respawn_rate": 100,
       "resource_max_quantity": 5,
-      "object_density_scale": 1.0
+      "object_density_scale": 1.0,
+      "geofence_enabled": false,
+      "geofence_margin": 0
     },
     "physics": {
       "collision_enabled": true,
@@ -95,7 +97,11 @@
       "vehicle_turn_radius": 1,
       "fall_damage_per_level": 65536,
       "num_aerial": 0,
-      "num_ground_vehicles": 0
+      "num_ground_vehicles": 0,
+      "restrict_recharge_to_chargers": false,
+      "charger_tiles": [],
+      "spawn_home": null,
+      "battery_action_floor": 0
     },
     "agri": {
       "enabled": false,

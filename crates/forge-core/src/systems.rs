@@ -3,8 +3,9 @@
 //! Systems are run in a fixed deterministic order each tick.
 //! This module coordinates the execution of all systems.
 
-use forge_types::entity::ObjectType;
-use forge_types::grid::Direction;
+use forge_civ::grid_topology::GridTopology;
+use forge_types::entity::{Agent, AgentMorphology, ObjectType};
+use forge_types::grid::{Direction, Position};
 use forge_types::Action;
 use tracing::{debug, instrument, trace, warn};
 
@@ -364,139 +365,191 @@ fn validate_actions_into(state: &mut WorldState) {
         let validated = if !agent.alive {
             Action::Noop
         } else {
-            match action {
-                Action::Move(dir) => {
-                    // Basic validation: direction is valid (always true for enum)
-                    Action::Move(*dir)
-                }
-                Action::Communicate(token) => {
-                    let vocab_size = state.config.agents.comm_vocab_size;
-                    if *token < vocab_size {
-                        Action::Communicate(*token)
-                    } else {
-                        warn!(
-                            agent_id = agent.id,
-                            token, vocab_size, "comm token out of range, falling back to Noop"
-                        );
-                        Action::Noop
-                    }
-                }
-                Action::Drop(slot) => {
-                    if (*slot as usize) < agent.inventory.capacity() {
-                        Action::Drop(*slot)
-                    } else {
-                        warn!(
-                            agent_id = agent.id,
-                            slot,
-                            capacity = agent.inventory.capacity(),
-                            "drop slot out of range, falling back to Noop"
-                        );
-                        Action::Noop
-                    }
-                }
-                Action::Use(slot) => {
-                    if (*slot as usize) < agent.inventory.capacity() {
-                        Action::Use(*slot)
-                    } else {
-                        warn!(
-                            agent_id = agent.id,
-                            slot,
-                            capacity = agent.inventory.capacity(),
-                            "use slot out of range, falling back to Noop"
-                        );
-                        Action::Noop
-                    }
-                }
-                // Drone altitude actions: only valid for Aerial morphology when drone enabled
-                Action::Ascend
-                | Action::Descend
-                | Action::Hover
-                | Action::TakeOff
-                | Action::Land => {
-                    if !state.config.drone.enabled
-                        || agent.morphology != forge_types::entity::AgentMorphology::Aerial
-                    {
-                        trace!(
-                            agent_id = agent.id,
-                            ?action,
-                            "drone action on non-aerial agent or drone disabled, falling back to Noop"
-                        );
-                        Action::Noop
-                    } else {
-                        action.clone()
-                    }
-                }
-                // Scan: any morphology can scan when drone enabled
-                Action::Scan(_) => {
-                    if !state.config.drone.enabled {
-                        Action::Noop
-                    } else {
-                        action.clone()
-                    }
-                }
-                // Agricultural actions: require agri + drone enabled, aerial morphology, airborne
-                Action::Spray(slot) => {
-                    if !state.config.agri.enabled
-                        || !state.config.drone.enabled
-                        || agent.morphology != forge_types::entity::AgentMorphology::Aerial
-                        || agent.altitude == 0
-                        || (*slot as usize) >= agent.inventory.capacity()
-                    {
-                        Action::Noop
-                    } else {
-                        Action::Spray(*slot)
-                    }
-                }
-                Action::ScanMultispectral | Action::ScanThermal => {
-                    if !state.config.agri.enabled
-                        || !state.config.drone.enabled
-                        || agent.morphology != forge_types::entity::AgentMorphology::Aerial
-                        || agent.altitude == 0
-                    {
-                        Action::Noop
-                    } else {
-                        action.clone()
-                    }
-                }
-                Action::RelaySoilData => {
-                    if !state.config.agri.enabled {
-                        Action::Noop
-                    } else {
-                        action.clone()
-                    }
-                }
-                Action::GenerateReport => {
-                    if !state.config.agri.enabled {
-                        Action::Noop
-                    } else {
-                        action.clone()
-                    }
-                }
-                // DropPayload: only valid for airborne Aerial agents (altitude > 0)
-                Action::DropPayload(slot) => {
-                    if !state.config.drone.enabled
-                        || agent.morphology != forge_types::entity::AgentMorphology::Aerial
-                        || agent.altitude == 0
-                    {
-                        Action::Noop
-                    } else if (*slot as usize) >= agent.inventory.capacity() {
-                        warn!(
-                            agent_id = agent.id,
-                            slot,
-                            capacity = agent.inventory.capacity(),
-                            "drop payload slot out of range, falling back to Noop"
-                        );
-                        Action::Noop
-                    } else {
-                        Action::DropPayload(*slot)
-                    }
-                }
-                _ => action.clone(),
-            }
+            apply_process_constraints(agent, validate_action_shape(agent, action, state), state)
         };
 
         state.validated_actions.push(validated);
     }
+}
+
+fn validate_action_shape(agent: &Agent, action: &Action, state: &WorldState) -> Action {
+    match action {
+        Action::Move(dir) => Action::Move(*dir),
+        Action::Communicate(token) => {
+            let vocab_size = state.config.agents.comm_vocab_size;
+            if *token < vocab_size {
+                Action::Communicate(*token)
+            } else {
+                warn!(
+                    agent_id = agent.id,
+                    token, vocab_size, "comm token out of range, falling back to Noop"
+                );
+                Action::Noop
+            }
+        }
+        Action::Drop(slot) => {
+            if (*slot as usize) < agent.inventory.capacity() {
+                Action::Drop(*slot)
+            } else {
+                warn!(
+                    agent_id = agent.id,
+                    slot,
+                    capacity = agent.inventory.capacity(),
+                    "drop slot out of range, falling back to Noop"
+                );
+                Action::Noop
+            }
+        }
+        Action::Use(slot) => {
+            if (*slot as usize) < agent.inventory.capacity() {
+                Action::Use(*slot)
+            } else {
+                warn!(
+                    agent_id = agent.id,
+                    slot,
+                    capacity = agent.inventory.capacity(),
+                    "use slot out of range, falling back to Noop"
+                );
+                Action::Noop
+            }
+        }
+        Action::Ascend | Action::Descend | Action::Hover | Action::TakeOff | Action::Land => {
+            if !state.config.drone.enabled || agent.morphology != AgentMorphology::Aerial {
+                trace!(
+                    agent_id = agent.id,
+                    ?action,
+                    "drone action on non-aerial agent or drone disabled, falling back to Noop"
+                );
+                Action::Noop
+            } else {
+                action.clone()
+            }
+        }
+        Action::Scan(_) => {
+            if !state.config.drone.enabled {
+                Action::Noop
+            } else {
+                action.clone()
+            }
+        }
+        Action::Spray(slot) => {
+            if !state.config.agri.enabled
+                || !state.config.drone.enabled
+                || agent.morphology != AgentMorphology::Aerial
+                || agent.altitude == 0
+                || (*slot as usize) >= agent.inventory.capacity()
+            {
+                Action::Noop
+            } else {
+                Action::Spray(*slot)
+            }
+        }
+        Action::ScanMultispectral | Action::ScanThermal => {
+            if !state.config.agri.enabled
+                || !state.config.drone.enabled
+                || agent.morphology != AgentMorphology::Aerial
+                || agent.altitude == 0
+            {
+                Action::Noop
+            } else {
+                action.clone()
+            }
+        }
+        Action::RelaySoilData => {
+            if !state.config.agri.enabled {
+                Action::Noop
+            } else {
+                action.clone()
+            }
+        }
+        Action::GenerateReport => {
+            if !state.config.agri.enabled {
+                Action::Noop
+            } else {
+                action.clone()
+            }
+        }
+        Action::DropPayload(slot) => {
+            if !state.config.drone.enabled
+                || agent.morphology != AgentMorphology::Aerial
+                || agent.altitude == 0
+            {
+                Action::Noop
+            } else if (*slot as usize) >= agent.inventory.capacity() {
+                warn!(
+                    agent_id = agent.id,
+                    slot,
+                    capacity = agent.inventory.capacity(),
+                    "drop payload slot out of range, falling back to Noop"
+                );
+                Action::Noop
+            } else {
+                Action::DropPayload(*slot)
+            }
+        }
+        _ => action.clone(),
+    }
+}
+
+fn apply_process_constraints(agent: &Agent, action: Action, state: &WorldState) -> Action {
+    if matches!(action, Action::Noop) {
+        return action;
+    }
+    let drone = &state.config.drone;
+    if drone.enabled && agent.morphology == AgentMorphology::Aerial {
+        if matches!(action, Action::Ascend) && agent.altitude >= drone.max_altitude {
+            return Action::Noop;
+        }
+        if agent.battery < drone.battery_action_floor && energy_constrained_action(&action) {
+            return Action::Noop;
+        }
+    }
+    if state.config.world.geofence_enabled && is_locomotion(&action) {
+        match movement_target(state, agent.position, &action) {
+            Some(next) if geofence_allows(state, next) => {}
+            _ => return Action::Noop,
+        }
+    }
+    action
+}
+
+fn energy_constrained_action(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::TakeOff
+            | Action::Ascend
+            | Action::Hover
+            | Action::Scan(_)
+            | Action::ScanMultispectral
+            | Action::ScanThermal
+            | Action::Spray(_)
+            | Action::GenerateReport
+            | Action::DropPayload(_)
+    )
+}
+
+fn is_locomotion(action: &Action) -> bool {
+    matches!(action, Action::Move(_) | Action::MoveHex(_))
+}
+
+fn movement_target(state: &WorldState, pos: Position, action: &Action) -> Option<Position> {
+    let width = state.config.world.width;
+    let height = state.config.world.height;
+    match action {
+        Action::Move(dir) => pos.offset(*dir, width, height),
+        Action::MoveHex(dir) => state.topology.neighbor(pos, *dir as u8, width, height),
+        _ => None,
+    }
+}
+
+fn geofence_allows(state: &WorldState, pos: Position) -> bool {
+    if state.config.world.allows_position(pos) {
+        return true;
+    }
+    if state.config.drone.spawn_home == Some(pos) {
+        return true;
+    }
+    state.config.drone.restrict_recharge_to_chargers && state.config.drone.allows_recharge_at(pos)
 }
 
 #[cfg(test)]

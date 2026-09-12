@@ -10,6 +10,7 @@
 //! <1µs per environment step on a single CPU core.
 
 pub mod agriculture;
+pub mod baselines;
 pub mod combat;
 pub mod communication;
 pub mod crafting;

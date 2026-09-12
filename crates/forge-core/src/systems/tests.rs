@@ -496,3 +496,117 @@ fn test_compute_near_station_multiple_agents() {
     assert!(result[0], "agent 0 near station");
     assert!(!result[1], "agent 1 not near station");
 }
+
+#[test]
+fn test_geofence_noops_move_outside_margin() {
+    let mut config = ForgeConfig::default();
+    config.world.width = 16;
+    config.world.height = 16;
+    config.world.geofence_enabled = true;
+    config.world.geofence_margin = 1;
+    config.agents.num_agents = 1;
+    let mut state = WorldState::new(config).unwrap();
+    state.agents[0].position = Position::new(1, 1);
+
+    let validated = validate_actions(&[Action::Move(forge_types::Direction::Left)], &state);
+    assert_eq!(validated[0], Action::Noop);
+}
+
+#[test]
+fn test_geofence_allows_depot_tile() {
+    let mut config = ForgeConfig::default();
+    config.world.width = 16;
+    config.world.height = 16;
+    config.world.geofence_enabled = true;
+    config.world.geofence_margin = 1;
+    config.agents.num_agents = 1;
+    config.drone.enabled = true;
+    config.drone.num_aerial = 1;
+    config.drone.spawn_home = Some(Position::new(0, 1));
+    let mut state = WorldState::new(config).unwrap();
+    state.agents[0].position = Position::new(1, 1);
+
+    let validated = validate_actions(&[Action::Move(forge_types::Direction::Left)], &state);
+    assert_eq!(validated[0], Action::Move(forge_types::Direction::Left));
+}
+
+#[test]
+fn test_battery_floor_noops_takeoff_but_allows_land() {
+    let mut config = ForgeConfig::default();
+    config.agents.num_agents = 1;
+    config.drone.enabled = true;
+    config.drone.num_aerial = 1;
+    config.drone.battery_action_floor = 50_000;
+    let mut state = WorldState::new(config).unwrap();
+    state.agents[0].battery = 0;
+    state.agents[0].altitude = 2;
+
+    assert_eq!(
+        validate_actions(&[Action::TakeOff], &state)[0],
+        Action::Noop
+    );
+    assert_eq!(validate_actions(&[Action::Land], &state)[0], Action::Land);
+}
+
+#[test]
+fn test_ascend_at_max_altitude_is_noop() {
+    let mut config = ForgeConfig::default();
+    config.agents.num_agents = 1;
+    config.drone.enabled = true;
+    config.drone.num_aerial = 1;
+    let mut state = WorldState::new(config.clone()).unwrap();
+    state.agents[0].altitude = config.drone.max_altitude;
+
+    assert_eq!(validate_actions(&[Action::Ascend], &state)[0], Action::Noop);
+}
+
+#[test]
+fn test_spawn_home_places_aerial_agent() {
+    let mut config = ForgeConfig::default();
+    config.agents.num_agents = 1;
+    config.drone.enabled = true;
+    config.drone.num_aerial = 1;
+    config.drone.spawn_home = Some(Position::new(3, 4));
+    let state = WorldState::new(config).unwrap();
+    assert_eq!(state.agents[0].position, Position::new(3, 4));
+}
+
+#[test]
+fn test_charger_constraint_same_seed_no_recharge_off_pad() {
+    let mut config = ForgeConfig::default();
+    config.world.width = 16;
+    config.world.height = 16;
+    config.world.seed = 7;
+    config.agents.num_agents = 1;
+    config.drone.enabled = true;
+    config.drone.num_aerial = 1;
+    config.drone.restrict_recharge_to_chargers = true;
+    config.drone.charger_tiles = vec![Position::new(0, 0)];
+    config.drone.spawn_home = Some(Position::new(0, 0));
+
+    let mut off_pad = WorldState::new(config.clone()).unwrap();
+    off_pad.agents[0].altitude = 0;
+    off_pad.agents[0].position = Position::new(4, 4);
+    off_pad.agents[0].battery = 1_000;
+    off_pad.step(&[Action::Noop]);
+    assert_eq!(off_pad.agents[0].battery, 1_000);
+
+    let mut on_pad = WorldState::new(config).unwrap();
+    on_pad.agents[0].altitude = 0;
+    on_pad.agents[0].battery = 1_000;
+    on_pad.step(&[Action::Noop]);
+    assert!(on_pad.agents[0].battery > 1_000);
+}
+
+#[test]
+fn test_orchard_coverage_scenario_constructs_world() {
+    let compiled = forge_types::scenario::compile_high_level_scenario(
+        include_str!("../../../../configs/scenarios/orchard_coverage.toml"),
+        "orchard_coverage",
+    )
+    .unwrap();
+    let state = WorldState::new(compiled.forge_config).unwrap();
+    assert_eq!(state.agents[0].position, Position::new(0, 0));
+    assert!(state.config.drone.restrict_recharge_to_chargers);
+    assert!(!state.tasks.is_empty());
+}

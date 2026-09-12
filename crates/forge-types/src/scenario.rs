@@ -17,6 +17,7 @@ use tracing::{debug, instrument, warn};
 use crate::config::{AgriConfig, DroneConfig, ForgeConfig};
 use crate::constants;
 use crate::error::ConfigError;
+use crate::grid::Position;
 use crate::task::{Predicate, TaskComposition, TaskDefinition, TaskTier};
 
 /// Result of compiling a high-level `[scenario]` TOML document.
@@ -61,6 +62,20 @@ struct HighLevelMap {
     grid_size: Option<u16>,
     cropland_density: Option<f32>,
     pasture_density: Option<f32>,
+    geofence_enabled: Option<bool>,
+    geofence_margin: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+struct HighLevelPosition {
+    x: u16,
+    y: u16,
+}
+
+impl From<HighLevelPosition> for Position {
+    fn from(value: HighLevelPosition) -> Self {
+        Position::new(value.x, value.y)
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -82,6 +97,10 @@ struct HighLevelDrone {
     altitude_vision_bonus: Option<u8>,
     vehicle_turn_radius: Option<u8>,
     fall_damage_per_level: Option<i32>,
+    restrict_recharge_to_chargers: Option<bool>,
+    charger_tiles: Vec<HighLevelPosition>,
+    spawn_home: Option<HighLevelPosition>,
+    battery_action_floor: Option<i32>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -114,6 +133,8 @@ struct HighLevelObjectives {
     survey_threshold: Option<f32>,
     spray_threshold: Option<f32>,
     collect_threshold: Option<u16>,
+    battery_threshold: Option<f32>,
+    home: Option<HighLevelPosition>,
     time_limit: Option<u64>,
     completion_bonus: Option<f32>,
 }
@@ -187,11 +208,18 @@ fn compile_parsed(scenario: &HighLevelScenario, source_stem: &str) -> CompiledSc
 
     apply_drone(&mut config.drone, &scenario.drone);
     apply_agri(&mut config.agri, &scenario.agri, &scenario.map);
+    apply_geofence(&mut config.world, &scenario.map);
     if let Some(rate) = scenario.difficulty.disease_spread_rate {
         config.agri.disease_spread_rate = rate;
     }
+    if config.drone.restrict_recharge_to_chargers && config.drone.charger_tiles.is_empty() {
+        if let Some(home) = config.drone.spawn_home {
+            config.drone.charger_tiles.push(home);
+        }
+    }
 
-    let tasks = compile_objectives(&scenario.objectives, tier, config.agri.num_soil_nodes);
+    let home = resolve_coverage_home(&scenario.objectives, &config);
+    let tasks = compile_objectives(&scenario.objectives, tier, config.agri.num_soil_nodes, home);
     let needs_agri = tasks.iter().any(task_needs_agri);
     if needs_agri {
         config.agri.enabled = true;
@@ -271,6 +299,18 @@ fn apply_drone(dst: &mut DroneConfig, src: &HighLevelDrone) {
     if let Some(v) = src.fall_damage_per_level {
         dst.fall_damage_per_level = v;
     }
+    if let Some(v) = src.restrict_recharge_to_chargers {
+        dst.restrict_recharge_to_chargers = v;
+    }
+    if !src.charger_tiles.is_empty() {
+        dst.charger_tiles = src.charger_tiles.iter().copied().map(Into::into).collect();
+    }
+    if let Some(home) = src.spawn_home {
+        dst.spawn_home = Some(home.into());
+    }
+    if let Some(v) = src.battery_action_floor {
+        dst.battery_action_floor = v;
+    }
 }
 
 fn apply_agri(dst: &mut AgriConfig, src: &HighLevelAgri, map: &HighLevelMap) {
@@ -324,7 +364,37 @@ fn apply_agri(dst: &mut AgriConfig, src: &HighLevelAgri, map: &HighLevelMap) {
     }
 }
 
-fn compile_objectives(obj: &HighLevelObjectives, tier: u8, soil_nodes: u16) -> Vec<TaskDefinition> {
+fn apply_geofence(world: &mut crate::config::WorldConfig, map: &HighLevelMap) {
+    if let Some(v) = map.geofence_enabled {
+        world.geofence_enabled = v;
+    }
+    if let Some(v) = map.geofence_margin {
+        world.geofence_margin = v;
+    }
+}
+
+fn resolve_coverage_home(obj: &HighLevelObjectives, config: &ForgeConfig) -> Position {
+    if let Some(home) = obj.home {
+        return home.into();
+    }
+    if let Some(home) = config.drone.spawn_home {
+        return home;
+    }
+    if let Some(tile) = config.drone.charger_tiles.first() {
+        return *tile;
+    }
+    Position::new(
+        constants::DEFAULT_SPAWN_HOME_X,
+        constants::DEFAULT_SPAWN_HOME_Y,
+    )
+}
+
+fn compile_objectives(
+    obj: &HighLevelObjectives,
+    tier: u8,
+    soil_nodes: u16,
+    home: Position,
+) -> Vec<TaskDefinition> {
     let reward = obj
         .completion_bonus
         .unwrap_or(constants::DEFAULT_REWARD_SCALE);
@@ -343,6 +413,18 @@ fn compile_objectives(obj: &HighLevelObjectives, tier: u8, soil_nodes: u16) -> V
             obj.collect_threshold
                 .unwrap_or(soil_nodes.max(constants::DEFAULT_SOIL_COLLECT_COUNT)),
         ))),
+        "coverage" | "orchard" => Some(TaskComposition::And(vec![
+            TaskComposition::Atom(Predicate::FieldSurveyed(
+                obj.survey_threshold
+                    .unwrap_or(constants::DEFAULT_SURVEY_THRESHOLD),
+            )),
+            TaskComposition::Atom(Predicate::BatteryAbove(
+                0,
+                obj.battery_threshold
+                    .unwrap_or(constants::DEFAULT_COVERAGE_BATTERY_THRESHOLD),
+            )),
+            TaskComposition::Atom(Predicate::AgentAt(0, home)),
+        ])),
         "sequence" => {
             let steps: Vec<TaskComposition> = obj
                 .steps
@@ -476,6 +558,7 @@ mod tests {
     const PATROL: &str = include_str!("../../../configs/scenarios/patrol.toml");
     const SPRAY: &str = include_str!("../../../configs/scenarios/spray_mission.toml");
     const SOIL: &str = include_str!("../../../configs/scenarios/soil_relay.toml");
+    const ORCHARD: &str = include_str!("../../../configs/scenarios/orchard_coverage.toml");
 
     #[test]
     fn crop_scout_enables_drone_and_agri_and_survey_task() {
@@ -532,6 +615,41 @@ mod tests {
                 assert_eq!(*count, 10);
             }
             other => panic!("expected SoilDataCollected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn orchard_coverage_emits_survey_battery_home_and() {
+        let compiled = compile_high_level_scenario(ORCHARD, "orchard_coverage").unwrap();
+        assert!(compiled.forge_config.drone.enabled);
+        assert!(compiled.forge_config.agri.enabled);
+        assert!(compiled.forge_config.drone.restrict_recharge_to_chargers);
+        assert_eq!(
+            compiled.forge_config.drone.spawn_home,
+            Some(Position::new(0, 0))
+        );
+        assert_eq!(
+            compiled.forge_config.drone.charger_tiles,
+            vec![Position::new(0, 0)]
+        );
+        assert!(compiled.forge_config.world.geofence_enabled);
+        match &compiled.forge_config.task.scenario_tasks[0].goal {
+            TaskComposition::And(parts) => {
+                assert_eq!(parts.len(), 3);
+                assert!(matches!(
+                    parts[0],
+                    TaskComposition::Atom(Predicate::FieldSurveyed(_))
+                ));
+                assert!(matches!(
+                    parts[1],
+                    TaskComposition::Atom(Predicate::BatteryAbove(0, _))
+                ));
+                assert!(matches!(
+                    parts[2],
+                    TaskComposition::Atom(Predicate::AgentAt(0, Position { x: 0, y: 0 }))
+                ));
+            }
+            other => panic!("expected And coverage goal, got {other:?}"),
         }
     }
 

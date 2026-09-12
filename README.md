@@ -836,6 +836,7 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 | [`mcts_planning.py`](examples/mcts_planning.py) | Monte Carlo Tree Search planning concept |
 | [`train_ppo.py`](examples/train_ppo.py) | PPO training with Stable Baselines3 integration |
 | [`train_sac_cleanrl.py`](examples/train_sac_cleanrl.py) | Config-driven discrete SAC training with CleanRL-style structure |
+| [`run_orchard_coverage_baselines.py`](examples/run_orchard_coverage_baselines.py) | Random vs lawnmower on `orchard_coverage` (optional SAC hook) |
 
 ## Scripts
 
