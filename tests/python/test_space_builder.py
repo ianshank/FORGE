@@ -42,18 +42,37 @@ class TestBuildsFromTheDescriptor:
 
     def test_nested_descriptor_entries_drive_the_shapes(self) -> None:
         descriptor: dict[str, Any] = {
-            "grid_view": {"shape": (3, 3, 2)},
-            "inventory": {"shape": (4, 2)},
-            "position": {"shape": (2,)},
-            "messages": {"shape": (5,), "high": 9},
+            "grid_view": {"shape": (3, 3, 2), "low": 1, "high": 2, "dtype": "uint16"},
+            "inventory": {"shape": (4, 2), "low": 2, "high": 3, "dtype": "uint8"},
+            "health": {"low": -1.0, "high": 2.0, "dtype": "float64"},
+            "stamina": {"low": -2.0, "high": 3.0, "dtype": "float64"},
+            "position": {"shape": (2,), "low": 4, "high": 5, "dtype": "uint8"},
+            "messages": {"shape": (5,), "low": 6, "high": 9, "dtype": "uint8"},
             "day_phase": {"high": 7},
         }
         space = build_observation_space(descriptor)
 
         assert space.spaces["grid_view"].shape == (3, 3, 2)
+        assert space.spaces["grid_view"].dtype == np.uint16
+        assert int(space.spaces["grid_view"].low.min()) == 1
+        assert int(space.spaces["grid_view"].high.max()) == 2
         assert space.spaces["inventory"].shape == (4, 2)
+        assert space.spaces["inventory"].dtype == np.uint8
+        assert int(space.spaces["inventory"].low.min()) == 2
+        assert int(space.spaces["inventory"].high.max()) == 3
+        assert float(space.spaces["health"].low) == -1.0
+        assert float(space.spaces["health"].high) == 2.0
+        assert space.spaces["health"].dtype == np.float64
+        assert float(space.spaces["stamina"].low) == -2.0
+        assert float(space.spaces["stamina"].high) == 3.0
+        assert space.spaces["stamina"].dtype == np.float64
+        assert int(space.spaces["position"].low.min()) == 4
+        assert int(space.spaces["position"].high.max()) == 5
+        assert space.spaces["position"].dtype == np.uint8
         assert space.spaces["messages"].shape == (5,)
+        assert int(space.spaces["messages"].low.min()) == 6
         assert int(space.spaces["messages"].high.max()) == 9
+        assert space.spaces["messages"].dtype == np.uint8
         # The descriptor publishes an inclusive bound; Discrete takes a count.
         assert space.spaces["day_phase"].n == 8
 
@@ -159,12 +178,12 @@ class TestFitObservation:
         fitted = fit_observation({"messages": np.array([5, 6], dtype=np.uint16)}, space)
         assert list(fitted["messages"]) == [5, 6, MESSAGE_PAD_VALUE, MESSAGE_PAD_VALUE]
 
-    def test_unknown_keys_pass_through_untouched(self) -> None:
-        """A native build growing a component stays usable before we know it."""
+    def test_unknown_keys_are_dropped(self) -> None:
+        """Fitted observations must match the declared Dict-space key set exactly."""
         space = self._space()
-        sentinel = object()
-        fitted = fit_observation({"a_brand_new_component": sentinel}, space)
-        assert fitted["a_brand_new_component"] is sentinel
+        fitted = fit_observation({"a_brand_new_component": object(), "health": 0.5}, space)
+        assert "a_brand_new_component" not in fitted
+        assert "health" in fitted
 
 
 class TestGymnasiumIsRequired:

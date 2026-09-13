@@ -164,7 +164,12 @@ hooks-test: ## Self-tests for .claude/hooks/ (stdlib-only, no project deps; matc
 	python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
 
 api-compliance: ## Upstream Gymnasium env_checker + PettingZoo parallel_api_test, plus the PyO3 determinism gate (matches CI's api-compliance job)
-	@echo "Needs the compliance extra: pip install -e '.[compliance]' (tests skip without it)."
+	@python3 -c "import importlib,sys; \
+missing=[name for name in ('gymnasium','pettingzoo') if importlib.util.find_spec(name) is None]; \
+missing and sys.exit('missing required package(s): ' + ', '.join(missing)); \
+importlib.util.find_spec('forge_env') is not None or sys.exit('forge_env package missing; run: pip install -e .'); \
+import forge_env; \
+getattr(forge_env, 'ForgeEnv', None) is not None or sys.exit('forge_env native extension missing; run: maturin develop')"
 	pytest tests/python/test_api_compliance.py tests/python/test_determinism.py -v --no-cov
 
 # DETERMINISM_STEPS overrides the gate's depth without editing anything: the
@@ -173,6 +178,10 @@ api-compliance: ## Upstream Gymnasium env_checker + PettingZoo parallel_api_test
 DETERMINISM_STEPS ?=
 
 api-compliance-soak: ## Long determinism soak; set DETERMINISM_STEPS=N (default: the test's own default)
+	@python3 -c "import importlib,sys; \
+importlib.util.find_spec('forge_env') is not None or sys.exit('forge_env package missing; run: pip install -e .'); \
+import forge_env; \
+getattr(forge_env, 'ForgeEnv', None) is not None or sys.exit('forge_env native extension missing; run: maturin develop')"
 	pytest tests/python/test_determinism.py -v --no-cov \
 		$(if $(DETERMINISM_STEPS),--determinism-steps $(DETERMINISM_STEPS),)
 

@@ -13,6 +13,7 @@ import pytest
 @pytest.fixture()
 def parallel_env() -> object:
     """Create a ForgeParallelEnv with 3 agents using real native backend."""
+    _skip_if_no_native()
     from forge_env import pettingzoo_env
     from forge_env.pettingzoo_env import ForgeParallelEnv
 

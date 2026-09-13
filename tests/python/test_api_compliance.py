@@ -29,6 +29,8 @@ installs both and is where these actually run.
 
 from __future__ import annotations
 
+import os
+import pathlib
 from typing import Any
 
 import pytest
@@ -149,8 +151,14 @@ class TestGymnasiumRegistration:
             "from forge_env.registration import FORGE_ENV_ID;"
             "print(FORGE_ENV_ID in gymnasium.registry)"
         )
+        python_dir = pathlib.Path(__file__).resolve().parents[2] / "python"
+        env = dict(os.environ)
+        existing_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = (
+            f"{python_dir}:{existing_pythonpath}" if existing_pythonpath else str(python_dir)
+        )
         result = subprocess.run(
-            [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+            [sys.executable, "-c", probe], capture_output=True, text=True, check=True, env=env
         )
         assert result.stdout.strip() == "False", (
             "importing forge_env registered a Gymnasium id as a side effect; "
@@ -203,29 +211,42 @@ class TestPettingZooCompliance:
             env.close()
 
     def test_every_agent_action_reaches_the_simulation(self) -> None:
-        """Distinct per-agent actions must produce distinct per-agent outcomes.
-
-        Guards the specific regression this wrapper was rewritten to fix: the
-        previous implementation forwarded only ``agent_0``'s action and copied
-        one observation to every agent, so an agent's own action had no effect
-        on its own observation.
-        """
+        """Each agent's own non-noop action must change that agent from a noop control."""
         pytest.importorskip("pettingzoo")
         _require_native()
 
         env = ForgeParallelEnvFactory()
         try:
-            env.reset(seed=COMPLIANCE_SEED)
             agents = list(env.agents)
-            # Move the first agent, hold the second still.
-            observations, _rewards, _term, _trunc, _infos = env.step(
-                {agents[0]: _MOVE_ACTION, agents[1]: _NOOP_ACTION}
-            )
-            positions = [tuple(observations[agent]["position"]) for agent in agents]
-            assert len(set(positions)) > 1, (
-                "agents given different actions reported identical positions, "
-                "which means per-agent actions are not reaching the simulation"
-            )
+            assert len(agents) == COMPLIANCE_AGENT_COUNT
+
+            def run_once(actions: dict[str, int]) -> dict[str, Any]:
+                env.reset(seed=COMPLIANCE_SEED)
+                observations, _rewards, _term, _trunc, _infos = env.step(actions)
+                return observations
+
+            def observations_equal(left: dict[str, Any], right: dict[str, Any]) -> bool:
+                import numpy as np
+
+                return all(np.array_equal(np.asarray(left[k]), np.asarray(right[k])) for k in left)
+
+            noop_actions = dict.fromkeys(agents, _NOOP_ACTION)
+            baseline = run_once(noop_actions)
+            action_space_n = int(env.action_space(agents[0]).n)
+
+            for target_agent in agents:
+                found_in_bounds = False
+                for candidate in range(1, action_space_n):
+                    actions = dict(noop_actions)
+                    actions[target_agent] = candidate
+                    shifted = run_once(actions)
+                    if not observations_equal(shifted[target_agent], baseline[target_agent]):
+                        found_in_bounds = True
+                        break
+                assert found_in_bounds, (
+                    f"{target_agent} action never changed its own observation from noop; "
+                    "this indicates per-agent actions are not reaching the simulation"
+                )
         finally:
             env.close()
 
@@ -245,10 +266,6 @@ class TestPettingZooCompliance:
 
 #: ``Action::Noop``; see ``crates/forge-python/src/env.rs::test_action_noop_is_zero``.
 _NOOP_ACTION: int = 0
-#: A movement action, distinct from the no-op, used to prove actions are applied
-#: per agent. Matches the action id the PyO3 throughput harness drives
-#: (``tests/python/test_step_throughput.py::ACTION_ID_MOVE_RIGHT``).
-_MOVE_ACTION: int = 4
 
 
 def ForgeParallelEnvFactory() -> Any:

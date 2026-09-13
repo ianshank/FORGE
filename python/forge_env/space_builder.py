@@ -178,6 +178,26 @@ def _day_phase_count(descriptor: Mapping[str, Any]) -> int:
     return int(high) + 1
 
 
+def _dtype_of(descriptor: Mapping[str, Any], key: str, fallback: Any) -> Any:
+    """Resolve a component dtype from the descriptor, with fallback on absence/parse failure."""
+    dtype_name = _component(descriptor, key).get("dtype")
+    if dtype_name is None:
+        return np.dtype(fallback)
+    try:
+        return np.dtype(dtype_name)
+    except TypeError:
+        logger.debug("Invalid dtype %r for %r; using fallback %r.", dtype_name, key, fallback)
+        return np.dtype(fallback)
+
+
+def _bounds_of(
+    descriptor: Mapping[str, Any], key: str, low_fallback: Any, high_fallback: Any
+) -> tuple[Any, Any]:
+    """Resolve a component's low/high bounds from the descriptor with fallbacks."""
+    component = _component(descriptor, key)
+    return component.get("low", low_fallback), component.get("high", high_fallback)
+
+
 def build_observation_space(descriptor: Mapping[str, Any]) -> spaces_t.Dict:
     """Build the Gymnasium observation space from a native descriptor.
 
@@ -193,32 +213,50 @@ def build_observation_space(descriptor: Mapping[str, Any]) -> spaces_t.Dict:
     """
     _require_gymnasium()
 
-    messages_high = _component(descriptor, "messages").get("high", UINT16_MAX)
+    grid_low, grid_high = _bounds_of(descriptor, "grid_view", 0, np.iinfo(np.uint8).max)
+    inventory_low, inventory_high = _bounds_of(descriptor, "inventory", 0, UINT16_MAX)
+    health_low, health_high = _bounds_of(descriptor, "health", 0.0, 1.0)
+    stamina_low, stamina_high = _bounds_of(descriptor, "stamina", 0.0, 1.0)
+    position_low, position_high = _bounds_of(descriptor, "position", 0, UINT16_MAX)
+    messages_low, messages_high = _bounds_of(descriptor, "messages", 0, UINT16_MAX)
 
     return spaces.Dict(
         {
             "grid_view": spaces.Box(
-                low=0,
-                high=np.iinfo(np.uint8).max,
+                low=grid_low,
+                high=grid_high,
                 shape=_grid_view_shape(descriptor),
-                dtype=np.uint8,
+                dtype=_dtype_of(descriptor, "grid_view", np.uint8),
             ),
             "inventory": spaces.Box(
-                low=0, high=UINT16_MAX, shape=_inventory_shape(descriptor), dtype=np.uint16
+                low=inventory_low,
+                high=inventory_high,
+                shape=_inventory_shape(descriptor),
+                dtype=_dtype_of(descriptor, "inventory", np.uint16),
             ),
-            "health": spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32),
-            "stamina": spaces.Box(low=0.0, high=1.0, shape=(), dtype=np.float32),
+            "health": spaces.Box(
+                low=health_low,
+                high=health_high,
+                shape=_shape_of(descriptor, "health", ()),
+                dtype=_dtype_of(descriptor, "health", np.float32),
+            ),
+            "stamina": spaces.Box(
+                low=stamina_low,
+                high=stamina_high,
+                shape=_shape_of(descriptor, "stamina", ()),
+                dtype=_dtype_of(descriptor, "stamina", np.float32),
+            ),
             "position": spaces.Box(
-                low=0,
-                high=UINT16_MAX,
+                low=position_low,
+                high=position_high,
                 shape=_shape_of(descriptor, "position", (POSITION_DIMENSIONS,)),
-                dtype=np.uint16,
+                dtype=_dtype_of(descriptor, "position", np.uint16),
             ),
             "messages": spaces.Box(
-                low=0,
+                low=messages_low,
                 high=int(messages_high),
                 shape=_shape_of(descriptor, "messages", (0,)),
-                dtype=np.uint16,
+                dtype=_dtype_of(descriptor, "messages", np.uint16),
             ),
             "day_phase": spaces.Discrete(_day_phase_count(descriptor)),
         }
@@ -269,8 +307,8 @@ def fit_observation(
     ``space.contains(obs)``, which requires exact dtypes and shapes, so each
     component is cast to its declared space here rather than in each wrapper.
 
-    Unknown keys are passed through untouched: a native build that grows a new
-    observation component stays usable before this module learns about it.
+    Unknown keys are ignored so the returned keyset exactly matches the declared
+    :class:`~gymnasium.spaces.Dict`.
 
     Args:
         observation: The mapping returned by the native ``reset``/``step``.
@@ -280,12 +318,11 @@ def fit_observation(
         A new dict whose values satisfy ``observation_space.contains(...)``.
     """
     fitted: dict[str, Any] = {}
-    for key, value in observation.items():
-        space = observation_space.spaces.get(key)
-        if space is None:
-            logger.debug("Observation key %r has no declared space; passing through.", key)
-            fitted[key] = value
+    for key, space in observation_space.spaces.items():
+        if key not in observation:
+            logger.debug("Observation key %r missing from native observation.", key)
             continue
+        value = observation[key]
         if key in DISCRETE_OBSERVATION_KEYS:
             fitted[key] = int(value)
             continue
