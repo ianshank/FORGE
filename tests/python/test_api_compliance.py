@@ -225,10 +225,15 @@ class TestPettingZooCompliance:
                 observations, _rewards, _term, _trunc, _infos = env.step(actions)
                 return observations
 
+            declared_keys = tuple(env.observation_space(agents[0]).spaces)
+
             def observations_equal(left: dict[str, Any], right: dict[str, Any]) -> bool:
                 import numpy as np
 
-                return all(np.array_equal(np.asarray(left[k]), np.asarray(right[k])) for k in left)
+                return all(
+                    np.array_equal(np.asarray(left[key]), np.asarray(right[key]))
+                    for key in declared_keys
+                )
 
             noop_actions = dict.fromkeys(agents, _NOOP_ACTION)
             baseline = run_once(noop_actions)
