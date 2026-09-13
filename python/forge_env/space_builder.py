@@ -185,7 +185,7 @@ def _dtype_of(descriptor: Mapping[str, Any], key: str, fallback: Any) -> Any:
         return np.dtype(fallback)
     try:
         return np.dtype(dtype_name)
-    except TypeError:
+    except (TypeError, ValueError):
         logger.debug("Invalid dtype %r for %r; using fallback %r.", dtype_name, key, fallback)
         return np.dtype(fallback)
 

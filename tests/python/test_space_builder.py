@@ -118,6 +118,10 @@ class TestBuildsFromTheDescriptor:
     def test_action_space_uses_the_descriptor_count(self) -> None:
         assert build_action_space({"type": "Discrete", "n": 17}).n == 17
 
+    def test_invalid_dtype_falls_back_to_default(self) -> None:
+        space = build_observation_space({"grid_view": {"shape": (2, 2, 3), "dtype": "not-a-dtype"}})
+        assert space.spaces["grid_view"].dtype == np.uint8
+
 
 class TestFitObservation:
     """Every fitted value must be contained in its declared space."""
