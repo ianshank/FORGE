@@ -1034,6 +1034,7 @@ mod tests {
                 terminated: true,
                 truncated: false,
                 mean_decision_time_ms: 1.5,
+                ..EpisodeResult::default()
             },
             EpisodeResult {
                 seed: 2,
@@ -1043,6 +1044,7 @@ mod tests {
                 terminated: false,
                 truncated: true,
                 mean_decision_time_ms: 2.0,
+                ..EpisodeResult::default()
             },
         ];
         let scenario = ScenarioResult::from_episodes("scenario_a".to_string(), 1, episodes);

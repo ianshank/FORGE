@@ -24,7 +24,8 @@ use crate::rng::ForgeRng;
 /// needs whole-state coverage: `tasks`, `recipe_book`, `config`,
 /// `last_task_rewards`, `physics_scratch`, `topology`, `crop_states`,
 /// `soil_nodes`, `agri_scratch`, `step_actions`, `validated_actions`,
-/// `near_station`, `crafting_object_map`, `comm_messages`, `push_scratch`.
+/// `near_station`, `crafting_object_map`, `comm_messages`, `push_scratch`,
+/// `task_action_ids`.
 #[derive(Serialize)]
 struct SerializableWorldState<'a> {
     tick: u64,
@@ -153,6 +154,7 @@ impl WorldState {
             crafting_object_map: HashMap::new(),
             comm_messages: Vec::new(),
             push_scratch: Vec::new(),
+            task_action_ids: Vec::new(),
         })
     }
 
@@ -213,6 +215,7 @@ impl WorldState {
             crafting_object_map: HashMap::new(),
             comm_messages: Vec::new(),
             push_scratch: Vec::new(),
+            task_action_ids: Vec::new(),
         })
     }
 }

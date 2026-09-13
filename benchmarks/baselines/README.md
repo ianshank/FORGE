@@ -41,6 +41,7 @@ cited as the Python headline.
 | `<profile>/alloc_audit.json` | `target/release/allocation_audit` | `cargo run -p forge-bench --bin allocation_audit --features dhat-heap --release -- --warmup 1024 --iters 10000 --agents 1,8,16,32,64,128 --out benchmarks/baselines/<profile>/alloc_audit.json` |
 | `<profile>/multi_agent_scaling.json` | Criterion (`multi_agent_scaling` bench) + exporter | `make bench-export PROFILE=<profile>` (runs `cargo bench -p forge-bench --bench multi_agent_scaling` then `python3 benchmarks/runner/export_criterion_scaling.py`) |
 | `<profile>/pyo3_step.json` | `tests/python/test_step_throughput.py` | `FORGE_RUN_STEP_THROUGHPUT=1 FORGE_STEP_THROUGHPUT_OUT=benchmarks/baselines/<profile>/pyo3_step.json pytest tests/python/test_step_throughput.py -s --no-cov` (requires `maturin develop` / the native `forge_env` extension) |
+| `<profile>/vecenv_step.json` | `tests/python/test_vecenv_throughput.py` | `FORGE_RUN_VECENV_THROUGHPUT=1 FORGE_VECENV_THROUGHPUT_OUT=benchmarks/baselines/<profile>/vecenv_step.json pytest tests/python/test_vecenv_throughput.py -s -o addopts=` (Karten 2026 random-action SPS @ N via `ForgeAsyncVecEnv`; not JAX vmap) |
 
 Each `multi_agent_scaling.json` row records **both** `env_steps_per_sec`
 (whole-world `step()` calls per second, comparable to the Python

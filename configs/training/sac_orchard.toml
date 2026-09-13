@@ -1,0 +1,41 @@
+# Discrete SAC on the orchard_coverage scenario. Short budgets only;
+# this is a hook for the energy-aware CPP baseline, not a paper run.
+
+[hyperparams]
+learning_rate       = 3e-4
+tau                 = 0.005
+gamma               = 0.99
+buffer_size         = 50_000
+batch_size          = 64
+learning_starts     = 256
+ent_coef            = "auto"
+target_entropy      = "auto"
+train_freq          = 1
+gradient_steps      = 1
+total_timesteps     = 2000
+
+[env]
+scenario  = "configs/scenarios/orchard_coverage.toml"
+width     = 16
+height    = 16
+max_steps = 800
+seed      = 0
+
+[model]
+hidden_sizes = [128, 128]
+
+[feature_extractor]
+cnn_channels     = [32, 64]
+cnn_kernel_sizes = [3, 3]
+cnn_strides      = [1, 1]
+features_dim     = 128
+mlp_hidden_sizes = [128]
+
+[logging]
+log_freq = 200
+
+[curriculum]
+enabled             = false
+target_success_rate = 0.7
+window_size         = 100
+adjustment_rate     = 1

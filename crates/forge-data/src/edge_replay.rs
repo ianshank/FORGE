@@ -61,16 +61,15 @@ impl EdgeReplayLoader {
     /// [`CompactReplay::replay()`]: forge_replay::compact::CompactReplay::replay
     #[instrument(skip_all, fields(seed = replay.seed, ticks = replay.metadata.total_ticks))]
     fn reconstruct_trajectory(&self, replay: &CompactReplay) -> Result<Trajectory, DatasetError> {
-        let mut replay_iter = replay.replay().ok_or_else(|| {
-            DatasetError::Io(
-                "failed to start replay: config hash mismatch or world creation error".to_string(),
-            )
-        })?;
+        let mut replay_iter = replay
+            .replay()
+            .map_err(|err| DatasetError::Io(format!("failed to start replay: {err}")))?;
 
         let mut builder = TrajectoryBuilder::new();
         let mut tick: u64 = 0;
 
-        for step_result in replay_iter.by_ref() {
+        for step in replay_iter.by_ref() {
+            let step_result = step.map_err(|err| DatasetError::Io(err.to_string()))?;
             // Build AgentResponse for each agent from the recorded action IDs.
             let action_ids = replay
                 .actions

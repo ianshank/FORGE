@@ -51,7 +51,7 @@ This catalog documents all configuration files across `configs/` and the root wo
 |:-----|:-----------------------|:-----------------|:--------|
 | `forge.toml` | Python `ForgeConfig` | Python v1 | Default root configuration for training and environment parameters |
 | `configs/dry_run.toml` | Python `ForgeConfig` | Python v1 | Minimal configuration for fast local smoke tests and CI dry-runs |
-| `(in-code)` | `forge_types::config::ForgeConfig` | Rust v0.5 | Strict typed engine configuration (`[world]`, `[physics]`, `[agents]`) |
+| `(in-code)` | `forge_types::config::{DroneConfig, WorldConfig}` | Rust v0.5 | Aerial/agri knobs including `restrict_recharge_to_chargers`, `charger_tiles`, `spawn_home`, `battery_action_floor`, `geofence_enabled`, `geofence_margin` (`Default` + `serde(default)`) |
 | `(in-code)` | `forge_server::config::ServerConfig` | Rust v0.5 | HTTP/WebSocket server bind options and history buffer limits |
 
 ### 3.2 Minecraft Environment & Episode Runner (`forge-env-mc`, `mc-bot`, `forge-mc-runner`)
@@ -86,13 +86,14 @@ This catalog documents all configuration files across `configs/` and the root wo
 | Path | Loader Struct / Module | Schema / Version | Purpose |
 |:-----|:-----------------------|:-----------------|:--------|
 | `configs/eval/e2e_long_preset.toml` | `forge_eval::config::EvalConfig` | v1 | End-to-end evaluation preset specifying scenarios, MLflow sink, and LLM teacher |
-| `configs/scenarios/*.toml` | `forge_eval::scenario::Scenario` | v1 | 11 benchmark scenarios (e.g. `patrol.toml`, `area_denial.toml`, `escort.toml`, `search_and_rescue.toml`) |
+| `configs/scenarios/*.toml` | high-level `[scenario]` → `forge_types::scenario` / `forge.mangomas.collector.scenario` | v1 | 12 benchmark scenarios including `orchard_coverage.toml` (energy-aware aerial CPP grader). Compiles to `ForgeConfig` + `scenario_tasks`; unmapped kinds leave tasks empty. |
 
 ### 3.5 Training & Agent Policies
 
 | Path | Loader Struct / Module | Schema / Version | Purpose |
 |:-----|:-----------------------|:-----------------|:--------|
 | `configs/training/sac_default.toml` | Python SAC trainer | v1 | Soft Actor-Critic hyperparameters (learning rates, discount, entropy) |
+| `configs/training/sac_orchard.toml` | Python SAC trainer | v1 | SAC hyperparameters for `orchard_coverage` (`examples/train_sac_cleanrl.py --scenario`) |
 | `configs/training/ppo_default.toml` | Python PPO trainer | v1 | Proximal Policy Optimization hyperparameters (GAE lambda, clip range) |
 | `configs/training/distributed.toml` | Python distributed / `forge-cloud` | v1 | Multi-worker distributed training layout, cloud storage, and edge budgets |
 | `configs/agents/mcts_default.toml` | `forge_agent::latent_mcts::LatentMctsConfig` | v1 | MCTS simulation count, c_puct exploration constant, and dirichlet noise |

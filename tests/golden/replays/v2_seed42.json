@@ -1,0 +1,299 @@
+{
+  "format_version": 2,
+  "config_hash": "e831b2c14031f0d10d4ebd3fff8259ec66bcc0727335d183c5b994f73eb27071",
+  "config": {
+    "world": {
+      "grid_type": "square",
+      "width": 16,
+      "height": 16,
+      "seed": 42,
+      "biome_scale": 0.1,
+      "resource_density": 0.3,
+      "day_night_cycle_length": 1000,
+      "max_entities": 256,
+      "min_dimension": 8,
+      "max_dimension": 256,
+      "resource_respawn_rate": 100,
+      "resource_max_quantity": 5,
+      "object_density_scale": 1.0,
+      "geofence_enabled": false,
+      "geofence_margin": 0
+    },
+    "physics": {
+      "collision_enabled": true,
+      "stamina_cost_move": 6554,
+      "stamina_regen_rate": 3277,
+      "max_velocity": 65536,
+      "friction": 52429,
+      "projectiles_enabled": false
+    },
+    "crafting": {
+      "enabled": true,
+      "procedural_recipes": false,
+      "max_ingredients": 4,
+      "require_discovery": false
+    },
+    "agents": {
+      "num_agents": 1,
+      "default_vision_radius": 5,
+      "default_carry_capacity": 10,
+      "starting_health": 655360,
+      "max_health": 655360,
+      "starting_stamina": 655360,
+      "max_stamina": 655360,
+      "heterogeneous": false,
+      "comm_vocab_size": 0,
+      "comm_radius": 10,
+      "comm_buffer_size": 8
+    },
+    "task": {
+      "enabled": true,
+      "max_tier": 6,
+      "max_predicates": 32,
+      "max_episode_length": 32,
+      "reward_scale": 1.0,
+      "dense_rewards": true,
+      "scenario_tasks": []
+    },
+    "curriculum": {
+      "enabled": false,
+      "target_success_rate": 0.5,
+      "window_size": 100,
+      "warmup_episodes": 50,
+      "adjustment_rate": 0.1
+    },
+    "rendering": {
+      "pixel_observations": false,
+      "pixel_width": 64,
+      "pixel_height": 64,
+      "record_replays": false
+    },
+    "drone": {
+      "enabled": false,
+      "max_altitude": 10,
+      "aerial_drain_rate": 9830,
+      "ascend_cost": 13107,
+      "descend_cost": 3277,
+      "hover_cost": 6554,
+      "scan_cost": 5243,
+      "scan_range": 12,
+      "starting_battery": 655360,
+      "max_battery": 655360,
+      "recharge_rate": 1966,
+      "vehicle_terrain_costs": [
+        32768,
+        2147483647,
+        2147483647,
+        2147483647,
+        49152,
+        45875,
+        2147483647,
+        2147483647,
+        32768,
+        32768,
+        2147483647
+      ],
+      "altitude_vision_bonus": 2,
+      "vehicle_turn_radius": 1,
+      "fall_damage_per_level": 65536,
+      "num_aerial": 0,
+      "num_ground_vehicles": 0,
+      "restrict_recharge_to_chargers": false,
+      "charger_tiles": [],
+      "spawn_home": null,
+      "battery_action_floor": 0
+    },
+    "agri": {
+      "enabled": false,
+      "crop_growth_rate": 655,
+      "disease_spread_rate": 328,
+      "disease_decay_rate": 131,
+      "max_growth_stages": 5,
+      "initial_crop_health": 65536,
+      "moisture_drain_rate": 197,
+      "nutrient_drain_rate": 131,
+      "spray_radius": 3,
+      "spray_efficacy": 32768,
+      "spray_battery_cost": 9830,
+      "ndvi_scan_radius": 8,
+      "thermal_scan_radius": 6,
+      "soil_relay_range": 10,
+      "scan_battery_cost": 6554,
+      "num_soil_nodes": 0,
+      "soil_reading_interval": 50,
+      "report_generation_cost": 13107,
+      "report_scan_radius": 10,
+      "cropland_density": 0.3,
+      "pasture_density": 0.1
+    },
+    "cloud": {
+      "enabled": false,
+      "num_workers": 4,
+      "replay_batch_size": 64,
+      "heartbeat_interval_s": 10,
+      "heartbeat_timeout_s": 30,
+      "max_replay_size_bytes": 10485760,
+      "compression_level": 3,
+      "coordinator_port": 9090,
+      "replay_archive_path": "replays",
+      "model_registry_path": "models",
+      "checkpoint_path": "checkpoints",
+      "model_version_retention": 10,
+      "checkpoint_interval_steps": 1000,
+      "storage_backend": "local",
+      "gcs_bucket": "",
+      "gcs_prefix": "forge/",
+      "gcp_project": "",
+      "gcp_region": "us-central1",
+      "gcp_service_account": ""
+    },
+    "edge": {
+      "enabled": false,
+      "mcts_latency_budget_ms": 50,
+      "mcts_min_simulations": 8,
+      "mcts_max_simulations": 200,
+      "telemetry_interval_s": 300,
+      "telemetry_buffer_bytes": 1048576,
+      "compress_telemetry": false,
+      "onnx_batch_size": 1,
+      "onnx_num_threads": 1,
+      "model_update_interval_s": 3600,
+      "latency_ema_alpha": 0.3,
+      "upload_retry_count": 4,
+      "upload_retry_base_ms": 2000,
+      "gcs_model_bucket": "",
+      "gcs_model_prefix": "forge/models/"
+    },
+    "skills": {
+      "enabled": false,
+      "default_skill": "explore",
+      "default_horizon": 32,
+      "skills": [
+        {
+          "id": "idle",
+          "category": "idle",
+          "enabled": true,
+          "max_horizon": 1,
+          "requires_drone": false,
+          "recipe_index": 0,
+          "comm_token": 0,
+          "target_x": null,
+          "target_y": null
+        },
+        {
+          "id": "navigate",
+          "category": "navigate",
+          "enabled": true,
+          "max_horizon": 64,
+          "requires_drone": false,
+          "recipe_index": 0,
+          "comm_token": 0,
+          "target_x": null,
+          "target_y": null
+        },
+        {
+          "id": "gather",
+          "category": "gather",
+          "enabled": true,
+          "max_horizon": 32,
+          "requires_drone": false,
+          "recipe_index": 0,
+          "comm_token": 0,
+          "target_x": null,
+          "target_y": null
+        },
+        {
+          "id": "explore",
+          "category": "explore",
+          "enabled": true,
+          "max_horizon": 16,
+          "requires_drone": false,
+          "recipe_index": 0,
+          "comm_token": 0,
+          "target_x": null,
+          "target_y": null
+        },
+        {
+          "id": "craft",
+          "category": "craft",
+          "enabled": true,
+          "max_horizon": 8,
+          "requires_drone": false,
+          "recipe_index": 0,
+          "comm_token": 0,
+          "target_x": null,
+          "target_y": null
+        },
+        {
+          "id": "combat",
+          "category": "combat",
+          "enabled": true,
+          "max_horizon": 8,
+          "requires_drone": false,
+          "recipe_index": 0,
+          "comm_token": 0,
+          "target_x": null,
+          "target_y": null
+        },
+        {
+          "id": "aerial",
+          "category": "aerial",
+          "enabled": true,
+          "max_horizon": 16,
+          "requires_drone": true,
+          "recipe_index": 0,
+          "comm_token": 0,
+          "target_x": null,
+          "target_y": null
+        },
+        {
+          "id": "agriculture",
+          "category": "agriculture",
+          "enabled": true,
+          "max_horizon": 12,
+          "requires_drone": true,
+          "recipe_index": 0,
+          "comm_token": 0,
+          "target_x": null,
+          "target_y": null
+        },
+        {
+          "id": "communicate",
+          "category": "communicate",
+          "enabled": true,
+          "max_horizon": 4,
+          "requires_drone": false,
+          "recipe_index": 0,
+          "comm_token": 0,
+          "target_x": null,
+          "target_y": null
+        }
+      ]
+    }
+  },
+  "seed": 42,
+  "actions": [
+    [
+      0
+    ],
+    [
+      4
+    ],
+    [
+      0
+    ]
+  ],
+  "metadata": {
+    "agent_names": [
+      "golden"
+    ],
+    "agent_metadata": [],
+    "total_ticks": 3,
+    "final_rewards": [
+      0.0
+    ],
+    "completed_tasks": [],
+    "timestamp": "1970-01-01T00:00:00+00:00",
+    "scenario_id": null
+  }
+}

@@ -136,6 +136,9 @@ impl Scenario {
     }
 
     /// Loads a scenario from a TOML file.
+    ///
+    /// Accepts the forge-eval schema (`id` / `tier` / `forge_config`) and the
+    /// high-level `[scenario]` documents under `configs/scenarios/`.
     #[instrument(skip_all, fields(path = %path.as_ref().display()))]
     pub fn load_file(path: impl AsRef<Path>) -> Result<Self, ScenarioError> {
         let path = path.as_ref();
@@ -143,10 +146,24 @@ impl Scenario {
             path: path.to_path_buf(),
             message: e.to_string(),
         })?;
-        let scenario: Scenario = toml::from_str(&raw).map_err(|e| ScenarioError::Parse {
-            path: path.to_path_buf(),
-            message: e.to_string(),
-        })?;
+        let scenario = match toml::from_str::<Scenario>(&raw) {
+            Ok(scenario) => scenario,
+            Err(eval_err) => {
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("scenario");
+                match forge_types::compile_high_level_scenario(&raw, stem) {
+                    Ok(compiled) => Self::from_compiled(compiled),
+                    Err(_) => {
+                        return Err(ScenarioError::Parse {
+                            path: path.to_path_buf(),
+                            message: eval_err.to_string(),
+                        });
+                    }
+                }
+            }
+        };
         let errors = scenario.validate();
         if !errors.is_empty() {
             return Err(ScenarioError::Invalid {
@@ -156,6 +173,18 @@ impl Scenario {
         }
         debug!(id = %scenario.id, tier = scenario.tier, "Loaded scenario");
         Ok(scenario)
+    }
+
+    /// Builds an eval scenario from a compiled high-level manifest.
+    pub fn from_compiled(compiled: forge_types::CompiledScenario) -> Self {
+        Self {
+            id: compiled.id,
+            tier: compiled.tier,
+            forge_config: compiled.forge_config,
+            max_steps: compiled.max_steps,
+            tags: Vec::new(),
+            description: compiled.description,
+        }
     }
 }
 
@@ -474,6 +503,17 @@ mod tests {
         std::fs::write(&path, "= not = valid =").unwrap();
         let err = Scenario::load_file(&path).unwrap_err();
         assert!(matches!(err, ScenarioError::Parse { .. }));
+    }
+
+    #[test]
+    fn load_file_compiles_high_level_crop_scout() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../configs/scenarios/crop_scout.toml");
+        let loaded = Scenario::load_file(&path).unwrap();
+        assert_eq!(loaded.id, "crop_scout");
+        assert!(loaded.forge_config.drone.enabled);
+        assert!(loaded.forge_config.agri.enabled);
+        assert!(!loaded.forge_config.task.scenario_tasks.is_empty());
     }
 
     #[test]

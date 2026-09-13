@@ -18,6 +18,14 @@ deterministic, procedurally generated grid worlds with crafting, combat,
 multi-agent cooperation, and a composable task curriculum, running at
 130,000+ steps/second from Python
 ([`benchmarks/baselines/cloud_agent/pyo3_step.json`](../benchmarks/baselines/cloud_agent/pyo3_step.json)).
+Process-parallel `ForgeAsyncVecEnv` SPS @ N lives in
+[`vecenv_step.json`](../benchmarks/baselines/cloud_agent/vecenv_step.json)
+and is not a JAX physics `vmap`. CompactReplay golden replay fidelity is 100%
+on the format-v2 corpus. High-level `[scenario]` TOML compiles to `ForgeConfig`
+plus `scenario_tasks` (Rust `forge-types::scenario` and Python
+`forge.mangomas.collector.scenario`); orchard coverage is the energy-aware
+grader. OpenEnv (`python/forge_env/openenv_env.py`) is an optional sidecar and
+is **not** on the PyO3 training path.
 
 On top of that core, FORGE runs a **self-improving MuZero loop against live
 Minecraft**: a Rust episode runner drives an environment over a WebSocket
@@ -79,6 +87,14 @@ the README's "What's still out of scope" list:
   `configs/minecraft/block_embeddings.toml`, default-on via `use_raw_block_id`);
   the richer representation is what remains deferred.
 
+Gated until evidence exists (not on the README v1.0 list):
+
+- **Anthropic Agent Skills packaging** of in-engine HRL options. The catalog
+  (`configs/agents/skills_default.toml`) and `HierarchicalSkillAgent` /
+  `HierarchicalSkillPolicy` ship today. Exporting those as packaged Agent
+  Skills waits for eval-gated winning behaviors. `.claude/skills/` operator
+  runbooks are not that packaging.
+
 See [`docs/next_steps.md`](next_steps.md) for live status.
 
 ### Permanent non-goals (ratified)
@@ -120,6 +136,11 @@ inconsistency:
    taken before any manifest/bundle/ORT load, so the baseline runs on a host
    with no ONNX Runtime installed.
    (`crates/forge-mc-runner/src/live.rs`, `crates/forge-mc-runner/src/random_baseline.rs`.)
+4. **OpenEnv is not on the PyO3 hot path.** `ForgeOpenEnv` wraps in-process
+   `ForgeEnv` for eval / LLM-tool distribution. Training remains Gymnasium /
+   PettingZoo / `ForgeAsyncVecEnv`. The OpenEnv SDK is optional and is not a
+   workspace dependency.
+   (`python/forge_env/openenv_env.py`.)
 
 ---
 
@@ -171,6 +192,7 @@ suites that pin the value, simultaneously:
 | obs-layout `block_embeddings` | `crates/forge-env-mc/src/block_embeddings.rs` | `mc-bot/test/block_embeddings.test.ts` | `tests/python/training/test_muzero_mc_schema_id.py` |
 | protocol `SCHEMA_VERSION` | `crates/forge-env-mc/src/protocol.rs` | `mc-bot/src/protocol.ts` | — |
 | `BLOCK_FEATURE_CHANNELS` | `crates/forge-env-mc/src/protocol.rs` | `mc-bot/src/observation_grid.ts` | — |
+| high-level scenario compiler (`orchard_coverage`, `crop_scout`) | `crates/forge-types/src/scenario.rs` | — | `tests/python/test_scenario_compiler_xlang_pin.py` |
 
 Bumping a hash in only two of the three languages breaks CI — update every row
 that pins the value in the same change.

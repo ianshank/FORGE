@@ -150,6 +150,13 @@ no per-user setup needed):
   `git commit` stages `configs/minecraft/{action_map,rewards,milestone_rewards,crafting_rewards,block_embeddings}.toml`,
   prints a reminder to bump the Rust/JS/Python xlang pins together.
   Self-tests: `python3 .claude/hooks/test_guard_schema_id_pins.py -v`.
+- **CompactReplay golden reminder** (`.claude/hooks/guard_golden_replay.py`,
+  same `PreToolUse`/`Bash` wiring) — advisory (always exit 0). When a
+  `git commit` stages `configs/scenarios/*.toml` or
+  `crates/forge-types/src/{config,constants}.rs` without also staging
+  `tests/golden/replays/` and `docs/results/replay_flip_log.md`, prints a
+  reminder to regenerate the v2 corpus.
+  Self-tests: `python3 .claude/hooks/test_guard_golden_replay.py -v`.
 
 ## Conventions
 

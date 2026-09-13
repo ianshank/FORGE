@@ -178,6 +178,63 @@ pub fn validate_config(config: &ForgeConfig) -> ForgeResult<()> {
                 max: i32::MAX.to_string(),
             }));
         }
+        if config.drone.battery_action_floor < 0
+            || config.drone.battery_action_floor > config.drone.max_battery
+        {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "drone.battery_action_floor".to_string(),
+                value: config.drone.battery_action_floor.to_string(),
+                min: "0".to_string(),
+                max: config.drone.max_battery.to_string(),
+            }));
+        }
+        if let Some(home) = config.drone.spawn_home {
+            if home.x >= config.world.width || home.y >= config.world.height {
+                return Err(ForgeError::Config(ConfigError::OutOfRange {
+                    field: "drone.spawn_home".to_string(),
+                    value: format!("({}, {})", home.x, home.y),
+                    min: "(0, 0)".to_string(),
+                    max: format!(
+                        "({}, {})",
+                        config.world.width.saturating_sub(1),
+                        config.world.height.saturating_sub(1)
+                    ),
+                }));
+            }
+        }
+        for (i, tile) in config.drone.charger_tiles.iter().enumerate() {
+            if tile.x >= config.world.width || tile.y >= config.world.height {
+                return Err(ForgeError::Config(ConfigError::OutOfRange {
+                    field: format!("drone.charger_tiles[{i}]"),
+                    value: format!("({}, {})", tile.x, tile.y),
+                    min: "(0, 0)".to_string(),
+                    max: format!(
+                        "({}, {})",
+                        config.world.width.saturating_sub(1),
+                        config.world.height.saturating_sub(1)
+                    ),
+                }));
+            }
+        }
+        if config.drone.restrict_recharge_to_chargers && config.drone.charger_tiles.is_empty() {
+            return Err(ForgeError::Config(ConfigError::ParseError(
+                "drone.restrict_recharge_to_chargers requires at least one charger_tiles entry"
+                    .to_string(),
+            )));
+        }
+    }
+
+    if config.world.geofence_enabled {
+        let min_side = config.world.width.min(config.world.height);
+        let margin = config.world.geofence_margin;
+        if u32::from(margin).saturating_mul(2) >= u32::from(min_side) {
+            return Err(ForgeError::Config(ConfigError::OutOfRange {
+                field: "world.geofence_margin".to_string(),
+                value: margin.to_string(),
+                min: "0".to_string(),
+                max: (min_side / 2).saturating_sub(1).to_string(),
+            }));
+        }
     }
 
     if config.skills.default_skill.trim().is_empty() {
@@ -451,6 +508,30 @@ mod tests {
         config.drone.enabled = true;
         config.drone.num_aerial = 1;
         config.agents.num_agents = 2;
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_restrict_recharge_without_chargers_fails() {
+        let mut config = ForgeConfig::default();
+        config.drone.enabled = true;
+        config.drone.num_aerial = 1;
+        config.agents.num_agents = 1;
+        config.drone.restrict_recharge_to_chargers = true;
+        assert!(validate_config(&config).is_err());
+        config.drone.charger_tiles = vec![crate::grid::Position::new(0, 0)];
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_geofence_margin_too_large_fails() {
+        let mut config = ForgeConfig::default();
+        config.world.width = 16;
+        config.world.height = 16;
+        config.world.geofence_enabled = true;
+        config.world.geofence_margin = 8;
+        assert!(validate_config(&config).is_err());
+        config.world.geofence_margin = 1;
         assert!(validate_config(&config).is_ok());
     }
 

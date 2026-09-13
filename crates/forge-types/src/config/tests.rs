@@ -437,6 +437,13 @@ fn test_drone_config_default_disabled() {
     assert!(!config.enabled);
     assert_eq!(config.num_aerial, 0);
     assert_eq!(config.num_ground_vehicles, 0);
+    assert!(!config.restrict_recharge_to_chargers);
+    assert!(config.charger_tiles.is_empty());
+    assert!(config.spawn_home.is_none());
+    assert_eq!(
+        config.battery_action_floor,
+        constants::DEFAULT_BATTERY_ACTION_FLOOR
+    );
 }
 
 #[test]

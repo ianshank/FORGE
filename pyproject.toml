@@ -211,6 +211,10 @@ module = [
     "anthropic.*",
     "openai",
     "openai.*",
+    # Optional OpenEnv Hub SDK. The sidecar (`python/forge_env/openenv_env.py`)
+    # must type-check without the package installed; training stays on PyO3.
+    "openenv",
+    "openenv.*",
     # Optional dependencies of `scripts/calibrate_agri.py` (HuggingFace
     # `datasets` for dataset I/O, `tomli_w` for writing back the calibrated
     # config). Either is installed on demand by the calibration workflow.

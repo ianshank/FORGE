@@ -127,6 +127,19 @@ pub struct ActiveTask {
     pub failed: bool,
 }
 
+impl ActiveTask {
+    /// Wraps a [`TaskDefinition`] with zeroed runtime progress.
+    pub fn from_definition(definition: TaskDefinition) -> Self {
+        Self {
+            definition,
+            progress: vec![0.0],
+            sequence_index: 0,
+            completed: false,
+            failed: false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

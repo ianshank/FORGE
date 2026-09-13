@@ -1,0 +1,31 @@
+name: Golden CompactReplay
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  golden-replay:
+    name: CompactReplay goldens + forge-replay suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Explicit toolchain, not just the action's own "stable" default --
+          # dtolnay/rust-toolchain never reads rust-toolchain.toml (confirmed
+          # against its own docs/action.yml), so without this every job here
+          # would keep floating on whatever "stable" resolves to at each run,
+          # defeating the repo-root pin. Keep in sync with rust-toolchain.toml.
+          toolchain: "1.94.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Golden bit-identity + crate suite
+        run: bash scripts/check_golden_replays.sh

@@ -21,6 +21,7 @@ use tracing::{debug, warn};
 
 use crate::constants;
 use crate::error::{ConfigError, ForgeError};
+use crate::grid::Position;
 use crate::skill::SkillsConfig;
 
 /// Top-level configuration for a FORGE simulation instance.
@@ -107,6 +108,11 @@ pub struct WorldConfig {
     pub resource_max_quantity: u16,
     /// Object placement density scale (multiplied with base probability).
     pub object_density_scale: f32,
+    /// When true, `Move` / `MoveHex` that would leave the interior
+    /// `[margin, width-margin) × [margin, height-margin)` become `Noop`.
+    pub geofence_enabled: bool,
+    /// Interior margin in tiles. Ignored unless `geofence_enabled`.
+    pub geofence_margin: u16,
 }
 
 impl Default for WorldConfig {
@@ -125,7 +131,29 @@ impl Default for WorldConfig {
             resource_respawn_rate: constants::DEFAULT_RESOURCE_RESPAWN_TICKS,
             resource_max_quantity: constants::DEFAULT_RESOURCE_MAX_QUANTITY,
             object_density_scale: constants::DEFAULT_OBJECT_DENSITY_SCALE,
+            geofence_enabled: constants::DEFAULT_GEOFENCE_ENABLED,
+            geofence_margin: constants::DEFAULT_GEOFENCE_MARGIN,
         }
+    }
+}
+
+impl WorldConfig {
+    /// Whether `pos` is a legal tile under the configured geofence.
+    ///
+    /// Out-of-world coordinates are never allowed. When geofencing is
+    /// disabled, every in-world tile is allowed.
+    pub fn allows_position(&self, pos: Position) -> bool {
+        if pos.x >= self.width || pos.y >= self.height {
+            return false;
+        }
+        if !self.geofence_enabled {
+            return true;
+        }
+        let margin = self.geofence_margin;
+        pos.x >= margin
+            && pos.y >= margin
+            && pos.x + margin < self.width
+            && pos.y + margin < self.height
     }
 }
 
@@ -247,6 +275,14 @@ pub struct TaskConfig {
     pub reward_scale: f32,
     /// Whether to provide dense reward shaping.
     pub dense_rewards: bool,
+    /// Tasks attached when a world is created or reset, if [`Self::enabled`].
+    ///
+    /// Populated by the high-level scenario compiler. Empty by default so
+    /// Gymnasium episodes without a scenario stay task-free (and remain on
+    /// the zero-alloc hot path). Procedural curriculum tasks from
+    /// `forge-data` are attached separately.
+    #[serde(default)]
+    pub scenario_tasks: Vec<crate::task::TaskDefinition>,
 }
 
 impl Default for TaskConfig {
@@ -258,6 +294,7 @@ impl Default for TaskConfig {
             max_episode_length: constants::DEFAULT_MAX_EPISODE_LENGTH,
             reward_scale: constants::DEFAULT_REWARD_SCALE,
             dense_rewards: true,
+            scenario_tasks: Vec::new(),
         }
     }
 }
@@ -357,6 +394,15 @@ pub struct DroneConfig {
     pub num_aerial: u32,
     /// Number of ground vehicle agents to spawn.
     pub num_ground_vehicles: u32,
+    /// When true, landed aerial agents recharge only on `charger_tiles`.
+    pub restrict_recharge_to_chargers: bool,
+    /// Tiles that act as charging stations when recharge is restricted.
+    pub charger_tiles: Vec<Position>,
+    /// Optional spawn override for aerial agents (home / depot).
+    pub spawn_home: Option<Position>,
+    /// Energy-costing actions become `Noop` while `battery` is below this
+    /// floor. `Land` and `Descend` remain legal so the agent can return.
+    pub battery_action_floor: i32,
 }
 
 impl Default for DroneConfig {
@@ -379,7 +425,21 @@ impl Default for DroneConfig {
             fall_damage_per_level: constants::DEFAULT_FALL_DAMAGE_PER_LEVEL,
             num_aerial: 0,
             num_ground_vehicles: 0,
+            restrict_recharge_to_chargers: constants::DEFAULT_RESTRICT_RECHARGE_TO_CHARGERS,
+            charger_tiles: Vec::new(),
+            spawn_home: None,
+            battery_action_floor: constants::DEFAULT_BATTERY_ACTION_FLOOR,
         }
+    }
+}
+
+impl DroneConfig {
+    /// Whether a landed aerial agent at `pos` may recharge this tick.
+    pub fn allows_recharge_at(&self, pos: Position) -> bool {
+        if !self.restrict_recharge_to_chargers {
+            return true;
+        }
+        self.charger_tiles.contains(&pos)
     }
 }
 

@@ -9,110 +9,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-09-12
+### Graded-loop hygiene
 
-First tagged public release. Promotes the workspace to a versioned release
-channel and closes the three gaps that made the previous ecosystem-compliance
-and reproducibility claims unverifiable.
+- **CompactReplay hash fail-closed**: `hash_config` never returns an empty
+  string (serde failure panics; `ForgeConfig` is always `Serialize`).
+  `replay()` rejects non-canonical hashes and `format_version != 2`
+  (`InvalidConfigHash`, `UnsupportedFormat`).
+- **Process-constraint logging**: geofence and battery-floor `Noop`s log at
+  `debug!`/`trace!` (charger skip-recharge already traced in `drone.rs`).
+- **Rust↔Python scenario compiler pin**: `orchard_coverage` and `crop_scout`
+  xlang tests. Python lawnmower imports `FORGE_BASE_ACTIONS` /
+  `FORGE_DRONE_ACTION_COUNT` from `forge.actions`.
+- **Eval contract tests**: success requires attached tasks complete; `MoveHex`
+  geofence + depot exception; evidential script exit 3 without docker;
+  OpenEnv `_unpack_step` rejects non-5-tuples.
+- **Skill + hook**: `.claude/skills/forge-scenario-compiler/SKILL.md` and
+  advisory `guard_golden_replay.py`. CHARTER records Agent Skills packaging
+  as gated until eval-gated HRL winners exist (operator `.claude/skills/`
+  are not that packaging).
 
-### RL ecosystem compliance -- now verified, not asserted
+### VecEnv SPS @ N (Karten 2026)
 
-- **The wrappers subclass the upstream base classes.** `ForgeGymnasiumEnv` is a
-  real `gymnasium.Env` and `ForgeParallelEnv` a real `pettingzoo.ParallelEnv`.
-  Previously neither did, and `gymnasium.utils.env_checker.check_env` rejects a
-  non-subclass outright -- so the documented "passes the checker" claim had never
-  been true and could not have been.
-- **Every agent's action reaches the simulation.** `ForgeParallelEnv.step`
-  forwarded only `agent_0`'s action to the single-agent native `step` and
-  broadcast one observation to all agents; the other agents' actions were
-  silently discarded. It now drives the native `step_multi`, with one
-  observation and one reward per agent. Regression-pinned by
-  `test_every_agent_action_reaches_the_simulation`.
-- **`n_agents` and the simulation can no longer disagree.** The wrapper built N
-  agent *names* over a simulation still configured for `DEFAULT_NUM_AGENTS` (1).
-  The resolved count is now pushed into the config, and is read from the config
-  when `n_agents` is omitted.
-- **Observations are fitted to their declared spaces.** A declared space is a
-  promise both upstream suites verify with `space.contains(obs)`. The native env
-  returns Python scalars, a position tuple, and a variable-length message list,
-  none of which satisfy a fixed-shape `Box`. New `forge_env.space_builder`
-  performs the coercion once for both wrappers, and builds the spaces from the
-  descriptor Rust derives from `ForgeConfig` rather than restating shapes.
-- **`gymnasium.make("Forge-v0")` is supported** via an explicit
-  `forge_env.register_envs()`. Registration is a function call, never an import
-  side effect (Charter Invariant 1), and a subprocess test pins that.
-- **New `api-compliance` CI job** runs `check_env` and `parallel_api_test`
-  themselves. Verified against Gymnasium 1.3.0 and PettingZoo 1.27.0. New
-  `compliance` extra in `pyproject.toml` carries the version floors.
+- **Committed `ForgeAsyncVecEnv` evidence**: labeled `cloud_agent` report
+  (`benchmarks/baselines/cloud_agent/vecenv_step.json`) measures random-action
+  SPS for `n_envs ∈ {1,8,16,32,64}` (process-parallel PyO3, **not** a JAX
+  `vmap`; `ForgeJaxEnv` / `RealisticFakeEnv` are out of scope). README
+  performance table publishes floors at or below those numbers (15k / 40k /
+  40k / 35k / 35k). Do not imply N-linear scale-up: IPC saturates after N=8
+  on this host. Guarded by `tests/python/test_throughput_claim.py`. Producer:
+  `tests/python/test_vecenv_throughput.py` (heavy sweep behind
+  `FORGE_RUN_VECENV_THROUGHPUT=1`). CompactReplay golden fidelity is published
+  as 100% on the format-v2 corpus.
 
-#### Behaviour change
+### Energy-aware orchard coverage
 
-- `ForgeGymnasiumEnv.unwrapped` now returns the environment itself, per the
-  Gymnasium contract that `unwrapped` yields the base `gymnasium.Env`. It
-  previously returned the native PyO3 handle, which broke wrapper chains such as
-  `TimeLimit(env).unwrapped`. The native handle moved to the explicit `native`
-  property, also added to `ForgeParallelEnv`.
+- **Home/charger recharge**: opt-in `drone.restrict_recharge_to_chargers` +
+  `charger_tiles` / `spawn_home`. Default remains "land anywhere". Geofence,
+  battery-action floor, and max-altitude `Ascend` are hard `Noop`s in
+  `validate_actions` (config-driven). High-level `type = "coverage"|"orchard"`
+  compiles to `And([FieldSurveyed, BatteryAbove, AgentAt(home)])`. Scenario:
+  `configs/scenarios/orchard_coverage.toml`. Baselines: lawnmower
+  (`forge-core::baselines`, `python/forge/baselines/coverage.py`) vs random;
+  SAC hook via `examples/train_sac_cleanrl.py --config configs/training/sac_orchard.toml`.
+  Wu et al. is cited as the ground CPP problem class, not a replica.
 
-### Determinism, measured across the Python boundary
+### Minecraft evidential ops
 
-- **New `tests/python/test_determinism.py`.** Determinism was defended inside
-  Rust by a property test and golden hashes, but never through PyO3 -- the
-  surface every training run consumes. A bug in observation conversion would not
-  have moved a single Rust hash. Two identically seeded envs are driven through
-  one action sequence and compared on `ndarray.tobytes()` and exact reward
-  equality, across episode boundaries.
-- Depth is a knob, not a literal: `--determinism-steps N` or
-  `FORGE_DETERMINISM_STEPS`, defaulting to 10,000. `make api-compliance-soak
-  DETERMINISM_STEPS=1000000` runs the release soak.
-- Sensitivity is itself tested, so the gate cannot decay into a no-op.
+- **`scripts/mc_evidential_capture.sh`**: operator capture for N≥3 random +
+  trained episodes. `--dry-run` is the CI surface. Live capture still requires
+  Docker + Paper; this environment does not invent `evidential_episodes >= 3`.
+  `mc_plot_baseline.py` continues to refuse comparison below the floor of 3.
 
-### Version single-sourcing
+### OpenEnv sidecar
 
-- **`[workspace.package].version` is the single source of truth.**
-  `forge_env.__version__` was a hardcoded `"0.5.0"` whose only test asserted
-  `hasattr`, and the root `forge-integration-tests` package restated its version
-  instead of inheriting. Either could drift from Cargo indefinitely.
-- New `forge_env._version` resolves the version from the co-located Cargo
-  manifest, then from installed distribution metadata, then a sentinel. The
-  manifest deliberately outranks metadata so a stale installed wheel cannot make
-  the package misreport the tree it is running from.
-- New `tests/python/test_version_consistency.py` fails if Cargo, the Python
-  package, `dashboard/package.json`, or its lockfile disagree.
-- Workspace version bumped `0.5.0` -> `0.6.0`. Note this is **not** `0.2.0`: the
-  workspace already shipped `0.5.0`, so a `0.2.0` tag would publish a wheel
-  reporting a lower version than its predecessor and break SemVer for consumers.
+- **`python/forge_env/openenv_env.py`**: `ForgeOpenEnv` wraps in-process
+  `ForgeEnv`. Observation carries `reward`/`done`. Optional `create_app` if
+  the OpenEnv SDK is installed. PyO3 remains the training path.
 
-### CI and release mechanics
+### CompactReplay fidelity (format version 2)
 
-- **`ci.yml` now runs on `v*` tags.** `on.push` declared only `branches`, and
-  GitHub does not run a workflow for tag pushes in that case -- so the `docker`
-  job's `startsWith(github.ref, 'refs/tags/v')` clause was unreachable for the
-  workflow's entire life and no tagged image was ever built. `docs/architecture.md`
-  and `test_docker_server_bind_contract.py` already documented tag builds as
-  working; that is now true.
-- **New `pip-install-clean` job.** Every other Python job uses `maturin develop`,
-  which leaves the source tree on `sys.path` and so never exercises packaging.
-  This builds a real wheel, installs it into an empty environment, imports it
-  from outside the checkout, and asserts the wheel version matches Cargo.
-- New `make` targets `api-compliance`, `api-compliance-soak`, and
-  `pip-install-smoke`, all reachable from `verify-full` and mapped in
-  `check_local_ci_parity.py`.
-
-### Documentation
-
-- **New `BENCHMARKS.md`**: every performance and determinism number is read from
-  a committed report under `benchmarks/baselines/`, with the command that
-  reproduces it and the profile it came from. No placeholder rows; the
-  unmeasured PPO-rollout figure is listed as not taken rather than estimated.
-  Added to `test_throughput_claim.py`'s `CLAIM_FILES`, so its published floor is
-  CI-gated against the committed measurement like the README's.
-- `README.md`: corrected the stale "Rust 1.75+" prerequisite to the declared
-  1.85 MSRV, and linked `BENCHMARKS.md`.
-- `docs/plans/forge_v0_2_0_release_plan.md` records the remaining operator steps
-  (creating `main`, branch protection, tagging) and the decisions behind them.
+- **Portable config hash**: `CompactReplay.config_hash` is a 64-char SHA-256 hex of `serde_json::to_vec(&ForgeConfig)` (Minecraft `schema_id` convention). rustc `DefaultHasher` is gone so goldens do not flake on toolchain bumps.
+- **Seed is binding**: `replay()` writes `self.seed` onto `config.world.seed` before `WorldState::new`. The builder pins the same field so the fingerprint covers the seed that will actually run.
+- **Unknown action ids fail closed**: illegal discrete ids are `ReplayError::UnknownActionId`, never rewritten to `Noop`. Decode uses `from_discrete_full` (drone + agri + hex flags).
+- **`BehavioralCoverage`**: tiles visited, action-type histogram, predicate-arm activations, seeds, constraint-violation classes — exact CompactReplay measurement; cite ECC rather than claiming a new coverage invention.
+- **CI**: `tests/golden/replays/v2_seed42.json` is a PR bit-identity gate (`cargo test -p forge-replay --test golden_replay`). Scheduled / `workflow_dispatch` workflow `golden-replay.yml` runs `scripts/check_golden_replays.sh` (full crate suite + flip-log remedy). Intentional corpus changes go in `docs/results/replay_flip_log.md`.
 
 ### Fixed / CI
 
+- **Tarpaulin install vs rust-cache**: `coverage` no longer treats a
+  tarpaulin-cache miss as "must `cargo install`". `Swatinem/rust-cache`
+  can already have restored `~/.cargo/bin/cargo-tarpaulin`; installing
+  then failed with "binary already exists" (exit 101) and skipped the
+  85% gate. Skip install when 0.31.0 is on PATH; `--force` only when
+  installing.
 - **Docker GHCR `/health` smoke**: After `22d0fb80`, `forge-server` defaults to loopback (`127.0.0.1:8080`). Compose already sets `FORGE_SERVER_BIND=0.0.0.0:${FORGE_SERVER_PORT:-8080}`, but the smoke `docker run -p 8080:8080` did not, so host curl never reached the process. The simulation image now sets that bind via runtime ENV (binary default unchanged) and a writable `FORGE_SERVER_HISTORY_DIR` for `USER forge`. CI smoke passes the same BIND env and publishes `127.0.0.1:8080:8080`. `tests/python/test_docker_server_bind_contract.py` pins the image/CI/compose strings (the smoke job only runs on the default branch / `v*` tags).
 
 ### Close the self-improving loop (2026-09)
@@ -202,7 +171,7 @@ Completed full implementation of the 5-phase optimization and enterprise hardeni
 
 ---
 
-### Standards-audit remediation (2026-09-05)
+## [0.5.0] - 2026-09-05
 
 A standards audit found that the controls were configured but could not
 fail, and that the test guarding Invariant 6 checked five fields out of

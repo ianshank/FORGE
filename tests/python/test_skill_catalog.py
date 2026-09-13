@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from forge.actions import FORGE_DEFAULT_COMM_VOCAB_SIZE
 from forge.agents.base_agent import AgentConfig
 from forge.agents.skills import (
     DEFAULT_SKILL_ID,
@@ -105,6 +106,7 @@ def test_action_layout_constants_are_internally_consistent() -> None:
     assert FORGE_BASE_ACTIONS == 40
     assert FORGE_DRONE_ACTION_COUNT == 19
     assert FORGE_AGRI_ACTION_COUNT == 14
+    assert FORGE_DEFAULT_COMM_VOCAB_SIZE == 16
 
 
 def test_hierarchical_skill_policy_is_deterministic() -> None:

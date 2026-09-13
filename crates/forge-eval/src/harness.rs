@@ -387,6 +387,7 @@ impl EvalHarness {
                     terminated: false,
                     truncated: false,
                     mean_decision_time_ms: 0.0,
+                    ..EpisodeResult::default()
                 };
             }
         };
@@ -423,6 +424,9 @@ impl EvalHarness {
         };
 
         let mut per_agent_rewards: Vec<f32> = Vec::new();
+        let mut battery_nonnegative = true;
+        let mut altitude_within_cap = true;
+        let max_altitude = config.drone.max_altitude;
 
         for _ in 0..max_steps {
             if current_world.terminated || current_world.truncated {
@@ -517,6 +521,15 @@ impl EvalHarness {
             }
 
             current_obs = step_result.observations;
+
+            for agent in &current_world.agents {
+                if agent.battery < 0 {
+                    battery_nonnegative = false;
+                }
+                if agent.altitude > max_altitude {
+                    altitude_within_cap = false;
+                }
+            }
         }
 
         let mean_decision = if step_count > 0 {
@@ -525,9 +538,12 @@ impl EvalHarness {
             EMPTY_AGGREGATE_VALUE
         };
 
-        // Determine success: episode terminated naturally (not truncated)
-        // and agent is still alive
-        let success = current_world.terminated && !current_world.truncated;
+        let controlled_alive = current_world
+            .agents
+            .first()
+            .is_some_and(|agent| agent.alive);
+        let tasks_complete = current_world.tasks.iter().all(|task| task.completed);
+        let success = controlled_alive && tasks_complete && !current_world.truncated;
 
         // Persist artefacts. Errors are logged but never block the episode result.
         if output.enabled && output.is_valid() {
@@ -586,6 +602,8 @@ impl EvalHarness {
             terminated: current_world.terminated,
             truncated: current_world.truncated,
             mean_decision_time_ms: mean_decision,
+            battery_nonnegative,
+            altitude_within_cap,
         }
     }
 

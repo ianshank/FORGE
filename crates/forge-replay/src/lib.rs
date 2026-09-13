@@ -24,6 +24,7 @@
 
 pub mod compact;
 pub mod config;
+pub mod coverage;
 pub mod export;
 pub mod trajectory;
 pub mod v2;

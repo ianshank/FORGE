@@ -7,7 +7,7 @@ Fast Open-source Runtime for Generalist Environments
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 
 A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python
-([`cloud_agent` PyO3 measurement](benchmarks/baselines/cloud_agent/pyo3_step.json): 189k steps/sec).
+([`cloud_agent` PyO3 measurement](benchmarks/baselines/cloud_agent/pyo3_step.json): 189k steps/sec). Process-parallel `ForgeAsyncVecEnv` SPS @ N is a separate Karten-protocol number ([`vecenv_step.json`](benchmarks/baselines/cloud_agent/vecenv_step.json)); CompactReplay golden replay fidelity is 100% on the format-v2 corpus.
 
 See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope boundaries, and Seven Core Invariants, and [`BENCHMARKS.md`](BENCHMARKS.md) for every performance and determinism number with the command that reproduces it.
 
@@ -809,10 +809,17 @@ Benchmarked on a single core. The Python steps/second floor is gated
 against [`benchmarks/baselines/cloud_agent/pyo3_step.json`](benchmarks/baselines/cloud_agent/pyo3_step.json)
 (`tests/python/test_throughput_claim.py`). Rust multi-agent scaling is a
 separate Criterion measurement ([`cloud_agent/multi_agent_scaling.json`](benchmarks/baselines/cloud_agent/multi_agent_scaling.json)) and is not the headline.
+`ForgeAsyncVecEnv` SPS @ N is gated against [`cloud_agent/vecenv_step.json`](benchmarks/baselines/cloud_agent/vecenv_step.json) (process-parallel PyO3, **not** a JAX `vmap` of the physics). Do not treat N=64 as 64× serial.
 
 | Metric | Value |
 | --- | --- |
 | Steps/second (from Python) | 130,000+ |
+| SPS @ 1 (ForgeAsyncVecEnv) | 15,000+ |
+| SPS @ 8 (ForgeAsyncVecEnv) | 40,000+ |
+| SPS @ 16 (ForgeAsyncVecEnv) | 40,000+ |
+| SPS @ 32 (ForgeAsyncVecEnv) | 35,000+ |
+| SPS @ 64 (ForgeAsyncVecEnv) | 35,000+ |
+| CompactReplay replay fidelity | 100% (format v2 golden corpus) |
 | Microseconds/step | ~5.3 μs (measured); <8 μs claimed |
 | World creation (64x64) | ~3.5 ms |
 | Zero-alloc step | Yes (hot path) |
@@ -830,6 +837,7 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 | [`mcts_planning.py`](examples/mcts_planning.py) | Monte Carlo Tree Search planning concept |
 | [`train_ppo.py`](examples/train_ppo.py) | PPO training with Stable Baselines3 integration |
 | [`train_sac_cleanrl.py`](examples/train_sac_cleanrl.py) | Config-driven discrete SAC training with CleanRL-style structure |
+| [`run_orchard_coverage_baselines.py`](examples/run_orchard_coverage_baselines.py) | Random vs lawnmower on `orchard_coverage` (optional SAC hook) |
 
 ## Scripts
 
@@ -840,6 +848,7 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 | [`scripts/demo.py`](scripts/demo.py) | Launch demo server |
 | [`scripts/replay_viewer.py`](scripts/replay_viewer.py) | Replay visualization tool |
 | [`scripts/export_edge.py`](scripts/export_edge.py) | Export models for edge deployment |
+| [`scripts/mc_evidential_capture.sh`](scripts/mc_evidential_capture.sh) | Trained-vs-random capture runbook (`--dry-run` is CI; live needs Docker; refuses `evidential_episodes < 3`) |
 
 ## Configuration Files
 
@@ -855,9 +864,9 @@ configs/
 ├── mangomas/        # MangoMAS bridge configs (curriculum, constitutional, sweep, muzero, bdi)
 ├── memory/          # Memory system configs
 ├── minecraft/       # Minecraft env, rewards, action_map, reset, embeddings, runner configs
-├── scenarios/       # Scenario configs (patrol, escort, search_and_rescue, adversarial_recon, area_denial)
+├── scenarios/       # Scenario configs (patrol, escort, orchard_coverage, crop_scout, …)
 ├── social/          # Social system configs
-└── training/        # Training configs (PPO, SAC, distributed)
+└── training/        # Training configs (PPO, SAC, sac_orchard, distributed)
 ```
 
 All config structs derive `Clone, Debug, Serialize, Deserialize`, implement `Default` for programmatic use without config files, and enforce strict deserialization (`#[serde(deny_unknown_fields)]`) to eliminate silent config drift.

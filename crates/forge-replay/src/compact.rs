@@ -5,26 +5,81 @@
 //! needed to reconstruct the full simulation:
 //!
 //! - The [`ForgeConfig`] (for self-contained replays)
-//! - A config hash (for quick validation)
-//! - The seed
+//! - A portable SHA-256 config hash (for quick validation)
+//! - The seed (applied onto `config.world.seed` before [`WorldState::new`])
 //! - Per-tick action IDs for each agent
+//!
+//! Format version 2 replaced `std::collections::hash_map::DefaultHasher`
+//! (rustc-dependent) with canonical `serde_json` bytes + SHA-256 hex, matching
+//! the Minecraft `schema_id` convention. Unknown action IDs are hard errors;
+//! they are never rewritten to [`Action::Noop`].
 //!
 //! A 10,000-tick episode with 4 agents compresses to ~160 KB in bincode
 //! vs. ~50 MB for full trajectory data.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 use forge_core::WorldState;
 use forge_types::agent_interface::AgentMetadata;
-use forge_types::config::ForgeConfig;
+use forge_types::config::{ForgeConfig, GridType};
+use forge_types::error::ForgeError;
 use forge_types::observation::StepResult;
 use forge_types::Action;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tracing::{debug, info, instrument, warn};
 
 /// Current compact replay format version.
-pub const FORMAT_VERSION: u32 = 1;
+///
+/// Version 2: `config_hash` is a 64-char SHA-256 hex string; unknown action
+/// IDs fail replay instead of becoming `Noop`.
+pub const FORMAT_VERSION: u32 = 2;
+
+/// Length of a SHA-256 hex config fingerprint (`config_hash`).
+pub const CONFIG_HASH_HEX_LEN: usize = 64;
+
+/// RFC 3339 timestamp used by golden CompactReplay fixtures.
+///
+/// Wall-clock `Utc::now()` would make bit-identity goldens flake.
+pub const GOLDEN_TIMESTAMP: &str = "1970-01-01T00:00:00+00:00";
+
+/// Errors that prevent a faithful CompactReplay reconstruction.
+#[derive(Debug, thiserror::Error)]
+pub enum ReplayError {
+    /// Stored fingerprint does not match `hash_config(&self.config)`.
+    #[error("config hash mismatch: recorded {recorded}, computed {computed}")]
+    ConfigHashMismatch {
+        /// Hash stored on the replay.
+        recorded: String,
+        /// Hash recomputed from the stored config.
+        computed: String,
+    },
+    /// An action id is outside the discrete space for this world's flags.
+    #[error("unknown action id {id} at step {step} (action space size {space_size})")]
+    UnknownActionId {
+        /// Tick index in `actions`.
+        step: u32,
+        /// Recorded discrete id.
+        id: u32,
+        /// `Action::space_size_full` for this replay's comm/drone/agri/hex flags.
+        space_size: u32,
+    },
+    /// [`WorldState::new`] failed after applying the replay seed.
+    #[error("world construction failed: {0}")]
+    World(#[from] ForgeError),
+    /// Recording `format_version` is not [`FORMAT_VERSION`].
+    #[error("unsupported compact replay format {found}; expected {expected}")]
+    UnsupportedFormat {
+        /// Version stored on the recording.
+        found: u32,
+        /// Version this crate can replay.
+        expected: u32,
+    },
+    /// Recorded fingerprint is empty or not 64 lowercase hex.
+    #[error("invalid config hash {recorded:?}; expected 64 lowercase hex")]
+    InvalidConfigHash {
+        /// Hash stored on the replay (may be empty).
+        recorded: String,
+    },
+}
 
 /// Compact deterministic replay.
 ///
@@ -34,8 +89,8 @@ pub const FORMAT_VERSION: u32 = 1;
 pub struct CompactReplay {
     /// Format version for forward compatibility.
     pub format_version: u32,
-    /// Hash of the ForgeConfig for quick validation.
-    pub config_hash: u64,
+    /// SHA-256 hex of `serde_json::to_vec(&config)` (64 lowercase chars).
+    pub config_hash: String,
     /// Full config for self-contained replay.
     pub config: ForgeConfig,
     /// Seed used for world generation and RNG.
@@ -112,28 +167,54 @@ impl CompactReplay {
     }
 
     /// Validates that the config hash matches the stored config.
+    ///
+    /// Empty or non-canonical fingerprints fail closed even if two broken
+    /// hashes would otherwise compare equal.
     #[instrument(skip_all)]
     pub fn validate_config(&self) -> bool {
-        hash_config(&self.config) == self.config_hash
+        is_canonical_config_hash(&self.config_hash) && hash_config(&self.config) == self.config_hash
     }
 
-    /// Replays the episode, yielding `StepResult` at each tick.
+    /// Replays the episode, yielding `Result<StepResult, ReplayError>` per tick.
     ///
-    /// Returns `None` if the config doesn't match or world creation fails.
+    /// Applies [`Self::seed`] onto a cloned config's `world.seed` before
+    /// constructing the world, so a stored seed that disagrees with
+    /// `config.world.seed` still reconstructs the recorded episode.
+    ///
+    /// Unknown discrete ids yield [`ReplayError::UnknownActionId`] instead of
+    /// being rewritten to [`Action::Noop`].
     #[instrument(skip_all)]
-    pub fn replay(&self) -> Option<ReplayIterator<'_>> {
-        if !self.validate_config() {
-            warn!("Config hash mismatch during replay");
-            return None;
+    pub fn replay(&self) -> Result<ReplayIterator<'_>, ReplayError> {
+        if self.format_version != FORMAT_VERSION {
+            return Err(ReplayError::UnsupportedFormat {
+                found: self.format_version,
+                expected: FORMAT_VERSION,
+            });
+        }
+        if !is_canonical_config_hash(&self.config_hash) {
+            return Err(ReplayError::InvalidConfigHash {
+                recorded: self.config_hash.clone(),
+            });
+        }
+        let computed = hash_config(&self.config);
+        if computed != self.config_hash {
+            warn!(
+                recorded = %self.config_hash,
+                computed = %computed,
+                "Config hash mismatch during replay"
+            );
+            return Err(ReplayError::ConfigHashMismatch {
+                recorded: self.config_hash.clone(),
+                computed,
+            });
         }
 
-        let world = match WorldState::new(self.config.clone()) {
-            Ok(w) => w,
-            Err(e) => {
-                warn!(error = %e, "Failed to create world for replay");
-                return None;
-            }
-        };
+        let mut config = self.config.clone();
+        config.world.seed = self.seed;
+        let world = WorldState::new(config)?;
+        let drone_enabled = self.config.drone.enabled;
+        let agri_enabled = self.config.agri.enabled && drone_enabled;
+        let hex_enabled = matches!(self.config.world.grid_type, GridType::Hex);
 
         info!(
             ticks = self.actions.len(),
@@ -141,12 +222,14 @@ impl CompactReplay {
             "Starting replay"
         );
 
-        Some(ReplayIterator {
+        Ok(ReplayIterator {
             world,
             actions: &self.actions,
             tick: 0,
             comm_vocab: self.config.agents.comm_vocab_size,
-            drone_enabled: self.config.drone.enabled,
+            drone_enabled,
+            agri_enabled,
+            hex_enabled,
         })
     }
 }
@@ -158,12 +241,14 @@ pub struct ReplayIterator<'a> {
     tick: usize,
     comm_vocab: u16,
     drone_enabled: bool,
+    agri_enabled: bool,
+    hex_enabled: bool,
 }
 
 impl<'a> Iterator for ReplayIterator<'a> {
-    type Item = StepResult;
+    type Item = Result<StepResult, ReplayError>;
 
-    fn next(&mut self) -> Option<StepResult> {
+    fn next(&mut self) -> Option<Result<StepResult, ReplayError>> {
         if self.tick >= self.actions.len() {
             return None;
         }
@@ -172,18 +257,38 @@ impl<'a> Iterator for ReplayIterator<'a> {
             return None;
         }
 
+        let space_size = Action::space_size_full(
+            self.comm_vocab,
+            self.drone_enabled,
+            self.agri_enabled,
+            self.hex_enabled,
+        );
         let action_ids = &self.actions[self.tick];
-        let actions: Vec<Action> = action_ids
-            .iter()
-            .map(|&id| {
-                Action::from_discrete(id, self.comm_vocab, self.drone_enabled)
-                    .unwrap_or(Action::Noop)
-            })
-            .collect();
+        let mut actions = Vec::with_capacity(action_ids.len());
+        for &id in action_ids {
+            match Action::from_discrete_full(
+                id,
+                self.comm_vocab,
+                self.drone_enabled,
+                self.agri_enabled,
+                self.hex_enabled,
+            ) {
+                Some(action) => actions.push(action),
+                None => {
+                    let err = ReplayError::UnknownActionId {
+                        step: self.tick as u32,
+                        id,
+                        space_size,
+                    };
+                    self.tick = self.actions.len();
+                    return Some(Err(err));
+                }
+            }
+        }
 
         let result = self.world.step(&actions);
         self.tick += 1;
-        Some(result)
+        Some(Ok(result))
     }
 }
 
@@ -209,7 +314,11 @@ pub struct CompactReplayBuilder {
 
 impl CompactReplayBuilder {
     /// Creates a new builder.
-    fn new(config: ForgeConfig, seed: u64) -> Self {
+    ///
+    /// Pins `config.world.seed` to `seed` so the stored fingerprint covers the
+    /// seed that [`CompactReplay::replay`] will actually use.
+    fn new(mut config: ForgeConfig, seed: u64) -> Self {
+        config.world.seed = seed;
         Self {
             config,
             seed,
@@ -252,11 +361,20 @@ impl CompactReplayBuilder {
         self
     }
 
+    /// Pins the recording timestamp (golden fixtures must not use wall-clock).
+    #[instrument(skip(self, timestamp))]
+    pub fn timestamp(mut self, timestamp: impl Into<String>) -> Self {
+        self.metadata.timestamp = timestamp.into();
+        self
+    }
+
     /// Builds the compact replay.
     #[instrument(skip_all)]
     pub fn build(mut self) -> CompactReplay {
         self.metadata.total_ticks = self.actions.len() as u64;
-        self.metadata.timestamp = chrono::Utc::now().to_rfc3339();
+        if self.metadata.timestamp.is_empty() {
+            self.metadata.timestamp = chrono::Utc::now().to_rfc3339();
+        }
 
         debug!(
             ticks = self.metadata.total_ticks,
@@ -275,12 +393,37 @@ impl CompactReplayBuilder {
     }
 }
 
-/// Computes a deterministic hash of a ForgeConfig.
-fn hash_config(config: &ForgeConfig) -> u64 {
-    let json = serde_json::to_string(config).unwrap_or_default();
-    let mut hasher = DefaultHasher::new();
-    json.hash(&mut hasher);
-    hasher.finish()
+/// SHA-256 hex fingerprint of a [`ForgeConfig`].
+///
+/// Uses `serde_json::to_vec` (struct field order is stable) so the digest is
+/// independent of rustc's hasher. Aligns with Minecraft `schema_id` hex.
+///
+/// Serialization failure panics: [`ForgeConfig`] is `Serialize` with no
+/// custom map keys, so `serde_json::to_vec` cannot fail. Returning an empty
+/// string would fail *open* (`validate_config` would treat two broken hashes
+/// as equal).
+#[must_use]
+pub fn hash_config(config: &ForgeConfig) -> String {
+    let json = serde_json::to_vec(config)
+        .expect("ForgeConfig is Serialize; serde_json::to_vec cannot fail for this type");
+    hex_sha256(&json)
+}
+
+/// Returns true when `hash` is a 64-char lowercase hex SHA-256 digest.
+#[must_use]
+pub fn is_canonical_config_hash(hash: &str) -> bool {
+    hash.len() == CONFIG_HASH_HEX_LEN
+        && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut out = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        use std::fmt::Write;
+        write!(&mut out, "{byte:02x}").expect("write to string never fails");
+    }
+    out
 }
 
 #[cfg(test)]
@@ -324,14 +467,18 @@ mod tests {
         let config = test_config();
         let replay = CompactReplay::builder(config, 42).build();
         assert!(replay.validate_config());
+        assert_eq!(replay.config_hash.len(), 64);
+        assert!(replay
+            .config_hash
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
     }
 
     #[test]
     fn test_config_hash_mismatch() {
         let config = test_config();
         let mut replay = CompactReplay::builder(config, 42).build();
-        // Corrupt the hash
-        replay.config_hash = 0;
+        replay.config_hash = "0".repeat(64);
         assert!(!replay.validate_config());
     }
 
@@ -391,7 +538,11 @@ mod tests {
         let replay = builder.build();
 
         // Replay and verify we get the same number of steps
-        let results: Vec<_> = replay.replay().unwrap().collect();
+        let results = replay
+            .replay()
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         assert_eq!(results.len(), 3);
     }
 
@@ -404,7 +555,7 @@ mod tests {
         let mut builder = CompactReplay::builder(config, 42);
 
         let action_seq = vec![vec![0u32], vec![1], vec![2], vec![0]];
-        let mut original_positions = vec![];
+        let mut original_snapshots = vec![];
 
         for action_ids in &action_seq {
             builder.record_tick(action_ids.clone());
@@ -413,22 +564,31 @@ mod tests {
                 .map(|&id| Action::from_discrete(id, 0, false).unwrap_or(Action::Noop))
                 .collect();
             world1.step(&actions);
-            original_positions.push(world1.agents[0].position);
+            original_snapshots.push(world1.agents[0].clone());
         }
 
         let replay = builder.build();
 
-        // Replay and verify positions match
+        // Replay and verify full agent snapshot (not just XY)
         let mut replay_iter = replay.replay().unwrap();
-        for (i, result) in replay_iter.by_ref().enumerate() {
-            let replay_pos = result.observations[0].position;
-            let orig_pos = original_positions[i];
+        let mut i = 0;
+        while let Some(step) = replay_iter.next() {
+            let result = step.unwrap();
+            let orig = &original_snapshots[i];
             assert_eq!(
-                replay_pos,
-                (orig_pos.x, orig_pos.y),
+                result.observations[0].position,
+                (orig.position.x, orig.position.y),
                 "Position mismatch at tick {i}"
             );
+            let agent = &replay_iter.world().agents[0];
+            assert_eq!(agent.altitude, orig.altitude, "altitude at tick {i}");
+            assert_eq!(agent.battery, orig.battery, "battery at tick {i}");
+            assert_eq!(agent.health, orig.health, "health at tick {i}");
+            assert_eq!(agent.morphology, orig.morphology, "morphology at tick {i}");
+            assert_eq!(agent.alive, orig.alive, "alive at tick {i}");
+            i += 1;
         }
+        assert_eq!(i, original_snapshots.len());
     }
 
     #[test]
@@ -438,7 +598,11 @@ mod tests {
         assert_eq!(replay.actions.len(), 0);
         assert_eq!(replay.metadata.total_ticks, 0);
 
-        let results: Vec<_> = replay.replay().unwrap().collect();
+        let results = replay
+            .replay()
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         assert_eq!(results.len(), 0);
     }
 
@@ -585,8 +749,11 @@ mod tests {
         let mut builder = CompactReplay::builder(config, 42);
         builder.record_tick(vec![0]);
         let mut replay = builder.build();
-        replay.config_hash = 0xDEADBEEF;
-        assert!(replay.replay().is_none());
+        replay.config_hash = "deadbeef".repeat(8);
+        assert!(matches!(
+            replay.replay(),
+            Err(ReplayError::ConfigHashMismatch { .. })
+        ));
     }
 
     #[test]
@@ -648,5 +815,85 @@ mod tests {
         assert_eq!(from_json.seed, from_bytes.seed);
         assert_eq!(from_json.actions, from_bytes.actions);
         assert_eq!(from_json.config_hash, from_bytes.config_hash);
+    }
+
+    #[test]
+    fn test_builder_pins_seed_onto_config() {
+        let mut config = test_config();
+        config.world.seed = 1;
+        let replay = CompactReplay::builder(config, 42).build();
+        assert_eq!(replay.seed, 42);
+        assert_eq!(replay.config.world.seed, 42);
+    }
+
+    #[test]
+    fn test_replay_applies_stored_seed_not_config_world_seed() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![0]);
+        let mut replay = builder.build();
+        replay.config.world.seed = 7;
+        replay.config_hash = hash_config(&replay.config);
+        let iter = replay.replay().unwrap();
+        assert_eq!(iter.world().config.world.seed, 42);
+    }
+
+    #[test]
+    fn test_unknown_action_id_is_hard_error() {
+        let config = test_config();
+        let mut builder = CompactReplay::builder(config, 42);
+        builder.record_tick(vec![u32::MAX]);
+        let replay = builder.build();
+        let err = replay.replay().unwrap().next().unwrap().unwrap_err();
+        assert!(matches!(
+            err,
+            ReplayError::UnknownActionId {
+                step: 0,
+                id: u32::MAX,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_builder_timestamp_is_stable() {
+        let config = test_config();
+        let replay = CompactReplay::builder(config, 42)
+            .timestamp(GOLDEN_TIMESTAMP)
+            .build();
+        assert_eq!(replay.metadata.timestamp, GOLDEN_TIMESTAMP);
+    }
+
+    #[test]
+    fn test_empty_config_hash_fails_closed() {
+        let config = test_config();
+        let mut replay = CompactReplay::builder(config, 42).build();
+        replay.config_hash.clear();
+        assert!(!replay.validate_config());
+        assert!(matches!(
+            replay.replay(),
+            Err(ReplayError::InvalidConfigHash { .. })
+        ));
+    }
+
+    #[test]
+    fn test_hash_config_never_empty() {
+        let hash = hash_config(&test_config());
+        assert!(is_canonical_config_hash(&hash));
+        assert_eq!(hash.len(), CONFIG_HASH_HEX_LEN);
+    }
+
+    #[test]
+    fn test_unsupported_format_version_fails_closed() {
+        let config = test_config();
+        let mut replay = CompactReplay::builder(config, 42).build();
+        replay.format_version = 1;
+        assert!(matches!(
+            replay.replay(),
+            Err(ReplayError::UnsupportedFormat {
+                found: 1,
+                expected: FORMAT_VERSION,
+            })
+        ));
     }
 }

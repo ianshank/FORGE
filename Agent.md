@@ -59,6 +59,9 @@ WorldState (forge-core)  <--  Actions from Agent/Python/WASM
   |
   +---> forge-task::evaluate_tasks()  -->  Rewards + Termination signals
   |
+  +---> high-level scenario compiler (forge-types::scenario /
+  |     python forge.mangomas.collector.scenario) attaches scenario_tasks
+  |
   v
 StepResult (forge-types)  -->  Observations + Rewards
   |
@@ -234,4 +237,6 @@ Added on the `claude/minecraft-rl-agent-integration-xnJjt` branch.
 | `docker compose -f docker/compose.minecraft.yml --env-file docker/compose.minecraft.env up -d minecraft mc-bot runner` | **v0.5 Phase 1** — full v0.5 stack bring-up. Compose mounts `configs/minecraft/env.docker.toml` over `env.toml` so the bot uses docker DNS hostnames (`minecraft`, `mc-bot:8765`) instead of local-dev `127.0.0.1` defaults |
 | `python scripts/v05_handshake_probe.py 127.0.0.1 8765` | **v0.5 Phase 1** — stdlib-only WS handshake probe. Connects to live mc-bot, validates v0.5 contract end-to-end (`obs_dim=920`, `grid_shape={11,11,1,7,73}`). EXIT_OK / EXIT_GRID_SHAPE_MISSING / EXIT_GRID_SHAPE_MISMATCH for CI gating |
 | `python scripts/v05_manual_baseline.py --episodes N --max-steps-per-episode M --out PATH` | **v0.5 Phase 1** — Python-driven random baseline (stdlib-only stand-in when not using the Rust runner). Snapshot JSON schema-compatible with `mc_plot_baseline.py`. Shares `scripts/_ws_client.py` (RFC 6455 frame parser) with the handshake probe |
+| `scripts/mc_evidential_capture.sh --dry-run` | Operator trained-vs-random capture. Live path needs Docker (exit 3 if missing) and never invents evidential JSON |
+| `UPDATE_GOLDEN_REPLAYS=1 cargo test -p forge-replay --test golden_replay` | Regenerate CompactReplay v2 goldens after ForgeConfig fingerprint changes; log the flip in `docs/results/replay_flip_log.md` |
 | `cargo test -p forge-mc-runner --lib && cargo test -p forge-env-mc` | **v0.5 Phase 1** — Rust tests pinning xlang block-feature channel order, nested-reward schema_id fold, transient `RECONNECTING`/`BUSY` continue-on-reconnect, ships-default-runner.toml/env.toml validity, grid_shape handshake mismatch branches |

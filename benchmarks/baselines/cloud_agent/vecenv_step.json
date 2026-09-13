@@ -1,0 +1,74 @@
+{
+  "by_n": {
+    "1": {
+      "action_sampling": "uniform_random",
+      "backend": "ForgeAsyncVecEnv",
+      "iters": 31371,
+      "n_envs": 1,
+      "steps_per_sec": 15685.048960730206,
+      "total_env_steps": 31371,
+      "wall_s": 2.0000575120002395,
+      "warmup": 16
+    },
+    "16": {
+      "action_sampling": "uniform_random",
+      "backend": "ForgeAsyncVecEnv",
+      "iters": 5071,
+      "n_envs": 16,
+      "steps_per_sec": 40566.09110173084,
+      "total_env_steps": 81136,
+      "wall_s": 2.0000941130001593,
+      "warmup": 16
+    },
+    "32": {
+      "action_sampling": "uniform_random",
+      "backend": "ForgeAsyncVecEnv",
+      "iters": 2402,
+      "n_envs": 32,
+      "steps_per_sec": 38426.879714340794,
+      "total_env_steps": 76864,
+      "wall_s": 2.0002664950002327,
+      "warmup": 16
+    },
+    "64": {
+      "action_sampling": "uniform_random",
+      "backend": "ForgeAsyncVecEnv",
+      "iters": 1153,
+      "n_envs": 64,
+      "steps_per_sec": 36871.74174925811,
+      "total_env_steps": 73792,
+      "wall_s": 2.0013158179999664,
+      "warmup": 16
+    },
+    "8": {
+      "action_sampling": "uniform_random",
+      "backend": "ForgeAsyncVecEnv",
+      "iters": 10777,
+      "n_envs": 8,
+      "steps_per_sec": 43107.51344549545,
+      "total_env_steps": 86216,
+      "wall_s": 2.0000225740000133,
+      "warmup": 16
+    }
+  },
+  "git_sha": "0dd810f45d7b012a5b040e59562192be03c570d0",
+  "hardware": {
+    "arch": "x86_64",
+    "cpu": "Intel(R) Xeon(R) Processor",
+    "os": "Linux",
+    "os_release": "6.12.94+",
+    "python": "3.12.3"
+  },
+  "n_envs": [
+    1,
+    8,
+    16,
+    32,
+    64
+  ],
+  "notes": "ForgeAsyncVecEnv is process-parallel PyO3, not a JAX vmap of physics. Do not cite ForgeJaxEnv or RealisticFakeEnv as this number.",
+  "producer": "test_vecenv_throughput",
+  "profile": "cloud_agent",
+  "protocol": "Karten 2026 random-action SPS",
+  "seed": 42
+}
