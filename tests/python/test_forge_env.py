@@ -216,6 +216,7 @@ def test_wrapper_time_limit() -> None:
 def test_multi_agent_env() -> None:
     """ForgeParallelEnv with 2 agents should return per-agent dicts."""
     _skip_if_no_native()
+    pytest.importorskip("pettingzoo")
     from forge_env.pettingzoo_env import ForgeParallelEnv
 
     env = ForgeParallelEnv(n_agents=2)

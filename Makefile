@@ -170,7 +170,7 @@ missing and sys.exit('missing required package(s): ' + ', '.join(missing)); \
 importlib.util.find_spec('forge_env') is not None or sys.exit('forge_env package missing; run: pip install -e .'); \
 import forge_env; \
 getattr(forge_env, 'ForgeEnv', None) is not None or sys.exit('forge_env native extension missing; run: maturin develop')"
-	pytest tests/python/test_api_compliance.py tests/python/test_determinism.py -v --no-cov
+	pytest tests/python/test_api_compliance.py tests/python/test_pettingzoo_env.py tests/python/test_determinism.py -v --no-cov
 
 # DETERMINISM_STEPS overrides the gate's depth without editing anything: the
 # same knob CI uses for a fast PR run and a release soak.

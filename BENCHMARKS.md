@@ -1,11 +1,15 @@
 # FORGE Performance & Determinism Benchmarks
 
 Unverifiable performance claims degrade trust in a simulation engine, so this
-document holds itself to a rule: **every number below is read from a
+document holds itself to a rule: **every measured value below is read from a
 machine-readable report committed to this repository**, produced by a harness in
-this repository, on hardware recorded inside the report itself. Nothing here is
-typed in by hand, and there are no placeholder rows — a measurement that has not
-been taken is listed as not taken.
+this repository, on hardware recorded inside the report itself. Nothing
+measured here is typed in by hand, and there are no placeholder rows — a
+measurement that has not been taken is listed as not taken.
+
+Toolchain floors in §1 (Rust `1.94.1`, MSRV `1.85`, Python 3.9+) are not
+benchmark measurements. They are read from `rust-toolchain.toml`,
+`Cargo.toml`'s `rust-version`, and `pyproject.toml`'s `requires-python`.
 
 Three of these claims are enforced rather than asserted. CI fails if a published
 throughput floor exceeds the committed measurement

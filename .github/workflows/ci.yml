@@ -416,7 +416,7 @@ jobs:
           # workflow-contract tests parse those files, and they are
           # written to FAIL rather than skip without it (see
           # tests/python/integration/_helpers.py::load_yaml_document).
-          pip install maturin pytest pytest-cov numpy gymnasium httpx jsonschema \
+          pip install maturin pytest pytest-cov numpy gymnasium pettingzoo httpx jsonschema \
             pyyaml stable-baselines3
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           # v0.4: install onnx + onnxruntime + onnxscript so the new
@@ -659,7 +659,9 @@ jobs:
     # Separate from `python-test` on purpose: this is the job whose green tick
     # backs the README/release claim that FORGE passes the upstream suites, so
     # it must be readable as its own required check rather than buried in a
-    # 1500-test run. It is also the only job that installs pettingzoo.
+    # 1500-test run. `python-test` also installs pettingzoo so the wrapper
+    # suite in test_pettingzoo_env.py is not skip-only there; this job is
+    # where the upstream checkers themselves run.
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -687,11 +689,11 @@ jobs:
           # without the plugin. Pinned as a contract by
           # tests/python/integration/test_config_contracts.py.
           pip install maturin pytest pytest-cov
-          pip install "gymnasium>=1.0" "pettingzoo>=1.24" "numpy>=1.26,<2.0"
+          pip install "gymnasium>=1.0" "pettingzoo>=1.24" "numpy>=1.26"
       - name: Build native extension
         run: maturin develop
       - name: Gymnasium env_checker + PettingZoo parallel_api_test
-        run: pytest tests/python/test_api_compliance.py -v --no-cov
+        run: pytest tests/python/test_api_compliance.py tests/python/test_pettingzoo_env.py -v --no-cov
       - name: Byte-level determinism across the PyO3 boundary
         run: pytest tests/python/test_determinism.py -v --no-cov
 
@@ -1286,7 +1288,7 @@ jobs:
   docker:
     name: Docker Build & Publish (GHCR + optional Docker Hub)
     runs-on: ubuntu-latest
-    needs: [test, clippy, fmt, python-test]
+    needs: [test, clippy, fmt, python-test, api-compliance, pip-install-clean]
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
