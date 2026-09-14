@@ -2637,7 +2637,7 @@ The CI pipeline runs on every push and pull request targeting `main`, `master`, 
   │ mypy       │  │ (no native)│  │ --cov ≥85%   │  │ + health smoke │
   └────────────┘  └────────────┘  └──────┬───────┘  └────────────────┘
                                          │
-                  needs: [test, clippy, fmt, python-test]
+                  needs: [test, clippy, fmt, python-test, api-compliance, pip-install-clean]
                                          │
                                          ▼
                                   ┌──────────────┐
@@ -2667,7 +2667,7 @@ The CI pipeline runs on every push and pull request targeting `main`, `master`, 
 | `machete`, `dashboard-e2e`, `wasm-e2e` | Advisory / non-required | push / PR — `wasm-e2e` drives the real `web/` demo in Chromium against the wasm-pack build |
 | `markdownlint`, `bench`, `hf-export`, `demo-ui`, `dashboard`, `python-test-fast` | Runs on push/PR; not in CHARTER.md's blocking list but not marked advisory either — check branch protection for current required-check status | push / PR |
 | `python-test-lmstudio`, `python-test-minecraft-e2e`, `python-test-minecraft-real-run` | Opt-in | `workflow_dispatch` only |
-| `docker` | Build + push to GHCR | default branch / version tags only, `needs: [test, clippy, fmt, python-test]` |
+| `docker` | Build + push to GHCR | default branch / version tags only, `needs: [test, clippy, fmt, python-test, api-compliance, pip-install-clean]` |
 | `cargo-deny`, `gitleaks`, `pip-audit` (`security.yml`) | **Blocking** | push / PR / weekly cron |
 | `npm-audit` (×2), `trivy-fs` (`security.yml`) | Advisory (report-only, `\|\| true`) | push / PR / weekly cron |
 | `codeql` (`security.yml`) | Opt-in | gated on repo var `ENABLE_CODEQL` |

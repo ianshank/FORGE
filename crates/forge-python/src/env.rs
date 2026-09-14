@@ -77,18 +77,7 @@ impl ForgeEnv {
     /// Returns:
     ///     Tuple of (observation_dict, reward, terminated, truncated, info_dict)
     fn step(&mut self, py: Python<'_>, action: u32) -> PyResult<PyObject> {
-        let comm_vocab_size = self.config.agents.comm_vocab_size;
-        let hex_enabled = self.config.world.grid_type == forge_types::config::GridType::Hex;
-        let action = Action::from_discrete_full(
-            action,
-            comm_vocab_size,
-            self.config.drone.enabled,
-            self.config.agri.enabled && self.config.drone.enabled,
-            hex_enabled,
-        )
-        .ok_or_else(|| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid action: {action}"))
-        })?;
+        let action = self.decode_action(action)?;
 
         // Release GIL during computation
         let result = py.allow_threads(|| self.state.step(&[action]));
@@ -98,6 +87,55 @@ impl ForgeEnv {
         let info = self.info_to_dict(py, &result.info)?;
 
         Ok((obs, reward, result.terminated, result.truncated, info).to_object(py))
+    }
+
+    /// Resets the environment and returns one observation per agent.
+    ///
+    /// Args:
+    ///     seed: Optional random seed for deterministic reset.
+    ///     options: Optional dict of reset options (currently unused).
+    ///
+    /// Returns:
+    ///     Tuple of (observations, info_dict) where `observations` is a list
+    ///     of observation dicts, one per configured agent.
+    #[pyo3(signature = (seed=None, options=None))]
+    fn reset_all(
+        &mut self,
+        py: Python<'_>,
+        seed: Option<u64>,
+        options: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyObject> {
+        let _ = options;
+        let result = self.state.reset(seed);
+        let obs = self.observations_to_list(py, &result.observations)?;
+        let info = self.info_to_dict(py, &result.info)?;
+        Ok((obs, info).to_object(py))
+    }
+
+    /// Advances the environment by one step with one discrete action per agent.
+    ///
+    /// Args:
+    ///     actions: Discrete action indices; length must equal
+    ///         `config.agents.num_agents`.
+    ///
+    /// Returns:
+    ///     Tuple of (observations, rewards, terminated, truncated, info_dict)
+    ///     where `observations` and `rewards` are lists with one entry per
+    ///     agent.
+    fn step_multi(&mut self, py: Python<'_>, actions: Vec<u32>) -> PyResult<PyObject> {
+        let expected = self.config.agents.num_agents as usize;
+        if actions.len() != expected {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "expected {expected} actions, got {}",
+                actions.len()
+            )));
+        }
+        let decoded = self.decode_actions(&actions)?;
+        let result = py.allow_threads(|| self.state.step(&decoded));
+        let obs = self.observations_to_list(py, &result.observations)?;
+        let rewards = PyList::new_bound(py, &result.rewards);
+        let info = self.info_to_dict(py, &result.info)?;
+        Ok((obs, rewards, result.terminated, result.truncated, info).to_object(py))
     }
 
     /// Returns a description of the observation space.
@@ -130,6 +168,41 @@ impl ForgeEnv {
 }
 
 impl ForgeEnv {
+    fn decode_action(&self, action: u32) -> PyResult<Action> {
+        let comm_vocab_size = self.config.agents.comm_vocab_size;
+        let hex_enabled = self.config.world.grid_type == forge_types::config::GridType::Hex;
+        Action::from_discrete_full(
+            action,
+            comm_vocab_size,
+            self.config.drone.enabled,
+            self.config.agri.enabled && self.config.drone.enabled,
+            hex_enabled,
+        )
+        .ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid action: {action}"))
+        })
+    }
+
+    fn decode_actions(&self, actions: &[u32]) -> PyResult<Vec<Action>> {
+        actions
+            .iter()
+            .copied()
+            .map(|a| self.decode_action(a))
+            .collect()
+    }
+
+    fn observations_to_list<'py>(
+        &self,
+        py: Python<'py>,
+        observations: &[Observation],
+    ) -> PyResult<Bound<'py, PyList>> {
+        let list = PyList::empty_bound(py);
+        for obs in observations {
+            list.append(self.obs_to_dict(py, obs)?)?;
+        }
+        Ok(list)
+    }
+
     /// Converts an Observation to a Python dict with numpy arrays.
     ///
     /// The dict contains:

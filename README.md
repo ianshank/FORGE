@@ -9,7 +9,7 @@ Fast Open-source Runtime for Generalist Environments
 A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python
 ([`cloud_agent` PyO3 measurement](benchmarks/baselines/cloud_agent/pyo3_step.json): 189k steps/sec). Process-parallel `ForgeAsyncVecEnv` SPS @ N is a separate Karten-protocol number ([`vecenv_step.json`](benchmarks/baselines/cloud_agent/vecenv_step.json)); CompactReplay golden replay fidelity is 100% on the format-v2 corpus.
 
-See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope boundaries, and Seven Core Invariants.
+See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope boundaries, and Seven Core Invariants, and [`BENCHMARKS.md`](BENCHMARKS.md) for every performance and determinism number with the command that reproduces it.
 
 ## Key Features
 
@@ -18,7 +18,8 @@ See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope bounda
 - **Procedural worlds**: Perlin noise terrain with biome classification, resource distribution, and object placement
 - **Topology-aware worlds**: Configurable square and hex grids via `forge-civ`, with shared line-of-sight, distance, and pathfinding primitives
 - **Rich interaction**: 6 resource types, 9 crafting recipes, combat, push mechanics, day/night cycle
-- **Multi-agent**: PettingZoo Parallel API for cooperative/competitive scenarios with communication
+- **Multi-agent**: PettingZoo Parallel API for cooperative/competitive scenarios with communication — every agent's action is applied through the native `step_multi`, with one observation and reward per agent
+- **Verified ecosystem compliance**: passes the upstream suites themselves, not lookalikes — `gymnasium.utils.env_checker.check_env` and `pettingzoo.test.parallel_api_test` run as a required CI job (`api-compliance`). `gymnasium.make("Forge-v0")` works after an explicit `register_envs()` call. See [`BENCHMARKS.md` §5](BENCHMARKS.md)
 - **Cooperative swarm planning**: CTDE cooperative MCTS (`forge-mangomas::swarm`) that reuses the single-agent PUCT search to produce coordinated joint actions, with a centralized/independent critic and deterministic seeded sampling — a drop-in swap for the no-coordination baseline. See [`docs/architecture.md` §3.8.1](docs/architecture.md)
 - **REST + WASM env API**: drive the simulation over HTTP (`POST /api/env/{reset,step}`, `GET /api/env/render`) or fully in-browser via WebAssembly — the two surfaces mirror the same JSON shapes
 - **Live dashboard + persistent history**: `forge-server` accepts training metrics / decision traces (`POST /api/training-metrics`, `/api/decision-traces`), persists them to JSONL (configurable via `FORGE_SERVER_HISTORY_*`), and serves them back for the dashboard's Training/Runs/Live views via `GET /api/training-metrics/history`, `/api/decision-traces/history`, and `/api/runs` (with `runId`/`limit` filters)
@@ -38,7 +39,7 @@ See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope bounda
 
 ### Prerequisites
 
-- Rust 1.75+ (`rustup`)
+- Rust 1.85+ (`rustup`) — the MSRV declared by `Cargo.toml`'s `rust-version`; CI builds on the `rust-toolchain.toml` pin
 - Python 3.9+
 - [maturin](https://github.com/PyO3/maturin) (`pip install maturin`)
 - numpy (`pip install numpy`)

@@ -36,6 +36,7 @@ _FIDELITY = re.compile(
 
 VECENV_REPORT = REPO_ROOT / "benchmarks" / "baselines" / "cloud_agent" / "vecenv_step.json"
 CLAIM_FILES: tuple[str, ...] = (
+    "BENCHMARKS.md",
     "README.md",
     "docs/CHARTER.md",
     "docs/architecture.md",

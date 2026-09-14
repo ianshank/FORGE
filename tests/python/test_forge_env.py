@@ -170,9 +170,12 @@ def test_deterministic_seed() -> None:
     obs2, _ = env2.reset(seed=123)
     env2.close()
 
+    # Every component is compared as an array: the wrapper now fits observations
+    # to their declared Box spaces, so `position` is a (2,) uint16 array rather
+    # than a Python tuple and `==` on it yields an elementwise array.
     np.testing.assert_array_equal(obs1["grid_view"], obs2["grid_view"])
-    assert obs1["health"] == obs2["health"]
-    assert obs1["position"] == obs2["position"]
+    np.testing.assert_array_equal(obs1["health"], obs2["health"])
+    np.testing.assert_array_equal(obs1["position"], obs2["position"])
 
 
 def test_wrapper_flatten() -> None:
@@ -213,6 +216,7 @@ def test_wrapper_time_limit() -> None:
 def test_multi_agent_env() -> None:
     """ForgeParallelEnv with 2 agents should return per-agent dicts."""
     _skip_if_no_native()
+    pytest.importorskip("pettingzoo")
     from forge_env.pettingzoo_env import ForgeParallelEnv
 
     env = ForgeParallelEnv(n_agents=2)

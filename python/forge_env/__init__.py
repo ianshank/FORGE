@@ -15,9 +15,14 @@ from __future__ import annotations
 
 import logging
 
+from forge_env._version import resolve_version
+
 logger = logging.getLogger(__name__)
 
-__version__ = "0.5.0"
+#: Resolved, never restated. The workspace ``Cargo.toml`` is the single source
+#: of truth; see :mod:`forge_env._version` for the resolution ladder and why a
+#: literal here was a drift hazard.
+__version__: str = resolve_version()
 
 # Native Rust extension (built via maturin)
 try:
@@ -33,6 +38,7 @@ except ImportError:
 # deliberate, not accidental.
 from forge_env.gymnasium_env import ForgeGymnasiumEnv  # noqa: E402
 from forge_env.pettingzoo_env import ForgeParallelEnv  # noqa: E402
+from forge_env.registration import FORGE_ENV_ID, register_envs  # noqa: E402
 from forge_env.utils import benchmark_fps, check_env, make_env, seed_everything  # noqa: E402
 from forge_env.vecenv import ForgeAsyncVecEnv, ForgeSyncVecEnv, make_forge_vec_env  # noqa: E402
 
@@ -71,6 +77,7 @@ else:
     ForgeOpenEnv = _ForgeOpenEnv
 
 __all__ = [
+    "FORGE_ENV_ID",
     "ForgeAsyncVecEnv",
     "ForgeCurriculumCallback",
     "ForgeEnv",
@@ -86,5 +93,6 @@ __all__ = [
     "check_env",
     "make_env",
     "make_forge_vec_env",
+    "register_envs",
     "seed_everything",
 ]

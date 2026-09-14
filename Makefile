@@ -9,7 +9,7 @@ SHELL := /bin/bash
         onnx-check hf-check mlflow-check alloc-audit bench-export mc-runner-smoke machete mutants \
         wasm wasm-check wasm-test deny gitleaks pin-check text-check \
         md-lint ci-parity \
-        py-lint py-test hooks-test \
+        py-lint py-test hooks-test api-compliance pip-install-smoke \
         mc-bot-test dashboard-test dashboard-e2e demo-ui-test web-e2e \
         verify verify-full clean
 
@@ -163,6 +163,41 @@ py-test: ## pytest tests/python, excluding opt-in markers (build the native ext 
 hooks-test: ## Self-tests for .claude/hooks/ (stdlib-only, no project deps; matches CI's python-lint job)
 	python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
 
+api-compliance: ## Upstream Gymnasium env_checker + PettingZoo parallel_api_test, plus the PyO3 determinism gate (matches CI's api-compliance job)
+	@python3 -c "import importlib,sys; \
+missing=[name for name in ('gymnasium','pettingzoo') if importlib.util.find_spec(name) is None]; \
+missing and sys.exit('missing required package(s): ' + ', '.join(missing)); \
+importlib.util.find_spec('forge_env') is not None or sys.exit('forge_env package missing; run: pip install -e .'); \
+import forge_env; \
+getattr(forge_env, 'ForgeEnv', None) is not None or sys.exit('forge_env native extension missing; run: maturin develop')"
+	pytest tests/python/test_api_compliance.py tests/python/test_pettingzoo_env.py tests/python/test_determinism.py -v --no-cov
+
+# DETERMINISM_STEPS overrides the gate's depth without editing anything: the
+# same knob CI uses for a fast PR run and a release soak.
+#   make api-compliance-soak DETERMINISM_STEPS=1000000
+DETERMINISM_STEPS ?=
+
+api-compliance-soak: ## Long determinism soak; set DETERMINISM_STEPS=N (default: the test's own default)
+	@python3 -c "import importlib,sys; \
+importlib.util.find_spec('forge_env') is not None or sys.exit('forge_env package missing; run: pip install -e .'); \
+import forge_env; \
+getattr(forge_env, 'ForgeEnv', None) is not None or sys.exit('forge_env native extension missing; run: maturin develop')"
+	pytest tests/python/test_determinism.py -v --no-cov \
+		$(if $(DETERMINISM_STEPS),--determinism-steps $(DETERMINISM_STEPS),)
+
+pip-install-smoke: ## Build a wheel, install it into a clean venv, import it from outside the tree (matches CI's pip-install-clean job)
+	@set -euo pipefail; \
+	WHEEL_DIR="$$(mktemp -d)"; VENV_DIR="$$(mktemp -d)"; \
+	trap 'rm -rf "$$WHEEL_DIR" "$$VENV_DIR"' EXIT; \
+	maturin build --release -m crates/forge-python/Cargo.toml --out "$$WHEEL_DIR"; \
+	python3 -m venv "$$VENV_DIR"; \
+	"$$VENV_DIR/bin/python" -m pip install --quiet --upgrade pip; \
+	"$$VENV_DIR/bin/python" -m pip install --quiet "$$WHEEL_DIR"/*.whl; \
+	"$$VENV_DIR/bin/python" -m pip check; \
+	cd /tmp && "$$VENV_DIR/bin/python" -c "import forge_env; from forge_env import ForgeEnv; \
+		e = ForgeEnv(); o, _ = e.reset(seed=0); assert 'grid_view' in o; e.close(); \
+		print('wheel import OK, version', forge_env.__version__)"
+
 # ---- Node --------------------------------------------------------------------
 
 mc-bot-test: ## mc-bot: typecheck + Biome lint + node:test + coverage
@@ -193,7 +228,7 @@ verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check text
 # renamed away. `md-lint` and `mc-runner-smoke` joined `verify` because both
 # are seconds-fast and both were CI jobs a contributor could go red on with a
 # fully green local run.
-verify-full: verify coverage hf-check mlflow-check alloc-audit mutants deny gitleaks ## verify, plus the slower/environment-dependent gates (tarpaulin, feature surfaces, allocation audit, mutation testing, cargo-deny, gitleaks). Does NOT include onnx-check (needs ORT_DYLIB_PATH) or the browser E2E targets (dashboard-e2e/demo-ui-test/web-e2e, each needs a Chromium download).
+verify-full: verify coverage hf-check mlflow-check alloc-audit mutants deny gitleaks api-compliance pip-install-smoke ## verify, plus the slower/environment-dependent gates (tarpaulin, feature surfaces, allocation audit, mutation testing, cargo-deny, gitleaks, upstream API compliance, clean wheel install). Does NOT include onnx-check (needs ORT_DYLIB_PATH) or the browser E2E targets (dashboard-e2e/demo-ui-test/web-e2e, each needs a Chromium download).
 	@echo "verify-full: all gates passed."
 
 clean: ## cargo clean (frees significant disk space; safe, fully reproducible)

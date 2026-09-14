@@ -90,6 +90,39 @@ class TestRenderReturnsNoneWithoutRenderMode:
         assert result is None
 
 
+class TestRenderModeValidation:
+    """An unsupported render mode must fail loudly at construction.
+
+    Gymnasium's checker requires `render_mode` to be None or a member of
+    `metadata["render_modes"]`; accepting anything else produces an env that
+    silently renders nothing.
+    """
+
+    def test_rejects_an_unsupported_render_mode(self) -> None:
+        pytest.importorskip("gymnasium")
+        from forge_env import gymnasium_env
+
+        if gymnasium_env._NativeEnv is None:
+            pytest.skip("forge_env running in pure-Python mode (no native backend)")
+
+        with pytest.raises(ValueError, match="Unsupported render_mode"):
+            gymnasium_env.ForgeGymnasiumEnv(render_mode="human")
+
+    def test_accepts_the_declared_modes(self) -> None:
+        pytest.importorskip("gymnasium")
+        from forge_env import gymnasium_env
+
+        if gymnasium_env._NativeEnv is None:
+            pytest.skip("forge_env running in pure-Python mode (no native backend)")
+
+        for mode in gymnasium_env.ForgeGymnasiumEnv.metadata["render_modes"]:
+            env = gymnasium_env.ForgeGymnasiumEnv(render_mode=mode)
+            try:
+                assert env.render_mode == mode
+            finally:
+                env.close()
+
+
 def _make_native_env_mock() -> MagicMock:
     native_env = MagicMock()
     native_env.observation_space = {
@@ -155,7 +188,15 @@ class TestPurePythonBranches:
         native_env.render.assert_called_once()
         env.close()
 
-    def test_unwrapped_returns_native_env(self) -> None:
+    def test_unwrapped_returns_self_and_native_exposes_the_handle(self) -> None:
+        """`unwrapped` follows the Gymnasium contract; `native` is the handle.
+
+        `unwrapped` used to return the native PyO3 object. That breaks the
+        Gymnasium contract — `unwrapped` must yield the base `gymnasium.Env`, so
+        a wrapper chain such as `TimeLimit(env).unwrapped` resolves to an env
+        rather than to a foreign object — and it is asserted by the upstream
+        checker. The native handle moved to the explicit `native` property.
+        """
         pytest.importorskip("gymnasium")
         from forge_env import gymnasium_env
 
@@ -163,5 +204,6 @@ class TestPurePythonBranches:
         with patch.object(gymnasium_env, "_NativeEnv", MagicMock(return_value=native_env)):
             env = gymnasium_env.ForgeGymnasiumEnv()
 
-        assert env.unwrapped is native_env
+        assert env.unwrapped is env
+        assert env.native is native_env
         env.close()

@@ -171,6 +171,110 @@ Completed full implementation of the 5-phase optimization and enterprise hardeni
 
 ---
 
+## [0.6.0] - 2026-09-12
+
+First tagged public release. Promotes the workspace to a versioned release
+channel and closes the three gaps that made the previous ecosystem-compliance
+and reproducibility claims unverifiable.
+
+### RL ecosystem compliance -- now verified, not asserted
+
+- **The wrappers subclass the upstream base classes.** `ForgeGymnasiumEnv` is a
+  real `gymnasium.Env` and `ForgeParallelEnv` a real `pettingzoo.ParallelEnv`.
+  Previously neither did, and `gymnasium.utils.env_checker.check_env` rejects a
+  non-subclass outright -- so the documented "passes the checker" claim had never
+  been true and could not have been.
+- **Every agent's action reaches the simulation.** `ForgeParallelEnv.step`
+  forwarded only `agent_0`'s action to the single-agent native `step` and
+  broadcast one observation to all agents; the other agents' actions were
+  silently discarded. It now drives the native `step_multi`, with one
+  observation and one reward per agent. Regression-pinned by
+  `test_every_agent_action_reaches_the_simulation`.
+- **`n_agents` and the simulation can no longer disagree.** The wrapper built N
+  agent *names* over a simulation still configured for `DEFAULT_NUM_AGENTS` (1).
+  The resolved count is now pushed into the config, and is read from the config
+  when `n_agents` is omitted.
+- **Observations are fitted to their declared spaces.** A declared space is a
+  promise both upstream suites verify with `space.contains(obs)`. The native env
+  returns Python scalars, a position tuple, and a variable-length message list,
+  none of which satisfy a fixed-shape `Box`. New `forge_env.space_builder`
+  performs the coercion once for both wrappers, and builds the spaces from the
+  descriptor Rust derives from `ForgeConfig` rather than restating shapes.
+- **`gymnasium.make("Forge-v0")` is supported** via an explicit
+  `forge_env.register_envs()`. Registration is a function call, never an import
+  side effect (Charter Invariant 1), and a subprocess test pins that.
+- **New `api-compliance` CI job** runs `check_env` and `parallel_api_test`
+  themselves. Verified against Gymnasium 1.3.0 and PettingZoo 1.27.0. New
+  `compliance` extra in `pyproject.toml` carries the version floors.
+
+#### Behaviour change
+
+- `ForgeGymnasiumEnv.unwrapped` now returns the environment itself, per the
+  Gymnasium contract that `unwrapped` yields the base `gymnasium.Env`. It
+  previously returned the native PyO3 handle, which broke wrapper chains such as
+  `TimeLimit(env).unwrapped`. The native handle moved to the explicit `native`
+  property, also added to `ForgeParallelEnv`.
+
+### Determinism, measured across the Python boundary
+
+- **New `tests/python/test_determinism.py`.** Determinism was defended inside
+  Rust by a property test and golden hashes, but never through PyO3 -- the
+  surface every training run consumes. A bug in observation conversion would not
+  have moved a single Rust hash. Two identically seeded envs are driven through
+  one action sequence and compared on `ndarray.tobytes()` and exact reward
+  equality, across episode boundaries.
+- Depth is a knob, not a literal: `--determinism-steps N` or
+  `FORGE_DETERMINISM_STEPS`, defaulting to 10,000. `make api-compliance-soak
+  DETERMINISM_STEPS=1000000` runs the release soak.
+- Sensitivity is itself tested, so the gate cannot decay into a no-op.
+
+### Version single-sourcing
+
+- **`[workspace.package].version` is the single source of truth.**
+  `forge_env.__version__` was a hardcoded `"0.5.0"` whose only test asserted
+  `hasattr`, and the root `forge-integration-tests` package restated its version
+  instead of inheriting. Either could drift from Cargo indefinitely.
+- New `forge_env._version` resolves the version from the co-located Cargo
+  manifest, then from installed distribution metadata, then a sentinel. The
+  manifest deliberately outranks metadata so a stale installed wheel cannot make
+  the package misreport the tree it is running from.
+- New `tests/python/test_version_consistency.py` fails if Cargo, the Python
+  package, `dashboard/package.json`, or its lockfile disagree.
+- Workspace version bumped `0.5.0` -> `0.6.0`. Note this is **not** `0.2.0`: the
+  workspace already shipped `0.5.0`, so a `0.2.0` tag would publish a wheel
+  reporting a lower version than its predecessor and break SemVer for consumers.
+
+### CI and release mechanics
+
+- **`ci.yml` now runs on `v*` tags.** `on.push` declared only `branches`, and
+  GitHub does not run a workflow for tag pushes in that case -- so the `docker`
+  job's `startsWith(github.ref, 'refs/tags/v')` clause was unreachable for the
+  workflow's entire life and no tagged image was ever built. `docs/architecture.md`
+  and `test_docker_server_bind_contract.py` already documented tag builds as
+  working; that is now true.
+- **New `pip-install-clean` job.** Every other Python job uses `maturin develop`,
+  which leaves the source tree on `sys.path` and so never exercises packaging.
+  This builds a real wheel, installs it into an empty environment, imports it
+  from outside the checkout, and asserts the wheel version matches Cargo.
+- New `make` targets `api-compliance`, `api-compliance-soak`, and
+  `pip-install-smoke`, all reachable from `verify-full` and mapped in
+  `check_local_ci_parity.py`.
+
+### Documentation
+
+- **New `BENCHMARKS.md`**: every performance and determinism number is read from
+  a committed report under `benchmarks/baselines/`, with the command that
+  reproduces it and the profile it came from. No placeholder rows; the
+  unmeasured PPO-rollout figure is listed as not taken rather than estimated.
+  Added to `test_throughput_claim.py`'s `CLAIM_FILES`, so its published floor is
+  CI-gated against the committed measurement like the README's.
+- `README.md`: corrected the stale "Rust 1.75+" prerequisite to the declared
+  1.85 MSRV, and linked `BENCHMARKS.md`.
+- `docs/plans/forge_v0_2_0_release_plan.md` records the remaining operator steps
+  (creating `main`, branch protection, tagging) and the decisions behind them.
+
+---
+
 ## [0.5.0] - 2026-09-05
 
 A standards audit found that the controls were configured but could not
