@@ -13,8 +13,8 @@
     "typecheck:e2e": "tsc -p e2e/tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
-    "@types/node": "^26.4.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.5.1",
     "typescript": "^5.4.0"
   }
 }
