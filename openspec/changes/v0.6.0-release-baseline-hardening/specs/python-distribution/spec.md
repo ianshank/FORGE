@@ -38,6 +38,12 @@ smoke test in CI that builds a release wheel using `maturin`, installs it into
 an empty virtual environment outside the source tree, and executes native
 imports and environment resets.
 
+The wheel smoke verification SHALL use `ForgeEnv` as the fast native binding
+smoke path to assert extension loading, basic stepping, and version agreement
+with the workspace. Formal compliance with standard reinforcement learning APIs
+SHALL be governed separately by `ForgeGymnasiumEnv` and `ForgeParallelEnv`
+under the dedicated `api-compliance` CI job.
+
 #### Scenario: Wheel installs and runs in an isolated environment
 - **GIVEN** a freshly built release wheel in `dist/*.whl`
 - **WHEN** the wheel is installed into a new virtual environment without source

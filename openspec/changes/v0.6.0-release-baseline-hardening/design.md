@@ -128,12 +128,14 @@ hardening without scope creep or compromise of technical integrity.
 
 ### Decision 9: L0 Drone Process Constraints vs. Physical Faults
 - **Choice:** Define drone autonomy in orchard_coverage.toml as L0 synthetic
-  coverage governed by deterministic process constraints in
-  crates/forge-core/src/systems.rs.
+  coverage governed by deterministic process constraints and background energy
+  modeling in crates/forge-core/src/systems.rs.
 - **Rationale:** The simulation enforces boundary and energy safety: moves
-  violating geofence_margin fall back to Action::Noop; actions below
-  battery_action_floor fall back to Action::Noop; ascents above max_altitude
-  fall back to Action::Noop. True motor failure, GPS denial, and sensor noise
+  violating geofence_margin fall back to Action::Noop; energy-consuming actions
+  below battery_action_floor fall back to Action::Noop; ascents above
+  max_altitude fall back to Action::Noop. Meanwhile, aerial_drain_rate acts as
+  the background energy consumption model per tick, not a Noop process
+  constraint converter. True motor failure, GPS denial, and sensor noise
   parameters do not exist in the codebase and must not be advertised as
   available features.
 

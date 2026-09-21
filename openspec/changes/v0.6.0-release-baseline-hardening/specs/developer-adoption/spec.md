@@ -14,13 +14,23 @@ checkout, virtual environment creation, and local `maturin` builds. Clear
 instructions SHALL guide the user to compile native extensions and verify
 installation with a single Python command.
 
+`ForgeEnv` SHALL serve as the fast native binding smoke path to verify that
+compiled Rust extensions load and step correctly outside the repository tree.
+Standard reinforcement learning workflows requiring formal Gym/PettingZoo
+interfaces SHALL consume `ForgeGymnasiumEnv` (single-agent) and
+`ForgeParallelEnv` (multi-agent), which define the ecosystem compliance path
+validated by the `api-compliance` CI gate.
+
 #### Scenario: Developer builds and runs from source checkout
 - **GIVEN** a clean clone of the FORGE repository
 - **AND** a Python 3.11 environment with `pip` and `maturin` installed
 - **WHEN** the developer executes `maturin develop` inside `crates/forge-python`
   or runs `pip install -e .`
-- **THEN** `from forge_env import ForgeEnv` SHALL succeed
+- **THEN** `from forge_env import ForgeEnv` SHALL succeed as the native binding
+  smoke check
 - **AND** `ForgeEnv().reset(seed=42)` SHALL return a valid initial observation
+- **AND** `ForgeGymnasiumEnv` and `ForgeParallelEnv` SHALL instantiate for RL
+  training loops with standards-compliant observation and action spaces
 
 #### Scenario: Falsifier: Incomplete installation prevents environment execution
 - **GIVEN** a developer following the documented quickstart commands

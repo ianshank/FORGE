@@ -57,7 +57,8 @@
       to `ForgeConfig` via `crates/forge-types/src/scenario.rs`.
 - [ ] 6.2 Confirm that drone flight safety is implemented strictly as deterministic
       process constraints in `crates/forge-core/src/systems.rs` (geofence margins,
-      battery action floors, altitude caps).
+      battery action floors, altitude caps converting invalid actions to `Noop`)
+      with `aerial_drain_rate` functioning as the background energy model.
 - [ ] 6.3 Document that parameterized motor failure, GPS denial, and sensor noise
       models are non-goals for v0.6.0.
 

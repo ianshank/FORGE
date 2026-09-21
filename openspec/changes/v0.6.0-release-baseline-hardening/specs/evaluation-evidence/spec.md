@@ -34,7 +34,9 @@ The simulation core SHALL produce bit-identical serialization for golden
 episodes. PR CI and weekly scheduled workflows SHALL execute
 `crates/forge-replay/tests/golden_replay.rs` against
 `tests/golden/replays/v2_seed42.json`. Any byte-level divergence in output,
-config hash (`e831b2c1...`), or replay format version SHALL fail the test.
+config hash pinned in `tests/golden/replays/v2_seed42.json`
+(`e831b2c14031f0d10d4ebd3fff8259ec66bcc0727335d183c5b994f73eb27071`),
+or replay format version SHALL fail the test.
 
 #### Scenario: Golden replay bit-identity verification
 - **GIVEN** the canonical replay configuration and random seed 42

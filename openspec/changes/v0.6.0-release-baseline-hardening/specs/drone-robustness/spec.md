@@ -15,6 +15,18 @@ under deterministic process constraints. The simulation engine in
 `crates/forge-core/src/systems.rs` SHALL strictly enforce boundary and energy
 safety rules by converting invalid actions to `Action::Noop`.
 
+In this model:
+- `aerial_drain_rate` governs background energy depletion per tick (the energy
+  model); it depletes battery state deterministically but does NOT convert
+  actions to `Action::Noop`.
+- `battery_action_floor` acts as an active process constraint: when battery
+  level falls below this floor, energy-consuming actions convert to
+  `Action::Noop`.
+- `geofence_margin` acts as a spatial process constraint: locomotion targets
+  outside the allowed margin convert to `Action::Noop`.
+- `max_altitude` acts as an altitude process constraint: climb commands at or
+  above maximum altitude convert to `Action::Noop`.
+
 #### Scenario: Drone attempts locomotion beyond geofence margin
 - **GIVEN** an aerial drone agent at the edge of the configured geofence
 - **WHEN** the agent attempts a movement action that crosses `geofence_margin`
@@ -52,7 +64,8 @@ models SHALL be treated as deferred future work.
   `configs/scenarios/orchard_coverage.toml`
 - **WHEN** configuration parameters are inspected
 - **THEN** only process constraints (`geofence_margin`, `battery_action_floor`,
-  `max_altitude`, `aerial_drain_rate`) SHALL be present
+  `max_altitude`) and the background energy model (`aerial_drain_rate`) SHALL
+  be present
 - **AND** no motor failure or GPS jamming parameters SHALL be claimed as
   implemented
 

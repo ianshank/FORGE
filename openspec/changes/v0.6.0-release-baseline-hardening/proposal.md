@@ -87,8 +87,9 @@ This change establishes the formal release baseline hardening contract:
   mandatory random-init warnings, and operator secret prerequisites for Hugging
   Face and GitHub Pages deployments.
 - `drone-robustness`: Formalize L0 synthetic process constraints (geofence,
-  battery floor, altitude limits) for orchard coverage, explicitly fencing
-  hardware fault injection as non-goals.
+  battery floor, altitude limits converting invalid actions to Noop) alongside
+  the background aerial drain rate energy model for orchard coverage,
+  explicitly fencing hardware fault injection as non-goals.
 - `developer-adoption`: Define reproducible developer adoption journeys
   anchored in local source installation, container workflows, and reproducible
   seed execution.
