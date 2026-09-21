@@ -65,7 +65,8 @@ python -c "from forge_env import ForgeEnv; print('FORGE is ready!')"
 ```
 
 > **Support Matrix & Packaging Notice**:
-> - **CI Validation**: Automated CI runs on Python 3.11 on Linux x86_64 (`ubuntu-latest`). Broader Python runtime versions (3.9–3.13) adhere to syntax and typing targets but are not individually matrix-tested in CI.
+> - **Packaging floor**: `requires-python = ">=3.11"` (CPython 3.9/3.10 are not declared).
+> - **CI-proven**: Automated CI validates **CPython 3.11 on Linux x86_64** (`ubuntu-latest`) only. Other 3.11+ minors or platforms are not claimed as CI-proven.
 > - **Prebuilt Containers**: Prebuilt container images are published to GitHub Container Registry (`ghcr.io/ianshank/forge`).
 > - **Distribution Fences**: Automated PyPI publishing and multi-platform binary wheels (`cibuildwheel` across macOS, Windows, Linux ARM64) are deferred to post-v0.6.0 follow-on releases. v0.6.0 distribution is strictly local maturin builds, source checkouts, and GHCR container images.
 
