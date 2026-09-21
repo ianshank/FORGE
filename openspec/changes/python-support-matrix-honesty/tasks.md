@@ -3,7 +3,7 @@
 ## Spec Writer
 
 - [x] 1. Author proposal.md, design.md, tasks.md, specs/python-distribution/spec.md under openspec/changes/python-support-matrix-honesty/
-- [ ] 2. Run `openspec validate --all --strict` when CLI exists; otherwise note absent and keep package lint-clean manually
+- [ ] 2. Keep package green under existing CI job `openspec-validate` (`npx @fission-ai/openspec validate --all --strict`); do not invent a separate local-only validate path
 
 ## Implementer
 
