@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import logging
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -275,7 +276,13 @@ def main(argv: list[str] | None = None) -> int:
         f"{len(JOB_TO_MAKE_TARGET)} mapped to `make` targets, "
         f"{len(JOB_EXCEPTIONS)} documented as CI-only)"
     )
-    return 0
+
+    # Disposition A: packaging floor must not outrun CI smoke pins.
+    matrix = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "check_python_support_matrix.py")],
+        check=False,
+    )
+    return EXIT_DRIFT if matrix.returncode != 0 else 0
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised via subprocess in tests

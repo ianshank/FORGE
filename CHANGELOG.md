@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - Unreleased
+
+### Changed
+
+- **Python support matrix honesty (Disposition A)**: narrowed `requires-python` from `>=3.9` to `>=3.11` so packaging metadata matches proven CI (CPython 3.11 on Linux x86_64). Declared 3.9/3.10 support is removed. Added a declaration-vs-CI parity gate. cibuildwheel / multi-platform PyPI remain deferred.
+
 ### Release v0.6.0 Baseline Hardening (complete-v0.6.0-gates)
 
 - **OpenSpec validation gate**: added `scripts/openspec` wrapper and `openspec-validate`
