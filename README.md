@@ -40,24 +40,34 @@ See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope bounda
 ### Prerequisites
 
 - Rust 1.85+ (`rustup`) — the MSRV declared by `Cargo.toml`'s `rust-version`; CI builds on the `rust-toolchain.toml` pin
-- Python 3.9+
+- Python 3.9+ (`pyproject.toml` declares `requires-python = ">=3.9"`; automated CI validation is performed exclusively on Python 3.11 on Linux x86_64)
 - [maturin](https://github.com/PyO3/maturin) (`pip install maturin`)
 - numpy (`pip install numpy`)
 
 ### Build and Install
+
+#### Source Installation (Linux x86_64 verified)
 
 ```bash
 # Clone the repository
 git clone https://github.com/ianshank/FORGE.git
 cd FORGE
 
-# Build and install the Python extension
+# Build and install the Python extension in editable mode
+maturin develop
+
+# Alternatively, build and install the release wheel (Linux x86_64 verified via pip-install-clean)
 maturin build --release -m crates/forge-python/Cargo.toml
 pip install target/wheels/*.whl
 
-# Verify installation
+# Verify native extension smoke test
 python -c "from forge_env import ForgeEnv; print('FORGE is ready!')"
 ```
+
+> **Support Matrix & Packaging Notice**:
+> - **CI Validation**: Automated CI runs on Python 3.11 on Linux x86_64 (`ubuntu-latest`). Broader Python runtime versions (3.9–3.13) adhere to syntax and typing targets but are not individually matrix-tested in CI.
+> - **Prebuilt Containers**: Prebuilt container images are published to GitHub Container Registry (`ghcr.io/ianshank/forge`).
+> - **Distribution Fences**: Automated PyPI publishing and multi-platform binary wheels (`cibuildwheel` across macOS, Windows, Linux ARM64) are deferred to post-v0.6.0 follow-on releases. v0.6.0 distribution is strictly local maturin builds, source checkouts, and GHCR container images.
 
 ### Hello World
 
@@ -74,6 +84,30 @@ for _ in range(100):
         obs, info = env.reset(seed=42)
 
 print(env.render())
+```
+
+### Deterministic Seed Verification
+
+FORGE guarantees bit-identical reproduction across identical seeds and action sequences:
+
+```python
+from forge_env import ForgeEnv
+
+env1 = ForgeEnv()
+env2 = ForgeEnv()
+
+obs1, _ = env1.reset(seed=42)
+obs2, _ = env2.reset(seed=42)
+assert obs1["grid_view"].tobytes() == obs2["grid_view"].tobytes()
+
+for _ in range(50):
+    action = 1  # Move Up
+    o1, r1, term1, trunc1, _ = env1.step(action)
+    o2, r2, term2, trunc2, _ = env2.step(action)
+    assert o1["grid_view"].tobytes() == o2["grid_view"].tobytes()
+    assert r1 == r2 and term1 == term2 and trunc1 == trunc2
+
+print("Determinism verified: identical observations and rewards across runs.")
 ```
 
 ### Run the Demo
@@ -737,6 +771,9 @@ trajectory_gzip_level = "default"
   safe for the single-owner runner).
 - DPO / preference trainer consuming teacher decision traces.
 - Complex learned block embeddings (T3 Phase 2 candidate).
+- Multi-platform `cibuildwheel` matrices (macOS, Windows, Linux ARM64) and automated PyPI publishing.
+- Physical hardware fault injection (motor loss, GPS denial/spoofing, sensor noise models); autonomy is L0 process constraints.
+- Product Fence: FORGE is strictly fenced from Distilled_Agents and Neuroharness i2.
 
 See [`docs/next_steps.md`](docs/next_steps.md) for the status table.
 
@@ -788,6 +825,9 @@ cargo fmt --check
 
 # Run benchmarks
 cargo bench -p forge-bench
+
+# Validate OpenSpec changes and specifications
+scripts/openspec validate --strict
 
 # Python tests (requires maturin develop first)
 maturin develop
@@ -849,6 +889,14 @@ The simulation engine uses fixed-point arithmetic (`fixed` crate) for determinis
 | [`scripts/replay_viewer.py`](scripts/replay_viewer.py) | Replay visualization tool |
 | [`scripts/export_edge.py`](scripts/export_edge.py) | Export models for edge deployment |
 | [`scripts/mc_evidential_capture.sh`](scripts/mc_evidential_capture.sh) | Trained-vs-random capture runbook (`--dry-run` is CI; live needs Docker; refuses `evidential_episodes < 3`) |
+| [`scripts/openspec`](scripts/openspec) | OpenSpec CLI executable wrapper for local validation and CI gates |
+
+## Documentation & Runbooks
+
+- [`docs/CHARTER.md`](docs/CHARTER.md) — Durable mission, scope boundaries, and Seven Core Invariants.
+- [`docs/v0.6.0-operator-runbook.md`](docs/v0.6.0-operator-runbook.md) — Operator release runbook for v0.6.0 (Decision D2 branch rename to `main`, GitHub Pages Actions source, `HF_TOKEN`, and `v0.6.0` annotated tag).
+- [`docs/architecture.md`](docs/architecture.md) — Architectural layers, crate topologies, and full CI job inventory.
+- [`BENCHMARKS.md`](BENCHMARKS.md) — Machine-readable performance and determinism evidence.
 
 ## Configuration Files
 
@@ -934,6 +982,13 @@ docker build -f docker/Dockerfile.demo -t forge-demo .
 docker run --rm -p 127.0.0.1:8080:8080 forge-simulation
 ```
 
+**Running prebuilt GHCR container images:**
+
+```bash
+# Run prebuilt FORGE simulation server from GHCR
+docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/ianshank/forge:latest
+```
+
 ## Project Stats
 
 | Area | Details |
@@ -943,7 +998,7 @@ docker run --rm -p 127.0.0.1:8080:8080 forge-simulation
 | Python surface | `forge_env` wrappers plus `forge` training, MangoMAS bridge, traces, and utilities |
 | Python tests | 21 MangoMAS smoke tests, coverage-gated at 85% |
 | Python lint | `ruff` + `mypy --strict` — 86 source files, 0 errors |
-| CI pipeline | `.github/workflows/ci.yml` (blocking: fmt, clippy `-D warnings`, test, alloc-audit, coverage, python-lint, python-test, mc-bot-test, forge-mc-runner-bin; advisory: machete, dashboard-e2e; plus opt-in `workflow_dispatch` jobs) and `security.yml` (advisory: cargo-deny, pip-audit, npm-audit, trivy-fs, CodeQL) |
+| CI pipeline | `.github/workflows/ci.yml` (blocking: fmt, clippy `-D warnings`, test, alloc-audit, coverage, python-lint, python-test, api-compliance, pip-install-clean, openspec-validate, mc-bot-test, forge-mc-runner-bin; advisory: machete, dashboard-e2e; plus opt-in `workflow_dispatch` jobs) and `security.yml` (advisory: cargo-deny, pip-audit, npm-audit, trivy-fs, CodeQL) |
 | Deployment | Docker Compose (3 services), GHCR multi-arch images (amd64 + arm64) |
 | Dependencies | See [`Cargo.toml`](Cargo.toml) for full list |
 

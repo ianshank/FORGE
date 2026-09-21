@@ -86,6 +86,9 @@ the README's "What's still out of scope" list:
   table ships today (`nn.Embedding` over the curated index map in
   `configs/minecraft/block_embeddings.toml`, default-on via `use_raw_block_id`);
   the richer representation is what remains deferred.
+- Multi-platform `cibuildwheel` matrices and automated PyPI publishing (v0.6.0 distribution is source, local maturin, and GHCR images).
+- Physical motor and GPS fault injection models (autonomy vertical is grounded in L0 deterministic process constraints).
+- Fenced from Distilled_Agents and Neuroharness i2.
 
 Gated until evidence exists (not on the README v1.0 list):
 
@@ -248,7 +251,8 @@ that must stay green.
 *Enforced by:* fixed-point physics + `rand_pcg` RNG, and the CI jobs in
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — `fmt`, `clippy`
 (`-D warnings`), `test`, `alloc-audit`, `coverage` (tarpaulin), `python-lint`
-/ `python-test` (ruff + mypy, pytest), `mc-bot-test` (tsc + Biome +
+/ `python-test` (ruff + mypy, pytest), `api-compliance`, `pip-install-clean`,
+`openspec-validate`, `mc-bot-test` (tsc + Biome +
 `node:test`), the `forge-mc-runner-bin` smoke, and `wasm` — which lints and
 runs the crate's tests on the wasm32 target, the one place determinism is
 verified for the environment the browser demo actually ships to. Coverage thresholds and

@@ -12,8 +12,8 @@ and the Seven Core Invariants every change must preserve, and
   for the WASM demo) per workflow. Locally, install `stable` with those components.
   The declared MSRV floor is in `Cargo.toml` (`rust-version`): the workspace needs
   cargo/rustc **≥ 1.85** because of edition-2024 dependencies.
-- **Python** 3.11 recommended (`requires-python >= 3.9`), with `maturin` to build
-  the native `forge_env` extension.
+- **Python** — automated CI validates Python 3.11 on Linux x86_64 (`requires-python >= 3.9`), with `maturin` to build
+  the native `forge_env` extension. Distribution is currently source checkouts, local `maturin` builds, and GHCR container images (`cibuildwheel` and automated PyPI publishing are deferred).
 - **Node** 22+ for `mc-bot/` and `dashboard/`.
 
 ## Build & test (the CI gates, run them locally)
@@ -64,6 +64,9 @@ python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
 
 # Pinned-config consistency (Rust toolchain / ONNX Runtime / LM Studio endpoint, duplicated across workflows/Dockerfiles/Python)
 python3 scripts/check_pinned_config_consistency.py
+
+# OpenSpec strict validation
+scripts/openspec validate --strict
 ```
 
 More task-specific commands (benchmarks, the visualization server, the Minecraft

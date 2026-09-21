@@ -159,5 +159,7 @@ named CI jobs and test artifacts:
 6. `test_evidence_integrity.py` and `docs/results/INDEX.toml`: Verifies that
    all results snapshots are indexed with SHA-256 digests and empty snapshots
    carry valid declarations.
-7. Decision D2 execution: Annotated tag v0.6.0 applied only to main following
+7. `openspec-validate` CI job (`scripts/openspec validate --strict`): Verifies
+   that OpenSpec changes and specs pass strict validation.
+8. Decision D2 execution: Annotated tag v0.6.0 applied only to main following
    successful default branch rename.

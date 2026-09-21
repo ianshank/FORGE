@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# OpenSpec CLI executable wrapper for local execution and CI gates.
+# Normalizes `openspec validate --strict` without arguments to default to `--all`.
+set -euo pipefail
+
+has_validate=false
+has_strict=false
+has_target=false
+
+for arg in "$@"; do
+    case "$arg" in
+        validate) has_validate=true ;;
+        --strict) has_strict=true ;;
+        --all|--changes|--specs) has_target=true ;;
+        -*) ;;
+        *)
+            # Positional argument (change or spec item name)
+            if [ "$has_validate" = true ]; then
+                has_target=true
+            fi
+            ;;
+    esac
+done
+
+if [ "$has_validate" = true ] && [ "$has_target" = false ]; then
+    exec npx --yes @fission-ai/openspec "$@" --all
+else
+    exec npx --yes @fission-ai/openspec "$@"
+fi

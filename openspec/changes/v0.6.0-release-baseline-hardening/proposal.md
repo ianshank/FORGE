@@ -99,11 +99,11 @@ This change establishes the formal release baseline hardening contract:
 - Documentation: README.md, docs/CHARTER.md, docs/architecture.md,
   BENCHMARKS.md, and docs/results/ maintain exact agreement with committed
   artifacts and CI gates.
-- Workflows: ci.yml (api-compliance, pip-install-clean, python-test),
+- Workflows: ci.yml (api-compliance, pip-install-clean, openspec-validate, python-test),
   golden-replay.yml, and security.yml serve as definitive gating mechanisms.
 - Verification gates: test_version_consistency.py, test_api_compliance.py,
-  test_throughput_claim.py, test_evidence_integrity.py, and
-  test_charter_alignment.py enforce repository invariants.
+  test_throughput_claim.py, test_evidence_integrity.py,
+  test_charter_alignment.py, and test_openspec_validation.py enforce repository invariants.
 - Operator actions: Execution of branch rename D2, configuration of GitHub
   Pages source and HF_TOKEN, and final release tagging.
 

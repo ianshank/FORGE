@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Release v0.6.0 Baseline Hardening (complete-v0.6.0-gates)
+
+- **OpenSpec validation gate**: added `scripts/openspec` wrapper and `openspec-validate`
+  CI/local gate running `openspec validate --all --strict`, paired with unit tests in
+  `tests/python/test_openspec_validation.py`.
+- **Python distribution & support matrix honesty**: documented that automated CI matrix tests
+  specifically target Python 3.11 on Linux x86_64 (`ubuntu-latest`), while `pyproject.toml` declares
+  `requires-python = ">=3.9"`. Fenced automated PyPI publishing and multi-platform `cibuildwheel` matrices
+  as post-v0.6.0 follow-on changes; distribution is source builds, local `maturin develop`, and GHCR images.
+- **RL API conformance regression gates**: verified upstream `gymnasium.utils.env_checker.check_env` and
+  `pettingzoo.test.parallel_api_test` in `api-compliance` CI job.
+- **Evaluation evidence & benchmark integrity**: enforced 189k steps/second baseline ceiling,
+  CompactReplay v2 golden replay bit-identity (`tests/golden/replays/v2_seed42.json`), and SHA-256
+  checksums in `docs/results/INDEX.toml`.
+- **Operator release runbook**: created `docs/v0.6.0-operator-runbook.md` documenting manual operator
+  prerequisites (Decision D2 branch rename to `main`, GitHub Pages source, write-scoped `HF_TOKEN`, and `v0.6.0` annotated tag).
+
 ### Graded-loop hygiene
 
 - **CompactReplay hash fail-closed**: `hash_config` never returns an empty
