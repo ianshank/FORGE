@@ -282,10 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         [sys.executable, str(REPO_ROOT / "scripts" / "check_python_support_matrix.py")],
         check=False,
     )
-    if matrix.returncode != 0:
-        return EXIT_DRIFT if "EXIT_DRIFT" in globals() else 1
-
-    return 0
+    return EXIT_DRIFT if matrix.returncode != 0 else 0
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised via subprocess in tests
