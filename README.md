@@ -4,7 +4,7 @@ Fast Open-source Runtime for Generalist Environments
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 
 A high-performance simulation platform for training and evaluating AI agents, built in Rust with first-class Python and WebAssembly bindings. FORGE provides procedurally generated grid worlds with crafting, combat, multi-agent cooperation, and a composable task curriculum — all running at 130,000+ steps/second from Python
 ([`cloud_agent` PyO3 measurement](benchmarks/baselines/cloud_agent/pyo3_step.json): 189k steps/sec). Process-parallel `ForgeAsyncVecEnv` SPS @ N is a separate Karten-protocol number ([`vecenv_step.json`](benchmarks/baselines/cloud_agent/vecenv_step.json)); CompactReplay golden replay fidelity is 100% on the format-v2 corpus.
@@ -40,7 +40,7 @@ See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope bounda
 ### Prerequisites
 
 - Rust 1.85+ (`rustup`) — the MSRV declared by `Cargo.toml`'s `rust-version`; CI builds on the `rust-toolchain.toml` pin
-- Python 3.9+ (`pyproject.toml` declares `requires-python = ">=3.9"`; automated CI validation is performed exclusively on Python 3.11 on Linux x86_64)
+- Python 3.11+ (`pyproject.toml` declares `requires-python = ">=3.11"`; automated CI validation is performed exclusively on Python 3.11 on Linux x86_64)
 - [maturin](https://github.com/PyO3/maturin) (`pip install maturin`)
 - numpy (`pip install numpy`)
 

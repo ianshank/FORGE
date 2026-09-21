@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - Unreleased
+
+### Changed
+
+- **Python support matrix honesty (Disposition A)**: narrowed `requires-python` from `>=3.9` to `>=3.11` so packaging metadata matches proven CI (CPython 3.11 on Linux x86_64). Declared 3.9/3.10 support is removed. Added a declaration-vs-CI parity gate. cibuildwheel / multi-platform PyPI remain deferred.
+
+
 ### Release v0.6.0 Baseline Hardening (complete-v0.6.0-gates)
 
 - **OpenSpec validation gate**: added `scripts/openspec` wrapper and `openspec-validate`
@@ -16,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/python/test_openspec_validation.py`.
 - **Python distribution & support matrix honesty**: documented that automated CI matrix tests
   specifically target Python 3.11 on Linux x86_64 (`ubuntu-latest`), while `pyproject.toml` declares
-  `requires-python = ">=3.9"`. Fenced automated PyPI publishing and multi-platform `cibuildwheel` matrices
+  `requires-python = ">=3.11"`. Fenced automated PyPI publishing and multi-platform `cibuildwheel` matrices
   as post-v0.6.0 follow-on changes; distribution is source builds, local `maturin develop`, and GHCR images.
 - **RL API conformance regression gates**: verified upstream `gymnasium.utils.env_checker.check_env` and
   `pettingzoo.test.parallel_api_test` in `api-compliance` CI job.

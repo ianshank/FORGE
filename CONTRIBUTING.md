@@ -12,7 +12,7 @@ and the Seven Core Invariants every change must preserve, and
   for the WASM demo) per workflow. Locally, install `stable` with those components.
   The declared MSRV floor is in `Cargo.toml` (`rust-version`): the workspace needs
   cargo/rustc **≥ 1.85** because of edition-2024 dependencies.
-- **Python** — automated CI validates Python 3.11 on Linux x86_64 (`requires-python >= 3.9`), with `maturin` to build
+- **Python** — automated CI validates Python 3.11 on Linux x86_64 (`requires-python >= 3.11`), with `maturin` to build
   the native `forge_env` extension. Distribution is currently source checkouts, local `maturin` builds, and GHCR container images (`cibuildwheel` and automated PyPI publishing are deferred).
 - **Node** 22+ for `mc-bot/` and `dashboard/`.
 

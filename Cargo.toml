@@ -98,7 +98,7 @@ path = "tests/rust/integration_agent_skills_deterministic.rs"
 # `version.workspace = true`, the Python package resolves it through
 # `forge_env._version`, and `tests/python/test_version_consistency.py` fails if
 # any other surface drifts from it.
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 authors = ["Ian Shank"]
 license = "Apache-2.0"

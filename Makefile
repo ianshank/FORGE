@@ -145,6 +145,7 @@ text-check: ## Reject NUL bytes in text files and line-ending drift (both have b
 
 ci-parity: ## Assert every CI job has a `make` target here, or a stated reason it cannot
 	python3 scripts/check_local_ci_parity.py
+	python3 scripts/check_python_support_matrix.py
 
 openspec-validate: ## Validate OpenSpec changes and specs with strict checking (matches CI's openspec-validate job)
 	scripts/openspec validate --strict
