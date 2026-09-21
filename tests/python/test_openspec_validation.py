@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CHANGE_DIR = REPO_ROOT / "openspec" / "changes" / "v0.6.0-release-baseline-hardening"
+CHANGE_DIR = REPO_ROOT / "openspec" / "changes" / "archive" / "v0.6.0-release-baseline-hardening"
 
 REQUIRED_SPECS = (
     "python-distribution",
