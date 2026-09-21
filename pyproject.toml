@@ -23,7 +23,7 @@ classifiers = [
 sb3        = ["stable-baselines3>=2.0", "torch>=2.0"]
 cleanrl    = ["torch>=2.0"]
 wandb      = ["wandb>=0.16"]
-mlflow     = ["mlflow>=3.15.1"]
+mlflow     = ["mlflow>=3.16.1"]
 mousedroid = ["huggingface-hub>=1.28.0", "torch>=2.0"]
 # LM Studio offline-teacher pipeline (cognitive providers + structured BC):
 #   - openai SDK    -> sync/async OpenAI-compatible HTTP client
@@ -57,7 +57,7 @@ all        = [
     "stable-baselines3>=2.0",
     "torch>=2.0",
     "wandb>=0.16",
-    "mlflow>=3.15.1",
+    "mlflow>=3.16.1",
     "huggingface-hub>=1.28.0",
     "openai>=1.0,<2.0",
     "jsonschema>=4.0,<5.0",
