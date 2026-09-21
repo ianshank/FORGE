@@ -50,7 +50,7 @@ compliance = ["gymnasium>=1.0", "pettingzoo>=1.24"]
 #                        materializes real files (0.20-0.22 symlink >5MB
 #                        files into the HF cache, which breaks bundles
 #                        mounted into the runner container)
-minecraft  = ["torch>=2.0", "onnx>=1.16", "onnxruntime>=1.17", "huggingface-hub>=1.28.0"]
+minecraft  = ["torch>=2.0", "onnx>=1.23.0", "onnxruntime>=1.17", "huggingface-hub>=1.28.0"]
 all        = [
     "gymnasium>=1.0",
     "pettingzoo>=1.24",
@@ -61,7 +61,7 @@ all        = [
     "huggingface-hub>=1.28.0",
     "openai>=1.0,<2.0",
     "jsonschema>=4.0,<5.0",
-    "onnx>=1.16",
+    "onnx>=1.23.0",
     "onnxruntime>=1.17",
 ]
 
