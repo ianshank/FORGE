@@ -68,12 +68,22 @@
       `test_version_consistency.py`, `test_api_compliance.py`,
       `test_throughput_claim.py`, `test_evidence_integrity.py`, and
       `test_charter_alignment.py`.
-- [ ] 7.2 Operator action: Execute Decision D2 by renaming default branch to
-      `main` using the GitHub API:
-      `gh api --method POST "repos/ianshank/FORGE/branches/claude%2Fplan-forge-environment-htAoK/rename" -f new_name=main`.
-- [ ] 7.3 Operator action: Configure GitHub Pages source to "GitHub Actions" and
-      add write-scoped `HF_TOKEN` repository secret (or document as deferred).
-- [ ] 7.4 Operator action: Create and push annotated tag `v0.6.0` from `main`
-      only after all gates are confirmed green.
-- [ ] 7.5 Archive this change package under `openspec/changes/archive/` and promote
-      spec deltas to canonical specifications.
+- [x] 7.2 Operator action: Execute Decision D2 by renaming default branch to
+      `main` using the GitHub API.
+      Evidence: default branch is `main`; tip
+      `fd9648008af47ef3acdff43f5c52ef6b232e51fc`.
+- [x] 7.3 Operator action: Configure GitHub Pages source to "GitHub Actions" and
+      add write-scoped `HF_TOKEN` repository secret.
+      Evidence: Pages `build_type=workflow`; site https://ianshank.github.io/FORGE/ ;
+      Pages SUCCESS run 35661478769; `HF_TOKEN` secret set; HF Space SUCCESS run
+      35661697902.
+- [x] 7.4 Operator action: Create and push annotated tag `v0.6.0` from `main`
+      after gates were green.
+      Evidence: annotated tag `v0.6.0` on `fd964800` (tag object
+      `6bbafb5823148adabb486d7a978cd38f5edf51bb`); release
+      https://github.com/ianshank/FORGE/releases/tag/v0.6.0 .
+- [x] 7.5 Archive this change package under
+      `openspec/changes/archive/v0.6.0-release-baseline-hardening/`.
+      Note: repository root `openspec/specs/` does not exist yet; promoting
+      capability deltas into a canonical `openspec/specs/` tree is deferred and
+      must not invent that directory in this hygiene change.
