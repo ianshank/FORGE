@@ -14,6 +14,8 @@
 - `make wasm` / `make wasm-test` — Build the browser bundle into `web/pkg/` via `scripts/build_wasm_demo.sh`, and run the crate's `#[wasm_bindgen_test]`s in a real wasm runtime via `scripts/wasm_test_node.sh`. Both need `wasm-pack` (`scripts/install_wasm_pack.sh`); `wasm-test` is deliberately **not** in `make verify` because it requires a network-installed binary
 - `make web-e2e` — `node:test` unit coverage for `web/app.js`'s pure helpers (`tests/web-e2e/unit/`) plus Playwright driving the real demo page in Chromium (`tests/web-e2e/e2e/specs/`) against a fresh wasm-pack build. CI: the non-blocking `wasm-e2e` job. Needs `wasm-pack` + a Chromium download, so also **not** in `make verify`
 - `python -m pytest tests/python/ -v` — Run Python tests using the local environment (e.g. Python 3.11.9) to bind core dependencies like `onnx`, `torch` and `onnxruntime` (requires `maturin develop` first)
+- `scripts/openspec validate --strict` — Validate OpenSpec change proposals and specifications strictly (CI: `openspec-validate` job)
+- `docs/v0.6.0-operator-runbook.md` — Release operator runbook for Decision D2 default branch rename, Pages/HF_TOKEN setup, and `v0.6.0` annotated tag
 - `cd mc-bot && npm test` — Run Node-side mc-bot unit/integration/security tests in strict TS using `tsx --test`
 - `cd mc-bot && npm run lint` — Biome lint + format check on the TypeScript source
 - `cargo run -p forge-mc-runner -- --dry-run --episodes 1` — Smoke-test the runner binary without docker / Minecraft (CI: `forge-mc-runner-bin` job)

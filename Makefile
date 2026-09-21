@@ -8,7 +8,7 @@ SHELL := /bin/bash
 .PHONY: help build fmt fmt-check lint test coverage \
         onnx-check hf-check mlflow-check alloc-audit bench-export mc-runner-smoke machete mutants \
         wasm wasm-check wasm-test deny gitleaks pin-check text-check \
-        md-lint ci-parity \
+        md-lint ci-parity openspec-validate \
         py-lint py-test hooks-test api-compliance pip-install-smoke \
         mc-bot-test dashboard-test dashboard-e2e demo-ui-test web-e2e \
         verify verify-full clean
@@ -146,6 +146,9 @@ text-check: ## Reject NUL bytes in text files and line-ending drift (both have b
 ci-parity: ## Assert every CI job has a `make` target here, or a stated reason it cannot
 	python3 scripts/check_local_ci_parity.py
 
+openspec-validate: ## Validate OpenSpec changes and specs with strict checking (matches CI's openspec-validate job)
+	scripts/openspec validate --strict
+
 md-lint: ## Markdown lint with the version ci.yml pins (matches CI's markdownlint job)
 	@test -n "$(MARKDOWNLINT_CLI2_VERSION)" || \
 		{ echo "could not read MARKDOWNLINT_CLI2_VERSION from .github/workflows/ci.yml"; exit 1; }
@@ -220,7 +223,7 @@ web-e2e: ## WASM demo: unit + Playwright E2E against the real web/ demo (needs w
 
 # ---- Aggregate -----------------------------------------------------------
 
-verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check text-check ci-parity md-lint mc-runner-smoke mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/hf-check/mlflow-check/alloc-audit/wasm-test/deny/gitleaks/E2E -- see verify-full)
+verify: fmt-check lint test wasm-check py-lint py-test hooks-test pin-check text-check ci-parity md-lint openspec-validate mc-runner-smoke mc-bot-test dashboard-test ## Run the standard pre-PR gate sequence (excludes coverage/onnx-check/hf-check/mlflow-check/alloc-audit/wasm-test/deny/gitleaks/E2E -- see verify-full)
 	@echo "verify: all standard gates passed."
 
 # `ci-parity` is what stops this list silently falling behind ci.yml: it fails

@@ -2661,13 +2661,13 @@ The CI pipeline runs on every push and pull request targeting `main`, `master`, 
 
 | Job (`ci.yml` unless noted) | Gate type | Trigger |
 |---|---|---|
-| `fmt`, `clippy`, `test`, `alloc-audit`, `coverage`, `python-lint`, `python-test`, `mc-bot-test`, `forge-mc-runner-bin` | **Blocking** (CHARTER.md Invariant 6) | push / PR |
+| `fmt`, `clippy`, `test`, `alloc-audit`, `coverage`, `python-lint`, `python-test`, `api-compliance`, `pip-install-clean`, `openspec-validate`, `mc-bot-test`, `forge-mc-runner-bin` | **Blocking** (CHARTER.md Invariant 6) | push / PR |
 | `wasm` | **Blocking** | push / PR — clippy + `wasm-pack test --node` for `crates/forge-wasm` on `wasm32-unknown-unknown` (added 2026-08; previously **zero** PR-time coverage — the target was built only by `gh-pages.yml` / `hf-space.yml` on default-branch pushes) |
 | `onnx-features` | **Blocking** | push / PR — builds/tests the `onnx`/`onnx-reload`/`mc-live-bundled` surface (added 2026-08; previously **zero** CI coverage) |
 | `machete`, `dashboard-e2e`, `wasm-e2e` | Advisory / non-required | push / PR — `wasm-e2e` drives the real `web/` demo in Chromium against the wasm-pack build |
 | `markdownlint`, `bench`, `hf-export`, `demo-ui`, `dashboard`, `python-test-fast` | Runs on push/PR; not in CHARTER.md's blocking list but not marked advisory either — check branch protection for current required-check status | push / PR |
 | `python-test-lmstudio`, `python-test-minecraft-e2e`, `python-test-minecraft-real-run` | Opt-in | `workflow_dispatch` only |
-| `docker` | Build + push to GHCR | default branch / version tags only, `needs: [test, clippy, fmt, python-test, api-compliance, pip-install-clean]` |
+| `docker` | Build + push to GHCR | default branch / version tags only, `needs: [test, clippy, fmt, python-test, api-compliance, pip-install-clean, openspec-validate]` |
 | `cargo-deny`, `gitleaks`, `pip-audit` (`security.yml`) | **Blocking** | push / PR / weekly cron |
 | `npm-audit` (×2), `trivy-fs` (`security.yml`) | Advisory (report-only, `\|\| true`) | push / PR / weekly cron |
 | `codeql` (`security.yml`) | Opt-in | gated on repo var `ENABLE_CODEQL` |

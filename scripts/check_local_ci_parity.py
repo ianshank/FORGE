@@ -75,6 +75,7 @@ JOB_TO_MAKE_TARGET: dict[str, str] = {
     "machete": "machete",
     "markdownlint": "md-lint",
     "mutants": "mutants",
+    "openspec-validate": "openspec-validate",
 }
 
 #: CI job id -> why no ``make`` target exists for it.
@@ -128,6 +129,7 @@ VERIFY_REQUIRED_JOBS: frozenset[str] = frozenset(
         # Seconds-fast, and both were jobs a contributor could go red on after
         # a fully green `make verify`.
         "markdownlint",
+        "openspec-validate",
         "forge-mc-runner-bin",
     }
 )

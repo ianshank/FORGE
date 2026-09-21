@@ -15,7 +15,7 @@ disagree, they've drifted and the drift itself is worth flagging.
 
 1. Ask which mode if it isn't already clear from the request:
    - `make verify` (default) — fmt-check, clippy, cargo test, ruff, mypy,
-     pytest, mc-bot, dashboard. This is what CI's blocking jobs run.
+     pytest, openspec-validate, mc-bot, dashboard. This is what CI's blocking jobs run.
    - `make verify-full` — everything in `verify`, plus `cargo tarpaulin`
      (85% floor), `cargo deny check`, and `gitleaks`. Slower; run before
      a PR that changes dependencies or when coverage regressions matter.

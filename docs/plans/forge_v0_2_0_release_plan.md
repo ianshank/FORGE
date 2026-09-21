@@ -344,6 +344,7 @@ Python Tests (maturin)
 Python Tests (no native)
 RL Ecosystem API Compliance (Gymnasium + PettingZoo)
 Clean Wheel Install Smoke
+OpenSpec Specification & Change Validation
 mc-bot Node Tests + Biome Lint
 forge-mc-runner Binary Smoke
 WASM Target Check + Node Runtime Tests
