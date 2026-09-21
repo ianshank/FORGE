@@ -74,14 +74,14 @@
       `fd9648008af47ef3acdff43f5c52ef6b232e51fc`.
 - [x] 7.3 Operator action: Configure GitHub Pages source to "GitHub Actions" and
       add write-scoped `HF_TOKEN` repository secret.
-      Evidence: Pages `build_type=workflow`; site https://ianshank.github.io/FORGE/ ;
+      Evidence: Pages `build_type=workflow`; site <https://ianshank.github.io/FORGE/> ;
       Pages SUCCESS run 35661478769; `HF_TOKEN` secret set; HF Space SUCCESS run
       35661697902.
 - [x] 7.4 Operator action: Create and push annotated tag `v0.6.0` from `main`
       after gates were green.
       Evidence: annotated tag `v0.6.0` on `fd964800` (tag object
       `6bbafb5823148adabb486d7a978cd38f5edf51bb`); release
-      https://github.com/ianshank/FORGE/releases/tag/v0.6.0 .
+      <https://github.com/ianshank/FORGE/releases/tag/v0.6.0> .
 - [x] 7.5 Archive this change package under
       `openspec/changes/archive/v0.6.0-release-baseline-hardening/`.
       Note: repository root `openspec/specs/` does not exist yet; promoting
