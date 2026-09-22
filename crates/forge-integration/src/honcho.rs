@@ -74,7 +74,12 @@ impl HonchoExporter {
                     "data": ev
                 }))
             }
-            JournalEntry::ActionProposal { agent_id, action_type, tick, .. } => {
+            JournalEntry::ActionProposal {
+                agent_id,
+                action_type,
+                tick,
+                ..
+            } => {
                 // Drop payload (which might contain Q-values or raw internal vectors)
                 Some(serde_json::json!({
                     "type": "action_proposal",
@@ -83,19 +88,17 @@ impl HonchoExporter {
                     "tick": tick
                 }))
             }
-            JournalEntry::TickBoundary(tick) => {
-                Some(serde_json::json!({
-                    "type": "tick_boundary",
-                    "tick": tick
-                }))
-            }
+            JournalEntry::TickBoundary(tick) => Some(serde_json::json!({
+                "type": "tick_boundary",
+                "tick": tick
+            })),
         }
     }
 
     /// Sends the filtered payload to Honcho.
     fn export_to_honcho(&self, client: &ureq::Agent, payload: &serde_json::Value) {
         let endpoint = format!("{}/v1/memory/ingest", self.config.endpoint);
-        
+
         match client.post(&endpoint).send_json(payload) {
             Ok(_) => {
                 // Successfully synced

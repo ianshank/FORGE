@@ -17,9 +17,9 @@ use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
 use tracing::{info, instrument};
 
+use crate::events::EventLog;
 use crate::physics::PhysicsScratch;
 use crate::rng::ForgeRng;
-use crate::events::EventLog;
 
 /// The complete state of a FORGE simulation instance.
 #[derive(Debug, Clone)]

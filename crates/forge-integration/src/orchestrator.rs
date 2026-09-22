@@ -154,7 +154,7 @@ impl IntegrationOrchestrator {
     }
 
     /// Runs an episode with external controllers and an authoritative journal.
-    /// 
+    ///
     /// Drives the simulation loop, extracting events from `WorldState` and
     /// writing them alongside tick boundaries to the `AppendOnlyJournal`.
     #[instrument(skip(self, state, agents, journal))]
@@ -190,8 +190,12 @@ impl IntegrationOrchestrator {
 
                 let comm_vocab = state.config.agents.comm_vocab_size;
                 let drone_enabled = state.config.drone.enabled;
-                let action = forge_types::Action::from_discrete(response.action_id, comm_vocab, drone_enabled)
-                    .unwrap_or(forge_types::Action::Noop);
+                let action = forge_types::Action::from_discrete(
+                    response.action_id,
+                    comm_vocab,
+                    drone_enabled,
+                )
+                .unwrap_or(forge_types::Action::Noop);
                 actions.push(action);
             }
 
@@ -208,7 +212,7 @@ impl IntegrationOrchestrator {
 
             // Flush events out of the log to prevent unbounded growth?
             // Actually EventLog is bounded, but we can clear it or rely on max_events.
-            
+
             // Write tick boundary
             journal.append(&JournalEntry::TickBoundary(state.tick))?;
         }

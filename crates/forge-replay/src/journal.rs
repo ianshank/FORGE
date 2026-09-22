@@ -39,10 +39,7 @@ impl AppendOnlyJournal {
     /// Creates or opens an append-only journal at the specified path.
     #[instrument(level = "debug", skip(path))]
     pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
 
         Ok(Self {
             writer: BufWriter::new(file),
