@@ -21,6 +21,12 @@
 //! the lesson from Data's emotion chip: integration requires integrated training.
 
 pub mod config;
+/// External controller harness for ADK and DeerFlow.
+pub mod controller;
+/// DeerFlow sandbox super-agent harness.
+pub mod deerflow;
+/// Honcho memory mirror export service.
+pub mod honcho;
 pub mod metrics;
 pub mod orchestrator;
 pub mod prelude;

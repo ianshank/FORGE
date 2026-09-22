@@ -152,6 +152,70 @@ impl IntegrationOrchestrator {
     pub fn config(&self) -> &IntegrationConfig {
         &self.config
     }
+
+    /// Runs an episode with external controllers and an authoritative journal.
+    /// 
+    /// Drives the simulation loop, extracting events from `WorldState` and
+    /// writing them alongside tick boundaries to the `AppendOnlyJournal`.
+    #[instrument(skip(self, state, agents, journal))]
+    pub fn run_episode_with_journal(
+        &mut self,
+        state: &mut forge_core::WorldState,
+        agents: &mut [Box<dyn forge_types::agent_interface::AgentInterface>],
+        journal: &mut forge_replay::journal::AppendOnlyJournal,
+        max_steps: u64,
+    ) -> std::io::Result<()> {
+        use forge_replay::journal::JournalEntry;
+
+        // Reset all agents at episode start
+        for agent in agents.iter_mut() {
+            agent.reset();
+        }
+
+        let initial_result = state.reset(Some(state.config.world.seed));
+        let mut current_obs = initial_result.observations;
+
+        for _ in 0..max_steps {
+            if state.terminated || state.truncated {
+                break;
+            }
+
+            let mut actions = Vec::with_capacity(agents.len());
+            for (i, agent) in agents.iter_mut().enumerate() {
+                let response = if i < current_obs.len() {
+                    agent.select_action(&current_obs[i], i)
+                } else {
+                    forge_types::agent_interface::AgentResponse::from_action(0)
+                };
+
+                let comm_vocab = state.config.agents.comm_vocab_size;
+                let drone_enabled = state.config.drone.enabled;
+                let action = forge_types::Action::from_discrete(response.action_id, comm_vocab, drone_enabled)
+                    .unwrap_or(forge_types::Action::Noop);
+                actions.push(action);
+            }
+
+            // Step the simulation
+            let result = state.step(&actions);
+            current_obs = result.observations;
+            self.tick();
+
+            // Extract events generated during this tick
+            let events_at_tick = state.events.events_at_tick(state.tick);
+            for ev in events_at_tick {
+                journal.append(&JournalEntry::Event(ev.clone()))?;
+            }
+
+            // Flush events out of the log to prevent unbounded growth?
+            // Actually EventLog is bounded, but we can clear it or rely on max_events.
+            
+            // Write tick boundary
+            journal.append(&JournalEntry::TickBoundary(state.tick))?;
+        }
+
+        journal.flush()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

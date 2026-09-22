@@ -63,6 +63,10 @@ pub struct ForgeConfig {
     pub edge: EdgeConfig,
     /// Hierarchical skill catalog over primitive actions (opt-in).
     pub skills: SkillsConfig,
+    /// External orchestration and controller parameters.
+    pub orchestration: OrchestrationConfig,
+    /// Honcho memory mirror parameters.
+    pub honcho: HonchoConfig,
 }
 
 /// Grid topology type for the simulation world.
@@ -663,6 +667,62 @@ impl Default for EdgeConfig {
     }
 }
 
+/// External orchestration configuration (e.g., ADK, DeerFlow).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct OrchestrationConfig {
+    /// Whether external orchestration is enabled.
+    pub enabled: bool,
+    /// Controller type ("adk", "deerflow", or "none").
+    pub controller_type: String,
+    /// Whether DeerFlow sandbox is enforced.
+    pub deerflow_sandboxed: bool,
+    /// Artifact directory for DeerFlow execution.
+    pub artifact_dir: String,
+    /// Endpoint for external ADK requests.
+    pub endpoint: String,
+    /// Timeout for external controller actions in ms.
+    pub timeout_ms: u32,
+}
+
+impl Default for OrchestrationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            controller_type: "none".to_string(),
+            deerflow_sandboxed: false,
+            artifact_dir: "/tmp/forge-artifacts".to_string(),
+            endpoint: "http://localhost:8080".to_string(),
+            timeout_ms: 5000,
+        }
+    }
+}
+
+/// Honcho memory mirror configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HonchoConfig {
+    /// Whether Honcho mirroring is enabled.
+    pub enabled: bool,
+    /// Endpoint for Honcho ingest API.
+    pub endpoint: String,
+    /// Whether to strip latent states (must be true for safe execution).
+    pub strip_latent_state: bool,
+    /// Sync interval in ticks.
+    pub sync_interval_ticks: u32,
+}
+
+impl Default for HonchoConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: "http://localhost:9090".to_string(),
+            strip_latent_state: true,
+            sync_interval_ticks: 100,
+        }
+    }
+}
+
 /// Environment variable prefix for config overrides.
 const ENV_PREFIX: &str = "FORGE_";
 
@@ -851,6 +911,32 @@ impl ForgeConfig {
                 debug!(key = "FORGE_SKILLS_DEFAULT_SKILL", value = %trimmed, "applying env override");
                 self.skills.default_skill = trimmed.to_string();
             }
+        }
+
+        // Orchestration overrides
+        env_override!(orchestration.enabled, bool);
+        env_override!(orchestration.deerflow_sandboxed, bool);
+        env_override!(orchestration.timeout_ms, u32);
+        if let Ok(val) = std::env::var("FORGE_ORCHESTRATION_CONTROLLER_TYPE") {
+            debug!(key = "FORGE_ORCHESTRATION_CONTROLLER_TYPE", value = %val, "applying env override");
+            self.orchestration.controller_type = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_ORCHESTRATION_ARTIFACT_DIR") {
+            debug!(key = "FORGE_ORCHESTRATION_ARTIFACT_DIR", value = %val, "applying env override");
+            self.orchestration.artifact_dir = val;
+        }
+        if let Ok(val) = std::env::var("FORGE_ORCHESTRATION_ENDPOINT") {
+            debug!(key = "FORGE_ORCHESTRATION_ENDPOINT", value = %val, "applying env override");
+            self.orchestration.endpoint = val;
+        }
+
+        // Honcho overrides
+        env_override!(honcho.enabled, bool);
+        env_override!(honcho.strip_latent_state, bool);
+        env_override!(honcho.sync_interval_ticks, u32);
+        if let Ok(val) = std::env::var("FORGE_HONCHO_ENDPOINT") {
+            debug!(key = "FORGE_HONCHO_ENDPOINT", value = %val, "applying env override");
+            self.honcho.endpoint = val;
         }
 
         // Edge GCS string overrides

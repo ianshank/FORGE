@@ -26,6 +26,8 @@ pub mod compact;
 pub mod config;
 pub mod coverage;
 pub mod export;
+/// Authoritative append-only journal for capturing events prior to export.
+pub mod journal;
 pub mod trajectory;
 pub mod v2;
 

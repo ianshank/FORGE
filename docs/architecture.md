@@ -163,7 +163,7 @@ Shows the major containers (deployable units) within FORGE.
 | **forge-memory** | Rust crate | Persistent agent memory: episodic, semantic, and preference stores with strength decay and eviction. |
 | **forge-social** | Rust crate | Social interaction primitives: trust and reputation models. |
 | **forge-cognitive** | Rust crate | LLM-backed cognitive agent: completion-provider abstraction plus configs. |
-| **forge-integration** | Rust crate (`forge-integration-layer`) | Cross-layer orchestrator wiring memory, social, and cognitive subsystems together. |
+| **forge-integration** | Rust crate (`forge-integration-layer`) | Cross-layer orchestrator providing a JSON-RPC external controller (ADK), episodic memory mirroring (Honcho), and a sandboxed thread-level containment harness (DeerFlow). |
 | **forge-mangomas** | Rust crate | MangoMAS control plane: parameter sweeps, swarm, curriculum, adapters, transfer. Rust twin of `python/forge/mangomas`. |
 | **forge-cloud** | Rust crate | Cloud training pipeline: workers, replay transport, storage backends (GCS behind the `gcs` feature), model registry. |
 | **forge-edge** | Rust crate | Edge deployment runtime: inference, telemetry, adaptive MCTS, latency estimation. |

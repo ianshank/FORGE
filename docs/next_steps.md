@@ -2,6 +2,12 @@
 
 Post-demo-UI priorities, roughly in order of impact.
 
+## Unreleased (v0.6.1)
+
+- **External Control Plane (forge-integration)**: Added `ExternalController` to `forge-integration-layer` exposing a JSON-RPC orchestration boundary for tools like Google ADK. Core simulation (`forge-core`) remains fully decoupled.
+- **Episodic Memory Mirroring (Honcho)**: Added `HonchoExporter` to push parsed trajectories into Honcho for episodic memory and RAG workflows.
+- **Sandboxed Containment (DeerFlow)**: Integrated `DeerFlowHarness` to safely run long-horizon external orchestration in a restricted, thread-isolated `.tmp` environment.
+
 ## v0.5.0 — non-Minecraft tracks LANDED
 
 Three non-Minecraft tracks shipped in the `0.5.0` release-hygiene cut:
