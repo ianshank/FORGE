@@ -204,7 +204,7 @@ mockito = "1"
 testcontainers = { version = "0.23", features = ["blocking"] }
 
 # Benchmarking
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 # Python bindings
 pyo3 = { version = "0.22", features = ["extension-module"] }
