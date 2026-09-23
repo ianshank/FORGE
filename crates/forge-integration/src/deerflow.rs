@@ -40,9 +40,9 @@ impl DeerFlowHarness {
     /// we would drop capabilities here (e.g., using `seccomp` or `capsicum`). For this
     /// implementation, we emulate it via thread isolation and strict pathing.
     #[instrument(skip(artifact_dir))]
-    pub fn new<P: AsRef<Path>>(name: String, artifact_dir: P, timeout_ms: u32) -> Self {
+    pub fn new<P: AsRef<Path>>(name: String, artifact_dir: P, timeout_ms: u64) -> Self {
         let artifact_dir = artifact_dir.as_ref().to_path_buf();
-        let timeout = Duration::from_millis(timeout_ms.into());
+        let timeout = Duration::from_millis(timeout_ms);
 
         // Ensure the directory exists
         if let Err(e) = std::fs::create_dir_all(&artifact_dir) {
