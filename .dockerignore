@@ -105,3 +105,6 @@ playwright-report/
 /memories/
 Agent.md
 CLAUDE.md
+
+# DeerFlow sandboxed artifacts
+scratch.tmp/

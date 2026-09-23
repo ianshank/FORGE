@@ -23,6 +23,7 @@ See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope bounda
 - **Cooperative swarm planning**: CTDE cooperative MCTS (`forge-mangomas::swarm`) that reuses the single-agent PUCT search to produce coordinated joint actions, with a centralized/independent critic and deterministic seeded sampling — a drop-in swap for the no-coordination baseline. See [`docs/architecture.md` §3.8.1](docs/architecture.md)
 - **REST + WASM env API**: drive the simulation over HTTP (`POST /api/env/{reset,step}`, `GET /api/env/render`) or fully in-browser via WebAssembly — the two surfaces mirror the same JSON shapes
 - **Live dashboard + persistent history**: `forge-server` accepts training metrics / decision traces (`POST /api/training-metrics`, `/api/decision-traces`), persists them to JSONL (configurable via `FORGE_SERVER_HISTORY_*`), and serves them back for the dashboard's Training/Runs/Live views via `GET /api/training-metrics/history`, `/api/decision-traces/history`, and `/api/runs` (with `runId`/`limit` filters)
+- **External agent orchestration**: `forge-integration-layer` provides a JSON-RPC external controller compatible with Google ADK, episodic memory mirroring to Honcho, and a sandboxed thread-level DeerFlow containment harness.
 - **Task curriculum**: Composable task DSL with 6 difficulty tiers and adaptive difficulty scaling
 - **MCTS planning**: Built-in Monte Carlo Tree Search agent with configurable PUCT exploration
 - **MangoMAS bridge**: Config-driven curriculum, constitutional pre-training, curiosity-weight search, batch episode collection, and MCTS sweep utilities under `python/forge/mangomas/`
@@ -213,7 +214,7 @@ graph TD
         forge_memory["forge-memory<br/><i>persistent memory</i>"]
         forge_social["forge-social<br/><i>trust & reputation</i>"]
         forge_cognitive["forge-cognitive<br/><i>LLM reasoning</i>"]
-        forge_integration["forge-integration-layer<br/><i>cognitive orchestrator</i>"]
+        forge_integration["forge-integration-layer<br/><i>ADK orchestrator & containment</i>"]
     end
 
     subgraph "Data & Evaluation"

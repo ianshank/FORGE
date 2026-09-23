@@ -251,3 +251,33 @@ class TestDryRunConfig:
             assert config.dry_run.enabled is True
         finally:
             del os.environ["FORGE_DRY_RUN_ENABLED"]
+
+    def test_orchestration_env_override(self) -> None:
+        import os
+
+        os.environ["FORGE_ORCHESTRATION_ENDPOINT"] = "http://test-endpoint:8080"
+        os.environ["FORGE_ORCHESTRATION_ENABLED"] = "true"
+        try:
+            from forge.config import ForgeConfig
+
+            config = ForgeConfig.from_dict({})
+            assert config.orchestration.endpoint == "http://test-endpoint:8080"
+            assert config.orchestration.enabled is True
+        finally:
+            del os.environ["FORGE_ORCHESTRATION_ENDPOINT"]
+            del os.environ["FORGE_ORCHESTRATION_ENABLED"]
+
+    def test_honcho_env_override(self) -> None:
+        import os
+
+        os.environ["FORGE_HONCHO_ENDPOINT"] = "http://test-honcho:9090"
+        os.environ["FORGE_HONCHO_ENABLED"] = "true"
+        try:
+            from forge.config import ForgeConfig
+
+            config = ForgeConfig.from_dict({})
+            assert config.honcho.endpoint == "http://test-honcho:9090"
+            assert config.honcho.enabled is True
+        finally:
+            del os.environ["FORGE_HONCHO_ENDPOINT"]
+            del os.environ["FORGE_HONCHO_ENABLED"]

@@ -17,6 +17,7 @@ use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
 use tracing::{info, instrument};
 
+use crate::events::EventLog;
 use crate::physics::PhysicsScratch;
 use crate::rng::ForgeRng;
 
@@ -81,6 +82,8 @@ pub struct WorldState {
     /// Reusable discrete action ids for this tick's `validated_actions`.
     /// Filled only when `tasks` is non-empty (already an alloc-audit carve-out).
     pub(crate) task_action_ids: Vec<u32>,
+    /// Append-only event log for state transitions.
+    pub events: EventLog,
 }
 
 impl WorldState {
@@ -211,6 +214,7 @@ impl WorldState {
             comm_messages: Vec::with_capacity(agent_count),
             push_scratch: Vec::with_capacity(agent_count),
             task_action_ids: Vec::with_capacity(agent_count),
+            events: EventLog::default(),
         };
 
         // Place agents on the grid

@@ -75,10 +75,11 @@ def test_openspec_capability_specs_have_scenarios_and_falsifiers() -> None:
 
 def test_openspec_cli_validate_strict() -> None:
     """Run openspec validate --all --strict via the CLI or wrapper."""
+    openspec_path = shutil.which("openspec")
     cmd = (
-        ["openspec", "validate", "--all", "--strict"]
-        if shutil.which("openspec")
-        else ["npx", "--yes", "@fission-ai/openspec", "validate", "--all", "--strict"]
+        [openspec_path, "validate", "--all", "--strict"]
+        if openspec_path
+        else [shutil.which("npx") or "npx", "--yes", "@fission-ai/openspec", "validate", "--all", "--strict"]
     )
     result = subprocess.run(
         cmd,

@@ -1,6 +1,6 @@
 {
   "format_version": 2,
-  "config_hash": "e831b2c14031f0d10d4ebd3fff8259ec66bcc0727335d183c5b994f73eb27071",
+  "config_hash": "53e866cb4010d4cb1db099441701f95fd12da44cf27dd1a739a3a53d07aaf7be",
   "config": {
     "world": {
       "grid_type": "square",
@@ -269,6 +269,21 @@
           "target_y": null
         }
       ]
+    },
+    "orchestration": {
+      "enabled": false,
+      "controller_type": "none",
+      "deerflow_sandboxed": false,
+      "artifact_dir": "/tmp/forge-artifacts",
+      "endpoint": "http://localhost:8080",
+      "timeout_ms": 5000
+    },
+    "honcho": {
+      "enabled": false,
+      "endpoint": "http://localhost:9090",
+      "strip_latent_state": true,
+      "sync_interval_ticks": 100,
+      "timeout_ms": 5000
     }
   },
   "seed": 42,

@@ -309,3 +309,6 @@ alloc_audit_summary.json
 coverage.xml
 .coverage
 htmlcov/
+
+# DeerFlow sandboxed artifacts
+scratch.tmp/

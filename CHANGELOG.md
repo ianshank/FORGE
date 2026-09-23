@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.1] - Unreleased
 
+### Added
+
+- **External Control Plane (forge-integration)**: Added `ExternalController` to `forge-integration-layer` exposing a JSON-RPC orchestration boundary for tools like Google ADK. Core simulation (`forge-core`) remains fully decoupled.
+- **Episodic Memory Mirroring (Honcho)**: Added `HonchoExporter` to push parsed trajectories into Honcho for episodic memory and RAG workflows.
+- **Sandboxed Containment (DeerFlow)**: Integrated `DeerFlowHarness` to safely run long-horizon external orchestration in a restricted, thread-isolated `.tmp` environment.
+
 ### Changed
 
 - **Python support matrix honesty (Disposition A)**: narrowed `requires-python` from `>=3.9` to `>=3.11` so packaging metadata matches proven CI (CPython 3.11 on Linux x86_64). Declared 3.9/3.10 support is removed. Added a declaration-vs-CI parity gate. cibuildwheel / multi-platform PyPI remain deferred.

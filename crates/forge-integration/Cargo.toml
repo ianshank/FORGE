@@ -15,16 +15,20 @@ ignored = ["thiserror"]
 
 [dependencies]
 forge-types = { workspace = true }
+forge-core = { workspace = true }
 forge-memory = { workspace = true }
 forge-social = { workspace = true }
 forge-cognitive = { workspace = true }
+forge-replay = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
+ureq = { version = "2.9", features = ["json"] }
 
 [dev-dependencies]
 proptest = { workspace = true }
+tempfile.workspace = true
 toml = { workspace = true }
 
 [lints]

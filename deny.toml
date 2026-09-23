@@ -58,6 +58,7 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 # Per-crate license clarifications go here if a crate's license is ambiguous.

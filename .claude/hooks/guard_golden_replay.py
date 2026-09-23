@@ -62,13 +62,12 @@ def _staged_paths(cwd: str) -> list[str]:
 
 def matching_fingerprint_sources(staged: list[str]) -> list[str]:
     """Return staged paths that change CompactReplay config_hash inputs."""
-    matched: list[str] = []
-    for path in staged:
-        if path in PINNED_CONFIG_SOURCE_PATHS:
-            matched.append(path)
-        elif path.startswith(_SCENARIO_PREFIX) and path.endswith(".toml"):
-            matched.append(path)
-    return matched
+    return [
+        path
+        for path in staged
+        if path in PINNED_CONFIG_SOURCE_PATHS
+        or (path.startswith(_SCENARIO_PREFIX) and path.endswith(".toml"))
+    ]
 
 
 def golden_refresh_is_staged(staged: list[str]) -> bool:

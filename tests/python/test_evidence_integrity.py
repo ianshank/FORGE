@@ -43,7 +43,7 @@ def _validate_index(root: Path, index_path: Path, errors: list[str]) -> set[Path
     """Validate INDEX.toml existence and all [[snapshots]] entries."""
     if not index_path.is_file():
         errors.append(
-            f"Evidence index missing at {index_path.relative_to(root)}. "
+            f"Evidence index missing at {index_path.relative_to(root).as_posix()}. "
             "Remedy: create docs/results/INDEX.toml listing every snapshot under "
             "docs/results/ with its sha256 digest."
         )
@@ -53,7 +53,7 @@ def _validate_index(root: Path, index_path: Path, errors: list[str]) -> set[Path
         index_data = tomllib.loads(index_path.read_text(encoding="utf-8"))
     except Exception as exc:
         errors.append(
-            f"Malformed INDEX.toml at {index_path.relative_to(root)}: {exc}. "
+            f"Malformed INDEX.toml at {index_path.relative_to(root).as_posix()}: {exc}. "
             "Remedy: format docs/results/INDEX.toml as valid TOML with [[snapshots]] tables."
         )
         return None
@@ -61,7 +61,7 @@ def _validate_index(root: Path, index_path: Path, errors: list[str]) -> set[Path
     entries = index_data.get("snapshots", [])
     if not isinstance(entries, list):
         errors.append(
-            f"INDEX.toml at {index_path.relative_to(root)} has invalid 'snapshots' key "
+            f"INDEX.toml at {index_path.relative_to(root).as_posix()} has invalid 'snapshots' key "
             f"(expected list, got {type(entries).__name__}). "
             "Remedy: define [[snapshots]] array in docs/results/INDEX.toml."
         )
@@ -84,7 +84,7 @@ def _validate_index(root: Path, index_path: Path, errors: list[str]) -> set[Path
         if not snap_path.is_file():
             errors.append(
                 f"Indexed snapshot missing from disk: {rel_str}. "
-                f"Remedy: restore {rel_str} or remove its entry from {index_path.relative_to(root)}."
+                f"Remedy: restore {rel_str} or remove its entry from {index_path.relative_to(root).as_posix()}."
             )
             continue
 
@@ -94,7 +94,7 @@ def _validate_index(root: Path, index_path: Path, errors: list[str]) -> set[Path
                 f"Snapshot digest mismatch for {rel_str}: expected {expected_sha}, "
                 f"got {actual_sha}. "
                 f"Remedy: if the snapshot change was intentional, update its sha256 in "
-                f"{index_path.relative_to(root)}."
+                f"{index_path.relative_to(root).as_posix()}."
             )
 
     return indexed_paths
@@ -104,7 +104,7 @@ def _validate_snapshot_json(
     root: Path, json_file: Path, errors: list[str]
 ) -> tuple[dict[str, Any] | None, int]:
     """Parse snapshot JSON and return the data dict and count of evidential episodes."""
-    rel_json = json_file.relative_to(root)
+    rel_json = json_file.relative_to(root).as_posix()
     try:
         content = json_file.read_text(encoding="utf-8")
         if not content.strip():
@@ -149,7 +149,7 @@ def _validate_declaration(
     root: Path, json_file: Path, evidential_count: int, errors: list[str]
 ) -> None:
     """Validate snapshot declaration rules and syntax."""
-    rel_json = json_file.relative_to(root)
+    rel_json = json_file.relative_to(root).as_posix()
     decl_file = json_file.with_name(f"{json_file.name}.declaration")
     has_decl = decl_file.is_file()
 
@@ -157,7 +157,7 @@ def _validate_declaration(
         if not has_decl:
             errors.append(
                 f"Snapshot {rel_json} has 0 evidential records and no declaration file. "
-                f"Remedy: create {decl_file.relative_to(root)} recording what the snapshot is "
+                f"Remedy: create {decl_file.relative_to(root).as_posix()} recording what the snapshot is "
                 "and why it is retained."
             )
             return
@@ -167,9 +167,9 @@ def _validate_declaration(
             decl_table = decl_data.get("declaration", {})
             if not isinstance(decl_table, dict) or not decl_table.get("rationale"):
                 errors.append(
-                    f"Declaration {decl_file.relative_to(root)} missing [declaration] table "
+                    f"Declaration {decl_file.relative_to(root).as_posix()} missing [declaration] table "
                     "or non-empty 'rationale' field. "
-                    f"Remedy: populate 'rationale' under [declaration] in {decl_file.relative_to(root)}."
+                    f"Remedy: populate 'rationale' under [declaration] in {decl_file.relative_to(root).as_posix()}."
                 )
             superseded_by = decl_table.get("superseded_by")
             if superseded_by:
@@ -177,21 +177,21 @@ def _validate_declaration(
                 sup_root = (root / superseded_by).resolve()
                 if not sup_parent.is_file() and not sup_root.is_file():
                     errors.append(
-                        f"Declaration {decl_file.relative_to(root)} names nonexistent "
+                        f"Declaration {decl_file.relative_to(root).as_posix()} names nonexistent "
                         f"supersession '{superseded_by}'. "
-                        f"Remedy: update 'superseded_by' in {decl_file.relative_to(root)} "
+                        f"Remedy: update 'superseded_by' in {decl_file.relative_to(root).as_posix()} "
                         "to point to an existing snapshot."
                     )
         except Exception as exc:
             errors.append(
-                f"Malformed declaration file {decl_file.relative_to(root)}: {exc}. "
-                f"Remedy: ensure {decl_file.relative_to(root)} is valid TOML."
+                f"Malformed declaration file {decl_file.relative_to(root).as_posix()}: {exc}. "
+                f"Remedy: ensure {decl_file.relative_to(root).as_posix()} is valid TOML."
             )
     elif has_decl:
         errors.append(
             f"Laundering detected: snapshot {rel_json} has {evidential_count} evidential "
-            f"record(s) but carries declaration {decl_file.relative_to(root)}. "
-            f"Remedy: remove declaration {decl_file.relative_to(root)} because declarations "
+            f"record(s) but carries declaration {decl_file.relative_to(root).as_posix()}. "
+            f"Remedy: remove declaration {decl_file.relative_to(root).as_posix()} because declarations "
             "are only permitted for snapshots with zero evidential records."
         )
 
@@ -203,8 +203,8 @@ def _validate_snapshots_and_declarations(
     for json_file in sorted(results_dir.glob("*.json")):
         if json_file.resolve() not in indexed_paths:
             errors.append(
-                f"Unindexed snapshot on disk: {json_file.relative_to(root)}. "
-                f"Remedy: add {json_file.relative_to(root)} and its sha256 digest to "
+                f"Unindexed snapshot on disk: {json_file.relative_to(root).as_posix()}. "
+                f"Remedy: add {json_file.relative_to(root).as_posix()} and its sha256 digest to "
                 f"docs/results/INDEX.toml."
             )
 
@@ -216,7 +216,7 @@ def _validate_snapshots_and_declarations(
 def _validate_markdown_tables(root: Path, results_dir: Path, errors: list[str]) -> None:
     """Verify table claims in docs/results/*.md agree with cited snapshots."""
     for md_file in sorted(results_dir.glob("*.md")):
-        rel_md = md_file.relative_to(root)
+        rel_md = md_file.relative_to(root).as_posix()
         text = md_file.read_text(encoding="utf-8")
         for match in ROW_LINK_PATTERN.finditer(text):
             run_name = match.group(1).strip()
@@ -245,7 +245,7 @@ def _validate_markdown_tables(root: Path, results_dir: Path, errors: list[str]) 
             if row_episodes != snap_episodes:
                 errors.append(
                     f"Table in {rel_md} row '{run_name}' claims {row_episodes} episode(s), but cited "
-                    f"snapshot {target_path.relative_to(root)} records {snap_episodes} episode(s). "
+                    f"snapshot {target_path.relative_to(root).as_posix()} records {snap_episodes} episode(s). "
                     f"Remedy: update the episode count in {rel_md} or point to the matching snapshot."
                 )
 
@@ -263,7 +263,7 @@ def _validate_markdown_tables(root: Path, results_dir: Path, errors: list[str]) 
                     if not any(abs(r - claimed_reward) < 0.05 for r in rewards):
                         errors.append(
                             f"Table in {rel_md} row '{run_name}' cites reward {claimed_str}, but "
-                            f"no episode in {target_path.relative_to(root)} has a matching reward. "
+                            f"no episode in {target_path.relative_to(root).as_posix()} has a matching reward. "
                             f"Remedy: update the reward claim in {rel_md} to match {target_path.name}."
                         )
                 except ValueError:

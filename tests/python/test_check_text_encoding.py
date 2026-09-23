@@ -16,6 +16,7 @@ modes are asserted here, in both directions.
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import check_text_encoding as cte
@@ -50,7 +51,7 @@ def test_scan_reports_clean_tree(tmp_path: Path) -> None:
 def test_scan_flags_nul_byte_in_text_file(tmp_path: Path) -> None:
     """A literal NUL in a .ts file is reported -- the 0303612 recurrence."""
     repo = _init_repo(
-        tmp_path / "nul",
+        tmp_path / "nul_test",
         {"test/security.test.ts": b"const payloads = [\n  '@s\x00',\n];\n"},
     )
 
@@ -110,6 +111,7 @@ def test_is_text_candidate(path: str, expected: bool) -> None:
     assert cte.is_text_candidate(path) is expected
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Git core.autocrlf causes false failures on Windows.")
 def test_expected_crlf_matches_the_real_repository() -> None:
     """The pinned EXPECTED_CRLF snapshot still describes the actual tree.
 

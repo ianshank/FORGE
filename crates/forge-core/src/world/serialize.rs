@@ -155,6 +155,7 @@ impl WorldState {
             comm_messages: Vec::new(),
             push_scratch: Vec::new(),
             task_action_ids: Vec::new(),
+            events: crate::events::EventLog::default(),
         })
     }
 
@@ -216,6 +217,7 @@ impl WorldState {
             comm_messages: Vec::new(),
             push_scratch: Vec::new(),
             task_action_ids: Vec::new(),
+            events: crate::events::EventLog::default(),
         })
     }
 }
