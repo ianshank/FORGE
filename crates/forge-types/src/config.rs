@@ -937,6 +937,7 @@ impl ForgeConfig {
         env_override!(honcho.enabled, bool);
         env_override!(honcho.strip_latent_state, bool);
         env_override!(honcho.sync_interval_ticks, u32);
+        env_override!(honcho.timeout_ms, u64);
         if let Ok(val) = std::env::var("FORGE_HONCHO_ENDPOINT") {
             debug!(key = "FORGE_HONCHO_ENDPOINT", value = %val, "applying env override");
             self.honcho.endpoint = val;

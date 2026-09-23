@@ -36,8 +36,7 @@ REWARD_CLAIM_PATTERN = re.compile(r"reward[=:]\s*([\u2212\-+]?\d+(?:\.\d+)?)")
 
 def _sha256(path: Path) -> str:
     """Compute hex SHA-256 of the file at `path`."""
-    content = path.read_bytes().replace(b"\r\n", b"\n")
-    return hashlib.sha256(content).hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _validate_index(root: Path, index_path: Path, errors: list[str]) -> set[Path] | None:

@@ -75,7 +75,6 @@ def test_openspec_capability_specs_have_scenarios_and_falsifiers() -> None:
 
 def test_openspec_cli_validate_strict() -> None:
     """Run openspec validate --all --strict via the CLI or wrapper."""
-    import sys
     openspec_path = shutil.which("openspec")
     cmd = (
         [openspec_path, "validate", "--all", "--strict"]
