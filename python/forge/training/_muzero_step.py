@@ -108,7 +108,8 @@ def train_with_gradients(
     from forge.models.muzero_networks import scalar_to_support
 
     c = model.config
-    device = torch.device(c.device)
+    model_device = getattr(model, "device", None)
+    device = model_device if isinstance(model_device, torch.device) else torch.device(c.device)
 
     obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=device)
     actions = torch.as_tensor(batch["actions"], dtype=torch.long, device=device)

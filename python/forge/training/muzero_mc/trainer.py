@@ -36,6 +36,7 @@ __all__ = [
 
 import json
 import logging
+import math
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -404,12 +405,24 @@ class MuzeroMcTrainer:
         self._reader = reader
         self._config = config
         self._rng = random.Random(config.seed if config.seed is not None else None)
+        if config.seed is not None:
+            torch.manual_seed(config.seed)
+            try:
+                import numpy as np
+
+                np.random.seed(config.seed)
+            except ImportError:
+                pass
+            if torch.cuda.is_available() and config.device in ("cuda", "auto"):
+                torch.cuda.manual_seed_all(config.seed)
         # Resolve `auto` → `cuda` / `cpu` once at construction; subsequent
         # `train_step` calls operate against the locked device. The
         # config's validated literal (`cpu` / `cuda` / `auto`) means
         # `_resolve_device` never sees an unknown value.
         self._device = _resolve_device(config.device)
         self._model.to(self._device)
+        if hasattr(self._model, "config") and hasattr(self._model.config, "device"):
+            self._model.config.device = str(self._device)
         self._optimizer = torch.optim.Adam(
             model.all_parameters(),
             lr=model.config.learning_rate,
@@ -538,6 +551,24 @@ class MuzeroMcTrainer:
         )
         self._iter += 1
         metrics_dict = metrics.to_dict()
+
+        if not math.isfinite(metrics_dict.get("loss", float("nan"))):
+            logger.warning(
+                "non-finite loss detected at iter %d: %s",
+                self._iter,
+                metrics_dict,
+            )
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "train_step %d: loss=%.4f (policy=%.4f, value=%.4f, reward=%.4f, l2=%.4f)",
+                self._iter,
+                metrics_dict.get("loss", 0.0),
+                metrics_dict.get("policy_loss", 0.0),
+                metrics_dict.get("value_loss", 0.0),
+                metrics_dict.get("reward_loss", 0.0),
+                metrics_dict.get("l2_reg", 0.0),
+            )
 
         if self._experiment_logger is not None:
             log_data = dict(metrics_dict)

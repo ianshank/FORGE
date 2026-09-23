@@ -5,8 +5,8 @@
 
 [[snapshots]]
 path = "docs/results/v0.5-first-real-run-baseline.json"
-sha256 = "3fd1f4b8294573773b73a7ce8ddbd095220f61c1432a81e74fcb2e95a9575050"
+sha256 = "911d79392eee89b6ef85da6fea7cba3de78ce743c4019a4329a6544212ab6e95"
 
 [[snapshots]]
 path = "docs/results/v0.5-first-real-run-baseline-v2.json"
-sha256 = "c6f23e3b90aeed8c5300901243487837ea9073d0ea28cfdc83975716c2781f3d"
+sha256 = "19c6998621e1607ca352c6836296ec061cdeb8d327d47067a2e602551bfd3bdf"
