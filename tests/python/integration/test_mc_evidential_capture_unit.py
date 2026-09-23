@@ -42,8 +42,10 @@ def _run_dry(script_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def test_script_is_executable_and_parses(script_path: Path) -> None:
     assert script_path.is_file()
+    import sys
     mode = script_path.stat().st_mode
-    assert mode & stat.S_IXUSR
+    if sys.platform != "win32":
+        assert mode & stat.S_IXUSR
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("bash not on PATH")

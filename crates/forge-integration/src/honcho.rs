@@ -32,7 +32,7 @@ impl HonchoExporter {
 
         let mut synced_count = 0;
         let client = ureq::builder()
-            .timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_millis(self.config.timeout_ms))
             .build();
 
         loop {

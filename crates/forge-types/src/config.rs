@@ -710,6 +710,8 @@ pub struct HonchoConfig {
     pub strip_latent_state: bool,
     /// Sync interval in ticks.
     pub sync_interval_ticks: u32,
+    /// Timeout in milliseconds for Honcho requests.
+    pub timeout_ms: u64,
 }
 
 impl Default for HonchoConfig {
@@ -719,6 +721,7 @@ impl Default for HonchoConfig {
             endpoint: "http://localhost:9090".to_string(),
             strip_latent_state: true,
             sync_interval_ticks: 100,
+            timeout_ms: 5000,
         }
     }
 }

@@ -56,6 +56,9 @@ impl DeerFlowHarness {
                     let check_path = thread_dir.join("scratch.tmp");
                     if let Err(e) = std::fs::write(&check_path, b"test") {
                         error!(error = %e, "DeerFlow sandbox failed to write to its restricted dir");
+                    } else {
+                        // Prevent disk leakage by immediately removing the temp file
+                        let _ = std::fs::remove_file(&check_path);
                     }
 
                     if act_tx.send(0).is_err() {
@@ -140,7 +143,7 @@ mod tests {
         let response = harness.select_action(&obs, 0);
         assert_eq!(response.action_id, 0);
 
-        // Assert that the sandbox thread created the check file
-        assert!(artifact_path.join("scratch.tmp").exists());
+        // Assert that the sandbox thread did not leak the scratch check file
+        assert!(!artifact_path.join("scratch.tmp").exists());
     }
 }

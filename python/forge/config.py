@@ -162,6 +162,29 @@ class DryRunConfig:
 
 
 @dataclass
+class OrchestrationConfig:
+    """External orchestration configuration (e.g., ADK, DeerFlow)."""
+
+    enabled: bool = False
+    controller_type: str = "none"
+    deerflow_sandboxed: bool = False
+    artifact_dir: str = "/tmp/forge-artifacts"
+    endpoint: str = "http://localhost:8080"
+    timeout_ms: int = 5000
+
+
+@dataclass
+class HonchoConfig:
+    """Honcho memory mirror configuration."""
+
+    enabled: bool = False
+    endpoint: str = "http://localhost:9090"
+    strip_latent_state: bool = True
+    sync_interval_ticks: int = 100
+    timeout_ms: int = 5000
+
+
+@dataclass
 class ForgeConfig:
     """Top-level FORGE configuration.
 
@@ -173,6 +196,8 @@ class ForgeConfig:
     simulation: SimulationConfig = field(default_factory=SimulationConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     dry_run: DryRunConfig = field(default_factory=DryRunConfig)
+    orchestration: OrchestrationConfig = field(default_factory=OrchestrationConfig)
+    honcho: HonchoConfig = field(default_factory=HonchoConfig)
 
     def effective_simulation(self) -> SimulationConfig:
         """Return simulation config, overridden by dry_run if enabled."""
@@ -228,13 +253,24 @@ class ForgeConfig:
         sim = _build_section(SimulationConfig, data.get("simulation", {}))
         train = _build_section(TrainingConfig, data.get("training", {}))
         dry = _build_section(DryRunConfig, data.get("dry_run", {}))
+        orch = _build_section(OrchestrationConfig, data.get("orchestration", {}))
+        honcho = _build_section(HonchoConfig, data.get("honcho", {}))
 
         _apply_env_overrides(hw, "HARDWARE")
         _apply_env_overrides(sim, "SIMULATION")
         _apply_env_overrides(train, "TRAINING")
         _apply_env_overrides(dry, "DRY_RUN")
+        _apply_env_overrides(orch, "ORCHESTRATION")
+        _apply_env_overrides(honcho, "HONCHO")
 
-        return cls(hardware=hw, simulation=sim, training=train, dry_run=dry)
+        return cls(
+            hardware=hw,
+            simulation=sim,
+            training=train,
+            dry_run=dry,
+            orchestration=orch,
+            honcho=honcho,
+        )
 
     @staticmethod
     def _resolve_path(path: str | Path | None) -> Path | None:
@@ -274,6 +310,8 @@ class ForgeConfig:
                 "target_success_rate": self.training.target_success_rate,
                 "window_size": self.training.curriculum_window_size,
             },
+            "orchestration": asdict(self.orchestration),
+            "honcho": asdict(self.honcho),
         }
 
     def to_dict(self) -> dict[str, Any]:
