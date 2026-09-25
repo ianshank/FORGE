@@ -18,7 +18,12 @@
 # already cache-friendly via `--mount=type=cache`.
 
 ARG TORCH_VARIANT=cpu
-FROM python:3.14-slim AS base
+# Python minor is pinned to 3.11 (the CI-proven interpreter) and must stay
+# inside torch==${TORCH_VERSION}'s wheel matrix: torch 2.4.x ships
+# cp38-cp312 wheels only, and numpy<2.0 has no cp313+ wheels, so a
+# Dependabot bump to python:3.14 makes the pip step below fail for both
+# variants. Bump the interpreter and TORCH_VERSION together.
+FROM python:3.11-slim-bookworm AS base
 
 # ---- runtime tooling ------------------------------------------------
 RUN apt-get update -qq \
@@ -31,10 +36,14 @@ RUN apt-get update -qq \
 WORKDIR /app
 
 # ---- python deps ----------------------------------------------------
-# Copy the bare minimum needed for `pip install -e .[minecraft]`:
-# the pyproject + the source tree under `python/`.
-COPY pyproject.toml /app/pyproject.toml
+# Only the pure-Python `forge` package is needed: the trainer never
+# imports the native `forge_env` extension. `pip install -e .` cannot be
+# used here -- pyproject's build backend is maturin, which needs the Rust
+# workspace + toolchain this image deliberately doesn't carry -- so the
+# package is put on PYTHONPATH instead and the `[minecraft]` extras are
+# installed explicitly below.
 COPY python /app/python
+ENV PYTHONPATH=/app/python
 
 # Install the right torch wheel via index-url based on TORCH_VARIANT.
 # Default is CPU-only; pass `--build-arg TORCH_VARIANT=cu121` to get
@@ -49,6 +58,9 @@ ARG TORCH_VERSION=2.4.1
 ARG TORCHVISION_VERSION=0.19.1
 ARG ONNX_VERSION=1.17.0
 ARG ONNXRUNTIME_VERSION=1.20.0
+# Mirrors the `huggingface-hub` floor in pyproject's `[minecraft]` extra
+# (needed by `bootstrap --from-hf`).
+ARG HF_HUB_SPEC=">=1.28.0"
 RUN pip install --upgrade pip \
     && if [ "${TORCH_VARIANT}" = "cu121" ]; then \
          pip install --no-cache-dir \
@@ -63,12 +75,11 @@ RUN pip install --upgrade pip \
          "onnx==${ONNX_VERSION}" \
          "onnxruntime==${ONNXRUNTIME_VERSION}" \
          "numpy>=1.26,<2.0" \
-         "tomli; python_version < '3.11'"
+         "huggingface-hub${HF_HUB_SPEC}"
 
-# Install the FORGE package itself in editable mode so changes to
-# `python/forge/training/muzero_mc/` flow into the container without
-# a rebuild (compose `develop` watch can be wired up by operators).
-RUN pip install --no-cache-dir -e .
+# Fail the build (not the first training round) if the package or the
+# requested torch variant is broken.
+RUN python -c "import forge.training.muzero_mc.cli, torch; print('torch', torch.__version__, 'cuda', torch.version.cuda)"
 
 # ---- non-root runtime user ------------------------------------------
 # This image previously had no USER directive, so the trainer ran as root
@@ -101,8 +112,7 @@ RUN if ! getent group "${APP_GID}" >/dev/null; then \
         useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home \
             --shell /usr/sbin/nologin "${APP_USER}"; \
     fi \
-    # `pip install -e .` leaves editable-install metadata under /app that the
-    # runtime user has to read. Bind mounts (/app/models, /app/trajectories)
+    # The runtime user has to read the source tree under /app. Bind mounts (/app/models, /app/trajectories)
     # are attached at RUN time and keep their host ownership — see the note
     # above about matching APP_UID to the host.
     && chown -R "${APP_UID}:${APP_GID}" /app

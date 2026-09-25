@@ -24,7 +24,13 @@
 #                      touches the host. Used by the test in
 #                      tests/python/integration/test_mc_self_play_unit.py.
 #   --gpu              Layer compose.minecraft.gpu.yml on top of the
-#                      base file. Trainer picks `cuda`.
+#                      base file, build the trainer image with CUDA
+#                      torch (TRAINER_TORCH_VARIANT=cu121, tagged
+#                      separately so a cached CPU image is never
+#                      reused) and run it with --device=cuda. These
+#                      override the env file's CPU values; tune via
+#                      GPU_TORCH_VARIANT / GPU_TRAINER_DEVICE /
+#                      GPU_TRAINER_IMAGE.
 #   --detach           Run the final `compose up` in detached mode.
 #                      Default is foreground (logs stream to TTY,
 #                      Ctrl-C tears down).
@@ -76,10 +82,16 @@ ACTION_DIM="${ACTION_DIM:-12}"
 SCHEMA_ID_HEX_LEN="${SCHEMA_ID_HEX_LEN:-64}"
 TRAINED_FEATURES="${TRAINED_FEATURES:-mc-live-bundled}"
 TRAINED_RANDOM_ACTIONS="${TRAINED_RANDOM_ACTIONS:-false}"
+# --gpu trainer identity. Exported over the env file's TRAINER_* values
+# (shell env wins over --env-file in compose interpolation), because the
+# example env file ships the CPU variant + device for the default path.
+GPU_TORCH_VARIANT="${GPU_TORCH_VARIANT:-cu121}"
+GPU_TRAINER_DEVICE="${GPU_TRAINER_DEVICE:-cuda}"
+GPU_TRAINER_IMAGE="${GPU_TRAINER_IMAGE:-forge-mc-trainer:dev-${GPU_TORCH_VARIANT}}"
 
 log()   { printf '%s [mc_self_play] %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 die()   { log "ERROR: $*"; exit 1; }
-usage() { sed -n '2,44p' "$0"; }
+usage() { sed -n '2,46p' "$0"; }
 
 # Run a command or print it in dry-run mode. The dry-run trace goes
 # to STDERR so callers capturing stdout (e.g. command substitution
@@ -156,11 +168,30 @@ fi
 # ---------- step 1: preflight ----------
 log "preflight: checking docker compose version >= ${COMPOSE_MIN_VERSION}"
 if (( DRY_RUN )); then
-  log "DRY-RUN: skipping `docker compose version` check"
+  log "DRY-RUN: skipping 'docker compose version' check"
 else
   command -v docker >/dev/null 2>&1 || die "docker not on PATH"
-  docker compose version >/dev/null 2>&1 \
+  compose_version="$(docker compose version --short 2>/dev/null)" \
     || die "docker compose v2 not installed (need >= ${COMPOSE_MIN_VERSION})"
+  compose_version="${compose_version#v}"
+  # `sort -V` puts the smaller version first; anything but the minimum
+  # coming first means the installed compose is too old.
+  if [[ "$(printf '%s\n%s\n' "${COMPOSE_MIN_VERSION}" "${compose_version}" | sort -V | head -n1)" \
+        != "${COMPOSE_MIN_VERSION}" ]]; then
+    die "docker compose ${compose_version} < ${COMPOSE_MIN_VERSION} (older versions silently drop the GPU reservation)"
+  fi
+  if (( USE_GPU )); then
+    # Advisory only: CDI-based setups may not list an `nvidia` runtime.
+    docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia \
+      || log "WARN: no 'nvidia' docker runtime found; install nvidia-container-toolkit if the trainer can't see the GPU"
+  fi
+fi
+
+if (( USE_GPU )); then
+  export TRAINER_TORCH_VARIANT="${GPU_TORCH_VARIANT}"
+  export TRAINER_DEVICE="${GPU_TRAINER_DEVICE}"
+  export TRAINER_IMAGE="${GPU_TRAINER_IMAGE}"
+  log "gpu trainer: TRAINER_TORCH_VARIANT=${TRAINER_TORCH_VARIANT} TRAINER_DEVICE=${TRAINER_DEVICE} TRAINER_IMAGE=${TRAINER_IMAGE}"
 fi
 
 if (( BASELINE_ONLY )); then
@@ -269,6 +300,13 @@ if [[ -n "${RUNNER_RANDOM_ACTIONS-}" ]]; then
 fi
 if [[ -n "${RUNNER_FEATURES-}" ]]; then
   forward_env+=( "RUNNER_FEATURES=${RUNNER_FEATURES}" )
+fi
+if (( USE_GPU )); then
+  forward_env+=(
+    "TRAINER_TORCH_VARIANT=${TRAINER_TORCH_VARIANT}"
+    "TRAINER_DEVICE=${TRAINER_DEVICE}"
+    "TRAINER_IMAGE=${TRAINER_IMAGE}"
+  )
 fi
 run_or_echo env "${forward_env[@]}" "${MC_RUN_SH}" "${up_args[@]}"
 

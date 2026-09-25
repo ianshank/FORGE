@@ -86,11 +86,7 @@ class MuZeroWorldModel(WorldModel):
         self.prediction = PredictionNetwork(c)
 
         # Collect all parameters for training
-        self._all_params = (
-            self.representation.parameters()
-            + self.dynamics.parameters()
-            + self.prediction.parameters()
-        )
+        self._all_params = self._collect_parameters()
 
         total_params = sum(p.numel() for p in self._all_params)
         logger.info(
@@ -359,6 +355,23 @@ class MuZeroWorldModel(WorldModel):
         self.prediction.modules_list.load_state_dict(checkpoint["prediction"])
         logger.info("MuZeroWorldModel loaded from %s", path)
 
+    def _collect_parameters(self) -> list[torch.nn.Parameter]:
+        """Gather every sub-network's parameters, in a stable order."""
+        return (
+            self.representation.parameters()
+            + self.dynamics.parameters()
+            + self.prediction.parameters()
+        )
+
+    @property
+    def device(self) -> torch.device:
+        """The device every sub-network's parameters currently live on.
+
+        Tracks :meth:`to`, so callers building input tensors should read
+        this rather than ``config.device`` (the construction-time value).
+        """
+        return self._device
+
     def all_parameters(self) -> list[torch.nn.Parameter]:
         """Return all trainable parameters across all networks."""
         return list(self._all_params)
@@ -369,8 +382,9 @@ class MuZeroWorldModel(WorldModel):
         ``model.to(trainer.device)`` regardless of whether ``model`` is
         a ``nn.Module`` or this wrapper.
 
-        Updates the cached ``self._device`` so future
-        ``.config.device``-aware paths stay consistent.
+        Updates the cached ``self._device`` *and* ``config.device`` so
+        both :attr:`device`- and ``.config.device``-aware paths build
+        their input tensors on the same device as the weights.
 
         Returns ``self`` for chainability (matches
         ``nn.Module.to``'s contract).
@@ -381,5 +395,11 @@ class MuZeroWorldModel(WorldModel):
         self.representation.modules_list.to(resolved)
         self.dynamics.modules_list.to(resolved)
         self.prediction.modules_list.to(resolved)
+        # `nn.Module.to` may replace Parameter objects rather than mutate
+        # them in place (e.g. when the tensor types aren't shallow-copy
+        # compatible), so re-collect instead of trusting the cached list.
+        # Build optimizers *after* calling `to()`.
+        self._all_params = self._collect_parameters()
         self._device = resolved
+        self._config.device = str(resolved)
         return self

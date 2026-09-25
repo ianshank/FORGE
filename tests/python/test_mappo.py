@@ -325,6 +325,30 @@ class TestMAPPOConfigFromForgeConfig:
         assert mappo_cfg.gamma == pytest.approx(0.95)
         assert mappo_cfg.epochs == 8
 
+    def test_from_forge_config_defaults_to_auto_device(self) -> None:
+        """No [hardware] section keeps the pre-wiring "auto" behaviour."""
+        from forge.config import ForgeConfig
+
+        assert MAPPOConfig.from_forge_config(ForgeConfig.from_dict({})).device == "auto"
+
+    @pytest.mark.parametrize("device", ["cpu", "cuda", "cuda:1", "mps"])
+    def test_from_forge_config_reads_hardware_device(self, device: str) -> None:
+        """Regression: [hardware] device was parsed but never reached the
+        agent, so `device = "cpu"` still trained on the GPU."""
+        from forge.config import ForgeConfig
+
+        forge_cfg = ForgeConfig.from_dict({"hardware": {"device": device}})
+        assert MAPPOConfig.from_forge_config(forge_cfg).device == device
+
+    def test_from_forge_config_without_hardware_attr(self) -> None:
+        """Duck-typed configs lacking `hardware` fall back to "auto"."""
+        from types import SimpleNamespace
+
+        from forge.config import ForgeConfig
+
+        cfg = SimpleNamespace(training=ForgeConfig().training)
+        assert MAPPOConfig.from_forge_config(cfg).device == "auto"
+
 
 # ---------------------------------------------------------------------------
 # PPOTrainerConfig.from_forge_config

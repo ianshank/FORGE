@@ -101,3 +101,98 @@ class TestParseArgs:
         """Invalid agent type raises SystemExit."""
         with pytest.raises(SystemExit):
             parse_args(["--agent", "nonexistent"])
+
+
+class TestDeviceFlag:
+    """`--device` overrides [hardware] device and fails fast for mappo."""
+
+    def test_device_defaults_to_none(self) -> None:
+        """Absent flag must not clobber the config's [hardware] device."""
+        assert parse_args([]).device is None
+
+    def test_device_flag_parsed(self) -> None:
+        assert parse_args(["--device", "cuda:0"]).device == "cuda:0"
+
+    @pytest.mark.parametrize("device", ["bogus", "cuda:x"])
+    def test_unusable_device_exits_before_env_creation(
+        self, device: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An unusable device must exit 1 before the env is built."""
+        import train
+
+        def _no_env(_config: object) -> None:
+            raise AssertionError("env must not be created for an unusable device")
+
+        monkeypatch.setattr(train, "_create_env", _no_env)
+        with pytest.raises(SystemExit) as excinfo:
+            train.main(["--agent", "mappo", "--config", "configs/dry_run.toml", "--device", device])
+        assert excinfo.value.code == 1
+
+    def test_device_flag_overrides_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--device lands on config.hardware.device, which _train_mappo reads."""
+        import train
+
+        seen: dict[str, str] = {}
+
+        class _Env:
+            def close(self) -> None:
+                pass
+
+        def _capture(_env: object, config: object, _args: object) -> None:
+            seen["device"] = config.hardware.device  # type: ignore[attr-defined]
+
+        monkeypatch.setattr(train, "_create_env", lambda _config: _Env())
+        monkeypatch.setattr(train, "_train_mappo", _capture)
+        train.main(["--agent", "mappo", "--config", "configs/dry_run.toml", "--device", "cpu"])
+        assert seen == {"device": "cpu"}
+
+
+class TestFlatObsAgent:
+    """Evaluator passes dict obs; trained agents expect flatten_obs vectors."""
+
+    def test_flattens_dict_obs_in_sorted_key_order(self) -> None:
+        import numpy as np
+        from train import _FlatObsAgent
+
+        seen: list[object] = []
+
+        class _Recorder:
+            def act(self, obs: object) -> tuple[int, None]:
+                seen.append(obs)
+                return 0, None
+
+        assert _FlatObsAgent(_Recorder()).act({"b": [2.0, 3.0], "a": 1.0}) == (0, None)
+        np.testing.assert_array_equal(seen[0], np.array([1.0, 2.0, 3.0], dtype=np.float32))
+
+    def test_passes_flat_obs_through(self) -> None:
+        from train import _FlatObsAgent
+
+        class _Echo:
+            def act(self, obs: object) -> object:
+                return obs
+
+        flat = [0.5, 1.5]
+        assert _FlatObsAgent(_Echo()).act(flat) is flat
+
+
+def test_mappo_with_eval_interval_runs_end_to_end(tmp_path: object) -> None:
+    """Regression: `--agent mappo --eval-interval N` crashed on the first
+    evaluation (`TypeError: must be real number, not dict`)."""
+    pytest.importorskip("torch")
+    pytest.importorskip("gymnasium")
+    pytest.importorskip("forge_env.forge_env")
+    import train
+
+    train.main(
+        [
+            "--agent", "mappo",
+            "--config", "configs/dry_run.toml",
+            "--dry-run",
+            "--num-updates", "1",
+            "--eval-interval", "1",
+            "--eval-episodes", "1",
+            "--device", "cpu",
+            "--checkpoint-dir", str(tmp_path),
+        ]
+    )  # fmt: skip
+    assert any(tmp_path.iterdir())  # type: ignore[attr-defined]

@@ -57,7 +57,9 @@ class HardwareConfig:
     """Hardware and device configuration."""
 
     num_workers: int = 4
-    device: str = "cpu"
+    #: Torch device for learning agents: ``"auto"`` (CUDA > MPS > CPU),
+    #: ``"cpu"``, ``"cuda"``, ``"cuda:N"`` or ``"mps"``.
+    device: str = "auto"
     pin_memory: bool = False
     gpu_memory_fraction: float = 0.9
 
