@@ -44,6 +44,7 @@ See [`docs/CHARTER.md`](docs/CHARTER.md) for the project's mission, scope bounda
 - Python 3.11+ (`pyproject.toml` declares `requires-python = ">=3.11"`; automated CI validation is performed exclusively on Python 3.11 on Linux x86_64)
 - [maturin](https://github.com/PyO3/maturin) (`pip install maturin`)
 - numpy (`pip install numpy`)
+- For training: PyTorch + gymnasium (`maturin develop --extras train`). On a GPU host, install a CUDA-enabled `torch` first. See [Train an Agent Locally](#train-an-agent-locally-cpu-or-nvidia-gpu)
 
 ### Build and Install
 
@@ -119,6 +120,84 @@ python examples/forge_demo.py              # Full interactive demo
 python examples/forge_demo.py --quick      # CI mode (no delays)
 python examples/forge_demo.py --section crafting  # Single section
 ```
+
+### Train an Agent Locally (CPU or NVIDIA GPU)
+
+Not every training path uses a GPU. Only the torch-backed learners do:
+
+| Path | Entry point | Uses the GPU? |
+|------|-------------|---------------|
+| MAPPO (PPO actor-critic) on `ForgeGymnasiumEnv` | `scripts/train.py --agent mappo` | Yes. Set with `--device`, `FORGE_HARDWARE_DEVICE`, or `[hardware] device` |
+| Minecraft MuZero trainer (ONNX bundles for the runner) | `python -m forge.training.muzero_mc.cli train` | Yes, with `--device cuda` or `--device auto` |
+| Random / MCTS baselines | `scripts/train.py --agent random` or `--agent mcts` | No (nothing to learn) |
+| MangoMAS collection + stage pipeline, LM Studio BC, `scripts/run_e2e_long.py` | `scripts/train.py --agent mangomas[-collect]` | No. These stages are numpy-only |
+
+**1. Install PyTorch with CUDA, then FORGE with the training extras.** On
+Linux x86_64 the default PyPI `torch` wheel already bundles CUDA. If your
+driver is older than that wheel's CUDA, pick a matching index from
+[pytorch.org](https://pytorch.org/get-started/locally/). For example:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install maturin
+pip install torch --index-url https://download.pytorch.org/whl/cu124   # or plain `pip install torch`
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+# expect: <version> <cuda version> True
+
+# Native extension + extras. torch is already satisfied, so the CUDA
+# wheel is kept. `train` = torch + gymnasium (required by scripts/train.py).
+# `minecraft` = torch + onnx + onnxruntime + onnxscript + huggingface-hub.
+maturin develop --release --extras train,minecraft
+```
+
+**2. Smoke test, then the full run (MAPPO).**
+
+```bash
+# ~5 s on CPU: tiny grid, 3 PPO updates, writes a checkpoint
+python scripts/train.py --config configs/dry_run.toml --dry-run \
+    --agent mappo --num-updates 3 --device cpu --checkpoint-dir checkpoints/smoke
+
+# Full run on the GPU (forge.toml's default grid, rollout 2048, batch 256)
+python scripts/train.py --agent mappo --num-updates 500 --device cuda \
+    --eval-interval 25 --eval-episodes 5 --checkpoint-dir checkpoints/mappo
+```
+
+How the device is chosen, highest priority first:
+
+1. `--device`
+2. `FORGE_HARDWARE_DEVICE`
+3. `[hardware] device` in `--config`
+
+The root `forge.toml` ships `"auto"`, which picks CUDA, then MPS, then CPU.
+`configs/dry_run.toml` pins `"cpu"`. The startup log line
+`Starting training: ... device=...` shows which one won.
+
+An explicit `cuda`, `cuda:N` or `mps` that isn't usable exits with code 1
+before the environment is built. The error says whether the cause is a
+CPU-only torch build or no visible GPU. Hyperparameters live in the
+`[training]` section of `forge.toml` (or `configs/training/*.toml`), and
+any of them can be overridden with `FORGE_TRAINING_<FIELD>`.
+
+To stream live metrics to the dashboard, pass `--dashboard-url
+http://127.0.0.1:8080` with `cargo run -p forge-server` running.
+
+**3. Minecraft MuZero trainer on the local GPU.** This runs without Docker.
+It trains on `ep-*.json[.gz]` trajectories that the runner writes:
+
+```bash
+SCHEMA_ID="$(python -m forge.training.muzero_mc.cli compute-schema-id \
+    --action-map configs/minecraft/action_map.toml \
+    --rewards configs/minecraft/rewards.toml --quiet)"
+python -m forge.training.muzero_mc.cli bootstrap \
+    --obs-dim 920 --action-dim 12 --schema-id "$SCHEMA_ID" --out models/
+python -m forge.training.muzero_mc.cli train --input trajectories/ --out models/ \
+    --schema-id "$SCHEMA_ID" --obs-dim 920 --action-dim 12 \
+    --iters 1000 --export-every 100 --device cuda
+python -m forge.training.muzero_mc.cli validate-manifest models/model_manifest.json
+```
+
+For the fully containerised loop (Minecraft server + bot + runner + trainer),
+see [Minecraft Integration](#minecraft-integration) → `scripts/mc_self_play.sh --gpu`.
 
 ### MangoMAS Collection And Pipeline
 
@@ -575,24 +654,45 @@ CHANGELOG) has since been fixed.
 **continuous trainer**, one command):
 
 ```bash
-# 1. Accept Mojang's EULA
+# 1. Accept Mojang's EULA and set the (required) Grafana admin password —
+#    compose interpolates the whole file, so an empty
+#    GRAFANA_ADMIN_PASSWORD aborts every command, even without
+#    `--profile monitoring`.
 cp docker/compose.minecraft.env.example docker/compose.minecraft.env
-# edit and set MC_EULA=TRUE
+# edit: MC_EULA=TRUE and GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24)
 
-# 2. Bring the self-play stack up (CPU). Operator host needs ONLY
-#    docker compose v2 — no torch / Python extras locally (bootstrap
-#    runs inside the trainer-bootstrap container).
+# 2. Create the bind-mounted dirs as your user. The trainer runs as uid
+#    1000 by default; dirs docker auto-creates are root-owned and
+#    unwritable (other uids: rebuild with --build-arg APP_UID=$(id -u)).
+mkdir -p models trajectories
+
+# 3. Bring the self-play stack up (CPU). Operator host needs ONLY
+#    docker compose >= 2.20 — no torch / Python extras locally
+#    (bootstrap runs inside the trainer-bootstrap container).
 scripts/mc_self_play.sh --detach
 
-# 3. With a CUDA host + nvidia-container-toolkit:
+# 3b. Or on an NVIDIA GPU host (driver + nvidia-container-toolkit):
 scripts/mc_self_play.sh --gpu --detach
+docker exec forge-mc-trainer python -c "import torch; print(torch.cuda.is_available())"  # expect True
 
-# 4. Watch the bot's first-person view in the browser
+# 4. Watch the bot's first-person view in the browser (macOS `open`;
+#    use xdg-open on Linux)
 open http://localhost:3007
 
-# 5. Tear down:
+# 5. Tear down (add --gpu if you started with it):
 scripts/mc_self_play.sh --down
 ```
+
+`--gpu` layers `docker/compose.minecraft.gpu.yml` (NVIDIA device
+reservation on the `trainer` service) **and** overrides the env file's CPU
+defaults: it builds the trainer image with CUDA torch
+(`TRAINER_TORCH_VARIANT=cu121`, tagged `forge-mc-trainer:dev-cu121` so a
+cached CPU image is never reused) and runs it with `--device=cuda`. Change
+these with `GPU_TORCH_VARIANT`, `GPU_TRAINER_DEVICE` and
+`GPU_TRAINER_IMAGE`. The preflight rejects docker compose < 2.20, because
+older versions silently drop the GPU reservation, and it warns when no
+`nvidia` docker runtime is registered. Only the trainer uses the GPU. The
+runner's ONNX inference and mc-bot stay on CPU.
 
 The orchestrator computes `schema_id` (nested reward **contents**
 folded in), runs `bootstrap` inside a one-shot container if no
@@ -634,15 +734,34 @@ python scripts/mc_plot_baseline.py \
     --out docs/results/v0.5-first-real-run.md
 ```
 
+`capture-baseline` only observes a running stack. It doesn't pick the
+policy, and it reads two things from the host:
+
+- **Episode progress** comes from the runner's Prometheus endpoint
+  (`--metrics-url`, default `http://127.0.0.1:9090/metrics`). The stock
+  compose file does not publish the runner's port 9090 to the host, so
+  publish it yourself (for example, add a `ports: ["127.0.0.1:9090:9090"]`
+  override on `runner`) or pass a reachable `--metrics-url`. Otherwise the
+  capture polls until `--timeout-secs` expires.
+- **Per-episode rewards** come from `--trajectory-dir`. Start the stack
+  with `TRAJECTORIES_DIR=../trajectories.random` (the path is relative to
+  `docker/`) so the runner writes where the capture reads.
+
+For a true random baseline, bring the stack up with
+`scripts/mc_self_play.sh --baseline-only`. The default self-play stack runs
+the trained policy.
+
 **Legacy quickstart (v0.3-pre — runner only, no trainer)**:
 
 ```bash
 cp docker/compose.minecraft.env.example docker/compose.minecraft.env
-# edit MC_EULA=TRUE
+# edit MC_EULA=TRUE and GRAFANA_ADMIN_PASSWORD
 
-pip install -e ".[minecraft]"
+maturin develop --release --extras minecraft   # or: pip install -e ".[minecraft]"
+# obs-dim 920 = the shipped env.toml's block-grid observation
+# (include_block_grid = true); use 31 only if you set it to false.
 python -m forge.training.muzero_mc.cli bootstrap \
-    --obs-dim 31 --action-dim 12 \
+    --obs-dim 920 --action-dim 12 \
     --schema-id "$(python -m forge.training.muzero_mc.cli \
         compute-schema-id --action-map configs/minecraft/action_map.toml \
         --rewards configs/minecraft/rewards.toml --quiet)" \

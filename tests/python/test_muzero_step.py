@@ -10,6 +10,7 @@ module is importable without torch.
 
 from __future__ import annotations
 
+import importlib.util
 import math
 from typing import TYPE_CHECKING
 
@@ -136,3 +137,53 @@ def test_step_config_defaults_match_original_trainer_config() -> None:
     trainer_default = MuZeroTrainerConfig()
     assert step_default.max_grad_norm == trainer_default.max_grad_norm
     assert step_default.gradient_scale == trainer_default.gradient_scale
+
+
+def test_model_to_keeps_device_and_config_device_in_sync() -> None:
+    """``MuZeroWorldModel.to`` must update both the live device and
+    ``config.device``; the Minecraft trainer calls ``model.to(cuda)`` on a
+    model whose config was built with the ``"cpu"`` default.
+    """
+    torch = pytest.importorskip("torch")
+    model = _make_tiny_model()
+    assert model.device == torch.device("cpu")
+
+    assert model.to("meta") is model
+    assert model.device == torch.device("meta")
+    assert model.config.device == "meta"
+    assert all(p.device.type == "meta" for p in model.all_parameters())
+
+
+def test_train_with_gradients_builds_batch_on_weights_device() -> None:
+    """Regression: the step used ``torch.device(model.config.device)``,
+    so a model moved with ``.to()`` got batches on the stale config
+    device ("Expected all tensors to be on the same device" on the first
+    CUDA step). A stale config must not leak into the step.
+    """
+    torch = pytest.importorskip("torch")
+    from forge.training._muzero_step import MuZeroStepConfig, train_with_gradients
+
+    model = _make_tiny_model()
+    model.config.device = "meta"  # stale; weights stay on CPU
+    optimizer = torch.optim.Adam(model.all_parameters(), lr=1e-3)
+    batch = _make_batch(batch_size=4, obs_dim=_OBS_DIM, action_dim=_ACTION_DIM, unroll=2)
+
+    metrics = train_with_gradients(model, optimizer, batch, MuZeroStepConfig())
+    assert math.isfinite(metrics.loss)
+
+
+@pytest.mark.skipif(
+    not (importlib.util.find_spec("torch") and __import__("torch").cuda.is_available()),
+    reason="needs a CUDA device",
+)
+def test_train_with_gradients_on_cuda() -> None:
+    """End-to-end on a real GPU: CPU-built model moved to CUDA trains."""
+    import torch
+
+    from forge.training._muzero_step import MuZeroStepConfig, train_with_gradients
+
+    model = _make_tiny_model().to("cuda")
+    optimizer = torch.optim.Adam(model.all_parameters(), lr=1e-3)
+    batch = _make_batch(batch_size=4, obs_dim=_OBS_DIM, action_dim=_ACTION_DIM, unroll=2)
+    metrics = train_with_gradients(model, optimizer, batch, MuZeroStepConfig())
+    assert math.isfinite(metrics.loss)

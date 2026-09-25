@@ -64,11 +64,15 @@ class MuZeroExporter:
         output_dir.mkdir(parents=True, exist_ok=True)
         c = self._config
         paths: list[Path] = []
+        # Trace inputs must live on the weights' device (e.g. CUDA after
+        # ``trainer.to("cuda")``); ONNX initializers are device-agnostic,
+        # so the exported graph still runs on the CPU-only Rust runner.
+        device = self._model.device
 
         # --- Representation Network ---
         rep_path = output_dir / "representation.onnx"
         rep_module = _build_rep_module(self._model)
-        dummy_obs = torch.randn(1, c.obs_dim)
+        dummy_obs = torch.randn(1, c.obs_dim, device=device)
         torch.onnx.export(
             rep_module,
             dummy_obs,
@@ -85,7 +89,7 @@ class MuZeroExporter:
         dyn_path = output_dir / "dynamics.onnx"
         dyn_module = _build_dyn_module(self._model)
         input_dim = c.latent_dim + c.action_dim
-        dummy_input = torch.randn(1, input_dim)
+        dummy_input = torch.randn(1, input_dim, device=device)
         torch.onnx.export(
             dyn_module,
             dummy_input,
@@ -105,7 +109,7 @@ class MuZeroExporter:
         # --- Prediction Network ---
         pred_path = output_dir / "prediction.onnx"
         pred_module = _build_pred_module(self._model)
-        dummy_latent = torch.randn(1, c.latent_dim)
+        dummy_latent = torch.randn(1, c.latent_dim, device=device)
         torch.onnx.export(
             pred_module,
             dummy_latent,
@@ -143,23 +147,24 @@ class MuZeroExporter:
         output_dir.mkdir(parents=True, exist_ok=True)
         c = self._config
         paths: list[Path] = []
+        device = self._model.device
 
         rep_module = _build_rep_module(self._model)
         rep_path = output_dir / "representation.pt2"
-        _export_program(rep_module, torch.randn(1, c.obs_dim), rep_path)
+        _export_program(rep_module, torch.randn(1, c.obs_dim, device=device), rep_path)
         paths.append(rep_path)
         logger.info("Exported representation ExportedProgram to %s", rep_path)
 
         dyn_module = _build_dyn_module(self._model)
         input_dim = c.latent_dim + c.action_dim
         dyn_path = output_dir / "dynamics.pt2"
-        _export_program(dyn_module, torch.randn(1, input_dim), dyn_path)
+        _export_program(dyn_module, torch.randn(1, input_dim, device=device), dyn_path)
         paths.append(dyn_path)
         logger.info("Exported dynamics ExportedProgram to %s", dyn_path)
 
         pred_module = _build_pred_module(self._model)
         pred_path = output_dir / "prediction.pt2"
-        _export_program(pred_module, torch.randn(1, c.latent_dim), pred_path)
+        _export_program(pred_module, torch.randn(1, c.latent_dim, device=device), pred_path)
         paths.append(pred_path)
         logger.info("Exported prediction ExportedProgram to %s", pred_path)
 
@@ -245,18 +250,20 @@ class MuZeroExporter:
         """Validate TorchScript export against PyTorch."""
         import torch
 
-        obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+        # The ExportedProgram carries its weights on the export device.
+        device = self._model.device
+        obs_t = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
 
         rep_model = _load_exported_module(output_dir / "representation.pt2")
-        ts_latent = rep_model(obs_t).detach().numpy().flatten()
+        ts_latent = rep_model(obs_t).detach().cpu().numpy().flatten()
         if not np.allclose(ts_latent, ref_latent, atol=atol):
             logger.error("Representation ExportedProgram validation failed")
             return False
 
         pred_model = _load_exported_module(output_dir / "prediction.pt2")
-        latent_t = torch.tensor(ts_latent, dtype=torch.float32).unsqueeze(0)
+        latent_t = torch.tensor(ts_latent, dtype=torch.float32, device=device).unsqueeze(0)
         ts_policy, _ts_value = pred_model(latent_t)
-        if not np.allclose(ts_policy.detach().numpy().flatten()[: len(ref_policy)], ref_policy, atol=atol):
+        if not np.allclose(ts_policy.detach().cpu().numpy().flatten()[: len(ref_policy)], ref_policy, atol=atol):
             logger.error("Prediction ExportedProgram validation failed")
             return False
 

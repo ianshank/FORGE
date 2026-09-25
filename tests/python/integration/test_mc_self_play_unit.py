@@ -154,6 +154,26 @@ def test_dry_run_gpu_flag_includes_overlay(script_path: Path) -> None:
     assert "--gpu" in combined
 
 
+def test_dry_run_gpu_selects_cuda_trainer(script_path: Path) -> None:
+    """Regression: `--gpu` layered the device reservation but the trainer
+    still ran `--device=cpu` on a CPU-only torch image, because compose
+    interpolates `--device=${TRAINER_DEVICE}` and `TORCH_VARIANT` from the
+    env file (which ships `cpu`). The script must override both and use a
+    separate image tag so a cached CPU image is not reused."""
+    result = _run_dry(script_path, "--gpu")
+    combined = result.stdout + result.stderr
+    assert "TRAINER_TORCH_VARIANT=cu121" in combined
+    assert "TRAINER_DEVICE=cuda" in combined
+    assert "TRAINER_IMAGE=forge-mc-trainer:dev-cu121" in combined
+
+
+def test_dry_run_without_gpu_leaves_trainer_identity_to_env_file(script_path: Path) -> None:
+    result = _run_dry(script_path)
+    combined = result.stdout + result.stderr
+    assert "TRAINER_DEVICE=" not in combined
+    assert "TRAINER_TORCH_VARIANT=" not in combined
+
+
 def test_dry_run_without_gpu_omits_overlay(script_path: Path) -> None:
     """Without `--gpu`, the GPU overlay file MUST NOT appear in argv."""
     result = _run_dry(script_path)

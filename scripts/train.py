@@ -9,6 +9,7 @@ Usage::
     python scripts/train.py --config forge.toml --agent mappo --num-updates 10
     python scripts/train.py --agent random --episodes 100
     python scripts/train.py --agent mcts --episodes 50
+    python scripts/train.py --agent mappo --num-updates 200 --device cuda
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ _DEFAULT_EVAL_EPISODES = 10
 _DEFAULT_EARLY_STOP_PATIENCE = 0
 _DEFAULT_COLLECTION_POLICY = DEFAULT_COLLECTION_POLICY
 _DEFAULT_OPTIONAL_PATH = ""
+_DEFAULT_DEVICE = None  # None -> keep the config's [hardware] device
 _AGENT_CHOICES = ("random", "mcts", "mappo", "mangomas", "mangomas-collect")
 _COLLECTION_POLICY_CHOICES = COLLECTION_POLICY_CHOICES
 
@@ -116,6 +118,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=_DEFAULT_EVAL_EPISODES,
         help="Number of episodes per evaluation",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=_DEFAULT_DEVICE,
+        help=(
+            "Torch device for learning agents (mappo): auto, cpu, cuda, cuda:N or mps. "
+            "Overrides [hardware] device from --config; fails fast if unavailable"
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -352,6 +363,43 @@ def _create_env(config: Any) -> Any:
     return env
 
 
+class _FlatObsAgent:
+    """Present an agent trained on ``flatten_obs`` vectors to ``Evaluator``.
+
+    ``Evaluator`` hands ``agent.act`` the env's raw dict observation, while
+    the training loops here feed flattened float32 vectors. Without this
+    adapter ``--eval-interval`` crashed MAPPO on its first evaluation.
+    """
+
+    def __init__(self, agent: Any) -> None:
+        self._agent = agent
+
+    def act(self, obs: Any) -> Any:
+        """Flatten dict observations, then delegate to the wrapped agent."""
+        from forge.utils.observation import flatten_obs
+
+        return self._agent.act(flatten_obs(obs) if isinstance(obs, dict) else obs)
+
+
+def _apply_device(config: Any, args: argparse.Namespace) -> None:
+    """Apply ``--device`` over ``[hardware] device`` and fail fast if unusable.
+
+    Only ``mappo`` places tensors on a device, so only it is validated;
+    exits with status 1 (before the env is built) on an unusable device.
+    """
+    if args.device is not None:
+        config.hardware.device = args.device
+    if args.agent != "mappo":
+        return
+    from forge.utils.device import ensure_device_available
+
+    try:
+        ensure_device_available(config.hardware.device)
+    except ValueError as exc:
+        logger.error("%s", exc)
+        sys.exit(1)
+
+
 def _make_early_stopping(args: argparse.Namespace) -> Any:
     """Create an EarlyStopping instance if enabled via CLI args.
 
@@ -424,7 +472,7 @@ def _train_mappo(env: Any, config: Any, args: argparse.Namespace) -> None:
             from forge.evaluation.evaluator import EvalConfig, Evaluator
 
             evaluator = Evaluator(EvalConfig(num_episodes=args.eval_episodes, seed=args.seed))
-            result = evaluator.evaluate(env, agent)
+            result = evaluator.evaluate(env, _FlatObsAgent(agent))
             logger.info(
                 "Eval at update %d: reward_mean=%.3f\u00b1%.3f",
                 update,
@@ -536,7 +584,7 @@ def _train_basic(
             from forge.evaluation.evaluator import EvalConfig, Evaluator
 
             evaluator = Evaluator(EvalConfig(num_episodes=args.eval_episodes, seed=args.seed))
-            result = evaluator.evaluate(env, agent)
+            result = evaluator.evaluate(env, _FlatObsAgent(agent))
             logger.info(
                 "Eval at episode %d: reward_mean=%.3f\u00b1%.3f",
                 episode,
@@ -599,6 +647,8 @@ def main(argv: list[str] | None = None) -> None:
         logger.error("Failed to load config from '%s': %s", args.config, exc)
         sys.exit(1)
 
+    _apply_device(config, args)
+
     if args.dry_run:
         config.dry_run.enabled = True
         logger.info("Dry-run mode enabled — using effective_simulation() overrides")
@@ -606,10 +656,11 @@ def main(argv: list[str] | None = None) -> None:
     set_all_seeds(args.seed)
 
     logger.info(
-        "Starting training: agent=%s, seed=%d, config=%s",
+        "Starting training: agent=%s, seed=%d, config=%s, device=%s",
         args.agent,
         args.seed,
         args.config,
+        config.hardware.device,
     )
 
     try:
