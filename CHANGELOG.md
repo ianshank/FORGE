@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **GPU training readiness**: the MuZero trainer crashed on its first CUDA step because batches were built on the stale `config.device`, not the weights' device. ONNX / ExportedProgram export from a CUDA model also failed. Both now follow `MuZeroWorldModel.device`.
+- **`[hardware] device` now reaches MAPPO**: before this it was parsed but ignored. The default is `"auto"`. `scripts/train.py --device` overrides it and fails fast when the requested accelerator is unusable.
+- **`scripts/train.py --eval-interval`**: MAPPO no longer crashes on its first evaluation. The evaluator was passing dict observations to the agent.
+- **`mc_self_play.sh --gpu`** now builds the cu121 trainer image and runs `--device=cuda`. Before this it ran on CPU. The preflight also enforces compose >= 2.20.
+- **`trainer.Dockerfile`**: the image builds again. It is pinned back to Python 3.11 (torch 2.4.1 has no cp314 wheels), and the maturin-backed `pip install -e .` is replaced with `PYTHONPATH`.
+- **`[minecraft]` extra** now includes `onnxscript`, which `torch.onnx.export` requires. There is also a new `[train]` extra (torch + gymnasium).
+
 ## [0.6.1] - Unreleased
 
 ### Added
