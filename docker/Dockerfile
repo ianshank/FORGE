@@ -61,7 +61,7 @@ RUN maturin build --release -m crates/forge-python/Cargo.toml --out /app/dist
 # wheel-builder stage (rust:${RUST_IMAGE_TAG} ships Python 3.11). A mismatch
 # causes `pip install` to fail with "not a supported wheel on this platform"
 # because maturin embeds the Python ABI tag (e.g. cp311) into the wheel filename.
-FROM python:3.11-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 WORKDIR /app
 
 # Runtime-only system deps: libssl3 for TLS, curl for HEALTHCHECK
