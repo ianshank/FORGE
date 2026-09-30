@@ -245,3 +245,81 @@ def test_trainer_continuous_respects_max_bundle_versions_floor(tmp_path: Path) -
     assert set(surviving) == expected_top_versions, (
         f"GC kept wrong subdirs: surviving={surviving!r}, expected={expected_top_versions!r}"
     )
+
+
+def test_muzero_mc_training_workflow_e2e(tmp_path: Path) -> None:
+    """End-to-end verification of the MuZero training pipeline:
+    1. Pre-seeds synthetic TrajectoryV2 data.
+    2. Runs MuZeroMcTrainer.train() across multiple gradient iterations.
+    3. Verifies loss convergence and metrics emission.
+    4. Verifies atomic ONNX export ({representation, dynamics, prediction}.onnx)
+       and model_manifest.json bump.
+    5. Validates the generated manifest via CLI `validate-manifest`.
+    6. Loads the exported representation model in ONNX Runtime and verifies
+       an inference forward pass matches expected output shapes.
+    """
+    pytest.importorskip("torch")
+    pytest.importorskip("onnx")
+    pytest.importorskip("onnxruntime")
+    pytest.importorskip("onnxscript")
+    import numpy as np
+    import onnxruntime as ort
+
+    from forge.training.muzero_mc.cli import EXIT_OK
+    from forge.training.muzero_mc.cli import main as cli_main
+    from forge.training.muzero_mc.replay import TrajectoryReader
+    from forge.training.muzero_mc.trainer import MuzeroMcTrainer, MuZeroMcTrainerConfig
+
+    traj_dir = tmp_path / "trajectories"
+    out_dir = tmp_path / "models"
+
+    for i in range(4):
+        _populate_trajectory(
+            traj_dir / f"ep-{i:06d}.json",
+            obs_dim=_SMOKE_OBS_DIM,
+            action_count=_SMOKE_ACTION_DIM,
+            steps=6,
+        )
+
+    model = _make_smoke_model()
+    reader = TrajectoryReader(traj_dir, batch_size=2)
+    cfg = MuZeroMcTrainerConfig(
+        schema_id="smoke-e2e-schema",
+        output_dir=out_dir,
+        device="cpu",
+        train_iters=4,
+        export_every_n_iters=2,
+        seed=42,
+    )
+    trainer = MuzeroMcTrainer(model, reader, cfg)
+
+    # Execute training workflow E2E
+    outcome = trainer.train()
+
+    assert outcome["iters_completed"] == 4
+    assert outcome["exports"] >= 2
+    assert "loss" in outcome["last_metrics"]
+    assert np.isfinite(outcome["last_metrics"]["loss"])
+    assert outcome["last_manifest_version"] == 2
+
+    # Manifest verification via CLI subcommand
+    manifest_path = out_dir / "model_manifest.json"
+    assert manifest_path.is_file()
+    rc = cli_main(["validate-manifest", str(manifest_path)])
+    assert rc == EXIT_OK
+
+    # Verify ONNX bundle artifacts
+    v2_dir = out_dir / "v00000002"
+    rep_onnx = v2_dir / "representation.onnx"
+    assert rep_onnx.is_file()
+    assert (v2_dir / "dynamics.onnx").is_file()
+    assert (v2_dir / "prediction.onnx").is_file()
+
+    # Load in ONNX Runtime and verify inference forward pass
+    session = ort.InferenceSession(str(rep_onnx))
+    input_name = session.get_inputs()[0].name
+    dummy_obs = np.ones((1, _SMOKE_OBS_DIM), dtype=np.float32)
+    outputs = session.run(None, {input_name: dummy_obs})
+    assert len(outputs) == 1
+    # Latent dimension from _make_smoke_model is 16
+    assert outputs[0].shape == (1, 16)

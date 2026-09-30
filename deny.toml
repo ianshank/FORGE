@@ -101,6 +101,7 @@ deny = [
         "forge-cloud",
         "forge-data",
         "forge-edge",
+        "forge-integration-layer",
         "forge-integration-tests",
     ] },
 
@@ -112,6 +113,7 @@ deny = [
     { crate = "forge-core", wrappers = [
         "forge-agent",
         "forge-data",
+        "forge-integration-layer",
         "forge-mangomas",
         "forge-replay",
         "forge-integration-tests",

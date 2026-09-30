@@ -103,6 +103,11 @@ class MuZeroWorldModel(WorldModel):
         """Return the MuZero configuration."""
         return self._config
 
+    @property
+    def device(self) -> torch.device:
+        """Return the device tensors and models currently execute on."""
+        return self._device
+
     def _action_to_onehot(self, action: int) -> torch.Tensor:
         """Convert a discrete action index to a one-hot tensor.
 
@@ -382,4 +387,5 @@ class MuZeroWorldModel(WorldModel):
         self.dynamics.modules_list.to(resolved)
         self.prediction.modules_list.to(resolved)
         self._device = resolved
+        self._config.device = str(resolved)
         return self
