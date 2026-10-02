@@ -5,10 +5,13 @@
 # trajectories, export ONNX bundles, and bump the manifest the
 # runner's `HotReloadWatcher` polls.
 #
-# Image variants via `--build-arg TORCH_VARIANT={cpu,cu121}`:
+# Image variants via `--build-arg TORCH_VARIANT={cpu,cuXYZ}`:
 #   - `cpu` (default) — CPU-only torch wheel; ~700 MB image.
-#   - `cu121` — CUDA 12.1 torch wheel; requires nvidia-container-toolkit
-#     on the host AND the GPU compose overlay (compose.minecraft.gpu.yml).
+#   - `cuXYZ` (e.g. `cu121`, `cu124`) — the matching CUDA torch wheel from
+#     `${TORCH_INDEX_BASE}/cuXYZ`; requires nvidia-container-toolkit on the
+#     host AND the GPU compose overlay (compose.minecraft.gpu.yml). The
+#     variant must exist for TORCH_VERSION on the index, and any other
+#     value fails the build instead of silently installing CPU torch.
 #
 # numpy is pinned `<2.0` to match the workspace's CI gate (the savez
 # stub regression PR #58 documented hasn't shipped a numpy-2.x fix yet).
@@ -46,7 +49,7 @@ COPY python /app/python
 ENV PYTHONPATH=/app/python
 
 # Install the right torch wheel via index-url based on TORCH_VARIANT.
-# Default is CPU-only; pass `--build-arg TORCH_VARIANT=cu121` to get
+# Default is CPU-only; pass `--build-arg TORCH_VARIANT=cuXYZ` to get
 # CUDA-enabled wheels. Numpy pinned <2.0 per the CI gate.
 # Pinned minor versions so a rebuild on a different day pulls the
 # SAME wheels. Wide-open `>=2.0,<3.0` ranges produce drift across
@@ -54,6 +57,7 @@ ENV PYTHONPATH=/app/python
 # without sacrificing security patches (still picks the latest
 # 2.4.x). Bump together with the workspace's `numpy<2.0` gate.
 ARG TORCH_VARIANT
+ARG TORCH_INDEX_BASE=https://download.pytorch.org/whl
 ARG TORCH_VERSION=2.4.1
 ARG TORCHVISION_VERSION=0.19.1
 ARG ONNX_VERSION=1.17.0
@@ -62,15 +66,14 @@ ARG ONNXRUNTIME_VERSION=1.20.0
 # (needed by `bootstrap --from-hf`).
 ARG HF_HUB_SPEC=">=1.28.0"
 RUN pip install --upgrade pip \
-    && if [ "${TORCH_VARIANT}" = "cu121" ]; then \
-         pip install --no-cache-dir \
-           --index-url https://download.pytorch.org/whl/cu121 \
-           "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}"; \
-       else \
-         pip install --no-cache-dir \
-           --index-url https://download.pytorch.org/whl/cpu \
-           "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}"; \
-       fi \
+    && case "${TORCH_VARIANT}" in \
+         cpu|cu[0-9][0-9]*) ;; \
+         *) echo "unsupported TORCH_VARIANT='${TORCH_VARIANT}' (expected cpu or cuXYZ, e.g. cu121)" >&2; \
+            exit 1 ;; \
+       esac \
+    && pip install --no-cache-dir \
+         --index-url "${TORCH_INDEX_BASE}/${TORCH_VARIANT}" \
+         "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
     && pip install --no-cache-dir \
          "onnx==${ONNX_VERSION}" \
          "onnxruntime==${ONNXRUNTIME_VERSION}" \
@@ -78,8 +81,13 @@ RUN pip install --upgrade pip \
          "huggingface-hub${HF_HUB_SPEC}"
 
 # Fail the build (not the first training round) if the package or the
-# requested torch variant is broken.
-RUN python -c "import forge.training.muzero_mc.cli, torch; print('torch', torch.__version__, 'cuda', torch.version.cuda)"
+# requested torch variant is broken — including a `cuXYZ` request that
+# somehow resolved to a CPU-only wheel.
+RUN python -c "import forge.training.muzero_mc.cli, torch; print('torch', torch.__version__, 'cuda', torch.version.cuda)" \
+    && if [ "${TORCH_VARIANT}" != "cpu" ]; then \
+         python -c "import sys, torch; sys.exit(torch.version.cuda is None)" \
+           || { echo "TORCH_VARIANT=${TORCH_VARIANT} but torch has no CUDA support" >&2; exit 1; }; \
+       fi
 
 # ---- non-root runtime user ------------------------------------------
 # This image previously had no USER directive, so the trainer ran as root
@@ -90,8 +98,10 @@ RUN python -c "import forge.training.muzero_mc.cli, torch; print('torch', torch.
 #
 # The uid/gid are build args rather than literals because the trainer WRITES
 # to host bind mounts: a container uid that doesn't match the owner of the
-# host `models/` + `trajectories/` directories cannot write to them. Match
-# your host with:
+# host `models/` + `trajectories/` directories cannot write to them.
+# Compose passes them from TRAINER_UID / TRAINER_GID, which
+# `scripts/mc_self_play.sh` defaults to the invoking host user; a manual
+# build matches the host with:
 #
 #   docker build -f docker/trainer.Dockerfile \
 #     --build-arg APP_UID="$(id -u)" --build-arg APP_GID="$(id -g)" .

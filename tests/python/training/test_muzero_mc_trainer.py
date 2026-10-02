@@ -343,6 +343,34 @@ def test_resolve_device_explicit_cpu_does_not_query_cuda(
     assert queried["n"] == 0
 
 
+def test_resolve_device_explicit_cuda_fails_fast_without_gpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit `device='cuda'` on a host with no usable GPU raises an
+    actionable `ValueError` up front (via `ensure_device_available`)
+    rather than an opaque torch error at the first `.to(device)`."""
+    torch = pytest.importorskip("torch")
+    from forge.training.muzero_mc.trainer import _resolve_device
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(ValueError, match=r"torch\.cuda\.is_available\(\) is False"):
+        _resolve_device("cuda")
+
+
+def test_resolve_device_explicit_cuda_passes_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit `device='cuda'` resolves to a CUDA `torch.device` when the
+    availability check passes. Monkeypatched so it runs on CPU-only CI."""
+    torch = pytest.importorskip("torch")
+    from forge.training.muzero_mc.trainer import _resolve_device
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    resolved = _resolve_device("cuda")
+    assert resolved.type == "cuda"
+
+
 def test_trainer_moves_model_to_configured_device(tmp_path: Path) -> None:
     """End-to-end: `MuzeroMcTrainer.__init__` should move the model
     to the resolved device. Asserts via the `trainer.device` property

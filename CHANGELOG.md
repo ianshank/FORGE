@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`mc_self_play.sh --gpu`** now builds the cu121 trainer image and runs `--device=cuda`. Before this it ran on CPU. The preflight also enforces compose >= 2.20.
 - **`trainer.Dockerfile`**: the image builds again. It is pinned back to Python 3.11 (torch 2.4.1 has no cp314 wheels), and the maturin-backed `pip install -e .` is replaced with `PYTHONPATH`.
 - **`[minecraft]` extra** now includes `onnxscript`, which `torch.onnx.export` requires. There is also a new `[train]` extra (torch + gymnasium).
+- **Trainer image for any CUDA variant and host uid**: `trainer.Dockerfile` derives the torch index from `TORCH_VARIANT` (`cpu` or any `cuXYZ`). It rejects other values and verifies CUDA after install; before this, anything except `cu121` silently got CPU torch. `mc_self_play.sh --gpu` validates `GPU_TORCH_VARIANT` up front. It also builds the trainer with the host `id -u`/`id -g` (`TRAINER_UID`/`TRAINER_GID`), so the bind mounts are writable for users other than uid 1000.
+- **muzero_mc trainer `--device cuda`** now fails fast on a host with no usable GPU via `ensure_device_available`. `scripts/train.py` warns when `--device` is given to an agent that ignores it. `configs/training/distributed.toml` defaults to `device = "auto"`.
+- **mypy 2.x**: `forge.config._build_section` narrows `default_factory` with `callable()`, so it type-checks against newer typeshed too.
 
 ## [0.6.1] - Unreleased
 

@@ -386,6 +386,9 @@ class MuZeroWorldModel(WorldModel):
         both :attr:`device`- and ``.config.device``-aware paths build
         their input tensors on the same device as the weights.
 
+        Note that ``config`` is mutated in place: a :class:`MuZeroConfig`
+        shared with another model follows this one to ``device``.
+
         Returns ``self`` for chainability (matches
         ``nn.Module.to``'s contract).
         """
@@ -402,4 +405,7 @@ class MuZeroWorldModel(WorldModel):
         self._all_params = self._collect_parameters()
         self._device = resolved
         self._config.device = str(resolved)
+        logger.info(
+            "MuZeroWorldModel moved to %s (%d parameter tensors)", resolved, len(self._all_params)
+        )
         return self

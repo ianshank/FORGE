@@ -47,9 +47,10 @@ compliance = ["gymnasium>=1.0", "pettingzoo>=1.24"]
 #   - onnx            -> ONNX graph manipulation for round-trip tests
 #   - onnxruntime     -> cross-runtime validation; matches the Rust
 #                        `onnxruntime`/`ort` crate version range
-#   - onnxscript      -> required by `torch.onnx.export` on current torch
-#                        (the dynamo exporter); without it every bundle
-#                        export fails with ModuleNotFoundError
+#   - onnxscript      -> imported by `torch.onnx.export`'s dynamo exporter,
+#                        the default (`dynamo=True`) since torch 2.9;
+#                        without it every bundle export fails with
+#                        ModuleNotFoundError
 #   - huggingface-hub -> `bootstrap --from-hf` warm-start +
 #                        `scripts/hf_publish_model.py` publishing.
 #                        Floor 0.23: the first release where

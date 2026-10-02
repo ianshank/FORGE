@@ -152,6 +152,13 @@ def test_model_to_keeps_device_and_config_device_in_sync() -> None:
     assert model.device == torch.device("meta")
     assert model.config.device == "meta"
     assert all(p.device.type == "meta" for p in model.all_parameters())
+    # The optimizer-facing list must be the live Parameters, not stale copies.
+    live = [
+        p
+        for net in (model.representation, model.dynamics, model.prediction)
+        for p in net.modules_list.parameters()
+    ]
+    assert [id(p) for p in model.all_parameters()] == [id(p) for p in live]
 
 
 def test_train_with_gradients_builds_batch_on_weights_device() -> None:

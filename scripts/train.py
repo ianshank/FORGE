@@ -390,6 +390,12 @@ def _apply_device(config: Any, args: argparse.Namespace) -> None:
     if args.device is not None:
         config.hardware.device = args.device
     if args.agent != "mappo":
+        if args.device is not None:
+            logger.warning(
+                "--device=%s has no effect for --agent %s (only mappo places tensors on a device)",
+                args.device,
+                args.agent,
+            )
         return
     from forge.utils.device import ensure_device_available
 

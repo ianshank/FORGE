@@ -29,8 +29,8 @@
 #                      separately so a cached CPU image is never
 #                      reused) and run it with --device=cuda. These
 #                      override the env file's CPU values; tune via
-#                      GPU_TORCH_VARIANT / GPU_TRAINER_DEVICE /
-#                      GPU_TRAINER_IMAGE.
+#                      GPU_TORCH_VARIANT (a `cuXYZ` CUDA index) /
+#                      GPU_TRAINER_DEVICE / GPU_TRAINER_IMAGE.
 #   --detach           Run the final `compose up` in detached mode.
 #                      Default is foreground (logs stream to TTY,
 #                      Ctrl-C tears down).
@@ -88,6 +88,23 @@ TRAINED_RANDOM_ACTIONS="${TRAINED_RANDOM_ACTIONS:-false}"
 GPU_TORCH_VARIANT="${GPU_TORCH_VARIANT:-cu121}"
 GPU_TRAINER_DEVICE="${GPU_TRAINER_DEVICE:-cuda}"
 GPU_TRAINER_IMAGE="${GPU_TRAINER_IMAGE:-forge-mc-trainer:dev-${GPU_TORCH_VARIANT}}"
+# Must name a CUDA wheel index (cuXYZ); trainer.Dockerfile rejects others.
+GPU_TORCH_VARIANT_PATTERN='^cu[0-9]+$'
+# Trainer image uid/gid (Dockerfile APP_UID/APP_GID via compose). Default
+# to the invoking user so the container can write the host bind mounts;
+# fall back to the image default when invoked as root, so the trainer
+# never runs as uid 0.
+TRAINER_DEFAULT_UID="${TRAINER_DEFAULT_UID:-1000}"
+TRAINER_DEFAULT_GID="${TRAINER_DEFAULT_GID:-1000}"
+host_uid="$(id -u)"
+if (( host_uid == 0 )); then
+  TRAINER_UID="${TRAINER_UID:-${TRAINER_DEFAULT_UID}}"
+  TRAINER_GID="${TRAINER_GID:-${TRAINER_DEFAULT_GID}}"
+else
+  TRAINER_UID="${TRAINER_UID:-${host_uid}}"
+  TRAINER_GID="${TRAINER_GID:-$(id -g)}"
+fi
+export TRAINER_UID TRAINER_GID
 
 log()   { printf '%s [mc_self_play] %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 die()   { log "ERROR: $*"; exit 1; }
@@ -187,7 +204,11 @@ else
   fi
 fi
 
+log "trainer uid:gid=${TRAINER_UID}:${TRAINER_GID} (host models/ + trajectories/ must be writable by it)"
+
 if (( USE_GPU )); then
+  [[ "${GPU_TORCH_VARIANT}" =~ ${GPU_TORCH_VARIANT_PATTERN} ]] \
+    || die "GPU_TORCH_VARIANT='${GPU_TORCH_VARIANT}' must match ${GPU_TORCH_VARIANT_PATTERN} (a CUDA wheel index such as cu121); --gpu with a CPU wheel cannot use --device=cuda"
   export TRAINER_TORCH_VARIANT="${GPU_TORCH_VARIANT}"
   export TRAINER_DEVICE="${GPU_TRAINER_DEVICE}"
   export TRAINER_IMAGE="${GPU_TRAINER_IMAGE}"
@@ -217,7 +238,7 @@ else
   compose_args+=("--profile" "self-play")
 
   SCHEMA_ID="$(capture_or_echo \
-    docker "${compose_args[@]}" run --rm trainer-bootstrap \
+    docker "${compose_args[@]}" run --rm --build trainer-bootstrap \
       compute-schema-id \
       --action-map "${ACTION_MAP_IN_CONTAINER}" \
       --rewards "${REWARDS_IN_CONTAINER}" \
@@ -294,7 +315,11 @@ if [[ "${RUNNER_FEATURES:-}" == "${TRAINED_FEATURES}" ]]; then
 fi
 # Forward FORGE_MC_SCHEMA_ID + trained-identity knobs into the child
 # shell so `mc_run.sh`'s compose invocation interpolates them.
-forward_env=( "FORGE_MC_SCHEMA_ID=${SCHEMA_ID}" )
+forward_env=(
+  "FORGE_MC_SCHEMA_ID=${SCHEMA_ID}"
+  "TRAINER_UID=${TRAINER_UID}"
+  "TRAINER_GID=${TRAINER_GID}"
+)
 if [[ -n "${RUNNER_RANDOM_ACTIONS-}" ]]; then
   forward_env+=( "RUNNER_RANDOM_ACTIONS=${RUNNER_RANDOM_ACTIONS}" )
 fi

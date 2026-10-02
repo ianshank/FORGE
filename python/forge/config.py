@@ -334,9 +334,11 @@ def _build_section(cls: type, data: dict[str, Any]) -> Any:
         default: Any
         if f.default is not MISSING:
             default = f.default
-        elif getattr(f, "default_factory", MISSING) is not MISSING:
+        elif callable(factory := f.default_factory):
+            # ``callable`` narrows away typeshed's ``_MISSING_TYPE`` member of
+            # the ``default_factory`` union on both old and new mypy.
             try:
-                default = f.default_factory()  # type: ignore[misc]
+                default = factory()
             except TypeError:
                 # Non-callable or requires arguments; treat as no usable default.
                 continue

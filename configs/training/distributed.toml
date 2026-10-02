@@ -13,8 +13,8 @@
 [hardware]
 # Number of parallel simulation workers per node.
 num_workers = 4
-# Device for ML inference: "cpu", "cuda", "mps".
-device = "cpu"
+# Device for ML inference: "auto" (CUDA > MPS > CPU), "cpu", "cuda", "cuda:N", "mps".
+device = "auto"
 # Pin memory for faster GPU transfers (enable when using CUDA).
 pin_memory = false
 # Maximum GPU memory fraction (0.0-1.0).

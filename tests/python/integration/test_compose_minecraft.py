@@ -65,6 +65,26 @@ def test_compose_has_v04_trainer_services(compose_data: dict) -> None:
     assert services["trainer-bootstrap"]["profiles"] == ["self-play"]
 
 
+@pytest.mark.parametrize("service", ["trainer", "trainer-bootstrap"])
+def test_trainer_build_passes_uid_gid(compose_data: dict, service: str) -> None:
+    """Both trainer services build the same image, so both must pass the
+    host-ownership build args (interpolated from TRAINER_UID/TRAINER_GID)."""
+    args = compose_data["services"][service]["build"]["args"]
+    assert "TRAINER_UID" in str(args["APP_UID"])
+    assert "TRAINER_GID" in str(args["APP_GID"])
+
+
+def test_trainer_dockerfile_derives_torch_index_from_variant(repo_root: Path) -> None:
+    """Regression: only the literal `cu121` selected CUDA wheels; any other
+    variant silently installed CPU torch. The index must be derived from
+    the variant, unknown variants rejected, and CUDA verified post-install."""
+    text = (repo_root / "docker" / "trainer.Dockerfile").read_text(encoding="utf-8")
+    assert '"${TORCH_INDEX_BASE}/${TORCH_VARIANT}"' in text
+    assert "unsupported TORCH_VARIANT" in text
+    assert "torch.version.cuda is None" in text
+    assert '= "cu121"' not in text
+
+
 def test_trainer_service_mounts_models_and_trajectories(compose_data: dict) -> None:
     """The trainer MUST be able to read trajectories + read/write
     the models dir AND delete old trajectory files (T4 replay-buffer

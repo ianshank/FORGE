@@ -170,7 +170,9 @@ How the device is chosen, highest priority first:
 
 The root `forge.toml` ships `"auto"`, which picks CUDA, then MPS, then CPU.
 `configs/dry_run.toml` pins `"cpu"`. The startup log line
-`Starting training: ... device=...` shows which one won.
+`Starting training: ... device=...` shows which setting won (it can read
+`auto`); `MAPPOAgent initialized: ... device=...` shows the device it
+resolved to.
 
 An explicit `cuda`, `cuda:N` or `mps` that isn't usable exits with code 1
 before the environment is built. The error says whether the cause is a
@@ -659,11 +661,14 @@ CHANGELOG) has since been fixed.
 #    GRAFANA_ADMIN_PASSWORD aborts every command, even without
 #    `--profile monitoring`.
 cp docker/compose.minecraft.env.example docker/compose.minecraft.env
-# edit: MC_EULA=TRUE and GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24)
+# edit: MC_EULA=TRUE, and set GRAFANA_ADMIN_PASSWORD to the OUTPUT of
+#   openssl rand -base64 24
+# (env files are not shell-expanded; a literal `$(...)` is not a secret).
 
-# 2. Create the bind-mounted dirs as your user. The trainer runs as uid
-#    1000 by default; dirs docker auto-creates are root-owned and
-#    unwritable (other uids: rebuild with --build-arg APP_UID=$(id -u)).
+# 2. Create the bind-mounted dirs as your user (dirs docker auto-creates
+#    are root-owned and unwritable). mc_self_play.sh builds the trainer
+#    image with your `id -u`/`id -g` (override: TRAINER_UID/TRAINER_GID;
+#    run as root it falls back to 1000:1000 — then `chown 1000:1000` them).
 mkdir -p models trajectories
 
 # 3. Bring the self-play stack up (CPU). Operator host needs ONLY

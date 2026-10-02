@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 # scripts/ is placed on sys.path by the root conftest.py (_ensure_importable).
@@ -143,8 +145,22 @@ class TestDeviceFlag:
 
         monkeypatch.setattr(train, "_create_env", lambda _config: _Env())
         monkeypatch.setattr(train, "_train_mappo", _capture)
-        train.main(["--agent", "mappo", "--config", "configs/dry_run.toml", "--device", "cpu"])
-        assert seen == {"device": "cpu"}
+        # dry_run.toml pins `cpu`, so a non-cpu value proves the override.
+        train.main(["--agent", "mappo", "--config", "configs/dry_run.toml", "--device", "auto"])
+        assert seen == {"device": "auto"}
+
+    def test_device_flag_warns_for_non_mappo_agent(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A --device the agent ignores is logged, not silently dropped or validated."""
+        import argparse
+
+        import train
+
+        config = type("C", (), {"hardware": type("H", (), {"device": "cpu"})()})()
+        args = argparse.Namespace(device="bogus", agent="random")
+        with caplog.at_level(logging.WARNING, logger=train.logger.name):
+            train._apply_device(config, args)
+        assert config.hardware.device == "bogus"
+        assert "no effect for --agent random" in caplog.text
 
 
 class TestFlatObsAgent:
