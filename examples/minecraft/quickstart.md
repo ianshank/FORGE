@@ -15,12 +15,17 @@ training simultaneously), skip steps 2-3 and use:
 ```sh
 # Accept Mojang's EULA (see §1 below)
 cp docker/compose.minecraft.env.example docker/compose.minecraft.env
-# edit and set MC_EULA=TRUE
+# edit and set MC_EULA=TRUE and GRAFANA_ADMIN_PASSWORD (required; compose
+# refuses to run with it empty, even without --profile monitoring)
+
+# Bind-mounted dirs must be writable by the trainer's uid (1000 default)
+mkdir -p models trajectories
 
 # Bring up the full self-play stack (CPU)
 scripts/mc_self_play.sh --detach
 
-# CUDA host with nvidia-container-toolkit:
+# CUDA host with nvidia-container-toolkit: builds the cu121 trainer image
+# (forge-mc-trainer:dev-cu121) and runs it with --device=cuda
 scripts/mc_self_play.sh --gpu --detach
 
 # Tear down:

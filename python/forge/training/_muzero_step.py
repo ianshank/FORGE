@@ -108,7 +108,9 @@ def train_with_gradients(
     from forge.models.muzero_networks import scalar_to_support
 
     c = model.config
-    device = torch.device(c.device)
+    # The weights' live device, not the construction-time ``config.device``:
+    # a trainer that calls ``model.to("cuda")`` must get CUDA batches.
+    device = model.device
 
     obs = torch.as_tensor(batch["observations"], dtype=torch.float32, device=device)
     actions = torch.as_tensor(batch["actions"], dtype=torch.long, device=device)

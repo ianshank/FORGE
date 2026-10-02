@@ -5,8 +5,10 @@
 [hardware]
 # Number of parallel simulation workers.
 num_workers = 4
-# Device for ML inference: "cpu", "cuda", "mps".
-device = "cpu"
+# Device for ML training/inference: "auto" (CUDA > MPS > CPU), "cpu",
+# "cuda", "cuda:N", or "mps". Override per run with `scripts/train.py
+# --device` or FORGE_HARDWARE_DEVICE.
+device = "auto"
 # Whether to pin memory for faster GPU transfers.
 pin_memory = false
 # Maximum GPU memory fraction to use (0.0-1.0).

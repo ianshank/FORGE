@@ -27,9 +27,11 @@
 
 services:
   trainer:
-    # Pass-through to enable CUDA inside the container. The image
-    # built with `--build-arg TORCH_VARIANT=cu121` picks up the GPU
-    # automatically once the device reservation is in place.
+    # Pass-through to enable CUDA inside the container. Needs an image
+    # built with TORCH_VARIANT=cu121 AND the CLI's `--device=cuda`; both
+    # are interpolated from the shell/env file (TRAINER_TORCH_VARIANT,
+    # TRAINER_DEVICE), not from this block. `mc_self_play.sh --gpu`
+    # exports both; set them yourself when invoking compose directly.
     deploy:
       resources:
         reservations:
@@ -38,10 +40,8 @@ services:
               count: ${TRAINER_GPU_COUNT:-1}
               capabilities: [gpu]
     environment:
-      # Force the trainer to pick `cuda` instead of `cpu` when this
-      # overlay is in effect. Operators can still override via the
-      # base .env file if they want `auto` (which is identical here
-      # since the GPU is now visible).
+      # Informational only: the trainer's `--device` flag in the base
+      # file's `command:` is what selects CUDA (see note above).
       TRAINER_DEVICE: ${TRAINER_DEVICE:-cuda}
       # Helpful diagnostic — surface the device list at trainer
       # startup so operators don't have to shell into the container

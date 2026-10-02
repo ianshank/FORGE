@@ -49,6 +49,7 @@ from forge.training.muzero_mc.manifest import (
     load_manifest,
     save_manifest,
 )
+from forge.utils.device import ensure_device_available
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -153,6 +154,9 @@ def _resolve_device(
     - ``"auto"`` picks ``cuda`` if ``torch.cuda.is_available()`` else
       ``cpu``. Logged at INFO so the operator sees which path was
       chosen.
+    - An explicit accelerator is checked with
+      :func:`forge.utils.device.ensure_device_available`, so ``"cuda"`` on
+      a CPU-only build raises :class:`ValueError` up front.
 
     Lazy-imports torch so callers that just want to validate a config
     (e.g. CLI ``--help``) don't pay the import cost.
@@ -163,6 +167,10 @@ def _resolve_device(
         resolved = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info("device=auto resolved to %s", resolved)
         return torch.device(resolved)
+    # Fail fast with an actionable message (CPU-only wheel vs. no visible
+    # GPU) instead of an opaque torch error at the first ``.to(device)``.
+    ensure_device_available(device)
+    logger.info("device=%s requested explicitly", device)
     return torch.device(device)
 
 

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     "attr,expected",
     [
         ("num_workers", 4),
-        ("device", "cpu"),
+        ("device", "auto"),
         ("pin_memory", False),
         ("gpu_memory_fraction", 0.9),
     ],
@@ -171,7 +171,7 @@ def test_to_dict_roundtrip() -> None:
     cfg = ForgeConfig()
     d = cfg.to_dict()
     assert d["simulation"]["grid_size"] == 64
-    assert d["hardware"]["device"] == "cpu"
+    assert d["hardware"]["device"] == "auto"
     assert d["training"]["gamma"] == pytest.approx(0.99)
 
 

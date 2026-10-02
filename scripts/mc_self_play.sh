@@ -24,7 +24,13 @@
 #                      touches the host. Used by the test in
 #                      tests/python/integration/test_mc_self_play_unit.py.
 #   --gpu              Layer compose.minecraft.gpu.yml on top of the
-#                      base file. Trainer picks `cuda`.
+#                      base file, build the trainer image with CUDA
+#                      torch (TRAINER_TORCH_VARIANT=cu121, tagged
+#                      separately so a cached CPU image is never
+#                      reused) and run it with --device=cuda. These
+#                      override the env file's CPU values; tune via
+#                      GPU_TORCH_VARIANT (a `cuXYZ` CUDA index) /
+#                      GPU_TRAINER_DEVICE / GPU_TRAINER_IMAGE.
 #   --detach           Run the final `compose up` in detached mode.
 #                      Default is foreground (logs stream to TTY,
 #                      Ctrl-C tears down).
@@ -76,10 +82,33 @@ ACTION_DIM="${ACTION_DIM:-12}"
 SCHEMA_ID_HEX_LEN="${SCHEMA_ID_HEX_LEN:-64}"
 TRAINED_FEATURES="${TRAINED_FEATURES:-mc-live-bundled}"
 TRAINED_RANDOM_ACTIONS="${TRAINED_RANDOM_ACTIONS:-false}"
+# --gpu trainer identity. Exported over the env file's TRAINER_* values
+# (shell env wins over --env-file in compose interpolation), because the
+# example env file ships the CPU variant + device for the default path.
+GPU_TORCH_VARIANT="${GPU_TORCH_VARIANT:-cu121}"
+GPU_TRAINER_DEVICE="${GPU_TRAINER_DEVICE:-cuda}"
+GPU_TRAINER_IMAGE="${GPU_TRAINER_IMAGE:-forge-mc-trainer:dev-${GPU_TORCH_VARIANT}}"
+# Must name a CUDA wheel index (cuXYZ); trainer.Dockerfile rejects others.
+GPU_TORCH_VARIANT_PATTERN='^cu[0-9]+$'
+# Trainer image uid/gid (Dockerfile APP_UID/APP_GID via compose). Default
+# to the invoking user so the container can write the host bind mounts;
+# fall back to the image default when invoked as root, so the trainer
+# never runs as uid 0.
+TRAINER_DEFAULT_UID="${TRAINER_DEFAULT_UID:-1000}"
+TRAINER_DEFAULT_GID="${TRAINER_DEFAULT_GID:-1000}"
+host_uid="$(id -u)"
+if (( host_uid == 0 )); then
+  TRAINER_UID="${TRAINER_UID:-${TRAINER_DEFAULT_UID}}"
+  TRAINER_GID="${TRAINER_GID:-${TRAINER_DEFAULT_GID}}"
+else
+  TRAINER_UID="${TRAINER_UID:-${host_uid}}"
+  TRAINER_GID="${TRAINER_GID:-$(id -g)}"
+fi
+export TRAINER_UID TRAINER_GID
 
 log()   { printf '%s [mc_self_play] %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 die()   { log "ERROR: $*"; exit 1; }
-usage() { sed -n '2,44p' "$0"; }
+usage() { sed -n '2,46p' "$0"; }
 
 # Run a command or print it in dry-run mode. The dry-run trace goes
 # to STDERR so callers capturing stdout (e.g. command substitution
@@ -156,11 +185,34 @@ fi
 # ---------- step 1: preflight ----------
 log "preflight: checking docker compose version >= ${COMPOSE_MIN_VERSION}"
 if (( DRY_RUN )); then
-  log "DRY-RUN: skipping `docker compose version` check"
+  log "DRY-RUN: skipping 'docker compose version' check"
 else
   command -v docker >/dev/null 2>&1 || die "docker not on PATH"
-  docker compose version >/dev/null 2>&1 \
+  compose_version="$(docker compose version --short 2>/dev/null)" \
     || die "docker compose v2 not installed (need >= ${COMPOSE_MIN_VERSION})"
+  compose_version="${compose_version#v}"
+  # `sort -V` puts the smaller version first; anything but the minimum
+  # coming first means the installed compose is too old.
+  if [[ "$(printf '%s\n%s\n' "${COMPOSE_MIN_VERSION}" "${compose_version}" | sort -V | head -n1)" \
+        != "${COMPOSE_MIN_VERSION}" ]]; then
+    die "docker compose ${compose_version} < ${COMPOSE_MIN_VERSION} (older versions silently drop the GPU reservation)"
+  fi
+  if (( USE_GPU )); then
+    # Advisory only: CDI-based setups may not list an `nvidia` runtime.
+    docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia \
+      || log "WARN: no 'nvidia' docker runtime found; install nvidia-container-toolkit if the trainer can't see the GPU"
+  fi
+fi
+
+log "trainer uid:gid=${TRAINER_UID}:${TRAINER_GID} (host models/ + trajectories/ must be writable by it)"
+
+if (( USE_GPU )); then
+  [[ "${GPU_TORCH_VARIANT}" =~ ${GPU_TORCH_VARIANT_PATTERN} ]] \
+    || die "GPU_TORCH_VARIANT='${GPU_TORCH_VARIANT}' must match ${GPU_TORCH_VARIANT_PATTERN} (a CUDA wheel index such as cu121); --gpu with a CPU wheel cannot use --device=cuda"
+  export TRAINER_TORCH_VARIANT="${GPU_TORCH_VARIANT}"
+  export TRAINER_DEVICE="${GPU_TRAINER_DEVICE}"
+  export TRAINER_IMAGE="${GPU_TRAINER_IMAGE}"
+  log "gpu trainer: TRAINER_TORCH_VARIANT=${TRAINER_TORCH_VARIANT} TRAINER_DEVICE=${TRAINER_DEVICE} TRAINER_IMAGE=${TRAINER_IMAGE}"
 fi
 
 if (( BASELINE_ONLY )); then
@@ -186,7 +238,7 @@ else
   compose_args+=("--profile" "self-play")
 
   SCHEMA_ID="$(capture_or_echo \
-    docker "${compose_args[@]}" run --rm trainer-bootstrap \
+    docker "${compose_args[@]}" run --rm --build trainer-bootstrap \
       compute-schema-id \
       --action-map "${ACTION_MAP_IN_CONTAINER}" \
       --rewards "${REWARDS_IN_CONTAINER}" \
@@ -263,12 +315,23 @@ if [[ "${RUNNER_FEATURES:-}" == "${TRAINED_FEATURES}" ]]; then
 fi
 # Forward FORGE_MC_SCHEMA_ID + trained-identity knobs into the child
 # shell so `mc_run.sh`'s compose invocation interpolates them.
-forward_env=( "FORGE_MC_SCHEMA_ID=${SCHEMA_ID}" )
+forward_env=(
+  "FORGE_MC_SCHEMA_ID=${SCHEMA_ID}"
+  "TRAINER_UID=${TRAINER_UID}"
+  "TRAINER_GID=${TRAINER_GID}"
+)
 if [[ -n "${RUNNER_RANDOM_ACTIONS-}" ]]; then
   forward_env+=( "RUNNER_RANDOM_ACTIONS=${RUNNER_RANDOM_ACTIONS}" )
 fi
 if [[ -n "${RUNNER_FEATURES-}" ]]; then
   forward_env+=( "RUNNER_FEATURES=${RUNNER_FEATURES}" )
+fi
+if (( USE_GPU )); then
+  forward_env+=(
+    "TRAINER_TORCH_VARIANT=${TRAINER_TORCH_VARIANT}"
+    "TRAINER_DEVICE=${TRAINER_DEVICE}"
+    "TRAINER_IMAGE=${TRAINER_IMAGE}"
+  )
 fi
 run_or_echo env "${forward_env[@]}" "${MC_RUN_SH}" "${up_args[@]}"
 

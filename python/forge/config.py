@@ -57,7 +57,9 @@ class HardwareConfig:
     """Hardware and device configuration."""
 
     num_workers: int = 4
-    device: str = "cpu"
+    #: Torch device for learning agents: ``"auto"`` (CUDA > MPS > CPU),
+    #: ``"cpu"``, ``"cuda"``, ``"cuda:N"`` or ``"mps"``.
+    device: str = "auto"
     pin_memory: bool = False
     gpu_memory_fraction: float = 0.9
 
@@ -332,9 +334,11 @@ def _build_section(cls: type, data: dict[str, Any]) -> Any:
         default: Any
         if f.default is not MISSING:
             default = f.default
-        elif getattr(f, "default_factory", MISSING) is not MISSING:
+        elif callable(factory := f.default_factory):
+            # ``callable`` narrows away typeshed's ``_MISSING_TYPE`` member of
+            # the ``default_factory`` union on both old and new mypy.
             try:
-                default = f.default_factory()  # type: ignore[misc]
+                default = factory()
             except TypeError:
                 # Non-callable or requires arguments; treat as no usable default.
                 continue

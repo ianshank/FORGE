@@ -255,6 +255,10 @@ services:
       dockerfile: docker/trainer.Dockerfile
       args:
         TORCH_VARIANT: ${TRAINER_TORCH_VARIANT:-cpu}
+        # Container uid/gid must own the host bind mounts it writes
+        # (models/, trajectories/); mc_self_play.sh exports the host's.
+        APP_UID: ${TRAINER_UID:-1000}
+        APP_GID: ${TRAINER_GID:-1000}
     image: ${TRAINER_IMAGE:-forge-mc-trainer:dev}
     container_name: forge-mc-trainer
     profiles: ["self-play"]
@@ -339,6 +343,10 @@ services:
       dockerfile: docker/trainer.Dockerfile
       args:
         TORCH_VARIANT: ${TRAINER_TORCH_VARIANT:-cpu}
+        # Container uid/gid must own the host bind mounts it writes
+        # (models/, trajectories/); mc_self_play.sh exports the host's.
+        APP_UID: ${TRAINER_UID:-1000}
+        APP_GID: ${TRAINER_GID:-1000}
     image: ${TRAINER_IMAGE:-forge-mc-trainer:dev}
     container_name: forge-mc-trainer-bootstrap
     profiles: ["self-play"]

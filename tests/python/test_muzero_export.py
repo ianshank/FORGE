@@ -170,3 +170,40 @@ class TestWeightExporterIntegration:
         with (out_dir / "manifest.json").open() as f:
             manifest = json.load(f)
         assert "muzero" in manifest["components"]
+
+
+# ---------------------------------------------------------------------------
+# Device handling (GPU-trained models must export)
+# ---------------------------------------------------------------------------
+
+
+class TestExportDevice:
+    def test_trace_inputs_follow_model_device(self, tmp_path: Any) -> None:
+        """Regression: dummy inputs were created with a bare
+        ``torch.randn`` (CPU) while the trainer had moved the weights to
+        CUDA, failing every export. They must be built on
+        ``model.device``.
+        """
+        model = _make_model()
+        seen: list[Any] = []
+        real_randn = torch.randn
+
+        def spy(*args: Any, **kwargs: Any) -> Any:
+            seen.append(kwargs.get("device"))
+            return real_randn(*args, **kwargs)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(torch, "randn", spy)
+            MuZeroExporter(model).export_torchscript(tmp_path / "ts")
+        assert len(seen) == 3
+        assert all(d == model.device for d in seen)
+
+    @pytest.mark.filterwarnings("ignore::DeprecationWarning")
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
+    def test_cuda_model_exports_and_validates(self, tmp_path: Any) -> None:
+        model = _make_model().to("cuda")
+        exporter = MuZeroExporter(model)
+        exporter.export_torchscript(tmp_path / "ts")
+        assert exporter.validate_export(tmp_path / "ts", fmt="torchscript", atol=1e-3)
+        if _can_import("onnxscript"):
+            assert len(exporter.export_onnx(tmp_path / "onnx")) == 3

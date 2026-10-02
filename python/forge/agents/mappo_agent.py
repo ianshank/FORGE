@@ -52,8 +52,15 @@ class MAPPOConfig(AgentConfig):
 
     @classmethod
     def from_forge_config(cls, forge_config: Any) -> MAPPOConfig:
-        """Build MAPPOConfig from a ForgeConfig instance."""
+        """Build MAPPOConfig from a ForgeConfig instance.
+
+        ``device`` comes from ``[hardware] device`` (``"auto"``, ``"cpu"``,
+        ``"cuda"``, ``"cuda:N"`` or ``"mps"``); a config without a
+        ``hardware`` section keeps the ``"auto"`` default.
+        """
         tc = forge_config.training
+        hardware = getattr(forge_config, "hardware", None)
+        device = getattr(hardware, "device", None) or cls.device
         return cls(
             learning_rate=tc.learning_rate,
             gamma=tc.gamma,
@@ -64,6 +71,7 @@ class MAPPOConfig(AgentConfig):
             entropy_coeff=tc.entropy_coeff,
             value_coeff=tc.value_coeff,
             max_grad_norm=tc.max_grad_norm,
+            device=device,
         )
 
 

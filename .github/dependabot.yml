@@ -96,6 +96,14 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # The python image's minor is an ABI pin, not a routine bump: the
+    # runtime stage of docker/Dockerfile installs a cp311 wheel, and
+    # trainer.Dockerfile's torch==2.4.x / numpy<2.0 have no cp313+ wheels.
+    # A grouped 3.11 -> 3.14 bump broke both images once already; move the
+    # interpreter by hand together with those pins.
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     groups:
       docker-minor-patch:
         update-types: ["minor", "patch"]

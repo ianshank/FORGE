@@ -16,6 +16,7 @@ interpolate.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -37,16 +38,33 @@ def script_path(repo_root: Path) -> Path:
     return repo_root / "scripts" / "mc_self_play.sh"
 
 
-def _run_dry(script_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+# Env-var prefixes the script reads as overrides (`GPU_*`, `TRAINER_*`,
+# `FORGE_MC_*`); stripped from the child env by `_run_dry`.
+_HERMETIC_ENV_PREFIXES: tuple[str, ...] = ("GPU_", "TRAINER_", "FORGE_MC_")
+
+
+def _run_dry(
+    script_path: Path,
+    *args: str,
+    env_overrides: dict[str, str] | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
     """Invoke `mc_self_play.sh` in dry-run mode and capture both
-    stdout + stderr. bash is required (skip on hosts without it)."""
+    stdout + stderr. bash is required (skip on hosts without it).
+
+    ``env_overrides`` is layered over the scrubbed environment; pass
+    ``check=False`` to assert on a non-zero exit."""
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("bash not on PATH; mc_self_play.sh unit tests need POSIX shell")
+    # Scrub operator overrides so the asserted defaults are hermetic.
+    env = {k: v for k, v in os.environ.items() if not k.startswith(_HERMETIC_ENV_PREFIXES)}
+    env.update(env_overrides or {})
     with lf_normalized_script(script_path) as posix_script:
         return subprocess.run(
             [bash, posix_script, "--dry-run", *args],
-            check=True,
+            check=check,
+            env=env,
             capture_output=True,
             text=True,
             timeout=30,
@@ -152,6 +170,73 @@ def test_dry_run_gpu_flag_includes_overlay(script_path: Path) -> None:
     combined = result.stdout + result.stderr
     assert "compose.minecraft.gpu.yml" in combined
     assert "--gpu" in combined
+
+
+def test_dry_run_gpu_selects_cuda_trainer(script_path: Path) -> None:
+    """Regression: `--gpu` layered the device reservation but the trainer
+    still ran `--device=cpu` on a CPU-only torch image, because compose
+    interpolates `--device=${TRAINER_DEVICE}` and `TORCH_VARIANT` from the
+    env file (which ships `cpu`). The script must override both and use a
+    separate image tag so a cached CPU image is not reused."""
+    result = _run_dry(script_path, "--gpu")
+    combined = result.stdout + result.stderr
+    assert "TRAINER_TORCH_VARIANT=cu121" in combined
+    assert "TRAINER_DEVICE=cuda" in combined
+    assert "TRAINER_IMAGE=forge-mc-trainer:dev-cu121" in combined
+
+
+def test_dry_run_gpu_accepts_other_cuda_variants(script_path: Path) -> None:
+    """Any `cuXYZ` index is forwarded verbatim and gets its own image tag."""
+    result = _run_dry(script_path, "--gpu", env_overrides={"GPU_TORCH_VARIANT": "cu124"})
+    combined = result.stdout + result.stderr
+    assert "TRAINER_TORCH_VARIANT=cu124" in combined
+    assert "TRAINER_IMAGE=forge-mc-trainer:dev-cu124" in combined
+
+
+@pytest.mark.parametrize("variant", ["cpu", "cuda", "cu", "rocm6.1", "cu121;rm"])
+def test_dry_run_gpu_rejects_non_cuda_variant(script_path: Path, variant: str) -> None:
+    """Regression: a non-`cuXYZ` variant built a CPU-only torch image that
+    was then started with `--device=cuda` and crash-looped. Fail up front."""
+    result = _run_dry(
+        script_path, "--gpu", env_overrides={"GPU_TORCH_VARIANT": variant}, check=False
+    )
+    assert result.returncode != 0
+    assert "GPU_TORCH_VARIANT" in result.stderr
+    assert "compute-schema-id" not in result.stderr
+
+
+def test_dry_run_forwards_trainer_uid_gid(script_path: Path) -> None:
+    """The trainer image's APP_UID/APP_GID come from TRAINER_UID/GID, which
+    must reach compose (via mc_run.sh) so the bind mounts are writable."""
+    result = _run_dry(script_path, env_overrides={"TRAINER_UID": "4242", "TRAINER_GID": "4343"})
+    combined = result.stdout + result.stderr
+    assert "TRAINER_UID=4242" in combined
+    assert "TRAINER_GID=4343" in combined
+
+
+def test_dry_run_trainer_uid_defaults_to_non_root(script_path: Path) -> None:
+    """Unset TRAINER_UID defaults to the host user, or to the image default
+    when invoked as root — never uid 0."""
+    result = _run_dry(script_path)
+    combined = result.stdout + result.stderr
+    expected = "1000" if os.geteuid() == 0 else str(os.geteuid())
+    assert f"TRAINER_UID={expected}" in combined
+    assert "TRAINER_UID=0 " not in combined
+
+
+def test_dry_run_rebuilds_trainer_image_before_first_run(script_path: Path) -> None:
+    """The first trainer-bootstrap run must `--build`, or a cached image
+    baked with another APP_UID would write root/foreign-owned files."""
+    result = _run_dry(script_path)
+    combined = result.stdout + result.stderr
+    assert "run --rm --build trainer-bootstrap compute-schema-id" in combined
+
+
+def test_dry_run_without_gpu_leaves_trainer_identity_to_env_file(script_path: Path) -> None:
+    result = _run_dry(script_path)
+    combined = result.stdout + result.stderr
+    assert "TRAINER_DEVICE=" not in combined
+    assert "TRAINER_TORCH_VARIANT=" not in combined
 
 
 def test_dry_run_without_gpu_omits_overlay(script_path: Path) -> None:
